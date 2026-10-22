@@ -5,6 +5,9 @@ pub enum Error {
     /// The configuration file is missing a value or holds an invalid one.
     #[error("invalid configuration: {0}")]
     Config(String),
+    /// The configuration file is not valid TOML, has an unknown key, or has a wrongly typed value.
+    #[error("invalid configuration file: {0}")]
+    ConfigParse(#[from] toml::de::Error),
     /// A filesystem or process operation failed.
     #[error(transparent)]
     Io(#[from] std::io::Error),
