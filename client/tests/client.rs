@@ -8,8 +8,8 @@ use std::{
 };
 
 use rh_client::{
-    BlockingClient, Client, ClientError, ClientOptions, DEFAULT_REQUEST_TIMEOUT, DaemonStart,
-    SpawnOptions, TokenSource,
+    BlockingClient, Client, ClientError, ClientOptions, DEFAULT_CONNECT_TIMEOUT,
+    DEFAULT_REQUEST_TIMEOUT, DaemonStart, SpawnOptions, TokenSource,
 };
 use rh_core::sampler::{RawProcess, RawSample, Sampler};
 use rh_shared::{
@@ -77,6 +77,7 @@ fn options(addr: SocketAddr, token: TokenSource) -> ClientOptions {
     ClientOptions {
         base_url: format!("http://{addr}"),
         token,
+        connect_timeout: DEFAULT_CONNECT_TIMEOUT,
         request_timeout: DEFAULT_REQUEST_TIMEOUT,
         spawn: None,
     }

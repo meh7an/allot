@@ -1150,6 +1150,8 @@ dependencies = [
  "rh-core",
  "rh-sampler",
  "rh-shared",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

@@ -31,7 +31,8 @@ pub use crate::{blocking::BlockingClient, error::ClientError, spawn::SpawnOption
 /// Result of a client call.
 pub type Result<T> = std::result::Result<T, ClientError>;
 
-const CONNECT_TIMEOUT: Duration = Duration::from_millis(500);
+/// The connect timeout [`ClientOptions::discover`] uses.
+pub const DEFAULT_CONNECT_TIMEOUT: Duration = Duration::from_millis(500);
 /// The request timeout [`ClientOptions::discover`] uses.
 pub const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
 const READY_POLL: Duration = Duration::from_millis(100);
@@ -52,6 +53,8 @@ pub struct ClientOptions {
     pub base_url: String,
     /// The bearer token.
     pub token: TokenSource,
+    /// Timeout for opening the connection.
+    pub connect_timeout: Duration,
     /// Timeout for every request; acquire adds its own wait on top.
     pub request_timeout: Duration,
     /// Start rhd and retry once when it is unreachable; `None` never starts it.
@@ -68,12 +71,19 @@ impl ClientOptions {
     pub fn discover(auto_spawn: bool) -> Result<Self> {
         let paths = Paths::from_env()?;
         let config = Config::load(&paths.config_file())?;
-        Ok(Self {
+        Ok(Self::local(&paths, &config, auto_spawn))
+    }
+
+    /// Options for an install at `paths` with an already loaded `config`, with the default
+    /// timeouts.
+    pub fn local(paths: &Paths, config: &Config, auto_spawn: bool) -> Self {
+        Self {
             base_url: format!("http://127.0.0.1:{}", config.daemon.port),
             token: TokenSource::File(paths.token_file()),
+            connect_timeout: DEFAULT_CONNECT_TIMEOUT,
             request_timeout: DEFAULT_REQUEST_TIMEOUT,
             spawn: auto_spawn.then(SpawnOptions::beside_current_exe),
-        })
+        }
     }
 }
 
@@ -103,7 +113,7 @@ impl Client {
     pub fn new(options: ClientOptions) -> Result<Self> {
         // Per-request timeouts (acquire's wait) override this client-wide default.
         let http = reqwest::Client::builder()
-            .connect_timeout(CONNECT_TIMEOUT)
+            .connect_timeout(options.connect_timeout)
             .timeout(options.request_timeout)
             .build()
             .map_err(|error| ClientError::Setup(error.to_string()))?;
