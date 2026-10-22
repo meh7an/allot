@@ -101,6 +101,11 @@ impl Config {
                 format!("classifier.rules[{index}] has a blank program or arg"),
             )?;
         }
+        let flags = &self.classifier.light_flags;
+        ensure(
+            flags.iter().all(|flag| !flag.trim().is_empty()),
+            "classifier.light_flags must not contain blank entries",
+        )?;
         Ok(())
     }
 }
@@ -315,6 +320,9 @@ impl ProfileOverride {
 pub struct ClassifierConfig {
     /// Rules checked against every simple command in a command line, in order.
     pub rules: Vec<HeavyRule>,
+    /// A simple command containing any of these arguments only prints and exits, so it is
+    /// light even when a rule matches it, for example `cargo build --help`.
+    pub light_flags: Vec<String>,
 }
 
 impl Default for ClassifierConfig {
@@ -329,18 +337,27 @@ impl Default for ClassifierConfig {
                 HeavyRule::new("pnpm", &["build", "test"], JobClass::CpuHeavy),
                 HeavyRule::new("msbuild", &[], JobClass::CpuHeavy),
                 HeavyRule::new("cmake", &["--build"], JobClass::CpuHeavy),
+                HeavyRule::new("python*", &["train*.py"], JobClass::GpuHeavy),
+                HeavyRule::new("py", &["train*.py"], JobClass::GpuHeavy),
             ],
+            light_flags: ["--help", "-h", "--version", "-V", "/?"]
+                .map(String::from)
+                .to_vec(),
         }
     }
 }
 
-/// Marks a simple command as heavy when its program and first argument match.
+/// Marks a simple command as heavy when its program and arguments match.
+///
+/// Matching ignores case, and `*` matches any run of characters.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct HeavyRule {
-    /// Program name without directory or `.exe`, for example `cargo`.
+    /// Program name without directory or extension, for example `cargo` or `python*`.
     pub program: String,
-    /// First arguments that make the command heavy; empty matches any arguments.
+    /// Any one of these makes the command heavy; empty matches any arguments. A pattern that
+    /// starts with `-` matches that flag anywhere in the command; any other pattern matches
+    /// the first positional argument (the first one not starting with `-` or `+`).
     #[serde(default)]
     pub args: Vec<String>,
     /// Class the matched command needs a lease for.
@@ -428,6 +445,22 @@ mod tests {
             Config::from_toml("[[classifier.rules]]\nprogram = \"ninja\"\nclass = \"cpu_heavy\"\n")
                 .unwrap();
         assert!(config.classifier.rules[0].args.is_empty());
+    }
+
+    #[test]
+    fn test_config_user_rules_keep_default_light_flags() {
+        let config =
+            Config::from_toml("[[classifier.rules]]\nprogram = \"ninja\"\nclass = \"cpu_heavy\"\n")
+                .unwrap();
+        let defaults = ClassifierConfig::default();
+        assert_eq!(config.classifier.light_flags, defaults.light_flags);
+        assert!(defaults.light_flags.contains(&"--help".to_owned()));
+    }
+
+    #[test]
+    fn test_config_blank_light_flag_is_rejected() {
+        let message = config_error("[classifier]\nlight_flags = [\"--help\", \"\"]\n");
+        assert!(message.contains("classifier.light_flags"));
     }
 
     #[test]
