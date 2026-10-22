@@ -441,6 +441,7 @@ mod tests {
             peak_cpu_pct: 6.0,
             avg_gpu_pct: 0.0,
             peak_gpu_pct: 2.25,
+            quiet_at_start: true,
         };
         let old = sample_run("cargo build|app", 1_000, None);
         let mid = sample_run("cargo build|app", 2_000, Some(noise));

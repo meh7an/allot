@@ -26,6 +26,7 @@ diesel::table! {
         noise_peak_cpu_pct -> Nullable<Float>,
         noise_avg_gpu_pct -> Nullable<Float>,
         noise_peak_gpu_pct -> Nullable<Float>,
+        noise_quiet_at_start -> Nullable<Bool>,
     }
 }
 

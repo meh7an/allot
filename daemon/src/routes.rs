@@ -11,19 +11,23 @@ use axum::{
     response::Response,
     routing::{delete, get, post},
 };
-use rh_core::ledger::{LedgerError, Transition};
+use rh_core::{
+    benchmark::BenchmarkRun,
+    ledger::{LedgerError, Transition},
+};
 use rh_shared::{
     api::{
         AcquireRequest, AcquireResponse, CanFitRequest, HealthResponse, HeartbeatResponse,
         LeaseOwner, LeaseQuery, LeasesResponse, ProfileSpec, RegisterSessionRequest,
-        ReleaseResponse, SessionsResponse, Verdict,
+        ReleaseResponse, SessionsResponse, Verdict, WaitRequest,
     },
     config::Config,
     types::{JobClass, JobProfile, Lease, LeaseId, LeaseState, SessionKey, Snapshot},
 };
+use tokio::sync::watch;
 
 use crate::{
-    db::repo::{self, LeaseDraft},
+    db::repo::{self, JobRun, LeaseDraft},
     error::AppError,
     state::{AppState, now_ms},
 };
@@ -39,6 +43,7 @@ pub fn router(state: AppState) -> Router {
         .route("/leases", get(list_leases).post(acquire))
         .route("/leases/{id}", delete(release))
         .route("/leases/{id}/heartbeat", post(heartbeat))
+        .route("/leases/{id}/wait", post(wait))
         .route("/sessions", get(sessions).post(register_session))
         .route("/shutdown", post(shutdown))
         .route_layer(middleware::from_fn_with_state(state.clone(), require_token))
@@ -143,7 +148,7 @@ async fn acquire(
         expires_at_ms: now.saturating_add(ttl_ms),
     };
 
-    let mut changes = state.changes.subscribe();
+    let changes = state.changes.subscribe();
     let lease = state
         .with_db(move |conn| repo::insert_lease(conn, &draft))
         .await?;
@@ -153,20 +158,52 @@ async fn acquire(
         ledger.enqueue(lease)?;
         state.tick(&mut ledger).await?;
     }
+    wait_for_grant(&state, id, &session, request.wait_timeout_secs, changes).await
+}
 
-    let wait = Duration::from_secs(request.wait_timeout_secs).min(MAX_ACQUIRE_WAIT);
+/// Keeps waiting for a queued lease, which keeps its place. Answers at once for a lease
+/// that is already active or has ended.
+async fn wait(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+    Query(owner): Query<LeaseOwner>,
+    Json(request): Json<WaitRequest>,
+) -> Result<Json<AcquireResponse>, AppError> {
+    let id = LeaseId(id);
+    let changes = state.changes.subscribe();
+    stored_lease(&state, id, &owner.session).await?;
+    wait_for_grant(
+        &state,
+        id,
+        &owner.session,
+        request.wait_timeout_secs,
+        changes,
+    )
+    .await
+}
+
+/// Holds the request open until lease `id` stops being queued or `wait_timeout_secs` pass,
+/// then answers with the lease and why it runs or waits.
+async fn wait_for_grant(
+    state: &AppState,
+    id: LeaseId,
+    session: &SessionKey,
+    wait_timeout_secs: u64,
+    mut changes: watch::Receiver<u64>,
+) -> Result<Json<AcquireResponse>, AppError> {
+    let wait = Duration::from_secs(wait_timeout_secs).min(MAX_ACQUIRE_WAIT);
     let deadline = Instant::now() + wait;
     // The client can only heartbeat the lease once this response names it, and the open
     // request already proves the holder is alive, so the wait keeps the lease from expiring.
     let renew_every = Duration::from_secs(state.config.leases.heartbeat_ttl_secs) / 3;
     let mut renew_at = Instant::now() + renew_every;
-    while is_queued(&state, id).await {
+    while is_queued(state, id).await {
         let now = Instant::now();
         if now >= deadline {
             break;
         }
         if now >= renew_at {
-            renew(&state, id, &session).await?;
+            renew(state, id, session).await?;
             renew_at = now + renew_every;
         }
         let wake = deadline.min(renew_at).saturating_duration_since(now);
@@ -175,13 +212,13 @@ async fn acquire(
         }
     }
     // A full TTL from the response gives the client time to start heartbeating.
-    renew(&state, id, &session).await?;
+    renew(state, id, session).await?;
 
     let lease = state
         .with_db(move |conn| repo::get_lease(conn, id))
         .await?
         .ok_or_else(|| anyhow!("lease {} vanished from the database", id.0))?;
-    let verdict = lease_verdict(&state, &lease).await;
+    let verdict = lease_verdict(state, &lease).await;
     Ok(Json(AcquireResponse { lease, verdict }))
 }
 
@@ -231,24 +268,56 @@ async fn release(
     let id = LeaseId(id);
     let now = now_ms();
     let mut ledger = state.ledger.lock().await;
-    match ledger.release(id, &owner.session, now) {
-        Ok(_) => {
-            let released = Transition {
+    let benchmark = match ledger.release(id, &owner.session, now) {
+        Ok(released) => {
+            let transition = Transition {
                 id,
                 to: LeaseState::Released,
                 reason: "released by holder".to_owned(),
             };
-            state.persist(&[released], now).await?;
+            state.persist(&[transition], now).await?;
             state.notify_changes();
             // The freed room may let queued leases start right away.
             state.tick(&mut ledger).await?;
+            released
+                .benchmark
+                .map(|run| (job_run(&released.lease, &run, now), run))
         }
-        Err(LedgerError::NotFound(_)) => {}
+        Err(LedgerError::NotFound(_)) => None,
         Err(error) => return Err(error.into()),
-    }
+    };
     drop(ledger);
+
+    let noise = benchmark.as_ref().map(|(_, run)| run.noise);
+    if let Some((job, _)) = benchmark {
+        // The release itself succeeded; losing the history row must not hide the noise
+        // report from the holder.
+        if let Err(error) = state
+            .with_db(move |conn| repo::insert_job_run(conn, &job))
+            .await
+        {
+            tracing::error!(lease = id.0, "storing the benchmark run failed: {error:#}");
+        }
+    }
     let lease = stored_lease(&state, id, &owner.session).await?;
-    Ok(Json(ReleaseResponse { lease }))
+    Ok(Json(ReleaseResponse { lease, noise }))
+}
+
+/// The history row of a finished benchmark lease. Its label stands in for the command and
+/// the fingerprint until learned job profiles record them properly.
+fn job_run(lease: &Lease, run: &BenchmarkRun, ended_at_ms: i64) -> JobRun {
+    JobRun {
+        lease_id: Some(lease.id),
+        fingerprint: lease.label.trim().to_owned(),
+        command: lease.label.clone(),
+        cwd: String::new(),
+        declared: lease.profile,
+        peak: run.holder_peak,
+        avg: run.holder_avg,
+        started_at_ms: lease.granted_at_ms.unwrap_or(lease.requested_at_ms),
+        ended_at_ms,
+        noise: Some(run.noise),
+    }
 }
 
 /// Resolves a class through the config and checks the values.
@@ -293,6 +362,7 @@ async fn lease_verdict(state: &AppState, lease: &Lease) -> Verdict {
             fits: false,
             reasons: vec![reason],
             wait_estimate_secs: None,
+            benchmark: None,
         }
     })
 }

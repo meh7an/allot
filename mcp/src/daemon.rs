@@ -4,7 +4,10 @@ use std::future::Future;
 
 use rh_client::{Client, Result};
 use rh_shared::{
-    api::{AcquireRequest, AcquireResponse, CanFitRequest, HeartbeatResponse, LeaseQuery, Verdict},
+    api::{
+        AcquireRequest, AcquireResponse, CanFitRequest, HeartbeatResponse, LeaseQuery,
+        ReleaseResponse, Verdict,
+    },
     types::{Holder, Lease, LeaseId, SessionKey, Snapshot},
 };
 
@@ -19,6 +22,13 @@ pub trait DaemonApi: Send + Sync + 'static {
         &self,
         request: &AcquireRequest,
     ) -> impl Future<Output = Result<AcquireResponse>> + Send;
+    /// See [`Client::wait`].
+    fn wait(
+        &self,
+        id: LeaseId,
+        session: &SessionKey,
+        wait_timeout_secs: u64,
+    ) -> impl Future<Output = Result<AcquireResponse>> + Send;
     /// See [`Client::heartbeat`].
     fn heartbeat(
         &self,
@@ -30,7 +40,7 @@ pub trait DaemonApi: Send + Sync + 'static {
         &self,
         id: LeaseId,
         session: &SessionKey,
-    ) -> impl Future<Output = Result<Lease>> + Send;
+    ) -> impl Future<Output = Result<ReleaseResponse>> + Send;
     /// See [`Client::leases`].
     fn leases(&self, query: &LeaseQuery) -> impl Future<Output = Result<Vec<Lease>>> + Send;
     /// See [`Client::register_session`].
@@ -61,6 +71,15 @@ impl DaemonApi for Client {
         Client::acquire(self, request)
     }
 
+    fn wait(
+        &self,
+        id: LeaseId,
+        session: &SessionKey,
+        wait_timeout_secs: u64,
+    ) -> impl Future<Output = Result<AcquireResponse>> + Send {
+        Client::wait(self, id, session, wait_timeout_secs)
+    }
+
     fn heartbeat(
         &self,
         id: LeaseId,
@@ -73,7 +92,7 @@ impl DaemonApi for Client {
         &self,
         id: LeaseId,
         session: &SessionKey,
-    ) -> impl Future<Output = Result<Lease>> + Send {
+    ) -> impl Future<Output = Result<ReleaseResponse>> + Send {
         Client::release(self, id, session)
     }
 

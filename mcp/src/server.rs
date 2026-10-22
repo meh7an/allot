@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use rh_shared::{
     api::{AcquireRequest, CanFitRequest, LeaseQuery, Verdict},
-    types::{Holder, JobProfile, Lease, LeaseId, LeaseKind, LeaseState},
+    types::{Holder, JobProfile, Lease, LeaseId, LeaseKind, LeaseState, NoiseReport},
 };
 use rmcp::{
     ServerHandler,
@@ -46,6 +46,15 @@ struct AcquireOutcome {
     label: String,
     verdict: Verdict,
     next_step: &'static str,
+}
+
+/// What `release_lease` reports: the lease, plus the noise report of a benchmark.
+#[derive(Debug, Serialize)]
+struct ReleaseOutcome {
+    #[serde(flatten)]
+    lease: Lease,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    noise: Option<NoiseReport>,
 }
 
 /// What `list_leases` reports.
@@ -101,25 +110,38 @@ impl<C: DaemonApi> RhServer<C> {
     #[tool(
         description = "Reserves resources for a heavy command before running it. Waits up \
                           to wait_secs for the lease to start; if it is still queued it keeps \
-                          its place. Run the command only when state is active, then call \
-                          release_lease."
+                          its place, and calling again with its lease_id keeps waiting. Run \
+                          the command only when state is active, then call release_lease. \
+                          A waiting benchmark reports its progress in verdict.benchmark."
     )]
     async fn acquire_lease(
         &self,
         Parameters(params): Parameters<AcquireParams>,
     ) -> Result<String, String> {
-        let request = AcquireRequest {
-            holder: self.holder.clone(),
-            profile: params.profile.to_spec()?,
-            kind: params.kind.into(),
-            label: params.label,
-            wait_timeout_secs: params.wait_secs.unwrap_or(DEFAULT_WAIT_SECS),
+        let wait_timeout_secs = params.wait_secs.unwrap_or(DEFAULT_WAIT_SECS);
+        let response = match params.lease_id {
+            Some(id) => self
+                .client
+                .wait(LeaseId(id), &self.holder.session, wait_timeout_secs)
+                .await
+                .map_err(|e| e.to_string())?,
+            None => {
+                if params.label.trim().is_empty() {
+                    return Err("give `label`, the command the lease is for".to_owned());
+                }
+                let request = AcquireRequest {
+                    holder: self.holder.clone(),
+                    profile: params.profile.to_spec()?,
+                    kind: params.kind.into(),
+                    label: params.label,
+                    wait_timeout_secs,
+                };
+                self.client
+                    .acquire(&request)
+                    .await
+                    .map_err(|e| e.to_string())?
+            }
         };
-        let response = self
-            .client
-            .acquire(&request)
-            .await
-            .map_err(|e| e.to_string())?;
         let lease = response.lease;
         let next_step = match lease.state {
             LeaseState::Active => {
@@ -128,10 +150,13 @@ impl<C: DaemonApi> RhServer<C> {
             }
             LeaseState::Queued => {
                 self.held.insert(lease.id);
-                "Still queued and keeping its place. Check list_leases until it is active \
-                 before running the command, or call release_lease to give up."
+                "Still queued and keeping its place. Call acquire_lease with this lease_id \
+                 to keep waiting before running the command, or release_lease to give up."
             }
-            _ => "The lease ended before it started; do not run the command.",
+            _ => {
+                self.held.remove(lease.id);
+                "The lease ended before it started; do not run the command."
+            }
         };
         to_json(&AcquireOutcome {
             lease_id: lease.id.0,
@@ -146,20 +171,25 @@ impl<C: DaemonApi> RhServer<C> {
 
     #[tool(
         description = "Ends a lease once its command has finished (or to give up a queued \
-                          one). Releasing an ended lease is harmless."
+                          one). Releasing an ended lease is harmless. Ending a benchmark lease \
+                          returns its noise report: load from outside this session while it \
+                          ran."
     )]
     async fn release_lease(
         &self,
         Parameters(params): Parameters<ReleaseParams>,
     ) -> Result<String, String> {
         let id = LeaseId(params.lease_id);
-        let lease = self
+        let response = self
             .client
             .release(id, &self.holder.session)
             .await
             .map_err(|e| e.to_string())?;
         self.held.remove(id);
-        to_json(&lease)
+        to_json(&ReleaseOutcome {
+            lease: response.lease,
+            noise: response.noise,
+        })
     }
 
     #[tool(
@@ -285,9 +315,52 @@ mod tests {
             outcome["next_step"]
                 .as_str()
                 .unwrap()
-                .contains("list_leases")
+                .contains("acquire_lease with this lease_id")
         );
         assert_eq!(server.held.ids(), [LeaseId(1)]);
+    }
+
+    #[tokio::test]
+    async fn test_acquire_with_lease_id_resumes_the_queued_lease() {
+        let (server, daemon) = server_with(MockDaemon::default());
+        server
+            .acquire_lease(acquire(ClassParam::GpuHeavy))
+            .await
+            .unwrap();
+        let resume = Parameters(AcquireParams {
+            lease_id: Some(1),
+            ..AcquireParams::default()
+        });
+        let outcome = json(server.acquire_lease(resume).await);
+        assert_eq!(outcome["lease_id"], 1);
+        assert_eq!(outcome["state"], "active");
+        assert_eq!(daemon.leases_count(), 1);
+        assert_eq!(server.held.ids(), [LeaseId(1)]);
+    }
+
+    #[tokio::test]
+    async fn test_acquire_new_lease_without_label_is_a_tool_error() {
+        let (server, _) = server_with(MockDaemon::default());
+        let mut params = acquire(ClassParam::CpuHeavy);
+        params.0.label = "  ".into();
+        let error = server.acquire_lease(params).await.unwrap_err();
+        assert!(error.contains("label"), "{error}");
+    }
+
+    #[tokio::test]
+    async fn test_release_of_a_benchmark_reports_its_noise() {
+        let (server, _) = server_with(MockDaemon::default());
+        let mut params = acquire(ClassParam::CpuHeavy);
+        params.0.kind = KindParam::BenchmarkExclusive;
+        server.acquire_lease(params).await.unwrap();
+        let released = json(
+            server
+                .release_lease(Parameters(ReleaseParams { lease_id: 1 }))
+                .await,
+        );
+        assert_eq!(released["state"], "released");
+        assert_eq!(released["noise"]["avg_cpu_pct"], 1.5);
+        assert_eq!(released["noise"]["quiet_at_start"], true);
     }
 
     #[tokio::test]
@@ -313,6 +386,7 @@ mod tests {
                 .await,
         );
         assert_eq!(released["state"], "released");
+        assert!(released.get("noise").is_none());
         assert!(server.held.ids().is_empty());
         assert_eq!(daemon.releases(), [LeaseId(1)]);
     }

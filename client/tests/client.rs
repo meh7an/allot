@@ -189,10 +189,11 @@ async fn test_client_lease_lifecycle() {
         client.heartbeat(id, &session).await.unwrap().state,
         LeaseState::Active
     );
-    assert_eq!(
-        client.release(id, &session).await.unwrap().state,
-        LeaseState::Released
-    );
+    let waited = client.wait(id, &session, 5).await.unwrap();
+    assert_eq!(waited.lease.state, LeaseState::Active);
+    let released = client.release(id, &session).await.unwrap();
+    assert_eq!(released.lease.state, LeaseState::Released);
+    assert_eq!(released.noise, None);
     assert!(client.leases(&mine).await.unwrap().is_empty());
     daemon.stop().await;
 }
@@ -280,7 +281,11 @@ async fn test_blocking_client_works_outside_the_runtime() {
     let state = tokio::task::spawn_blocking(move || {
         let client = BlockingClient::new(options).unwrap();
         let lease = client.acquire(&build_request(0)).unwrap().lease;
-        client.release(lease.id, &holder().session).unwrap().state
+        client
+            .release(lease.id, &holder().session)
+            .unwrap()
+            .lease
+            .state
     })
     .await
     .unwrap();

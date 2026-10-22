@@ -3,6 +3,7 @@
 
 pub mod admission;
 pub mod ancestry;
+pub mod benchmark;
 pub mod classifier;
 pub mod ledger;
 pub mod sampler;

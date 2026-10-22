@@ -102,14 +102,12 @@ started before the MCP server was registered: tell the user to restart the sessi
    never fit), ask the user whether to keep waiting or give up. Waiting keeps the place;
    giving up is `release_lease`. A reason saying "more than the machine can free" will never
    fit: offer a smaller custom profile or a narrower command instead.
-3. While waiting, check `list_leases` about every 30 seconds, with a light shell sleep between
-   checks (`Start-Sleep -Seconds 30` in PowerShell, `sleep 30` in Bash). If the environment
-   refuses a sleep, do not chain shorter ones; wait on the lease itself instead, with the
-   environment's own mechanism (a Monitor or a background command) running an until-loop over
-   `rh leases`, whose line for the lease reads `lease <id> active` once it starts:
-   `until ~/.resources-helper/bin/rh.exe leases | grep -Eq "lease <id> +active"; do sleep 5; done`.
-   Do light work that does not depend on the command's result in the meantime if there is any.
-4. Once the lease shows `active`, run the command, then release it as usual.
+3. Keep waiting by calling `acquire_lease` again with only `lease_id` (and `wait_secs`, up to
+   120). It holds the same place in the queue, returns as soon as the lease starts, and its
+   `verdict` is fresh each time. Do not sleep in the shell between calls, and never request a
+   new lease for the same work. Do light work that does not depend on the command's result
+   between calls if there is any.
+4. Once a call returns `active`, run the command, then release it as usual.
 
 ## Reading the machine
 
@@ -138,18 +136,33 @@ throughput tests, before/after performance comparisons.
 Do not use it for correctness: running tests, checking that benches compile
 (`cargo bench --no-run`), or a smoke run whose timing nobody reads. Those take a normal lease.
 
-A benchmark lease waits until no other lease is active and the machine has been quiet (CPU
-and busiest GPU engine at or below 10%) for 10 seconds (defaults from `[benchmark]` in the
-config). While it waits it blocks every later
-request so the machine drains, and while it is active nothing else is granted. That costs
-every other session, so:
+A benchmark lease waits until no other lease is active, then measures the machine for 10
+seconds: it starts once total CPU and the busiest GPU engine average at or below 10% over that
+window. A single busy second does not restart the wait. If the average stays above the limits,
+the lease is granted anyway 60 seconds after the drain, marked as not quiet. (Defaults from
+`[benchmark]` in the config: `quiet_cpu_pct`, `quiet_gpu_pct`, `quiet_secs`,
+`max_quiet_wait_secs`.) While it waits it blocks every later request so the machine drains,
+and while it is active nothing else is granted. That costs every other session, so:
 
 - Tell the user before acquiring that other sessions will be held back.
 - Build first under a normal lease (`cargo bench --no-run`), release it, then acquire the
   benchmark lease for the measuring run only.
 - Release it the moment the measurement ends.
-- Unrelated background load (a game, a video call) can keep the machine from ever being
-  quiet; if the wait drags on, say so and ask the user whether to close it or give up.
+
+While it waits, `verdict.benchmark` says where it stands, by `phase`:
+
+- `draining`: `active_leases` other leases still run; nothing to do but wait.
+- `measuring`: `measured_secs` of `needed_secs` averaged so far, with the averages
+  (`cpu_avg_pct`, `gpu_avg_pct`).
+- `noisy`: the window is above the limits; it starts anyway in `grant_anyway_in_secs`.
+  Unrelated background load (a game, a video call) is the usual cause: tell the user what
+  the averages are, and that the benchmark will start without quiet unless they close it.
+
+`release_lease` on a benchmark lease returns a `noise` report: average and peak CPU and GPU
+load from everything outside your session while it ran, and `quiet_at_start`. Report the
+numbers with the results, for example "noise: 1.2% CPU average, 4% peak". When
+`quiet_at_start` is false or the averages are more than a few percent, say the numbers may be
+disturbed.
 
 ## Reporting to the user
 
@@ -159,7 +172,7 @@ Keep it to one line per event, in plain words:
   about 3 min. I'll start when it's granted."
 - Long or unknown wait: say why (from `reasons`) and ask whether to keep waiting.
 - Benchmark: "Waiting for a quiet machine for the benchmark; other sessions' builds are
-  held until it finishes."
+  held until it finishes." Once it ends, give the noise report with the results.
 - Granted after a wait: "Lease granted after 2 min; running `cargo test`."
 
 Do not report routine grants that came back `active` at once.

@@ -3,7 +3,7 @@
 use rh_shared::{
     api::{
         AcquireRequest, AcquireResponse, CanFitRequest, HealthResponse, HeartbeatResponse,
-        LeaseQuery, Verdict,
+        LeaseQuery, ReleaseResponse, Verdict,
     },
     types::{Holder, Lease, LeaseId, SessionKey, SessionUsage, Snapshot},
 };
@@ -109,7 +109,7 @@ impl BlockingClient {
     /// # Errors
     ///
     /// As [`Client::release`].
-    pub fn release(&self, id: LeaseId, session: &SessionKey) -> Result<Lease> {
+    pub fn release(&self, id: LeaseId, session: &SessionKey) -> Result<ReleaseResponse> {
         self.runtime.block_on(self.client.release(id, session))
     }
 

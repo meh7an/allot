@@ -82,6 +82,10 @@ impl Config {
             "benchmark.quiet_secs must be positive",
         )?;
         ensure(
+            self.benchmark.max_quiet_wait_secs >= self.benchmark.quiet_secs,
+            "benchmark.max_quiet_wait_secs must be at least quiet_secs",
+        )?;
+        ensure(
             self.leases.heartbeat_ttl_secs > 0,
             "leases.heartbeat_ttl_secs must be positive",
         )?;
@@ -159,8 +163,12 @@ pub struct BenchmarkConfig {
     pub quiet_cpu_pct: f32,
     /// GPU engine load at or below which the machine is quiet.
     pub quiet_gpu_pct: f32,
-    /// How long the machine must stay quiet before a benchmark lease is granted.
+    /// The window the loads are averaged over once no other lease is active. The machine is
+    /// quiet when both averages are at or below their limits.
     pub quiet_secs: u64,
+    /// How long a drained machine may stay above the limits before a waiting benchmark is
+    /// granted anyway, marked as not quiet. At least `quiet_secs`.
+    pub max_quiet_wait_secs: u64,
 }
 
 impl Default for BenchmarkConfig {
@@ -169,6 +177,7 @@ impl Default for BenchmarkConfig {
             quiet_cpu_pct: 10.0,
             quiet_gpu_pct: 10.0,
             quiet_secs: 10,
+            max_quiet_wait_secs: 60,
         }
     }
 }
@@ -485,6 +494,8 @@ mod tests {
         assert!(config_error("[admission]\nheadroom_pct = 100\n").contains("headroom_pct"));
         assert!(config_error("[benchmark]\nquiet_cpu_pct = 120\n").contains("quiet_cpu_pct"));
         assert!(config_error("[benchmark]\nquiet_secs = 0\n").contains("quiet_secs"));
+        let short_wait = "[benchmark]\nquiet_secs = 30\nmax_quiet_wait_secs = 20\n";
+        assert!(config_error(short_wait).contains("max_quiet_wait_secs"));
         assert!(config_error("[leases]\nheartbeat_ttl_secs = 0\n").contains("heartbeat_ttl"));
         assert!(config_error("[classes.mixed]\ngpu_pct = 150\n").contains("classes.mixed"));
     }

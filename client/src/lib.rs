@@ -18,7 +18,7 @@ use rh_shared::{
     api::{
         AcquireRequest, AcquireResponse, CanFitRequest, HealthResponse, HeartbeatResponse,
         LeaseQuery, LeasesResponse, RegisterSessionRequest, ReleaseResponse, SessionsResponse,
-        Verdict,
+        Verdict, WaitRequest,
     },
     config::Config,
     paths::Paths,
@@ -224,19 +224,48 @@ impl Client {
         decode(response).await
     }
 
-    /// `DELETE /leases/{id}`. Releasing an ended lease returns it unchanged.
+    /// `POST /leases/{id}/wait`: keeps waiting for a queued lease, which keeps its place. The
+    /// request may stay open for `wait_timeout_secs`.
     ///
     /// # Errors
     ///
     /// Any [`ClientError`]; `Http` with 403 for another session's lease, 404 for an unknown
     /// one.
-    pub async fn release(&self, id: LeaseId, session: &SessionKey) -> Result<Lease> {
+    pub async fn wait(
+        &self,
+        id: LeaseId,
+        session: &SessionKey,
+        wait_timeout_secs: u64,
+    ) -> Result<AcquireResponse> {
+        let path = format!("/leases/{}/wait?session={}", id.0, encode(&session.0));
+        let url = self.url(&path);
+        let request = WaitRequest { wait_timeout_secs };
+        let timeout = self.options.request_timeout + Duration::from_secs(wait_timeout_secs);
+        let response = self
+            .execute(|http, token| {
+                http.post(&url)
+                    .bearer_auth(token)
+                    .json(&request)
+                    .timeout(timeout)
+            })
+            .await?;
+        decode(response).await
+    }
+
+    /// `DELETE /leases/{id}`. Releasing an ended lease returns it unchanged. The release that
+    /// ends a benchmark lease also carries its noise report.
+    ///
+    /// # Errors
+    ///
+    /// Any [`ClientError`]; `Http` with 403 for another session's lease, 404 for an unknown
+    /// one.
+    pub async fn release(&self, id: LeaseId, session: &SessionKey) -> Result<ReleaseResponse> {
         let path = format!("/leases/{}?session={}", id.0, encode(&session.0));
         let url = self.url(&path);
         let response = self
             .execute(|http, token| http.delete(&url).bearer_auth(token))
             .await?;
-        Ok(decode::<ReleaseResponse>(response).await?.lease)
+        decode(response).await
     }
 
     /// `GET /leases`, oldest first.

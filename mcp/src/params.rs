@@ -129,6 +129,10 @@ pub struct CanFitParams {
 /// Parameters of `acquire_lease`.
 #[derive(Debug, Clone, Default, PartialEq, Deserialize, JsonSchema)]
 pub struct AcquireParams {
+    /// Keep waiting for this queued lease instead of requesting a new one; it keeps its
+    /// place. The profile, kind, and label are then ignored.
+    #[serde(default)]
+    pub lease_id: Option<i64>,
     /// The resources to reserve.
     #[serde(flatten)]
     pub profile: ProfileParams,
@@ -136,6 +140,8 @@ pub struct AcquireParams {
     #[serde(default)]
     pub kind: KindParam,
     /// The command that will run, shown to other sessions, for example `cargo build --release`.
+    /// Required for a new lease.
+    #[serde(default)]
     pub label: String,
     /// Seconds to wait for the lease to start before returning it still queued (default 60,
     /// at most 120).
@@ -228,7 +234,15 @@ mod tests {
     fn test_acquire_params_schema_lists_flattened_fields() {
         let schema = serde_json::to_value(schemars::schema_for!(AcquireParams)).unwrap();
         let properties = schema["properties"].as_object().unwrap();
-        for field in ["class", "cores", "ram_mb", "kind", "label", "wait_secs"] {
+        for field in [
+            "lease_id",
+            "class",
+            "cores",
+            "ram_mb",
+            "kind",
+            "label",
+            "wait_secs",
+        ] {
             assert!(properties.contains_key(field), "{field} missing: {schema}");
         }
     }

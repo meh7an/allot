@@ -1,7 +1,8 @@
 use serde::{Deserialize, Serialize};
 
 use crate::types::{
-    Holder, JobClass, JobProfile, Lease, LeaseKind, LeaseState, SessionKey, SessionUsage,
+    Holder, JobClass, JobProfile, Lease, LeaseKind, LeaseState, NoiseReport, SessionKey,
+    SessionUsage,
 };
 
 /// Response of `GET /health`.
@@ -36,7 +37,7 @@ pub struct CanFitRequest {
 }
 
 /// The admission engine's answer. Response of `POST /can-fit`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Verdict {
     /// Whether the job could start now.
     pub fits: bool,
@@ -44,6 +45,46 @@ pub struct Verdict {
     pub reasons: Vec<String>,
     /// Expected wait before the job fits, when the daemon can estimate it.
     pub wait_estimate_secs: Option<u64>,
+    /// Where a benchmark at the head of the queue stands; `None` for other requests.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub benchmark: Option<BenchmarkProgress>,
+}
+
+/// Where a waiting benchmark lease stands, so its holder can report progress.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "phase", rename_all = "snake_case")]
+#[non_exhaustive]
+pub enum BenchmarkProgress {
+    /// Other leases are still active; nothing new starts until they end.
+    Draining {
+        /// Active leases left.
+        active_leases: u32,
+    },
+    /// The machine has drained and its background load is being averaged.
+    Measuring {
+        /// Seconds averaged so far.
+        measured_secs: u64,
+        /// Seconds the average must cover.
+        needed_secs: u64,
+        /// Average total CPU load so far, in percent.
+        cpu_avg_pct: f32,
+        /// Average load of the busiest GPU engine so far, in percent.
+        gpu_avg_pct: f32,
+    },
+    /// The average is above the quiet limits. The lease is granted anyway, marked as not
+    /// quiet, once `grant_anyway_in_secs` have passed.
+    Noisy {
+        /// Average total CPU load over the quiet window, in percent.
+        cpu_avg_pct: f32,
+        /// Average load of the busiest GPU engine over the quiet window, in percent.
+        gpu_avg_pct: f32,
+        /// CPU limit of a quiet machine.
+        cpu_limit_pct: f32,
+        /// GPU limit of a quiet machine.
+        gpu_limit_pct: f32,
+        /// Seconds until the lease is granted without quiet.
+        grant_anyway_in_secs: u64,
+    },
 }
 
 /// Body of `POST /leases`.
@@ -70,7 +111,15 @@ pub struct AcquireResponse {
     pub verdict: Verdict,
 }
 
-/// Query string of `POST /leases/{id}/heartbeat` and `DELETE /leases/{id}`.
+/// Body of `POST /leases/{id}/wait`: keep waiting for a queued lease without losing its place.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WaitRequest {
+    /// How long the daemon may hold the request open waiting for the lease to become active.
+    pub wait_timeout_secs: u64,
+}
+
+/// Query string of `POST /leases/{id}/heartbeat`, `POST /leases/{id}/wait`, and
+/// `DELETE /leases/{id}`.
 ///
 /// The daemon refuses either call when the lease belongs to another session.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -93,6 +142,10 @@ pub struct HeartbeatResponse {
 pub struct ReleaseResponse {
     /// The lease in its final state.
     pub lease: Lease,
+    /// Background load while a benchmark lease was active. Only the release that ends the
+    /// lease carries it, and only when at least one sample was taken during the lease.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub noise: Option<NoiseReport>,
 }
 
 /// Query string of `GET /leases`. Each filter is optional; an empty query lists every lease.
@@ -138,6 +191,7 @@ mod tests {
             fits: false,
             reasons: vec!["RAM: 6144 MB requested, 4096 MB free after headroom".into()],
             wait_estimate_secs: Some(90),
+            benchmark: None,
         }
     }
 
@@ -187,7 +241,47 @@ mod tests {
             fits: true,
             reasons: vec![],
             wait_estimate_secs: None,
+            benchmark: None,
         });
+    }
+
+    #[test]
+    fn test_verdict_benchmark_progress_round_trips_every_phase() {
+        let phases = [
+            BenchmarkProgress::Draining { active_leases: 2 },
+            BenchmarkProgress::Measuring {
+                measured_secs: 4,
+                needed_secs: 10,
+                cpu_avg_pct: 6.5,
+                gpu_avg_pct: 0.0,
+            },
+            BenchmarkProgress::Noisy {
+                cpu_avg_pct: 12.5,
+                gpu_avg_pct: 1.0,
+                cpu_limit_pct: 10.0,
+                gpu_limit_pct: 10.0,
+                grant_anyway_in_secs: 35,
+            },
+        ];
+        for phase in phases {
+            assert_json_round_trip(&Verdict {
+                benchmark: Some(phase),
+                ..sample_verdict()
+            });
+        }
+        let value = serde_json::to_value(phases[0]).unwrap();
+        assert_eq!(
+            value,
+            serde_json::json!({ "phase": "draining", "active_leases": 2 })
+        );
+    }
+
+    #[test]
+    fn test_verdict_without_benchmark_field_deserializes_as_none() {
+        let verdict: Verdict =
+            serde_json::from_str(r#"{"fits":true,"reasons":[],"wait_estimate_secs":null}"#)
+                .unwrap();
+        assert_eq!(verdict.benchmark, None);
     }
 
     #[test]
@@ -228,6 +322,24 @@ mod tests {
     fn test_release_response_json_round_trip_preserves_every_field() {
         assert_json_round_trip(&ReleaseResponse {
             lease: sample_lease(),
+            noise: None,
+        });
+        assert_json_round_trip(&ReleaseResponse {
+            lease: sample_lease(),
+            noise: Some(NoiseReport {
+                avg_cpu_pct: 1.5,
+                peak_cpu_pct: 4.0,
+                avg_gpu_pct: 0.0,
+                peak_gpu_pct: 2.0,
+                quiet_at_start: true,
+            }),
+        });
+    }
+
+    #[test]
+    fn test_wait_request_json_round_trip_preserves_every_field() {
+        assert_json_round_trip(&WaitRequest {
+            wait_timeout_secs: 90,
         });
     }
 

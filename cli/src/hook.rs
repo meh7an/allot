@@ -168,9 +168,9 @@ fn judge(class: JobClass, rule: &str, command: &str, leases: &[Lease]) -> Outcom
     if let Some(queued) = in_state(LeaseState::Queued).find(|lease| covers(lease, class)) {
         return Outcome::Deny(format!(
             "Blocked by {MCP_SERVER}: `{command}` is {name} work and lease {} (\"{}\") that \
-             covers it is still queued. Wait until list_leases shows it active, then retry. Do \
-             not acquire another lease for it.",
-            queued.id.0, queued.label
+             covers it is still queued. Keep waiting on it (acquire_lease with only lease_id \
+             {}) until it is active, then retry. Do not acquire another lease for it.",
+            queued.id.0, queued.label, queued.id.0
         ));
     }
     let mut reason = format!(
@@ -429,6 +429,10 @@ mod tests {
         let leases = vec![lease(6, LeaseState::Queued, cpu())];
         let reason = denial(evaluate(BASH_CARGO_BUILD, &Config::default(), with(leases)));
         assert!(reason.contains("lease 6 (\"job 6\")") && reason.contains("still queued"));
+        assert!(
+            reason.contains("acquire_lease with only lease_id 6"),
+            "{reason}"
+        );
         assert!(!reason.contains("Call acquire_lease"), "{reason}");
     }
 

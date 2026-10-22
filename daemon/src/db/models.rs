@@ -204,6 +204,7 @@ pub(super) struct JobRunRow {
     noise_peak_cpu_pct: Option<f32>,
     noise_avg_gpu_pct: Option<f32>,
     noise_peak_gpu_pct: Option<f32>,
+    noise_quiet_at_start: Option<bool>,
 }
 
 impl TryFrom<JobRunRow> for JobRun {
@@ -215,16 +216,22 @@ impl TryFrom<JobRunRow> for JobRun {
             row.noise_peak_cpu_pct,
             row.noise_avg_gpu_pct,
             row.noise_peak_gpu_pct,
+            row.noise_quiet_at_start,
         ) {
-            (Some(avg_cpu_pct), Some(peak_cpu_pct), Some(avg_gpu_pct), Some(peak_gpu_pct)) => {
-                Some(NoiseReport {
-                    avg_cpu_pct,
-                    peak_cpu_pct,
-                    avg_gpu_pct,
-                    peak_gpu_pct,
-                })
-            }
-            (None, None, None, None) => None,
+            (
+                Some(avg_cpu_pct),
+                Some(peak_cpu_pct),
+                Some(avg_gpu_pct),
+                Some(peak_gpu_pct),
+                Some(quiet_at_start),
+            ) => Some(NoiseReport {
+                avg_cpu_pct,
+                peak_cpu_pct,
+                avg_gpu_pct,
+                peak_gpu_pct,
+                quiet_at_start,
+            }),
+            (None, None, None, None, None) => None,
             _ => bail!("job_runs noise columns are only partly set"),
         };
         Ok(Self {
@@ -284,6 +291,7 @@ pub(super) struct NewJobRunRow<'a> {
     noise_peak_cpu_pct: Option<f32>,
     noise_avg_gpu_pct: Option<f32>,
     noise_peak_gpu_pct: Option<f32>,
+    noise_quiet_at_start: Option<bool>,
 }
 
 impl<'a> NewJobRunRow<'a> {
@@ -312,6 +320,7 @@ impl<'a> NewJobRunRow<'a> {
             noise_peak_cpu_pct: run.noise.map(|noise| noise.peak_cpu_pct),
             noise_avg_gpu_pct: run.noise.map(|noise| noise.avg_gpu_pct),
             noise_peak_gpu_pct: run.noise.map(|noise| noise.peak_gpu_pct),
+            noise_quiet_at_start: run.noise.map(|noise| noise.quiet_at_start),
         })
     }
 }

@@ -9,12 +9,15 @@
 //! by then or leaves the head enough room at that time.
 
 use rh_shared::{
-    api::Verdict,
+    api::{BenchmarkProgress, Verdict},
     config::Config,
     types::{Holder, JobProfile, Lease, LeaseId, LeaseKind, LeaseState, SessionKey, Snapshot},
 };
 
-use crate::admission::{self, Room, Running};
+use crate::{
+    admission::{self, Room, Running},
+    benchmark::{BenchmarkRun, Quiet, QuietLimits, QuietWindow, RunMeter},
+};
 
 /// The config values the ledger works with, with times in milliseconds.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -23,12 +26,8 @@ pub struct LedgerSettings {
     pub headroom_pct: f32,
     /// A lease without a heartbeat for this long expires.
     pub heartbeat_ttl_ms: i64,
-    /// Total CPU load at or below which the machine is quiet.
-    pub quiet_cpu_pct: f32,
-    /// Busiest GPU engine load at or below which the machine is quiet.
-    pub quiet_gpu_pct: f32,
-    /// How long the machine must stay quiet before a benchmark lease is granted.
-    pub quiet_ms: i64,
+    /// When a drained machine is quiet enough for a benchmark.
+    pub quiet: QuietLimits,
 }
 
 impl LedgerSettings {
@@ -37,9 +36,12 @@ impl LedgerSettings {
         Self {
             headroom_pct: config.admission.headroom_pct,
             heartbeat_ttl_ms: secs_to_ms(config.leases.heartbeat_ttl_secs),
-            quiet_cpu_pct: config.benchmark.quiet_cpu_pct,
-            quiet_gpu_pct: config.benchmark.quiet_gpu_pct,
-            quiet_ms: secs_to_ms(config.benchmark.quiet_secs),
+            quiet: QuietLimits {
+                cpu_pct: config.benchmark.quiet_cpu_pct,
+                gpu_pct: config.benchmark.quiet_gpu_pct,
+                window_ms: secs_to_ms(config.benchmark.quiet_secs),
+                max_wait_ms: secs_to_ms(config.benchmark.max_quiet_wait_secs),
+            },
         }
     }
 }
@@ -83,12 +85,23 @@ pub enum LedgerError {
     AlreadyTracked(LeaseId),
 }
 
+/// A lease its holder ended, with what it measured if it was a benchmark.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Released {
+    /// The lease in its final state.
+    pub lease: Lease,
+    /// Noise and holder usage of an active benchmark lease; `None` for other leases, for a
+    /// benchmark released while queued, and when no sample arrived while it was active.
+    pub benchmark: Option<BenchmarkRun>,
+}
+
 /// Queued and active leases, in the order they were enqueued.
 #[derive(Debug, Clone)]
 pub struct Ledger {
     settings: LedgerSettings,
     leases: Vec<Lease>,
-    quiet_since_ms: Option<i64>,
+    quiet: QuietWindow,
+    meter: Option<RunMeter>,
 }
 
 #[derive(Debug, Clone)]
@@ -96,12 +109,17 @@ struct Candidate<'a> {
     profile: &'a JobProfile,
     kind: LeaseKind,
     label: String,
+    requested_at_ms: i64,
 }
 
 #[derive(Debug, Default)]
 struct Decision {
     granted: bool,
     reasons: Vec<String>,
+    /// Where a waiting benchmark stands.
+    progress: Option<BenchmarkProgress>,
+    /// The quiet check a benchmark candidate passed or failed.
+    quiet: Option<Quiet>,
 }
 
 /// What the first blocked candidate of a pass protects from later ones.
@@ -133,7 +151,8 @@ impl Ledger {
         Self {
             settings,
             leases: Vec::new(),
-            quiet_since_ms: None,
+            quiet: QuietWindow::default(),
+            meter: None,
         }
     }
 
@@ -187,16 +206,24 @@ impl Ledger {
         id: LeaseId,
         session: &SessionKey,
         now_ms: i64,
-    ) -> Result<Lease, LedgerError> {
+    ) -> Result<Released, LedgerError> {
         let index = self.owned_index(id, session)?;
         let mut lease = self.leases.remove(index);
         lease.state = LeaseState::Released;
         lease.ended_at_ms = Some(now_ms);
-        Ok(lease)
+        let benchmark = match self.meter.take() {
+            Some(meter) if meter.lease_id() == id => meter.finish(),
+            other => {
+                self.meter = other;
+                None
+            }
+        };
+        Ok(Released { lease, benchmark })
     }
 
-    /// Expires leases whose holder died or whose heartbeat stopped, updates the quiet-period
-    /// tracker from `snapshot`, and grants every queued lease that may start now.
+    /// Expires leases whose holder died or whose heartbeat stopped, feeds `snapshot` to the
+    /// quiet window and to the running benchmark's meter, and grants every queued lease that
+    /// may start now.
     pub fn tick(
         &mut self,
         now_ms: i64,
@@ -204,35 +231,47 @@ impl Ledger {
         liveness: &dyn ProcessLiveness,
     ) -> Vec<Transition> {
         let mut transitions = self.reap(now_ms, liveness);
-        self.observe_quiet(now_ms, snapshot);
+        let drained = self.active().is_empty();
+        self.quiet
+            .observe(now_ms, snapshot, drained, self.settings.quiet.window_ms);
+        if let Some(meter) = &mut self.meter {
+            meter.observe(snapshot);
+        }
 
         let candidates = self.queued_candidates();
         let decisions = self.plan(snapshot, now_ms, &candidates);
-        let granted: Vec<LeaseId> = self
+        let granted: Vec<(LeaseId, Option<Quiet>)> = self
             .leases
             .iter()
             .filter(|lease| lease.state == LeaseState::Queued)
             .zip(decisions)
             .filter(|(_, decision)| decision.granted)
-            .map(|(lease, _)| lease.id)
+            .map(|(lease, decision)| (lease.id, decision.quiet))
             .collect();
 
-        let quiet_secs = self.settings.quiet_ms / 1_000;
-        for lease in &mut self.leases {
-            if granted.contains(&lease.id) {
-                lease.state = LeaseState::Active;
-                lease.granted_at_ms = Some(now_ms);
-                let reason = if lease.kind == LeaseKind::BenchmarkExclusive {
-                    format!("granted after {quiet_secs}s of quiet")
-                } else {
-                    "granted".to_owned()
-                };
-                transitions.push(Transition {
-                    id: lease.id,
-                    to: LeaseState::Active,
-                    reason,
-                });
-            }
+        for (id, quiet) in granted {
+            let Some(lease) = self.leases.iter_mut().find(|lease| lease.id == id) else {
+                continue;
+            };
+            lease.state = LeaseState::Active;
+            lease.granted_at_ms = Some(now_ms);
+            let reason = if lease.kind == LeaseKind::BenchmarkExclusive {
+                let quiet_at_start = matches!(quiet, Some(Quiet::Quiet(_)));
+                self.meter = Some(RunMeter::start(
+                    id,
+                    lease.holder.session.clone(),
+                    quiet_at_start,
+                    snapshot,
+                ));
+                grant_reason(&self.settings.quiet, quiet)
+            } else {
+                "granted".to_owned()
+            };
+            transitions.push(Transition {
+                id,
+                to: LeaseState::Active,
+                reason,
+            });
         }
         transitions
     }
@@ -255,17 +294,14 @@ impl Ledger {
             profile,
             kind,
             label: "this request".to_owned(),
+            requested_at_ms: now_ms,
         });
         let decision = self
             .plan(snapshot, now_ms, &candidates)
             .pop()
             .unwrap_or_default();
         if decision.granted {
-            return Verdict {
-                fits: true,
-                reasons: decision.reasons,
-                wait_estimate_secs: None,
-            };
+            return fitting(decision.reasons);
         }
         let mut reasons = decision.reasons;
         if queued_ahead > 0 {
@@ -274,7 +310,8 @@ impl Ledger {
         Verdict {
             fits: false,
             reasons,
-            wait_estimate_secs: self.wait_estimate(profile, kind, snapshot, now_ms),
+            wait_estimate_secs: self.wait_estimate(profile, kind, now_ms, snapshot, now_ms),
+            benchmark: decision.progress,
         }
     }
 
@@ -283,11 +320,7 @@ impl Ledger {
     pub fn verdict_for(&self, id: LeaseId, snapshot: &Snapshot, now_ms: i64) -> Option<Verdict> {
         let lease = self.leases.iter().find(|lease| lease.id == id)?;
         if lease.state != LeaseState::Queued {
-            return Some(Verdict {
-                fits: true,
-                reasons: Vec::new(),
-                wait_estimate_secs: None,
-            });
+            return Some(fitting(Vec::new()));
         }
         let position = self
             .leases
@@ -300,20 +333,24 @@ impl Ledger {
             .into_iter()
             .nth(position)?;
         if decision.granted {
-            return Some(Verdict {
-                fits: true,
-                reasons: decision.reasons,
-                wait_estimate_secs: None,
-            });
+            return Some(fitting(decision.reasons));
         }
         let mut reasons = decision.reasons;
         if position > 0 {
             reasons.push(format!("{position} lease(s) queued ahead"));
         }
+        let wait_estimate_secs = self.wait_estimate(
+            &lease.profile,
+            lease.kind,
+            lease.requested_at_ms,
+            snapshot,
+            now_ms,
+        );
         Some(Verdict {
             fits: false,
             reasons,
-            wait_estimate_secs: self.wait_estimate(&lease.profile, lease.kind, snapshot, now_ms),
+            wait_estimate_secs,
+            benchmark: decision.progress,
         })
     }
 
@@ -347,30 +384,14 @@ impl Ledger {
             });
             false
         });
-        transitions
-    }
-
-    fn observe_quiet(&mut self, now_ms: i64, snapshot: &Snapshot) {
-        let gpu_pct = snapshot
-            .gpus
-            .iter()
-            .map(|gpu| admission::busiest_engine_pct(&gpu.engines, |load| load.avg_1s))
-            .fold(0.0, f32::max);
-        let quiet = snapshot.cpu.usage_pct.avg_1s <= self.settings.quiet_cpu_pct
-            && gpu_pct <= self.settings.quiet_gpu_pct;
-        if quiet {
-            self.quiet_since_ms.get_or_insert(now_ms);
-        } else {
-            self.quiet_since_ms = None;
+        let metered_ended = self
+            .meter
+            .as_ref()
+            .is_some_and(|meter| self.leases.iter().all(|lease| lease.id != meter.lease_id()));
+        if metered_ended {
+            self.meter = None;
         }
-    }
-
-    /// How much longer the machine must stay quiet, or `None` when it has been quiet long
-    /// enough.
-    fn quiet_left_ms(&self, now_ms: i64) -> Option<i64> {
-        let quiet_for = self.quiet_since_ms.map_or(0, |since| now_ms - since);
-        let left = self.settings.quiet_ms - quiet_for;
-        (left > 0).then_some(left)
+        transitions
     }
 
     fn active(&self) -> Vec<&Lease> {
@@ -388,6 +409,7 @@ impl Ledger {
                 profile: &lease.profile,
                 kind: lease.kind,
                 label: format!("lease {}", lease.id.0),
+                requested_at_ms: lease.requested_at_ms,
             })
             .collect()
     }
@@ -418,8 +440,8 @@ impl Ledger {
 
     fn decide(&self, candidate: &Candidate<'_>, pass: &mut Pass, now_ms: i64) -> Decision {
         let blocked = |reasons: Vec<String>| Decision {
-            granted: false,
             reasons,
+            ..Decision::default()
         };
         if let Some(holder) = &pass.exclusive {
             return blocked(vec![format!("benchmark {holder} holds the machine")]);
@@ -438,15 +460,23 @@ impl Ledger {
         }
 
         let mut reasons = Vec::new();
+        let mut progress = None;
+        let mut quiet = None;
         if is_benchmark {
             if pass.active_count > 0 {
                 reasons.push(format!("{} other lease(s) still active", pass.active_count));
-            }
-            if let Some(left_ms) = self.quiet_left_ms(now_ms) {
-                reasons.push(format!(
-                    "the machine must stay quiet for {}s more",
-                    admission::ms_to_secs_ceil(left_ms)
-                ));
+                progress = Some(BenchmarkProgress::Draining {
+                    active_leases: u32::try_from(pass.active_count).unwrap_or(u32::MAX),
+                });
+            } else {
+                let status =
+                    self.quiet
+                        .status(now_ms, candidate.requested_at_ms, &self.settings.quiet);
+                if let Some((reason, waiting)) = quiet_wait(&self.settings.quiet, status) {
+                    reasons.push(reason);
+                    progress = Some(waiting);
+                }
+                quiet = Some(status);
             }
         }
         reasons.extend(pass.room.shortfalls(candidate.profile));
@@ -478,6 +508,8 @@ impl Ledger {
             return Decision {
                 granted: true,
                 reasons,
+                progress: None,
+                quiet,
             };
         }
 
@@ -501,34 +533,115 @@ impl Ledger {
                 }
             };
         }
-        blocked(reasons)
+        Decision {
+            reasons,
+            progress,
+            ..Decision::default()
+        }
     }
 
+    /// Lower bound of the wait. A benchmark waits for the active leases to end, then for a
+    /// full quiet window, then at most until the longest quiet wait runs out.
     fn wait_estimate(
         &self,
         profile: &JobProfile,
         kind: LeaseKind,
+        requested_at_ms: i64,
         snapshot: &Snapshot,
         now_ms: i64,
     ) -> Option<u64> {
         let active = self.active();
         let running: Vec<Running> = active.iter().map(|lease| Running::of(lease)).collect();
         if kind == LeaseKind::BenchmarkExclusive {
-            let drain_ms = running
-                .iter()
-                .map(|reservation| reservation.end_ms - now_ms)
-                .max()
-                .unwrap_or(0)
-                .max(0);
-            let quiet_ms = if running.is_empty() {
-                self.quiet_left_ms(now_ms).unwrap_or(0)
+            let quiet = &self.settings.quiet;
+            let wait_ms = if running.is_empty() {
+                match self.quiet.status(now_ms, requested_at_ms, quiet) {
+                    Quiet::Measuring { left_ms, .. } | Quiet::Noisy { left_ms, .. } => left_ms,
+                    Quiet::Quiet(_) | Quiet::Overdue(_) => 0,
+                }
             } else {
-                self.settings.quiet_ms
+                let drain_ms = running
+                    .iter()
+                    .map(|reservation| reservation.end_ms - now_ms)
+                    .max()
+                    .unwrap_or(0)
+                    .max(0);
+                drain_ms.saturating_add(quiet.window_ms)
             };
-            return Some(admission::ms_to_secs_ceil(drain_ms + quiet_ms));
+            return Some(admission::ms_to_secs_ceil(wait_ms)).filter(|&secs| secs > 0);
         }
         let room = Room::measure(snapshot, &active, self.settings.headroom_pct);
         admission::wait_estimate_secs(room, &running, profile, now_ms).filter(|&secs| secs > 0)
+    }
+}
+
+/// A verdict for a request that starts now.
+fn fitting(reasons: Vec<String>) -> Verdict {
+    Verdict {
+        fits: true,
+        reasons,
+        wait_estimate_secs: None,
+        benchmark: None,
+    }
+}
+
+/// Why a drained machine still holds a benchmark back, or `None` when it may start.
+fn quiet_wait(limits: &QuietLimits, status: Quiet) -> Option<(String, BenchmarkProgress)> {
+    match status {
+        Quiet::Measuring {
+            measured_ms, load, ..
+        } => {
+            let measured_secs = u64::try_from(measured_ms / 1_000).unwrap_or(0);
+            let needed_secs = admission::ms_to_secs_ceil(limits.window_ms);
+            let reason = format!(
+                "measuring background load: {measured_secs}s of {needed_secs}s so far \
+                 (CPU {:.1}%, GPU {:.1}%)",
+                load.cpu_pct, load.gpu_pct
+            );
+            let progress = BenchmarkProgress::Measuring {
+                measured_secs,
+                needed_secs,
+                cpu_avg_pct: load.cpu_pct,
+                gpu_avg_pct: load.gpu_pct,
+            };
+            Some((reason, progress))
+        }
+        Quiet::Noisy { load, left_ms } => {
+            let grant_anyway_in_secs = admission::ms_to_secs_ceil(left_ms);
+            let reason = format!(
+                "background load is above the quiet limits (CPU {:.1}% of {:.0}%, GPU {:.1}% \
+                 of {:.0}%); granted anyway in {grant_anyway_in_secs}s",
+                load.cpu_pct, limits.cpu_pct, load.gpu_pct, limits.gpu_pct
+            );
+            let progress = BenchmarkProgress::Noisy {
+                cpu_avg_pct: load.cpu_pct,
+                gpu_avg_pct: load.gpu_pct,
+                cpu_limit_pct: limits.cpu_pct,
+                gpu_limit_pct: limits.gpu_pct,
+                grant_anyway_in_secs,
+            };
+            Some((reason, progress))
+        }
+        Quiet::Quiet(_) | Quiet::Overdue(_) => None,
+    }
+}
+
+/// The audit-trail reason of a benchmark grant.
+fn grant_reason(limits: &QuietLimits, quiet: Option<Quiet>) -> String {
+    let window_secs = admission::ms_to_secs_ceil(limits.window_ms);
+    match quiet {
+        Some(Quiet::Quiet(load)) => format!(
+            "granted after {window_secs}s of quiet (CPU {:.1}%, GPU {:.1}%)",
+            load.cpu_pct, load.gpu_pct
+        ),
+        Some(Quiet::Overdue(load)) => format!(
+            "granted without quiet after {}s: CPU {:.1}%, GPU {:.1}% over the last \
+             {window_secs}s",
+            admission::ms_to_secs_ceil(limits.max_wait_ms),
+            load.cpu_pct,
+            load.gpu_pct
+        ),
+        _ => "granted".to_owned(),
     }
 }
 
@@ -537,7 +650,7 @@ mod tests {
     use std::collections::HashSet;
 
     use super::*;
-    use crate::test_support::{holder, profile, queued_lease, snapshot};
+    use crate::test_support::{holder, profile, queued_lease, session_usage, snapshot};
 
     const TTL_MS: i64 = 60_000;
 
@@ -545,9 +658,12 @@ mod tests {
         LedgerSettings {
             headroom_pct: 10.0,
             heartbeat_ttl_ms: TTL_MS,
-            quiet_cpu_pct: 10.0,
-            quiet_gpu_pct: 10.0,
-            quiet_ms: 10_000,
+            quiet: QuietLimits {
+                cpu_pct: 10.0,
+                gpu_pct: 10.0,
+                window_ms: 10_000,
+                max_wait_ms: 60_000,
+            },
         }
     }
 
@@ -570,6 +686,31 @@ mod tests {
 
     fn busy() -> Snapshot {
         snapshot(50.0, 0, None)
+    }
+
+    /// A sample taken at `now_ms` with total CPU at `cpu_pct`; the quiet window and the
+    /// benchmark meter count each sample once, by its timestamp.
+    fn sample(now_ms: i64, cpu_pct: f32) -> Snapshot {
+        Snapshot {
+            taken_at_ms: now_ms,
+            ..snapshot(cpu_pct, 0, None)
+        }
+    }
+
+    /// Ticks once per second from `from_s` to `to_s` inclusive at `cpu_pct`, renewing every
+    /// lease, and returns the leases granted.
+    fn tick_seconds(ledger: &mut Ledger, from_s: i64, to_s: i64, cpu_pct: f32) -> Vec<i64> {
+        let mut granted_ids = Vec::new();
+        for second in from_s..=to_s {
+            let now_ms = second * 1_000;
+            renew_all(ledger, now_ms);
+            granted_ids.extend(granted(&ledger.tick(
+                now_ms,
+                &sample(now_ms, cpu_pct),
+                &alive(),
+            )));
+        }
+        granted_ids
     }
 
     fn session(name: &str) -> SessionKey {
@@ -664,8 +805,9 @@ mod tests {
         assert_eq!(granted(&ledger.tick(1_000, &idle(), &alive())), [1]);
 
         let released = ledger.release(LeaseId(1), &session("s"), 5_000).unwrap();
-        assert_eq!(released.state, LeaseState::Released);
-        assert_eq!(released.ended_at_ms, Some(5_000));
+        assert_eq!(released.lease.state, LeaseState::Released);
+        assert_eq!(released.lease.ended_at_ms, Some(5_000));
+        assert_eq!(released.benchmark, None);
         assert_eq!(granted(&ledger.tick(6_000, &idle(), &alive())), [2]);
         assert_eq!(states(&ledger), [(2, LeaseState::Active)]);
     }
@@ -720,31 +862,107 @@ mod tests {
     }
 
     #[test]
-    fn test_benchmark_waits_for_the_quiet_period() {
+    fn test_benchmark_waits_for_a_full_quiet_window() {
         let mut ledger = Ledger::new(settings());
         enqueue_benchmark(&mut ledger, 1, 0);
-        assert!(granted(&ledger.tick(0, &busy(), &alive())).is_empty());
-        assert!(granted(&ledger.tick(1_000, &idle(), &alive())).is_empty());
-        assert!(granted(&ledger.tick(6_000, &idle(), &alive())).is_empty());
-        assert_eq!(
-            can_fit_benchmark(&ledger, 6_000).wait_estimate_secs,
-            Some(5)
-        );
+        assert!(tick_seconds(&mut ledger, 0, 0, 50.0).is_empty());
+        assert!(tick_seconds(&mut ledger, 1, 6, 0.0).is_empty());
 
-        let transitions = ledger.tick(11_000, &idle(), &alive());
+        let waiting = ledger.verdict_for(LeaseId(1), &idle(), 6_000).unwrap();
+        assert_eq!(waiting.wait_estimate_secs, Some(4));
+        assert!(
+            has_reason(&waiting, "measuring background load: 6s of 10s"),
+            "{waiting:?}"
+        );
+        let Some(BenchmarkProgress::Measuring {
+            measured_secs: 6,
+            needed_secs: 10,
+            cpu_avg_pct,
+            ..
+        }) = waiting.benchmark
+        else {
+            panic!("{waiting:?}");
+        };
+        assert!((cpu_avg_pct - 50.0 / 7.0).abs() < 1e-3, "{cpu_avg_pct}");
+
+        assert!(tick_seconds(&mut ledger, 7, 9, 0.0).is_empty());
+        renew_all(&mut ledger, 10_000);
+        let transitions = ledger.tick(10_000, &sample(10_000, 0.0), &alive());
         assert_eq!(granted(&transitions), [1]);
-        assert_eq!(transitions[0].reason, "granted after 10s of quiet");
+        assert_eq!(
+            transitions[0].reason,
+            "granted after 10s of quiet (CPU 0.0%, GPU 0.0%)"
+        );
     }
 
     #[test]
-    fn test_benchmark_quiet_period_restarts_after_a_spike() {
+    fn test_benchmark_one_second_spike_does_not_restart_the_quiet_window() {
         let mut ledger = Ledger::new(settings());
         enqueue_benchmark(&mut ledger, 1, 0);
-        ledger.tick(0, &idle(), &alive());
-        ledger.tick(8_000, &busy(), &alive());
-        assert!(granted(&ledger.tick(12_000, &idle(), &alive())).is_empty());
-        renew_all(&mut ledger, 12_000);
-        assert_eq!(granted(&ledger.tick(22_000, &idle(), &alive())), [1]);
+        assert!(tick_seconds(&mut ledger, 0, 4, 3.0).is_empty());
+        assert!(tick_seconds(&mut ledger, 5, 5, 50.0).is_empty());
+        // The window (1 to 10 s) averages 7.7%, under the 10% limit.
+        assert_eq!(tick_seconds(&mut ledger, 6, 10, 3.0), [1]);
+    }
+
+    #[test]
+    fn test_benchmark_on_a_noisy_machine_is_granted_without_quiet_after_the_longest_wait() {
+        let mut ledger = Ledger::new(settings());
+        enqueue_benchmark(&mut ledger, 1, 0);
+        assert!(tick_seconds(&mut ledger, 0, 30, 15.0).is_empty());
+
+        let noisy = ledger.verdict_for(LeaseId(1), &idle(), 30_000).unwrap();
+        assert_eq!(noisy.wait_estimate_secs, Some(30));
+        assert!(
+            matches!(
+                noisy.benchmark,
+                Some(BenchmarkProgress::Noisy {
+                    grant_anyway_in_secs: 30,
+                    ..
+                })
+            ),
+            "{noisy:?}"
+        );
+        assert!(has_reason(&noisy, "above the quiet limits"), "{noisy:?}");
+
+        assert!(tick_seconds(&mut ledger, 31, 59, 15.0).is_empty());
+        renew_all(&mut ledger, 60_000);
+        let transitions = ledger.tick(60_000, &sample(60_000, 15.0), &alive());
+        assert_eq!(granted(&transitions), [1]);
+        assert!(
+            transitions[0]
+                .reason
+                .starts_with("granted without quiet after 60s: CPU 15.0%"),
+            "{transitions:?}"
+        );
+
+        tick_seconds(&mut ledger, 61, 62, 15.0);
+        let released = ledger
+            .release(LeaseId(1), &session("bench"), 63_000)
+            .unwrap();
+        assert!(!released.benchmark.unwrap().noise.quiet_at_start);
+    }
+
+    #[test]
+    fn test_benchmark_release_reports_noise_and_holder_usage() {
+        let mut ledger = Ledger::new(settings());
+        enqueue_benchmark(&mut ledger, 1, 0);
+        assert_eq!(tick_seconds(&mut ledger, 0, 10, 0.0), [1]);
+        for second in 11..=12 {
+            let mut busy_sample = sample(second * 1_000, 60.0);
+            busy_sample.sessions = vec![session_usage("bench", 8.0), session_usage("other", 0.32)];
+            ledger.tick(second * 1_000, &busy_sample, &alive());
+        }
+
+        let released = ledger
+            .release(LeaseId(1), &session("bench"), 13_000)
+            .unwrap();
+        let run = released.benchmark.unwrap();
+        // 0.32 of 16 cores is 2%; the holder's own 8 cores are not noise.
+        assert!((run.noise.avg_cpu_pct - 2.0).abs() < 1e-4, "{run:?}");
+        assert!(run.noise.quiet_at_start);
+        assert_eq!(run.holder_peak.cores, 8.0);
+        assert_eq!(run.holder_avg.cores, 8.0);
     }
 
     #[test]
@@ -761,12 +979,18 @@ mod tests {
             has_reason(&waiting, "waiting for the machine to drain"),
             "{waiting:?}"
         );
+        let draining = ledger.verdict_for(LeaseId(2), &idle(), 20_000).unwrap();
+        assert_eq!(
+            draining.benchmark,
+            Some(BenchmarkProgress::Draining { active_leases: 1 })
+        );
 
         ledger.release(LeaseId(1), &session("s"), 30_000).unwrap();
-        renew_all(&mut ledger, 30_000);
-        assert_eq!(granted(&ledger.tick(30_000, &idle(), &alive())), [2]);
+        // The quiet window starts at the drain, not at the earlier idle ticks.
+        assert!(tick_seconds(&mut ledger, 30, 39, 1.0).is_empty());
+        assert_eq!(tick_seconds(&mut ledger, 40, 40, 1.0), [2]);
 
-        let held = ledger.can_fit(&profile(1.0, 1_000), LeaseKind::Normal, &idle(), 31_000);
+        let held = ledger.can_fit(&profile(1.0, 1_000), LeaseKind::Normal, &idle(), 41_000);
         assert!(!held.fits);
         assert!(
             has_reason(&held, "benchmark lease 2 holds the machine"),
@@ -916,7 +1140,8 @@ mod tests {
     fn test_settings_from_config_converts_seconds() {
         let settings = LedgerSettings::from_config(&Config::default());
         assert_eq!(settings.heartbeat_ttl_ms, 60_000);
-        assert_eq!(settings.quiet_ms, 10_000);
+        assert_eq!(settings.quiet.window_ms, 10_000);
+        assert_eq!(settings.quiet.max_wait_ms, 60_000);
         assert_eq!(settings.headroom_pct, 15.0);
     }
 }

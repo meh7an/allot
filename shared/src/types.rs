@@ -295,6 +295,10 @@ pub struct Lease {
 }
 
 /// Load from processes outside the holder's session while a benchmark lease was active.
+///
+/// CPU is the summed per-process load of every other session and of processes outside all
+/// sessions. Kernel and interrupt time belongs to no process, so it is not counted: it would
+/// otherwise charge the benchmark's own system time as noise.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct NoiseReport {
     /// Average CPU load of other processes, as a percentage of all logical processors.
@@ -305,6 +309,9 @@ pub struct NoiseReport {
     pub avg_gpu_pct: f32,
     /// Peak GPU engine load of other processes.
     pub peak_gpu_pct: f32,
+    /// Whether the machine met the quiet limits when the lease was granted. `false` means it
+    /// was granted anyway after the longest quiet wait.
+    pub quiet_at_start: bool,
 }
 
 #[cfg(test)]
@@ -387,6 +394,7 @@ mod tests {
             peak_cpu_pct: 9.0,
             avg_gpu_pct: 0.5,
             peak_gpu_pct: 3.25,
+            quiet_at_start: false,
         });
     }
 

@@ -5,7 +5,7 @@ use std::{
     future::Future,
     process,
     sync::{Arc, Mutex},
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use diesel::sqlite::SqliteConnection;
@@ -13,9 +13,9 @@ use reqwest::{RequestBuilder, Response, StatusCode};
 use rh_core::sampler::{RawProcess, RawSample, Sampler};
 use rh_shared::{
     api::{
-        AcquireRequest, AcquireResponse, CanFitRequest, HealthResponse, HeartbeatResponse,
-        LeasesResponse, ProfileSpec, RegisterSessionRequest, ReleaseResponse, SessionsResponse,
-        Verdict,
+        AcquireRequest, AcquireResponse, BenchmarkProgress, CanFitRequest, HealthResponse,
+        HeartbeatResponse, LeasesResponse, ProfileSpec, RegisterSessionRequest, ReleaseResponse,
+        SessionsResponse, Verdict, WaitRequest,
     },
     config::Config,
     types::{
@@ -40,8 +40,15 @@ const BOB_PID: u32 = 5_353;
 struct FakeSampler(Arc<Mutex<RawSample>>);
 
 impl Sampler for FakeSampler {
+    /// The current machine state, stamped now: the quiet window and the benchmark meter
+    /// count each sample once, by its timestamp.
     fn sample(&mut self) -> rh_shared::Result<RawSample> {
-        Ok(self.0.lock().unwrap().clone())
+        let mut sample = self.0.lock().unwrap().clone();
+        sample.taken_at_ms = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as i64;
+        Ok(sample)
     }
 }
 
@@ -191,6 +198,40 @@ impl Daemon {
     async fn acquire_build(&self, holder: Holder, wait_secs: u64) -> AcquireResponse {
         let profile = ProfileSpec::Class(JobClass::CpuHeavy);
         let response = self.acquire(holder, profile, wait_secs).await;
+        assert_eq!(response.status(), StatusCode::OK);
+        response.json().await.unwrap()
+    }
+
+    /// A one-core benchmark, small enough to fit beside any background load.
+    async fn acquire_benchmark(&self, holder: Holder, wait_secs: u64) -> AcquireResponse {
+        let request = AcquireRequest {
+            holder,
+            profile: ProfileSpec::Custom(JobProfile {
+                cores: 1.0,
+                ram_mb: 100,
+                gpu_pct: 0.0,
+                vram_mb: 0,
+                est_secs: 30,
+            }),
+            kind: LeaseKind::BenchmarkExclusive,
+            label: "cargo bench".into(),
+            wait_timeout_secs: wait_secs,
+        };
+        let response = send(self.post("/leases").json(&request)).await;
+        assert_eq!(response.status(), StatusCode::OK);
+        response.json().await.unwrap()
+    }
+
+    async fn wait(&self, id: LeaseId, session: &str, wait_secs: u64) -> Response {
+        let path = format!("/leases/{}/wait?session={session}", id.0);
+        let request = WaitRequest {
+            wait_timeout_secs: wait_secs,
+        };
+        send(self.post(&path).json(&request)).await
+    }
+
+    async fn release_response(&self, id: LeaseId, session: &str) -> ReleaseResponse {
+        let response = self.release(id, session).await;
         assert_eq!(response.status(), StatusCode::OK);
         response.json().await.unwrap()
     }
@@ -490,6 +531,108 @@ async fn test_leases_left_from_a_previous_run_expire_on_startup() {
     assert_eq!(leases[0].id, leftover.unwrap());
     assert_eq!(leases[0].state, LeaseState::Expired);
     daemon.stop().await;
+}
+
+#[tokio::test]
+async fn test_wait_resumes_a_queued_lease_and_checks_the_owner() {
+    let daemon = Arc::new(Daemon::start().await);
+    let first = daemon.acquire_build(alice(), 0).await.lease;
+    let second = daemon.acquire_build(bob(), 0).await.lease;
+    assert_eq!(second.state, LeaseState::Queued);
+
+    assert_eq!(
+        daemon.wait(second.id, "alice", 0).await.status(),
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        daemon.wait(LeaseId(999), "bob", 0).await.status(),
+        StatusCode::NOT_FOUND
+    );
+
+    let waiter = daemon.clone();
+    let resumed = tokio::spawn(async move {
+        let response = waiter.wait(second.id, "bob", 30).await;
+        response.json::<AcquireResponse>().await.unwrap()
+    });
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    assert!(!resumed.is_finished());
+    daemon.release(first.id, "alice").await;
+
+    let resumed = resumed.await.unwrap();
+    assert_eq!(resumed.lease.id, second.id);
+    assert_eq!(resumed.lease.state, LeaseState::Active);
+    Arc::into_inner(daemon).unwrap().stop().await;
+}
+
+fn quick_benchmark_config(max_quiet_wait_secs: u64) -> Config {
+    let mut config = Config::default();
+    config.benchmark.quiet_secs = 1;
+    config.benchmark.max_quiet_wait_secs = max_quiet_wait_secs;
+    config
+}
+
+#[tokio::test]
+async fn test_benchmark_on_a_quiet_machine_reports_and_stores_its_noise() {
+    let daemon = Daemon::start_with(quick_benchmark_config(5), |_| {}).await;
+    let lease = daemon.acquire_benchmark(alice(), 5).await.lease;
+    assert_eq!(lease.state, LeaseState::Active);
+    // About ten samples while the benchmark runs.
+    tokio::time::sleep(Duration::from_millis(200)).await;
+
+    let released = daemon.release_response(lease.id, "alice").await;
+    let noise = released.noise.expect("a noise report");
+    assert!(noise.quiet_at_start);
+    assert_eq!((noise.avg_cpu_pct, noise.peak_cpu_pct), (0.0, 0.0));
+
+    let pool = open_pool(&daemon._dir.path().join("rh.db")).unwrap();
+    let mut conn = pool.get().unwrap();
+    let runs = repo::recent_job_runs(&mut conn, "cargo bench", 10).unwrap();
+    assert_eq!(runs.len(), 1);
+    assert_eq!(runs[0].lease_id, Some(lease.id));
+    assert_eq!(runs[0].noise, Some(noise));
+    let events = repo::lease_events(&mut conn, lease.id).unwrap();
+    assert!(
+        events[1].reason.starts_with("granted after 1s of quiet"),
+        "{events:?}"
+    );
+
+    let again = daemon.release_response(lease.id, "alice").await;
+    assert_eq!(again.noise, None);
+    daemon.stop().await;
+}
+
+#[tokio::test]
+async fn test_benchmark_on_a_busy_machine_is_granted_without_quiet() {
+    let daemon = Arc::new(Daemon::start_with(quick_benchmark_config(2), |_| {}).await);
+    daemon.machine.lock().unwrap().cpu_total_pct = 50.0;
+
+    let queued = daemon.acquire_benchmark(alice(), 0).await;
+    assert_eq!(queued.lease.state, LeaseState::Queued);
+    assert!(
+        matches!(
+            queued.verdict.benchmark,
+            Some(BenchmarkProgress::Measuring { .. } | BenchmarkProgress::Noisy { .. })
+        ),
+        "{:?}",
+        queued.verdict
+    );
+
+    let response = daemon.wait(queued.lease.id, "alice", 10).await;
+    let resumed: AcquireResponse = response.json().await.unwrap();
+    assert_eq!(resumed.lease.state, LeaseState::Active);
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    let released = daemon.release_response(queued.lease.id, "alice").await;
+    assert!(!released.noise.expect("a noise report").quiet_at_start);
+    let pool = open_pool(&daemon._dir.path().join("rh.db")).unwrap();
+    let events = repo::lease_events(&mut pool.get().unwrap(), queued.lease.id).unwrap();
+    assert!(
+        events[1]
+            .reason
+            .starts_with("granted without quiet after 2s"),
+        "{events:?}"
+    );
+    Arc::into_inner(daemon).unwrap().stop().await;
 }
 
 #[tokio::test]

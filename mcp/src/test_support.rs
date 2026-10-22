@@ -7,12 +7,12 @@ use rh_client::{ClientError, Result};
 use rh_shared::{
     api::{
         AcquireRequest, AcquireResponse, CanFitRequest, HeartbeatResponse, LeaseQuery, ProfileSpec,
-        Verdict,
+        ReleaseResponse, Verdict,
     },
     types::{
         CpuStats, GpuAdapter, GpuEngines, Holder, JobClass, JobProfile, Lease, LeaseId, LeaseKind,
-        LeaseState, MemStats, ProcessUsage, ResourceUsage, Rolling, SessionKey, SessionUsage,
-        Snapshot,
+        LeaseState, MemStats, NoiseReport, ProcessUsage, ResourceUsage, Rolling, SessionKey,
+        SessionUsage, Snapshot,
     },
 };
 
@@ -115,6 +115,10 @@ impl MockDaemon {
         self.lock().releases.clone()
     }
 
+    pub(crate) fn leases_count(&self) -> usize {
+        self.lock().leases.len()
+    }
+
     fn lock(&self) -> MutexGuard<'_, MockState> {
         self.state.lock().unwrap_or_else(PoisonError::into_inner)
     }
@@ -127,6 +131,15 @@ impl MockDaemon {
             });
         }
         make(&mut self.lock())
+    }
+}
+
+fn verdict(fits: bool) -> Verdict {
+    Verdict {
+        fits,
+        reasons: vec![],
+        wait_estimate_secs: None,
+        benchmark: None,
     }
 }
 
@@ -177,6 +190,7 @@ impl DaemonApi for MockDaemon {
                     vec!["GPU: busy".into()]
                 },
                 wait_estimate_secs: (!fits).then_some(30),
+                benchmark: None,
             })
         });
         async move { result }
@@ -202,12 +216,31 @@ impl DaemonApi for MockDaemon {
             lease.kind = request.kind;
             lease.label = request.label;
             state.leases.push(lease.clone());
-            let verdict = Verdict {
-                fits: !queued,
-                reasons: vec![],
-                wait_estimate_secs: None,
-            };
-            Ok(AcquireResponse { lease, verdict })
+            Ok(AcquireResponse {
+                lease,
+                verdict: verdict(!queued),
+            })
+        });
+        async move { result }
+    }
+
+    /// Grants the queued lease at once.
+    fn wait(
+        &self,
+        id: LeaseId,
+        _session: &SessionKey,
+        _wait_timeout_secs: u64,
+    ) -> impl Future<Output = Result<AcquireResponse>> + Send {
+        let result = self.reply(|state| {
+            let lease = state.leases.iter_mut().find(|lease| lease.id == id);
+            let lease = lease.ok_or_else(|| not_found(id))?;
+            if lease.state == LeaseState::Queued {
+                lease.state = LeaseState::Active;
+            }
+            Ok(AcquireResponse {
+                lease: lease.clone(),
+                verdict: verdict(true),
+            })
         });
         async move { result }
     }
@@ -229,17 +262,28 @@ impl DaemonApi for MockDaemon {
         async move { result }
     }
 
+    /// Benchmark leases come back with a small noise report.
     fn release(
         &self,
         id: LeaseId,
         _session: &SessionKey,
-    ) -> impl Future<Output = Result<Lease>> + Send {
+    ) -> impl Future<Output = Result<ReleaseResponse>> + Send {
         let result = self.reply(|state| {
             state.releases.push(id);
             let lease = state.leases.iter_mut().find(|lease| lease.id == id);
             let lease = lease.ok_or_else(|| not_found(id))?;
             lease.state = LeaseState::Released;
-            Ok(lease.clone())
+            let noise = (lease.kind == LeaseKind::BenchmarkExclusive).then_some(NoiseReport {
+                avg_cpu_pct: 1.5,
+                peak_cpu_pct: 4.0,
+                avg_gpu_pct: 0.0,
+                peak_gpu_pct: 0.0,
+                quiet_at_start: true,
+            });
+            Ok(ReleaseResponse {
+                lease: lease.clone(),
+                noise,
+            })
         });
         async move { result }
     }
