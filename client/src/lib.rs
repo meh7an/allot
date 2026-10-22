@@ -60,11 +60,11 @@ pub struct ClientOptions {
 
 impl ClientOptions {
     /// Options for the local install: the port from `config.toml` and the token file under
-    /// `%LOCALAPPDATA%\resources-helper\`.
+    /// `%USERPROFILE%\.resources-helper\`.
     ///
     /// # Errors
     ///
-    /// Fails when `LOCALAPPDATA` is unset or the config file is invalid.
+    /// Fails when `USERPROFILE` is unset or the config file is invalid.
     pub fn discover(auto_spawn: bool) -> Result<Self> {
         let paths = Paths::from_env()?;
         let config = Config::load(&paths.config_file())?;
@@ -367,7 +367,7 @@ impl Client {
             tokio::time::sleep(READY_POLL).await;
         }
         Err(ClientError::Spawn(format!(
-            "{} started but did not answer within {} s; see logs\\rhd.log",
+            "{} started but did not answer within {} s; see %USERPROFILE%\\.resources-helper\\logs\\rhd.log",
             spawn.daemon_exe.display(),
             spawn.ready_timeout.as_secs()
         )))
