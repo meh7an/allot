@@ -6,3 +6,5 @@ edition = "2024"
 [dependencies]
 anyhow = "1.0.104"
 clap = { version = "4.6.7", features = ["derive"] }
+rh-core = { version = "0.1.0", path = "../core" }
+sysinfo = "0.39.6"
