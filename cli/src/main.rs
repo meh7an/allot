@@ -2,6 +2,7 @@ use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
 
+mod classes;
 mod daemon;
 mod hook;
 mod probe;
@@ -26,6 +27,8 @@ enum Command {
         #[arg(long)]
         all: bool,
     },
+    /// Print the heavy-command rules and class profiles in effect, as Markdown.
+    Classes,
     /// Start, stop, or check the background daemon.
     Daemon {
         #[command(subcommand)]
@@ -70,6 +73,7 @@ fn main() -> ExitCode {
     let result = match args.command {
         Command::Status => status::status(),
         Command::Leases { all } => status::leases(all),
+        Command::Classes => classes::classes(),
         Command::Daemon { action } => match action {
             DaemonAction::Start => daemon::start(),
             DaemonAction::Stop => daemon::stop(),
