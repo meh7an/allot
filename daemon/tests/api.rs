@@ -120,11 +120,11 @@ struct Daemon {
 
 impl Daemon {
     async fn start() -> Self {
-        Self::start_with(|_| {}).await
+        Self::start_with(Config::default(), |_| {}).await
     }
 
-    /// Starts a daemon after `prepare` has run against its fresh database.
-    async fn start_with(prepare: impl FnOnce(&mut SqliteConnection)) -> Self {
+    /// Starts a daemon on `config` after `prepare` has run against its fresh database.
+    async fn start_with(config: Config, prepare: impl FnOnce(&mut SqliteConnection)) -> Self {
         let dir = TempDir::new().unwrap();
         let pool = open_pool(&dir.path().join("rh.db")).unwrap();
         prepare(&mut pool.get().unwrap());
@@ -134,7 +134,7 @@ impl Daemon {
         let machine = Arc::new(Mutex::new(idle_machine()));
         let sampled = machine.clone();
         let options = DaemonOptions {
-            config: Config::default(),
+            config,
             token: TOKEN.into(),
             pool,
             sampler: Box::new(move || Ok(Box::new(FakeSampler(sampled)) as Box<dyn Sampler>)),
@@ -344,6 +344,37 @@ async fn test_acquire_wait_returns_as_soon_as_the_lease_starts() {
 }
 
 #[tokio::test]
+async fn test_acquire_wait_longer_than_the_ttl_keeps_the_queued_lease_alive() {
+    let mut config = Config::default();
+    config.leases.heartbeat_ttl_secs = 1;
+    let daemon = Arc::new(Daemon::start_with(config, |_| {}).await);
+    let first = daemon.acquire_build(alice(), 0).await.lease;
+
+    let keeper = daemon.clone();
+    let heartbeats = tokio::spawn(async move {
+        loop {
+            keeper.heartbeat(first.id, "alice").await;
+            tokio::time::sleep(Duration::from_millis(200)).await;
+        }
+    });
+    let second = daemon.acquire_build(bob(), 3).await;
+    heartbeats.abort();
+    let _ = heartbeats.await;
+
+    assert_eq!(
+        second.lease.state,
+        LeaseState::Queued,
+        "{:?}",
+        second.verdict
+    );
+    assert_eq!(
+        daemon.heartbeat_state(second.lease.id, "bob").await,
+        LeaseState::Queued
+    );
+    Arc::into_inner(daemon).unwrap().stop().await;
+}
+
+#[tokio::test]
 async fn test_lease_of_a_dead_holder_expires() {
     let daemon = Daemon::start().await;
     let lease = daemon.acquire_build(bob(), 0).await.lease;
@@ -433,7 +464,7 @@ async fn test_can_fit_reports_the_shortfall() {
 #[tokio::test]
 async fn test_leases_left_from_a_previous_run_expire_on_startup() {
     let mut leftover = None;
-    let daemon = Daemon::start_with(|conn| {
+    let daemon = Daemon::start_with(Config::default(), |conn| {
         let draft = LeaseDraft {
             holder: alice(),
             kind: LeaseKind::Normal,

@@ -129,6 +129,7 @@ async fn acquire(
 ) -> Result<Json<AcquireResponse>, AppError> {
     let (profile, class) = resolve_profile(&state.config, &request.profile)?;
     state.register(request.holder.clone());
+    let session = request.holder.session.clone();
     let now = now_ms();
     let ttl_ms = i64::try_from(state.config.leases.heartbeat_ttl_secs.saturating_mul(1_000))
         .unwrap_or(i64::MAX);
@@ -155,13 +156,26 @@ async fn acquire(
 
     let wait = Duration::from_secs(request.wait_timeout_secs).min(MAX_ACQUIRE_WAIT);
     let deadline = Instant::now() + wait;
+    // The client can only heartbeat the lease once this response names it, and the open
+    // request already proves the holder is alive, so the wait keeps the lease from expiring.
+    let renew_every = Duration::from_secs(state.config.leases.heartbeat_ttl_secs) / 3;
+    let mut renew_at = Instant::now() + renew_every;
     while is_queued(&state, id).await {
-        let remaining = deadline.saturating_duration_since(Instant::now());
-        match tokio::time::timeout(remaining, changes.changed()).await {
-            Ok(Ok(())) => {}
-            _ => break,
+        let now = Instant::now();
+        if now >= deadline {
+            break;
+        }
+        if now >= renew_at {
+            renew(&state, id, &session).await?;
+            renew_at = now + renew_every;
+        }
+        let wake = deadline.min(renew_at).saturating_duration_since(now);
+        if let Ok(Err(_)) = tokio::time::timeout(wake, changes.changed()).await {
+            break;
         }
     }
+    // A full TTL from the response gives the client time to start heartbeating.
+    renew(&state, id, &session).await?;
 
     let lease = state
         .with_db(move |conn| repo::get_lease(conn, id))
@@ -177,28 +191,36 @@ async fn heartbeat(
     Query(owner): Query<LeaseOwner>,
 ) -> Result<Json<HeartbeatResponse>, AppError> {
     let id = LeaseId(id);
-    let mut ledger = state.ledger.lock().await;
-    match ledger.heartbeat(id, &owner.session, now_ms()) {
-        Ok(lease) => {
-            let (lease_state, expires_at_ms) = (lease.state, lease.expires_at_ms);
-            state
-                .with_db(move |conn| repo::renew_lease(conn, id, expires_at_ms))
-                .await?;
-            Ok(Json(HeartbeatResponse {
-                state: lease_state,
-                expires_at_ms,
-            }))
-        }
-        Err(LedgerError::NotFound(_)) => {
-            drop(ledger);
+    let (lease_state, expires_at_ms) = match renew(&state, id, &owner.session).await? {
+        Some(renewed) => renewed,
+        None => {
             let lease = stored_lease(&state, id, &owner.session).await?;
-            Ok(Json(HeartbeatResponse {
-                state: lease.state,
-                expires_at_ms: lease.expires_at_ms,
-            }))
+            (lease.state, lease.expires_at_ms)
         }
-        Err(error) => Err(error.into()),
-    }
+    };
+    Ok(Json(HeartbeatResponse {
+        state: lease_state,
+        expires_at_ms,
+    }))
+}
+
+/// Moves a tracked lease's deadline one TTL from now, in the ledger and the database, and
+/// returns its state and new deadline. `None` when the ledger no longer tracks the lease.
+async fn renew(
+    state: &AppState,
+    id: LeaseId,
+    session: &SessionKey,
+) -> Result<Option<(LeaseState, i64)>, AppError> {
+    let mut ledger = state.ledger.lock().await;
+    let (lease_state, expires_at_ms) = match ledger.heartbeat(id, session, now_ms()) {
+        Ok(lease) => (lease.state, lease.expires_at_ms),
+        Err(LedgerError::NotFound(_)) => return Ok(None),
+        Err(error) => return Err(error.into()),
+    };
+    state
+        .with_db(move |conn| repo::renew_lease(conn, id, expires_at_ms))
+        .await?;
+    Ok(Some((lease_state, expires_at_ms)))
 }
 
 async fn release(
