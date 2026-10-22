@@ -460,3 +460,21 @@ async fn test_leases_left_from_a_previous_run_expire_on_startup() {
     assert_eq!(leases[0].state, LeaseState::Expired);
     daemon.stop().await;
 }
+
+#[tokio::test]
+async fn test_shutdown_route_stops_the_server() {
+    let mut daemon = Daemon::start().await;
+    let anonymous = daemon
+        .client
+        .post(daemon.url("/shutdown"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(anonymous.status(), StatusCode::UNAUTHORIZED);
+
+    let response = send(daemon.post("/shutdown")).await;
+    assert_eq!(response.status(), StatusCode::ACCEPTED);
+    let server = daemon.server.take().unwrap();
+    let stopped = tokio::time::timeout(Duration::from_secs(5), server).await;
+    stopped.unwrap().unwrap().unwrap();
+}

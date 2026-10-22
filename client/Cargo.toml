@@ -4,3 +4,14 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+reqwest = { version = "0.13.5", default-features = false, features = ["json"] }
+rh-shared = { version = "0.1.0", path = "../shared" }
+serde = "1.0.229"
+thiserror = "2.0.21"
+tokio = { version = "1.54.1", features = ["rt", "time"] }
+
+[dev-dependencies]
+rh-core = { path = "../core" }
+rhd = { path = "../daemon" }
+tempfile = "3.27.0"
+tokio = { version = "1.54.1", features = ["macros", "rt-multi-thread"] }

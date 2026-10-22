@@ -68,6 +68,8 @@ pub struct Shared {
     pub ledger: AsyncMutex<Ledger>,
     /// Bumped after every batch of lease transitions, to wake waiting acquire requests.
     pub changes: watch::Sender<u64>,
+    /// Set by `POST /shutdown`; the server stops gracefully when it turns true.
+    pub shutdown: watch::Sender<bool>,
     /// When the daemon started.
     pub started: Instant,
     latest: RwLock<Option<Arc<Latest>>>,
@@ -84,6 +86,7 @@ impl Shared {
             pool,
             ledger: AsyncMutex::new(ledger),
             changes: watch::Sender::new(0),
+            shutdown: watch::Sender::new(false),
             started: Instant::now(),
             latest: RwLock::new(None),
             sessions: Mutex::new(HashMap::new()),

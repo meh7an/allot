@@ -1,0 +1,54 @@
+use std::path::PathBuf;
+
+/// Everything a client call can fail with.
+#[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
+pub enum ClientError {
+    /// No connection to the daemon, or it timed out.
+    #[error("rhd is not reachable at {url}: {reason}")]
+    Unreachable {
+        /// The address the client tried.
+        url: String,
+        /// What the transport reported.
+        reason: String,
+    },
+    /// The token file does not exist yet, so rhd has never started on this machine.
+    #[error("no token at {}; rhd has not run yet", .0.display())]
+    NoToken(PathBuf),
+    /// The daemon answered with an error status.
+    #[error("rhd answered {status}: {message}")]
+    Http {
+        /// HTTP status code.
+        status: u16,
+        /// The response body.
+        message: String,
+    },
+    /// The daemon answered with a body the client could not read.
+    #[error("unexpected response from rhd: {0}")]
+    Decode(String),
+    /// Starting rhd in the background failed or it never became ready.
+    #[error("could not start rhd: {0}")]
+    Spawn(String),
+    /// The HTTP client or runtime could not be set up.
+    #[error("client setup failed: {0}")]
+    Setup(String),
+    /// Local configuration or files.
+    #[error(transparent)]
+    Local(#[from] rh_shared::Error),
+}
+
+impl ClientError {
+    /// `true` when the daemon is not running or not set up, as opposed to refusing the
+    /// request. The hook fails open on these.
+    pub fn is_unreachable(&self) -> bool {
+        matches!(self, Self::Unreachable { .. } | Self::NoToken(_))
+    }
+
+    /// The HTTP status for [`ClientError::Http`].
+    pub fn status(&self) -> Option<u16> {
+        match self {
+            Self::Http { status, .. } => Some(*status),
+            _ => None,
+        }
+    }
+}

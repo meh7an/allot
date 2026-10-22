@@ -957,6 +957,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
+ "rh-client",
  "rh-core",
  "rh-sampler",
  "rh-shared",
@@ -966,6 +967,16 @@ dependencies = [
 [[package]]
 name = "rh-client"
 version = "0.1.0"
+dependencies = [
+ "reqwest",
+ "rh-core",
+ "rh-shared",
+ "rhd",
+ "serde",
+ "tempfile",
+ "thiserror",
+ "tokio",
+]
 
 [[package]]
 name = "rh-core"

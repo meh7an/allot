@@ -34,7 +34,8 @@ pub struct DaemonOptions {
     pub sample_interval: Duration,
 }
 
-/// Serves the API on `listener` until `shutdown` resolves.
+/// Serves the API on `listener` until `shutdown` resolves or a client calls
+/// `POST /shutdown`.
 ///
 /// Leases left queued or active by a previous run are expired first, since nothing tracks
 /// them any more.
@@ -53,9 +54,17 @@ pub async fn serve(
     let samples = sampling::spawn_sampler(options.sampler, options.sample_interval)?;
     let sampling = tokio::spawn(sampling::run(state.clone(), samples));
 
+    let mut requested = state.shutdown.subscribe();
+    let stop = async move {
+        tokio::select! {
+            () = shutdown => {}
+            _ = requested.wait_for(|stop| *stop) => {}
+        }
+    };
+
     tracing::info!("listening on {}", listener.local_addr()?);
     let served = axum::serve(listener, routes::router(state))
-        .with_graceful_shutdown(shutdown)
+        .with_graceful_shutdown(stop)
         .await;
     sampling.abort();
     tracing::info!("stopped");

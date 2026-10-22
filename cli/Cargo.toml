@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 anyhow = "1.0.104"
 clap = { version = "4.6.7", features = ["derive"] }
+rh-client = { version = "0.1.0", path = "../client" }
 rh-core = { version = "0.1.0", path = "../core" }
 rh-sampler = { version = "0.1.0", path = "../sampler" }
 rh-shared = { version = "0.1.0", path = "../shared" }

@@ -40,6 +40,7 @@ pub fn router(state: AppState) -> Router {
         .route("/leases/{id}", delete(release))
         .route("/leases/{id}/heartbeat", post(heartbeat))
         .route("/sessions", get(sessions).post(register_session))
+        .route("/shutdown", post(shutdown))
         .route_layer(middleware::from_fn_with_state(state.clone(), require_token))
         .route("/health", get(health))
         .with_state(state)
@@ -67,6 +68,14 @@ async fn health(State(state): State<AppState>) -> Json<HealthResponse> {
         pid: std::process::id(),
         uptime_secs: state.started.elapsed().as_secs(),
     })
+}
+
+/// Stops the daemon gracefully after this response; Windows has no signal another process
+/// can send a detached daemon.
+async fn shutdown(State(state): State<AppState>) -> StatusCode {
+    tracing::info!("shutdown requested over HTTP");
+    state.shutdown.send_replace(true);
+    StatusCode::ACCEPTED
 }
 
 async fn snapshot(State(state): State<AppState>) -> Result<Json<Snapshot>, AppError> {
