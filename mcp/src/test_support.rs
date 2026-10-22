@@ -1,0 +1,265 @@
+use std::{
+    future::Future,
+    sync::{Mutex, MutexGuard, PoisonError},
+};
+
+use rh_client::{ClientError, Result};
+use rh_shared::{
+    api::{
+        AcquireRequest, AcquireResponse, CanFitRequest, HeartbeatResponse, LeaseQuery, ProfileSpec,
+        Verdict,
+    },
+    types::{
+        CpuStats, GpuAdapter, GpuEngines, Holder, JobClass, JobProfile, Lease, LeaseId, LeaseKind,
+        LeaseState, MemStats, ProcessUsage, ResourceUsage, Rolling, SessionKey, SessionUsage,
+        Snapshot,
+    },
+};
+
+use crate::daemon::DaemonApi;
+
+pub(crate) fn holder(session: &str) -> Holder {
+    Holder {
+        session: SessionKey(session.into()),
+        pid: 60_012,
+        pid_start_time: 1,
+    }
+}
+
+fn steady(value: f32) -> Rolling {
+    Rolling {
+        avg_1s: value,
+        avg_10s: value,
+        avg_60s: value,
+    }
+}
+
+/// A 16-core machine with one GPU and two sessions, `me` and `them`.
+pub(crate) fn snapshot() -> Snapshot {
+    let session = |name: &str, cores: f32| SessionUsage {
+        holder: holder(name),
+        usage: ResourceUsage {
+            cores,
+            ..ResourceUsage::default()
+        },
+        processes: vec![ProcessUsage {
+            pid: 7,
+            name: "cargo.exe".into(),
+            usage: ResourceUsage::default(),
+        }],
+    };
+    Snapshot {
+        taken_at_ms: 0,
+        cpu: CpuStats {
+            logical_cores: 16,
+            usage_pct: steady(25.0),
+            per_core_pct: vec![25.0; 16],
+        },
+        memory: MemStats {
+            total_mb: 32_768,
+            used_mb: 8_000,
+            available_mb: 24_768,
+            commit_used_mb: 9_000,
+            commit_limit_mb: 65_536,
+        },
+        gpus: vec![GpuAdapter {
+            name: "Test GPU".into(),
+            luid: "0x00000000_0x00000001".into(),
+            engines: GpuEngines {
+                three_d_pct: steady(40.0),
+                ..GpuEngines::default()
+            },
+            dedicated_used_mb: 2_048,
+            dedicated_total_mb: Some(12_288),
+            shared_used_mb: 0,
+        }],
+        sessions: vec![session("me", 2.0), session("them", 3.0)],
+        unattributed: ResourceUsage::default(),
+    }
+}
+
+/// An in-memory daemon. Every request is granted at once, except `gpu_heavy` ones, which
+/// stay queued.
+#[derive(Debug, Default)]
+pub(crate) struct MockDaemon {
+    unreachable: bool,
+    state: Mutex<MockState>,
+}
+
+#[derive(Debug, Default)]
+struct MockState {
+    leases: Vec<Lease>,
+    next_id: i64,
+    heartbeats: Vec<LeaseId>,
+    releases: Vec<LeaseId>,
+}
+
+impl MockDaemon {
+    /// A daemon every call fails to reach.
+    pub(crate) fn unreachable() -> Self {
+        Self {
+            unreachable: true,
+            ..Self::default()
+        }
+    }
+
+    pub(crate) fn add_lease(&self, lease: Lease) {
+        self.lock().leases.push(lease);
+    }
+
+    pub(crate) fn heartbeats(&self) -> Vec<LeaseId> {
+        self.lock().heartbeats.clone()
+    }
+
+    pub(crate) fn releases(&self) -> Vec<LeaseId> {
+        self.lock().releases.clone()
+    }
+
+    fn lock(&self) -> MutexGuard<'_, MockState> {
+        self.state.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    fn reply<T: Send>(&self, make: impl FnOnce(&mut MockState) -> Result<T>) -> Result<T> {
+        if self.unreachable {
+            return Err(ClientError::Unreachable {
+                url: "http://127.0.0.1:47823".into(),
+                reason: "connection refused".into(),
+            });
+        }
+        make(&mut self.lock())
+    }
+}
+
+fn not_found(id: LeaseId) -> ClientError {
+    ClientError::Http {
+        status: 404,
+        message: format!("lease {} is not tracked", id.0),
+    }
+}
+
+/// A lease for `holder`, numbered `id`.
+pub(crate) fn lease(id: i64, holder: Holder, state: LeaseState) -> Lease {
+    Lease {
+        id: LeaseId(id),
+        holder,
+        kind: LeaseKind::Normal,
+        state,
+        class: Some(JobClass::CpuHeavy),
+        profile: JobProfile {
+            cores: 8.0,
+            ram_mb: 4_096,
+            gpu_pct: 0.0,
+            vram_mb: 0,
+            est_secs: 300,
+        },
+        label: "cargo build".into(),
+        requested_at_ms: 0,
+        granted_at_ms: None,
+        ended_at_ms: None,
+        expires_at_ms: 60_000,
+    }
+}
+
+impl DaemonApi for MockDaemon {
+    fn snapshot(&self) -> impl Future<Output = Result<Snapshot>> + Send {
+        let result = self.reply(|_| Ok(snapshot()));
+        async move { result }
+    }
+
+    fn can_fit(&self, request: &CanFitRequest) -> impl Future<Output = Result<Verdict>> + Send {
+        let fits = request.profile != ProfileSpec::Class(JobClass::GpuHeavy);
+        let result = self.reply(|_| {
+            Ok(Verdict {
+                fits,
+                reasons: if fits {
+                    vec![]
+                } else {
+                    vec!["GPU: busy".into()]
+                },
+                wait_estimate_secs: (!fits).then_some(30),
+            })
+        });
+        async move { result }
+    }
+
+    fn acquire(
+        &self,
+        request: &AcquireRequest,
+    ) -> impl Future<Output = Result<AcquireResponse>> + Send {
+        let request = request.clone();
+        let result = self.reply(|state| {
+            state.next_id += 1;
+            let queued = request.profile == ProfileSpec::Class(JobClass::GpuHeavy);
+            let mut lease = lease(
+                state.next_id,
+                request.holder,
+                if queued {
+                    LeaseState::Queued
+                } else {
+                    LeaseState::Active
+                },
+            );
+            lease.kind = request.kind;
+            lease.label = request.label;
+            state.leases.push(lease.clone());
+            let verdict = Verdict {
+                fits: !queued,
+                reasons: vec![],
+                wait_estimate_secs: None,
+            };
+            Ok(AcquireResponse { lease, verdict })
+        });
+        async move { result }
+    }
+
+    fn heartbeat(
+        &self,
+        id: LeaseId,
+        _session: &SessionKey,
+    ) -> impl Future<Output = Result<HeartbeatResponse>> + Send {
+        let result = self.reply(|state| {
+            state.heartbeats.push(id);
+            let lease = state.leases.iter().find(|lease| lease.id == id);
+            let lease = lease.ok_or_else(|| not_found(id))?;
+            Ok(HeartbeatResponse {
+                state: lease.state,
+                expires_at_ms: lease.expires_at_ms,
+            })
+        });
+        async move { result }
+    }
+
+    fn release(
+        &self,
+        id: LeaseId,
+        _session: &SessionKey,
+    ) -> impl Future<Output = Result<Lease>> + Send {
+        let result = self.reply(|state| {
+            state.releases.push(id);
+            let lease = state.leases.iter_mut().find(|lease| lease.id == id);
+            let lease = lease.ok_or_else(|| not_found(id))?;
+            lease.state = LeaseState::Released;
+            Ok(lease.clone())
+        });
+        async move { result }
+    }
+
+    fn leases(&self, query: &LeaseQuery) -> impl Future<Output = Result<Vec<Lease>>> + Send {
+        let result = self.reply(|state| {
+            let matching = state.leases.iter().filter(|lease| {
+                query
+                    .session
+                    .as_ref()
+                    .is_none_or(|s| &lease.holder.session == s)
+                    && query.state.is_none_or(|s| lease.state == s)
+            });
+            Ok(matching.cloned().collect())
+        });
+        async move { result }
+    }
+
+    fn register_session(&self, _holder: &Holder) -> impl Future<Output = Result<()>> + Send {
+        let result = self.reply(|_| Ok(()));
+        async move { result }
+    }
+}

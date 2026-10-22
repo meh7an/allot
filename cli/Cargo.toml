@@ -10,4 +10,3 @@ rh-client = { version = "0.1.0", path = "../client" }
 rh-core = { version = "0.1.0", path = "../core" }
 rh-sampler = { version = "0.1.0", path = "../sampler" }
 rh-shared = { version = "0.1.0", path = "../shared" }
-sysinfo = { version = "0.39.6", default-features = false, features = ["system"] }

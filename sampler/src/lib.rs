@@ -1,9 +1,14 @@
 //! Windows implementation of [`rh_core::sampler::Sampler`]: sysinfo for CPU, memory, and
 //! processes; PDH for commit charge and GPU load; DXGI for adapter names and VRAM sizes.
+//! Also reads the current process's ancestry, which the CLI and MCP server use to find
+//! their Claude session.
 
 mod dxgi;
 mod gpu;
 mod pdh;
+mod process;
+
+pub use crate::process::current_ancestry;
 
 use std::{
     collections::HashMap,

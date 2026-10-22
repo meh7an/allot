@@ -6,10 +6,8 @@ use std::{
 };
 
 use rh_core::sampler::{Sampler, SnapshotBuilder};
-use rh_sampler::SystemSampler;
+use rh_sampler::{SystemSampler, current_ancestry};
 use rh_shared::types::{Holder, ResourceUsage, SessionKey, Snapshot};
-
-use crate::probe::current_ancestry;
 
 const SESSION_ROOT: &str = "claude.exe";
 

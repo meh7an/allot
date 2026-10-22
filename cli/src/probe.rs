@@ -8,8 +8,7 @@ use std::{
 };
 
 use anyhow::Context;
-use rh_core::ancestry::{ProcessNode, ancestry};
-use sysinfo::{Pid, Process, ProcessRefreshKind, ProcessesToUpdate, System, UpdateKind};
+use rh_sampler::current_ancestry;
 
 use crate::sample;
 
@@ -128,30 +127,6 @@ fn build_report(args: &ProbeArgs) -> anyhow::Result<String> {
     Ok(report)
 }
 
-/// Returns this process followed by its ancestors, nearest first.
-pub(crate) fn current_ancestry() -> anyhow::Result<Vec<ProcessNode>> {
-    let mut system = System::new();
-    system.refresh_processes_specifics(
-        ProcessesToUpdate::All,
-        true,
-        ProcessRefreshKind::nothing().with_exe(UpdateKind::OnlyIfNotSet),
-    );
-    let own_pid = sysinfo::get_current_pid().map_err(anyhow::Error::msg)?;
-    Ok(ancestry(own_pid.as_u32(), |pid| {
-        system.process(Pid::from_u32(pid)).map(to_node)
-    }))
-}
-
-fn to_node(process: &Process) -> ProcessNode {
-    ProcessNode {
-        pid: process.pid().as_u32(),
-        parent_pid: process.parent().map(Pid::as_u32),
-        name: process.name().to_string_lossy().into_owned(),
-        exe: process.exe().map(|path| path.display().to_string()),
-        start_time: process.start_time(),
-    }
-}
-
 fn has_value_prefix(name: &str) -> bool {
     let upper = name.to_ascii_uppercase();
     ENV_VALUE_PREFIXES
@@ -171,16 +146,6 @@ fn redact<'a>(name: &str, value: &'a str) -> &'a str {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_current_ancestry_starts_at_own_process() {
-        let chain = current_ancestry().unwrap();
-        assert_eq!(chain[0].pid, std::process::id());
-        assert!(
-            chain.len() >= 2,
-            "test runner should have a parent: {chain:?}"
-        );
-    }
 
     #[test]
     fn test_redact_secret_names_hides_value() {
