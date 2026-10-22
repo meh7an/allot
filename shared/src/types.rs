@@ -213,6 +213,19 @@ pub enum LeaseKind {
     BenchmarkExclusive,
 }
 
+impl LeaseKind {
+    /// Every kind, in declaration order.
+    pub const ALL: [Self; 2] = [Self::Normal, Self::BenchmarkExclusive];
+
+    /// The name used in storage and on the wire, for example `benchmark_exclusive`.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Normal => "normal",
+            Self::BenchmarkExclusive => "benchmark_exclusive",
+        }
+    }
+}
+
 /// Where a lease is in its lifecycle.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -226,6 +239,21 @@ pub enum LeaseState {
     Released,
     /// Ended by the daemon because the heartbeat stopped or the holder died.
     Expired,
+}
+
+impl LeaseState {
+    /// Every state, in declaration order.
+    pub const ALL: [Self; 4] = [Self::Queued, Self::Active, Self::Released, Self::Expired];
+
+    /// The name used in storage and on the wire, for example `queued`.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Queued => "queued",
+            Self::Active => "active",
+            Self::Released => "released",
+            Self::Expired => "expired",
+        }
+    }
 }
 
 /// A reservation of machine resources for one job.
@@ -253,6 +281,19 @@ pub struct Lease {
     pub ended_at_ms: Option<i64>,
     /// When the lease expires unless a heartbeat arrives first.
     pub expires_at_ms: i64,
+}
+
+/// Load from processes outside the holder's session while a benchmark lease was active.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct NoiseReport {
+    /// Average CPU load of other processes, as a percentage of all logical processors.
+    pub avg_cpu_pct: f32,
+    /// Peak CPU load of other processes.
+    pub peak_cpu_pct: f32,
+    /// Average GPU engine load of other processes, as a percentage of one adapter.
+    pub avg_gpu_pct: f32,
+    /// Peak GPU engine load of other processes.
+    pub peak_gpu_pct: f32,
 }
 
 #[cfg(test)]
@@ -291,11 +332,26 @@ mod tests {
     }
 
     #[test]
-    fn test_job_class_as_str_matches_serde_name() {
+    fn test_enum_as_str_matches_serde_name() {
         for class in JobClass::ALL {
-            let wire = serde_json::to_value(class).unwrap();
-            assert_eq!(wire, class.as_str());
+            assert_eq!(serde_json::to_value(class).unwrap(), class.as_str());
         }
+        for kind in LeaseKind::ALL {
+            assert_eq!(serde_json::to_value(kind).unwrap(), kind.as_str());
+        }
+        for state in LeaseState::ALL {
+            assert_eq!(serde_json::to_value(state).unwrap(), state.as_str());
+        }
+    }
+
+    #[test]
+    fn test_noise_report_json_round_trip_preserves_every_field() {
+        assert_json_round_trip(&NoiseReport {
+            avg_cpu_pct: 2.5,
+            peak_cpu_pct: 9.0,
+            avg_gpu_pct: 0.5,
+            peak_gpu_pct: 3.25,
+        });
     }
 
     #[test]

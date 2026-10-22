@@ -1,3 +1,4 @@
 plan
 /target
 .claude/settings.local.json
+.diesel_lock
