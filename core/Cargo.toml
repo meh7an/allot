@@ -5,3 +5,4 @@ edition = "2024"
 
 [dependencies]
 rh-shared = { version = "0.1.0", path = "../shared" }
+thiserror = "2.0.21"

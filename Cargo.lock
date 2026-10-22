@@ -537,6 +537,7 @@ name = "rh-core"
 version = "0.1.0"
 dependencies = [
  "rh-shared",
+ "thiserror",
 ]
 
 [[package]]
