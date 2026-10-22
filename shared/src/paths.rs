@@ -60,6 +60,11 @@ impl Paths {
         self.root.join("rh.db")
     }
 
+    /// The file the running daemon keeps locked, so a second one refuses to start.
+    pub fn lock_file(&self) -> PathBuf {
+        self.root.join("rhd.lock")
+    }
+
     /// Directory for the daemon's log files.
     pub fn log_dir(&self) -> PathBuf {
         self.root.join("logs")
@@ -80,6 +85,7 @@ mod tests {
         assert_eq!(paths.token_file(), root.join("token"));
         assert_eq!(paths.database_file(), root.join("rh.db"));
         assert_eq!(paths.log_dir(), root.join("logs"));
+        assert_eq!(paths.lock_file(), root.join("rhd.lock"));
     }
 
     #[test]

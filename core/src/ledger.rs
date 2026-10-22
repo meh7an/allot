@@ -278,6 +278,45 @@ impl Ledger {
         }
     }
 
+    /// Whether the tracked lease `id` would start now, with the reasons it waits. An active
+    /// lease always fits. `None` when the ledger does not track `id`.
+    pub fn verdict_for(&self, id: LeaseId, snapshot: &Snapshot, now_ms: i64) -> Option<Verdict> {
+        let lease = self.leases.iter().find(|lease| lease.id == id)?;
+        if lease.state != LeaseState::Queued {
+            return Some(Verdict {
+                fits: true,
+                reasons: Vec::new(),
+                wait_estimate_secs: None,
+            });
+        }
+        let position = self
+            .leases
+            .iter()
+            .filter(|lease| lease.state == LeaseState::Queued)
+            .position(|lease| lease.id == id)?;
+        let candidates = self.queued_candidates();
+        let decision = self
+            .plan(snapshot, now_ms, &candidates)
+            .into_iter()
+            .nth(position)?;
+        if decision.granted {
+            return Some(Verdict {
+                fits: true,
+                reasons: decision.reasons,
+                wait_estimate_secs: None,
+            });
+        }
+        let mut reasons = decision.reasons;
+        if position > 0 {
+            reasons.push(format!("{position} lease(s) queued ahead"));
+        }
+        Some(Verdict {
+            fits: false,
+            reasons,
+            wait_estimate_secs: self.wait_estimate(&lease.profile, lease.kind, snapshot, now_ms),
+        })
+    }
+
     fn owned_index(&self, id: LeaseId, session: &SessionKey) -> Result<usize, LedgerError> {
         let index = self
             .leases
@@ -852,6 +891,25 @@ mod tests {
             LedgerError::NotOwner(LeaseId(1)).to_string(),
             "lease 1 belongs to another session"
         );
+    }
+
+    #[test]
+    fn test_verdict_for_explains_each_tracked_lease() {
+        let mut ledger = Ledger::new(settings());
+        enqueue(&mut ledger, 1, 8.0, 300, 0);
+        ledger.tick(0, &idle(), &alive());
+        enqueue(&mut ledger, 2, 12.0, 300, 0);
+        enqueue(&mut ledger, 3, 12.0, 300, 0);
+
+        let running = ledger.verdict_for(LeaseId(1), &idle(), 1_000).unwrap();
+        assert!(running.fits && running.reasons.is_empty());
+        let head = ledger.verdict_for(LeaseId(2), &idle(), 1_000).unwrap();
+        assert!(!head.fits);
+        assert!(has_reason(&head, "cores:"), "{head:?}");
+        assert_eq!(head.wait_estimate_secs, Some(299));
+        let second = ledger.verdict_for(LeaseId(3), &idle(), 1_000).unwrap();
+        assert!(has_reason(&second, "1 lease(s) queued ahead"), "{second:?}");
+        assert_eq!(ledger.verdict_for(LeaseId(9), &idle(), 1_000), None);
     }
 
     #[test]

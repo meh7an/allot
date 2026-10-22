@@ -118,6 +118,14 @@ pub struct SessionsResponse {
     pub sessions: Vec<SessionUsage>,
 }
 
+/// Body of `POST /sessions`. Registering the same session again is harmless; the daemon
+/// forgets a session once its holder process is gone.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RegisterSessionRequest {
+    /// The session and its `claude.exe`.
+    pub holder: Holder,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -249,6 +257,13 @@ mod tests {
     fn test_sessions_response_json_round_trip_preserves_every_field() {
         assert_json_round_trip(&SessionsResponse {
             sessions: vec![sample_session_usage()],
+        });
+    }
+
+    #[test]
+    fn test_register_session_request_json_round_trip_preserves_every_field() {
+        assert_json_round_trip(&RegisterSessionRequest {
+            holder: sample_holder(),
         });
     }
 }
