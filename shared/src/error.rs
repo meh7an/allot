@@ -8,6 +8,9 @@ pub enum Error {
     /// The configuration file is not valid TOML, has an unknown key, or has a wrongly typed value.
     #[error("invalid configuration file: {0}")]
     ConfigParse(#[from] toml::de::Error),
+    /// Reading system or GPU counters failed.
+    #[error("sampling failed: {0}")]
+    Sampler(String),
     /// A filesystem or process operation failed.
     #[error(transparent)]
     Io(#[from] std::io::Error),

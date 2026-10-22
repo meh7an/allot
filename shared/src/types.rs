@@ -1,3 +1,5 @@
+use std::ops::AddAssign;
+
 use serde::{Deserialize, Serialize};
 
 /// Identifies a lease. Assigned by the daemon's database when the lease is first stored.
@@ -103,6 +105,15 @@ pub struct ResourceUsage {
     pub gpu_pct: f32,
     /// Dedicated video memory.
     pub vram_mb: u64,
+}
+
+impl AddAssign for ResourceUsage {
+    fn add_assign(&mut self, other: Self) {
+        self.cores += other.cores;
+        self.ram_mb += other.ram_mb;
+        self.gpu_pct += other.gpu_pct;
+        self.vram_mb += other.vram_mb;
+    }
 }
 
 /// Usage of a single process.
@@ -342,6 +353,31 @@ mod tests {
         for state in LeaseState::ALL {
             assert_eq!(serde_json::to_value(state).unwrap(), state.as_str());
         }
+    }
+
+    #[test]
+    fn test_resource_usage_add_assign_sums_every_field() {
+        let mut total = ResourceUsage {
+            cores: 1.5,
+            ram_mb: 100,
+            gpu_pct: 10.0,
+            vram_mb: 64,
+        };
+        total += ResourceUsage {
+            cores: 2.25,
+            ram_mb: 50,
+            gpu_pct: 5.5,
+            vram_mb: 0,
+        };
+        assert_eq!(
+            total,
+            ResourceUsage {
+                cores: 3.75,
+                ram_mb: 150,
+                gpu_pct: 15.5,
+                vram_mb: 64,
+            }
+        );
     }
 
     #[test]

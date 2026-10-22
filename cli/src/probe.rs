@@ -11,6 +11,8 @@ use anyhow::Context;
 use rh_core::ancestry::{ProcessNode, ancestry};
 use sysinfo::{Pid, Process, ProcessRefreshKind, ProcessesToUpdate, System, UpdateKind};
 
+use crate::sample;
+
 const ENV_VALUE_PREFIXES: [&str; 3] = ["CLAUDE", "ANTHROPIC", "MCP"];
 const SECRET_MARKERS: [&str; 5] = ["TOKEN", "KEY", "SECRET", "PASSWORD", "AUTH"];
 
@@ -18,32 +20,52 @@ const SECRET_MARKERS: [&str; 5] = ["TOKEN", "KEY", "SECRET", "PASSWORD", "AUTH"]
 #[derive(Debug, clap::Args)]
 pub struct ProbeArgs {
     /// File the report is appended to.
-    #[arg(long)]
-    out: PathBuf,
+    #[arg(long, required_unless_present = "sample")]
+    out: Option<PathBuf>,
     /// Also record stdin. Only for hooks: an MCP server's stdin never closes.
     #[arg(long)]
     stdin: bool,
     /// Label written into the report header, for example `hook` or `mcp`.
     #[arg(long, default_value = "probe")]
     label: String,
+    /// Print one machine sample per second instead of writing a launch report.
+    #[arg(long, conflicts_with_all = ["out", "stdin"])]
+    sample: bool,
+    /// How many seconds `--sample` runs.
+    #[arg(
+        long,
+        default_value_t = 10,
+        requires = "sample",
+        value_parser = clap::value_parser!(u64).range(1..)
+    )]
+    secs: u64,
 }
 
-/// Appends a report on how this process was launched to `args.out`.
+/// Appends a report on how this process was launched to `args.out`, or with `--sample`
+/// prints live machine samples.
 ///
 /// # Errors
 ///
-/// Fails when the process table, stdin, or the output file cannot be read or written.
+/// Fails when the process table, stdin, the output file, or the sampler cannot be read or
+/// written.
 pub fn run(args: &ProbeArgs) -> anyhow::Result<()> {
+    if args.sample {
+        return sample::run(args.secs);
+    }
+    let out = args
+        .out
+        .as_deref()
+        .context("--out is required without --sample")?;
     let report = build_report(args)?;
-    if let Some(dir) = args.out.parent() {
+    if let Some(dir) = out.parent() {
         fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
     }
     OpenOptions::new()
         .create(true)
         .append(true)
-        .open(&args.out)
+        .open(out)
         .and_then(|mut file| file.write_all(report.as_bytes()))
-        .with_context(|| format!("writing {}", args.out.display()))
+        .with_context(|| format!("writing {}", out.display()))
 }
 
 fn build_report(args: &ProbeArgs) -> anyhow::Result<String> {
@@ -106,7 +128,8 @@ fn build_report(args: &ProbeArgs) -> anyhow::Result<String> {
     Ok(report)
 }
 
-fn current_ancestry() -> anyhow::Result<Vec<ProcessNode>> {
+/// Returns this process followed by its ancestors, nearest first.
+pub(crate) fn current_ancestry() -> anyhow::Result<Vec<ProcessNode>> {
     let mut system = System::new();
     system.refresh_processes_specifics(
         ProcessesToUpdate::All,
