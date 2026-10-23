@@ -29,7 +29,8 @@ public sealed partial class AcrylicBackdrop : SystemBackdrop
     private bool _windowActive = true;
     private bool _keepActiveLook;
     // Picked by eye over the handoff's CSS .86.
-    private float _tintOpacity = 0.2f;
+    private float _lightTintOpacity = 0.5f;
+    private float _darkTintOpacity = 0.2f;
     private float _luminosityOpacity = 0.2f;
 
     /// <summary>
@@ -45,12 +46,23 @@ public sealed partial class AcrylicBackdrop : SystemBackdrop
         }
     }
 
+    /// <summary>
+    /// The tint opacity of the current theme; light needs more than dark.
+    /// </summary>
     public float TintOpacity
     {
-        get => _tintOpacity;
+        get => _theme == ElementTheme.Dark ? _darkTintOpacity : _lightTintOpacity;
         set
         {
-            _tintOpacity = value;
+            if (_theme == ElementTheme.Dark)
+            {
+                _darkTintOpacity = value;
+            }
+            else
+            {
+                _lightTintOpacity = value;
+            }
+
             ApplyTint();
         }
     }
@@ -105,6 +117,15 @@ public sealed partial class AcrylicBackdrop : SystemBackdrop
         _controller = null;
     }
 
+    // The base implementation throws E_INVALIDARG for our target on every system theme change,
+    // which ends the app. This backdrop owns its configuration and takes the theme from the
+    // content's ActualThemeChanged instead.
+    protected override void OnDefaultSystemBackdropConfigurationChanged(
+        ICompositionSupportsSystemBackdrop target,
+        XamlRoot xamlRoot)
+    {
+    }
+
     private void ApplyActivation() =>
         _configuration.IsInputActive = _windowActive || _keepActiveLook;
 
@@ -118,7 +139,7 @@ public sealed partial class AcrylicBackdrop : SystemBackdrop
         var tint = _theme == ElementTheme.Dark ? DarkTint : LightTint;
         _controller.TintColor = tint;
         _controller.FallbackColor = tint;
-        _controller.TintOpacity = _tintOpacity;
+        _controller.TintOpacity = TintOpacity;
         _controller.LuminosityOpacity = _luminosityOpacity;
     }
 }
