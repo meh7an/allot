@@ -1,0 +1,338 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Design tokens from plan/design handoff/README.md ("Design tokens" plus the values its sections
+  give), checked against the handoff by TokenResourceTests in the Core tests. Names are
+  Rh<Token>Brush. Shadows are not here: DWM draws the flyout's and MenuFlyout its own.
+-->
+<ResourceDictionary
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+  <ResourceDictionary.ThemeDictionaries>
+    <ResourceDictionary x:Key="Light">
+      <!-- Surface: the acrylic tint and the 1 px flyout edge. -->
+      <SolidColorBrush x:Key="RhSurfaceBrush" Color="#DBF3F3F3" />
+      <SolidColorBrush x:Key="RhSurfaceEdgeBrush" Color="#17000000" />
+
+      <!-- Text. -->
+      <SolidColorBrush x:Key="RhTextBrush" Color="#FF1A1A1A" />
+      <SolidColorBrush x:Key="RhTextSecondaryBrush" Color="#FF5C5C5C" />
+      <SolidColorBrush x:Key="RhTextStripBrush" Color="#FF4A4A4A" />
+      <SolidColorBrush x:Key="RhTextSubtleBrush" Color="#FF8A8A8A" />
+
+      <!-- Cards, strips and lines. -->
+      <SolidColorBrush x:Key="RhCardBrush" Color="#B8FFFFFF" />
+      <SolidColorBrush x:Key="RhCardBorderBrush" Color="#24000000" />
+      <SolidColorBrush x:Key="RhStripBrush" Color="#13000000" />
+      <SolidColorBrush x:Key="RhSeparatorBrush" Color="#14000000" />
+      <SolidColorBrush x:Key="RhChipBackgroundBrush" Color="#12000000" />
+      <SolidColorBrush x:Key="RhChipForegroundBrush" Color="#FF3A3A3A" />
+      <SolidColorBrush x:Key="RhTileBackgroundBrush" Color="#0F000000" />
+      <SolidColorBrush x:Key="RhQueuedTileBorderBrush" Color="#4D000000" />
+      <SolidColorBrush x:Key="RhTrackBrush" Color="#12000000" />
+
+      <!-- Accent: the system accent, for used fills and toggles that are on. -->
+      <SolidColorBrush x:Key="RhAccentBrush" Color="{ThemeResource SystemAccentColor}" />
+      <SolidColorBrush x:Key="RhAccentForegroundBrush" Color="#FFFFFFFF" />
+      <SolidColorBrush x:Key="RhAccentBusyBrush" Color="#FF7A9CC4" />
+
+      <!-- States. -->
+      <SolidColorBrush x:Key="RhRunningBrush" Color="#FF0F7B0F" />
+      <SolidColorBrush x:Key="RhWaitingBrush" Color="#FF9D5D00" />
+      <SolidColorBrush x:Key="RhWaitingSoftBrush" Color="#2E9D5D00" />
+      <SolidColorBrush x:Key="RhBenchmarkBrush" Color="#FF6F3FB0" />
+      <SolidColorBrush x:Key="RhBenchmarkForegroundBrush" Color="#FFFFFFFF" />
+      <SolidColorBrush x:Key="RhBenchmarkSoftBrush" Color="#596F3FB0" />
+      <SolidColorBrush x:Key="RhStepUpcomingBrush" Color="#1A000000" />
+      <SolidColorBrush x:Key="RhDangerTextBrush" Color="#FFC42B1C" />
+      <SolidColorBrush x:Key="RhDangerFillBrush" Color="#FFC42B1C" />
+      <SolidColorBrush x:Key="RhDangerFillHoverBrush" Color="#FFA32317" />
+      <SolidColorBrush x:Key="RhKillHoverBrush" Color="#24C42B1C" />
+      <SolidColorBrush x:Key="RhStoppedBrush" Color="#FF8A8A8A" />
+
+      <!-- Header buttons and menus. -->
+      <SolidColorBrush x:Key="RhPressedBrush" Color="#0F000000" />
+      <SolidColorBrush x:Key="RhMenuBackgroundBrush" Color="#F7F9F9F9" />
+      <SolidColorBrush x:Key="RhMenuEdgeBrush" Color="#1A000000" />
+      <SolidColorBrush x:Key="RhMenuHoverBrush" Color="#24808080" />
+      <SolidColorBrush x:Key="RhMenuDisabledBrush" Color="#FFA0A0A0" />
+
+      <!-- Resources card. -->
+      <SolidColorBrush x:Key="RhHatchStrongBrush" Color="#33000000" />
+      <SolidColorBrush x:Key="RhHatchWeakBrush" Color="#0D000000" />
+      <SolidColorBrush x:Key="RhMarkerBrush" Color="#FF1A1A1A" />
+      <SolidColorBrush x:Key="RhMarkerRingBrush" Color="#CCFFFFFF" />
+      <SolidColorBrush x:Key="RhDriveBrush" Color="#FF6B6B6B" />
+
+      <!-- Service stopped banner. -->
+      <SolidColorBrush x:Key="RhBannerBackgroundBrush" Color="#14C42B1C" />
+      <SolidColorBrush x:Key="RhBannerBorderBrush" Color="#4DC42B1C" />
+      <SolidColorBrush x:Key="RhBannerForegroundBrush" Color="#FF8A1E14" />
+
+      <!-- Tray icon badges. -->
+      <SolidColorBrush x:Key="RhTrayAmberBrush" Color="#FFC27A00" />
+      <SolidColorBrush x:Key="RhTrayRedBrush" Color="#FFC42B1C" />
+    </ResourceDictionary>
+
+    <ResourceDictionary x:Key="Dark">
+      <SolidColorBrush x:Key="RhSurfaceBrush" Color="#DB242424" />
+      <SolidColorBrush x:Key="RhSurfaceEdgeBrush" Color="#14FFFFFF" />
+
+      <SolidColorBrush x:Key="RhTextBrush" Color="#FFFFFFFF" />
+      <SolidColorBrush x:Key="RhTextSecondaryBrush" Color="#FFC5C5C5" />
+      <SolidColorBrush x:Key="RhTextStripBrush" Color="#FFC5C5C5" />
+      <SolidColorBrush x:Key="RhTextSubtleBrush" Color="#FF9A9A9A" />
+
+      <SolidColorBrush x:Key="RhCardBrush" Color="#0EFFFFFF" />
+      <SolidColorBrush x:Key="RhCardBorderBrush" Color="#66000000" />
+      <SolidColorBrush x:Key="RhStripBrush" Color="#17FFFFFF" />
+      <SolidColorBrush x:Key="RhSeparatorBrush" Color="#14FFFFFF" />
+      <SolidColorBrush x:Key="RhChipBackgroundBrush" Color="#1AFFFFFF" />
+      <SolidColorBrush x:Key="RhChipForegroundBrush" Color="#FFDEDEDE" />
+      <SolidColorBrush x:Key="RhTileBackgroundBrush" Color="#12FFFFFF" />
+      <SolidColorBrush x:Key="RhQueuedTileBorderBrush" Color="#4DFFFFFF" />
+      <SolidColorBrush x:Key="RhTrackBrush" Color="#14FFFFFF" />
+
+      <!-- Dark mode uses the accent's light 2 shade, as Windows does. -->
+      <SolidColorBrush x:Key="RhAccentBrush" Color="{ThemeResource SystemAccentColorLight2}" />
+      <SolidColorBrush x:Key="RhAccentForegroundBrush" Color="#FF000000" />
+      <SolidColorBrush x:Key="RhAccentBusyBrush" Color="#FF3F7F9E" />
+
+      <SolidColorBrush x:Key="RhRunningBrush" Color="#FF6CCB5F" />
+      <SolidColorBrush x:Key="RhWaitingBrush" Color="#FFFCE100" />
+      <SolidColorBrush x:Key="RhWaitingSoftBrush" Color="#33FCE100" />
+      <SolidColorBrush x:Key="RhBenchmarkBrush" Color="#FFC9A8F0" />
+      <SolidColorBrush x:Key="RhBenchmarkForegroundBrush" Color="#FF1A1A1A" />
+      <SolidColorBrush x:Key="RhBenchmarkSoftBrush" Color="#59C9A8F0" />
+      <SolidColorBrush x:Key="RhStepUpcomingBrush" Color="#1FFFFFFF" />
+      <SolidColorBrush x:Key="RhDangerTextBrush" Color="#FFFF99A4" />
+      <SolidColorBrush x:Key="RhDangerFillBrush" Color="#FFC42B1C" />
+      <SolidColorBrush x:Key="RhDangerFillHoverBrush" Color="#FFA32317" />
+      <SolidColorBrush x:Key="RhKillHoverBrush" Color="#24C42B1C" />
+      <SolidColorBrush x:Key="RhStoppedBrush" Color="#FF8A8A8A" />
+
+      <SolidColorBrush x:Key="RhPressedBrush" Color="#14FFFFFF" />
+      <SolidColorBrush x:Key="RhMenuBackgroundBrush" Color="#F72C2C2C" />
+      <SolidColorBrush x:Key="RhMenuEdgeBrush" Color="#1AFFFFFF" />
+      <SolidColorBrush x:Key="RhMenuHoverBrush" Color="#24808080" />
+      <SolidColorBrush x:Key="RhMenuDisabledBrush" Color="#FF6A6A6A" />
+
+      <SolidColorBrush x:Key="RhHatchStrongBrush" Color="#38FFFFFF" />
+      <SolidColorBrush x:Key="RhHatchWeakBrush" Color="#0DFFFFFF" />
+      <SolidColorBrush x:Key="RhMarkerBrush" Color="#FFFFFFFF" />
+      <SolidColorBrush x:Key="RhMarkerRingBrush" Color="#99000000" />
+      <SolidColorBrush x:Key="RhDriveBrush" Color="#FFA8A8A8" />
+
+      <SolidColorBrush x:Key="RhBannerBackgroundBrush" Color="#1AFF99A4" />
+      <SolidColorBrush x:Key="RhBannerBorderBrush" Color="#59FF99A4" />
+      <SolidColorBrush x:Key="RhBannerForegroundBrush" Color="#FFFFB3BB" />
+
+      <SolidColorBrush x:Key="RhTrayAmberBrush" Color="#FFFCE100" />
+      <SolidColorBrush x:Key="RhTrayRedBrush" Color="#FFFF6B6B" />
+    </ResourceDictionary>
+
+    <!-- High contrast maps every token to a system colour. -->
+    <ResourceDictionary x:Key="HighContrast">
+      <SolidColorBrush x:Key="RhSurfaceBrush" Color="{ThemeResource SystemColorWindowColor}" />
+      <SolidColorBrush x:Key="RhSurfaceEdgeBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
+
+      <SolidColorBrush x:Key="RhTextBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
+      <SolidColorBrush x:Key="RhTextSecondaryBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
+      <SolidColorBrush x:Key="RhTextStripBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
+      <SolidColorBrush x:Key="RhTextSubtleBrush" Color="{ThemeResource SystemColorGrayTextColor}" />
+
+      <SolidColorBrush x:Key="RhCardBrush" Color="{ThemeResource SystemColorWindowColor}" />
+      <SolidColorBrush x:Key="RhCardBorderBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
+      <SolidColorBrush x:Key="RhStripBrush" Color="{ThemeResource SystemColorWindowColor}" />
+      <SolidColorBrush x:Key="RhSeparatorBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
+      <SolidColorBrush x:Key="RhChipBackgroundBrush" Color="{ThemeResource SystemColorWindowColor}" />
+      <SolidColorBrush x:Key="RhChipForegroundBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
+      <SolidColorBrush x:Key="RhTileBackgroundBrush" Color="{ThemeResource SystemColorWindowColor}" />
+      <SolidColorBrush x:Key="RhQueuedTileBorderBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
+      <SolidColorBrush x:Key="RhTrackBrush" Color="{ThemeResource SystemColorGrayTextColor}" />
+
+      <SolidColorBrush x:Key="RhAccentBrush" Color="{ThemeResource SystemColorHighlightColor}" />
+      <SolidColorBrush x:Key="RhAccentForegroundBrush" Color="{ThemeResource SystemColorHighlightTextColor}" />
+      <SolidColorBrush x:Key="RhAccentBusyBrush" Color="{ThemeResource SystemColorGrayTextColor}" />
+
+      <SolidColorBrush x:Key="RhRunningBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
+      <SolidColorBrush x:Key="RhWaitingBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
+      <SolidColorBrush x:Key="RhWaitingSoftBrush" Color="{ThemeResource SystemColorGrayTextColor}" />
+      <SolidColorBrush x:Key="RhBenchmarkBrush" Color="{ThemeResource SystemColorHighlightColor}" />
+      <SolidColorBrush x:Key="RhBenchmarkForegroundBrush" Color="{ThemeResource SystemColorHighlightTextColor}" />
+      <SolidColorBrush x:Key="RhBenchmarkSoftBrush" Color="{ThemeResource SystemColorGrayTextColor}" />
+      <SolidColorBrush x:Key="RhStepUpcomingBrush" Color="{ThemeResource SystemColorGrayTextColor}" />
+      <SolidColorBrush x:Key="RhDangerTextBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
+      <SolidColorBrush x:Key="RhDangerFillBrush" Color="{ThemeResource SystemColorHighlightColor}" />
+      <SolidColorBrush x:Key="RhDangerFillHoverBrush" Color="{ThemeResource SystemColorHighlightColor}" />
+      <SolidColorBrush x:Key="RhKillHoverBrush" Color="{ThemeResource SystemColorHighlightColor}" />
+      <SolidColorBrush x:Key="RhStoppedBrush" Color="{ThemeResource SystemColorGrayTextColor}" />
+
+      <SolidColorBrush x:Key="RhPressedBrush" Color="{ThemeResource SystemColorHighlightColor}" />
+      <SolidColorBrush x:Key="RhMenuBackgroundBrush" Color="{ThemeResource SystemColorWindowColor}" />
+      <SolidColorBrush x:Key="RhMenuEdgeBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
+      <SolidColorBrush x:Key="RhMenuHoverBrush" Color="{ThemeResource SystemColorHighlightColor}" />
+      <SolidColorBrush x:Key="RhMenuDisabledBrush" Color="{ThemeResource SystemColorGrayTextColor}" />
+
+      <SolidColorBrush x:Key="RhHatchStrongBrush" Color="{ThemeResource SystemColorGrayTextColor}" />
+      <SolidColorBrush x:Key="RhHatchWeakBrush" Color="{ThemeResource SystemColorWindowColor}" />
+      <SolidColorBrush x:Key="RhMarkerBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
+      <SolidColorBrush x:Key="RhMarkerRingBrush" Color="{ThemeResource SystemColorWindowColor}" />
+      <SolidColorBrush x:Key="RhDriveBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
+
+      <SolidColorBrush x:Key="RhBannerBackgroundBrush" Color="{ThemeResource SystemColorWindowColor}" />
+      <SolidColorBrush x:Key="RhBannerBorderBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
+      <SolidColorBrush x:Key="RhBannerForegroundBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
+
+      <SolidColorBrush x:Key="RhTrayAmberBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
+      <SolidColorBrush x:Key="RhTrayRedBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
+    </ResourceDictionary>
+  </ResourceDictionary.ThemeDictionaries>
+
+  <!-- Fonts. The icon fonts are Fluent System Icons (MIT, microsoft/fluentui-system-icons). -->
+  <FontFamily x:Key="RhTextFontFamily">Segoe UI Variable Text, Segoe UI</FontFamily>
+  <FontFamily x:Key="RhDisplayFontFamily">Segoe UI Variable Display, Segoe UI</FontFamily>
+  <FontFamily x:Key="RhMonoFontFamily">Cascadia Mono, Consolas</FontFamily>
+  <FontFamily x:Key="RhIconRegularFontFamily">ms-appx:///Assets/Fonts/FluentSystemIcons-Regular.ttf#FluentSystemIcons-Regular</FontFamily>
+  <FontFamily x:Key="RhIconFilledFontFamily">ms-appx:///Assets/Fonts/FluentSystemIcons-Filled.ttf#FluentSystemIcons-Filled</FontFamily>
+
+  <!--
+    Glyphs, by Fluent System Icons name. *Regular ones are in RhIconRegularFontFamily, *Filled in
+    RhIconFilledFontFamily. Codepoints from the fonts' JSON maps at commit 463d58b.
+  -->
+  <x:String x:Key="RhGlyphLockOpenRegular">&#xE795;</x:String>
+  <x:String x:Key="RhGlyphLockClosedFilled">&#xE79D;</x:String>
+  <x:String x:Key="RhGlyphPinRegular">&#xF601;</x:String>
+  <x:String x:Key="RhGlyphPinFilled">&#xF60B;</x:String>
+  <x:String x:Key="RhGlyphMoreHorizontalRegular">&#xE824;</x:String>
+  <x:String x:Key="RhGlyphDismissCircleRegular">&#xF36D;</x:String>
+  <x:String x:Key="RhGlyphDismissCircleFilled">&#xF36D;</x:String>
+  <x:String x:Key="RhGlyphPlayCircleFilled">&#xE9A6;</x:String>
+  <x:String x:Key="RhGlyphClockRegular">&#xF2DD;</x:String>
+  <x:String x:Key="RhGlyphTimerRegular">&#xED88;</x:String>
+  <x:String x:Key="RhGlyphCheckmarkCircleFilled">&#xF298;</x:String>
+  <x:String x:Key="RhGlyphErrorCircleFilled">&#xF3F0;</x:String>
+  <x:String x:Key="RhGlyphChevronUpRegular">&#xF2B6;</x:String>
+  <x:String x:Key="RhGlyphChevronDownRegular">&#xF2A3;</x:String>
+  <x:String x:Key="RhGlyphChevronRightRegular">&#xF2B0;</x:String>
+  <x:String x:Key="RhGlyphDataBarHorizontalRegular">&#xF39B;</x:String>
+  <x:String x:Key="RhGlyphAlertRegular">&#xF114;</x:String>
+  <x:String x:Key="RhGlyphDocumentTextRegular">&#xE557;</x:String>
+  <x:String x:Key="RhGlyphOpenRegular">&#xF582;</x:String>
+  <x:String x:Key="RhGlyphCheckmarkRegular">&#xF294;</x:String>
+  <x:String x:Key="RhGlyphStopRegular">&#xF72A;</x:String>
+
+  <!-- Radii. -->
+  <CornerRadius x:Key="RhFlyoutCornerRadius">8</CornerRadius>
+  <CornerRadius x:Key="RhCardCornerRadius">6</CornerRadius>
+  <CornerRadius x:Key="RhControlCornerRadius">4</CornerRadius>
+  <CornerRadius x:Key="RhChipCornerRadius">9</CornerRadius>
+  <CornerRadius x:Key="RhBarCornerRadius">2</CornerRadius>
+
+  <!-- Spacing scale. -->
+  <x:Double x:Key="RhSpacing2">2</x:Double>
+  <x:Double x:Key="RhSpacing4">4</x:Double>
+  <x:Double x:Key="RhSpacing6">6</x:Double>
+  <x:Double x:Key="RhSpacing8">8</x:Double>
+  <x:Double x:Key="RhSpacing10">10</x:Double>
+  <x:Double x:Key="RhSpacing12">12</x:Double>
+  <x:Double x:Key="RhSpacing14">14</x:Double>
+  <x:Double x:Key="RhSpacing16">16</x:Double>
+  <x:Double x:Key="RhDetailInset">28</x:Double>
+
+  <!-- Sizes and paddings from the handoff sections (XAML order: left, top, right, bottom). -->
+  <x:Double x:Key="RhFlyoutWidth">360</x:Double>
+  <x:Double x:Key="RhFlyoutMaxHeight">640</x:Double>
+  <x:Double x:Key="RhButtonSize">32</x:Double>
+  <x:Double x:Key="RhIconSize">16</x:Double>
+  <x:Double x:Key="RhGroupIconSize">14</x:Double>
+  <x:Double x:Key="RhTileSize">20</x:Double>
+  <x:Double x:Key="RhChipHeight">18</x:Double>
+  <x:Double x:Key="RhEdgeBarHeight">2</x:Double>
+  <x:Double x:Key="RhMeterRowHeight">28</x:Double>
+  <x:Double x:Key="RhResourcesHeaderHeight">40</x:Double>
+  <Thickness x:Key="RhHeaderPadding">14,8,8,6</Thickness>
+  <Thickness x:Key="RhBodyPadding">8,0,8,6</Thickness>
+  <Thickness x:Key="RhResourcesMargin">8,0,8,8</Thickness>
+  <Thickness x:Key="RhGroupHeadingPadding">6,6,6,0</Thickness>
+  <Thickness x:Key="RhIdleLinePadding">6,4,6,2</Thickness>
+  <Thickness x:Key="RhStripPadding">12,5,12,5</Thickness>
+  <Thickness x:Key="RhRowPadding">12,4,4,10</Thickness>
+  <Thickness x:Key="RhChipPadding">8,0,8,0</Thickness>
+  <Thickness x:Key="RhBenchmarkChipPadding">5,0,8,0</Thickness>
+  <Thickness x:Key="RhBannerPadding">10,6,6,6</Thickness>
+  <Thickness x:Key="RhMenuPadding">4</Thickness>
+  <Thickness x:Key="RhMenuItemPadding">12,0,12,0</Thickness>
+
+  <!-- Type ramp. Line heights follow the handoff's size/line pairs; numbers are tabular everywhere. -->
+  <Style x:Key="RhCaptionTextStyle" TargetType="TextBlock">
+    <Setter Property="FontFamily" Value="{StaticResource RhTextFontFamily}" />
+    <Setter Property="FontSize" Value="11" />
+    <Setter Property="LineHeight" Value="14" />
+    <Setter Property="Foreground" Value="{ThemeResource RhTextSecondaryBrush}" />
+    <Setter Property="Typography.NumeralAlignment" Value="Tabular" />
+  </Style>
+  <Style x:Key="RhBodyTextStyle" TargetType="TextBlock">
+    <Setter Property="FontFamily" Value="{StaticResource RhTextFontFamily}" />
+    <Setter Property="FontSize" Value="12" />
+    <Setter Property="LineHeight" Value="16" />
+    <Setter Property="Foreground" Value="{ThemeResource RhTextBrush}" />
+    <Setter Property="Typography.NumeralAlignment" Value="Tabular" />
+  </Style>
+  <Style x:Key="RhDetailTextStyle" TargetType="TextBlock" BasedOn="{StaticResource RhBodyTextStyle}">
+    <Setter Property="Foreground" Value="{ThemeResource RhTextSecondaryBrush}" />
+    <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+  </Style>
+  <Style x:Key="RhGroupHeadingTextStyle" TargetType="TextBlock" BasedOn="{StaticResource RhBodyTextStyle}">
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="Foreground" Value="{ThemeResource RhTextSecondaryBrush}" />
+  </Style>
+  <Style x:Key="RhMenuTextStyle" TargetType="TextBlock">
+    <Setter Property="FontFamily" Value="{StaticResource RhTextFontFamily}" />
+    <Setter Property="FontSize" Value="13" />
+    <Setter Property="Foreground" Value="{ThemeResource RhTextBrush}" />
+    <Setter Property="Typography.NumeralAlignment" Value="Tabular" />
+  </Style>
+  <Style x:Key="RhSummaryTextStyle" TargetType="TextBlock">
+    <Setter Property="FontFamily" Value="{StaticResource RhDisplayFontFamily}" />
+    <Setter Property="FontSize" Value="14" />
+    <Setter Property="LineHeight" Value="20" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="Foreground" Value="{ThemeResource RhTextBrush}" />
+    <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+    <Setter Property="TextWrapping" Value="NoWrap" />
+    <Setter Property="Typography.NumeralAlignment" Value="Tabular" />
+  </Style>
+  <Style x:Key="RhCommandTextStyle" TargetType="TextBlock">
+    <Setter Property="FontFamily" Value="{StaticResource RhMonoFontFamily}" />
+    <Setter Property="FontSize" Value="13" />
+    <Setter Property="LineHeight" Value="18" />
+    <Setter Property="Foreground" Value="{ThemeResource RhTextBrush}" />
+    <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+    <Setter Property="TextWrapping" Value="NoWrap" />
+  </Style>
+  <Style x:Key="RhSessionIdTextStyle" TargetType="TextBlock">
+    <Setter Property="FontFamily" Value="{StaticResource RhMonoFontFamily}" />
+    <Setter Property="FontSize" Value="12" />
+    <Setter Property="Foreground" Value="{ThemeResource RhTextBrush}" />
+  </Style>
+  <Style x:Key="RhRowIdTextStyle" TargetType="TextBlock">
+    <Setter Property="FontFamily" Value="{StaticResource RhMonoFontFamily}" />
+    <Setter Property="FontSize" Value="11" />
+    <Setter Property="Foreground" Value="{ThemeResource RhTextSecondaryBrush}" />
+  </Style>
+  <Style x:Key="RhInitialsTextStyle" TargetType="TextBlock">
+    <Setter Property="FontFamily" Value="{StaticResource RhMonoFontFamily}" />
+    <Setter Property="FontSize" Value="9" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="Foreground" Value="{ThemeResource RhTextBrush}" />
+  </Style>
+  <Style x:Key="RhIconRegularTextStyle" TargetType="TextBlock">
+    <Setter Property="FontFamily" Value="{StaticResource RhIconRegularFontFamily}" />
+    <Setter Property="FontSize" Value="{StaticResource RhIconSize}" />
+    <Setter Property="Foreground" Value="{ThemeResource RhTextBrush}" />
+  </Style>
+  <Style x:Key="RhIconFilledTextStyle" TargetType="TextBlock" BasedOn="{StaticResource RhIconRegularTextStyle}">
+    <Setter Property="FontFamily" Value="{StaticResource RhIconFilledFontFamily}" />
+  </Style>
+</ResourceDictionary>

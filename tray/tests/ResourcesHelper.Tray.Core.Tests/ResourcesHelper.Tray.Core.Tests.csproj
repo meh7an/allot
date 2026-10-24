@@ -23,4 +23,9 @@
     <None Include="..\..\..\contract\fixtures\*.json" LinkBase="Fixtures" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
+  <!-- The app's design tokens, checked against the handoff values by TokenResourceTests. -->
+  <ItemGroup>
+    <None Include="..\..\src\ResourcesHelper.Tray\Themes\Tokens.xaml" Link="Themes\Tokens.xaml" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>
