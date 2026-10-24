@@ -1,5 +1,6 @@
 using ResourcesHelper.Tray.Core.Contract;
 using ResourcesHelper.Tray.Core.Daemon;
+using ResourcesHelper.Tray.Core.Settings;
 using ResourcesHelper.Tray.Core.ViewModels;
 
 namespace ResourcesHelper.Tray.Core.Samples;
@@ -60,15 +61,21 @@ public static class Handoff
 
     private static readonly string[] Several = ["cargo", "py"];
 
+    // The prototype's sparkline noise (NOISE), added to the CPU load second by second.
+    private static readonly int[] Noise =
+        [0, 3, -2, 4, 7, 2, -1, -4, 1, 5, 8, 4, 0, -3, -6, -2, 2, 6, 3, -1, -3, 1, 0, -2];
+
+    private const ulong Mib = 1024 * 1024;
+
     /// <summary>
     /// The scenarios the tray app can show, in the state board's order.
     /// </summary>
     public static IReadOnlyList<string> ScenarioNames { get; } =
     [
         "empty", "one", "several", "kill-confirm", "killed", "bench-drain", "bench-quiet",
-        "bench-run", "bench-done", "bench-noisy", "bench-forced", "down", "max", "icons",
-        "c-active", "c-over", "c-queued", "c-bench", "c-confirm", "c-killed", "c-removed",
-        "c-refused",
+        "bench-run", "bench-done", "bench-noisy", "bench-forced", "down", "res-collapsed",
+        "res-expanded", "max", "icons", "c-active", "c-over", "c-queued", "c-bench", "c-confirm",
+        "c-killed", "c-removed", "c-refused",
     ];
 
     /// <summary>
@@ -87,10 +94,126 @@ public static class Handoff
     public static string SessionOf(string job) => FullSession(Jobs[job].Session);
 
     /// <summary>
-    /// The service status and state of a scenario in <see cref="ScenarioNames"/>; the <c>c-</c>
-    /// component scenarios are their jobs alone, without the idle session.
+    /// The service status and state of a scenario in <see cref="ScenarioNames"/>, with its meter
+    /// set (<c>METERS</c>); the <c>c-</c> component scenarios are their jobs alone, without the
+    /// idle session.
     /// </summary>
-    public static (ServiceStatus Status, UiState State) Scenario(string name) => name switch
+    public static (ServiceStatus Status, UiState State) Scenario(string name)
+    {
+        var (status, state) = JobsOf(name);
+        var drives = name is "max" or "icons" ? 3 : 2;
+        return (status, state with { Meters = MeterSet(MeterSetOf(name), drives) });
+    }
+
+    /// <summary>
+    /// How a scenario sets the Resources card (<c>resOpen</c> and <c>mv</c>), or <c>null</c> for
+    /// one that leaves the card as the user set it.
+    /// </summary>
+    public static ResourcesPreset? Preset(string name) => name switch
+    {
+        "one" or "bench-run" or "max" => new ResourcesPreset(true, null),
+        "res-collapsed" => new ResourcesPreset(false, null),
+        "res-expanded" => new ResourcesPreset(
+            true,
+            new MeterToggles { Vram = false, DriveActivity = false }),
+        _ => null,
+    };
+
+    /// <summary>
+    /// A meter set of the prototype: <c>idle</c>, <c>one</c>, <c>busy</c>, <c>bench</c> or
+    /// <c>max</c> (two adapters), with the first <paramref name="drives"/> of its three drives.
+    /// Reservations sit on the first adapter only, as rhd reports them.
+    /// </summary>
+    public static Meters MeterSet(string name, int drives = 2)
+    {
+        var (cpu, cores, ramGb, ramReserved, gpus) = name switch
+        {
+            "idle" => (6f, 0f, 14.1, 0ul, new[] { Gpu(Rtx, 2, 1.1, 12) }),
+            "one" => (52f, 8f, 18.2, 4096ul, [Gpu(Rtx, 3, 1.2, 12)]),
+            "busy" => (64f, 10f, 22.4, 8192ul, [Gpu(Rtx, 78, 5.1, 12, 80, 4096)]),
+            "bench" => (97f, 16f, 9.6, 8192ul, [Gpu(Rtx, 1, 1.1, 12)]),
+            "max" => (88f, 13f, 25.9, 12288ul,
+                [Gpu(Rtx, 78, 5.1, 12, 80, 4096), Gpu(Arc, 34, 2.4, 6)]),
+            _ => throw new ArgumentException($"unknown meter set {name}", nameof(name)),
+        };
+        return new Meters
+        {
+            Cpu = new CpuMeter
+            {
+                HistoryPct = Noise.Select(offset => Math.Clamp(cpu + offset, 1f, 99f)).ToList(),
+                LogicalCores = 16,
+                ReservedCores = cores,
+                UsagePct = cpu,
+            },
+            Drives = Drives().Take(drives).ToList(),
+            Gpus = gpus,
+            HeadroomPct = 15,
+            Ram = new RamMeter
+            {
+                ReservedMb = ramReserved,
+                TotalMb = 32768,
+                UsedMb = Megabytes(ramGb),
+            },
+        };
+    }
+
+    private const string Rtx = "NVIDIA GeForce RTX 4070";
+
+    private const string Arc = "Intel(R) Arc(TM) A380 Graphics";
+
+    private static string MeterSetOf(string name) => name switch
+    {
+        "empty" or "bench-quiet" or "bench-done" or "bench-noisy" => "idle",
+        "one" or "bench-drain" or "res-expanded" => "one",
+        "bench-run" or "bench-forced" => "bench",
+        "max" or "icons" => "max",
+        _ => "busy",
+    };
+
+    private static GpuMeter Gpu(
+        string name,
+        float busiest,
+        double vramGb,
+        ulong totalGb,
+        float reservedPct = 0,
+        ulong reservedVramMb = 0) =>
+        new()
+        {
+            BusiestPct = busiest,
+            Name = name,
+            ReservedPct = reservedPct,
+            ReservedVramMb = reservedVramMb,
+            VramTotalMb = totalGb * 1024,
+            VramUsedMb = Megabytes(vramGb),
+        };
+
+    // C: 612 / 953 GB reading 42 and writing 8 MB/s, D: 1.21 / 1.82 TB idle, E: 0.4 / 1.82 TB
+    // writing 120 MB/s.
+    private static DriveUsage[] Drives() =>
+    [
+        Drive("C:", 612 * 1024, 953 * 1024, 42 * Mib, 8 * Mib),
+        Drive("D:", 1_268_777, 1_908_408, 0, 0),
+        Drive("E:", 419_430, 1_908_408, 0, 120 * Mib),
+    ];
+
+    private static DriveUsage Drive(
+        string name,
+        ulong usedMb,
+        ulong totalMb,
+        ulong read,
+        ulong write) =>
+        new()
+        {
+            Name = name,
+            ReadBytesPerSec = read,
+            TotalMb = totalMb,
+            UsedMb = usedMb,
+            WriteBytesPerSec = write,
+        };
+
+    private static ulong Megabytes(double gigabytes) => (ulong)Math.Round(gigabytes * 1024);
+
+    private static (ServiceStatus Status, UiState State) JobsOf(string name) => name switch
     {
         "empty" => (ServiceStatus.Running, State(recent: true)),
         "one" or "c-active" or "c-confirm" or "c-killed" or RefusedScenario =>
@@ -106,6 +229,8 @@ public static class Handoff
         "bench-noisy" => (ServiceStatus.Running, State(wait: ["npmB"], bench: "noisy")),
         "bench-forced" => (ServiceStatus.Running, State(wait: ["npmB"], bench: "forced")),
         "down" => (ServiceStatus.Stopped, State(run: ["cargo"])),
+        "res-collapsed" => (ServiceStatus.Running, State(run: ["cargo"], wait: ["npm"])),
+        "res-expanded" => (ServiceStatus.Running, State(run: ["cargo"])),
         "max" => (ServiceStatus.Running, MaxState(exes: false)),
         "icons" => (ServiceStatus.Running, MaxState(exes: true)),
         "c-over" => (ServiceStatus.Running, State(run: ["py"])),
@@ -421,3 +546,10 @@ public static class Handoff
         long Waited = 0,
         ulong? WaitLeft = null);
 }
+
+/// <summary>
+/// How a Debug scenario sets the Resources card.
+/// </summary>
+/// <param name="Expanded">The card shows its rows.</param>
+/// <param name="Meters">The meter toggles, or <c>null</c> to keep the user's.</param>
+public sealed record ResourcesPreset(bool Expanded, MeterToggles? Meters);

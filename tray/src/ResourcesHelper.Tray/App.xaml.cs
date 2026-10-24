@@ -7,6 +7,7 @@ using Microsoft.Windows.AppLifecycle;
 using ResourcesHelper.Tray.Core.Contract;
 using ResourcesHelper.Tray.Core.Daemon;
 using ResourcesHelper.Tray.Core.Logging;
+using ResourcesHelper.Tray.Core.Settings;
 using ResourcesHelper.Tray.Core.TrayIcon;
 using ResourcesHelper.Tray.Core.ViewModels;
 using ResourcesHelper.Tray.Flyout;
@@ -46,7 +47,10 @@ public sealed partial class App : Application
     private DaemonClient? _client;
     private DaemonPoller? _poller;
     private FlyoutWindow? _flyout;
+    private FlyoutShell? _shell;
     private TrayController? _tray;
+    private SettingsStore? _settingsStore;
+    private TraySettings _settings = new();
 
     public App()
     {
@@ -87,6 +91,10 @@ public sealed partial class App : Application
             Toasts.Register(_dispatcher, OnToastAction);
         }
 
+        _settingsStore = new SettingsStore(SettingsFile(_data));
+        _settings = _settingsStore.Load();
+        _model.ApplyMenu(_settings);
+
         _client = DaemonClient.ForInstall(_data);
         _stopper = _client;
         _poller = new DaemonPoller(_client, new ServiceLauncher(_data), TimeProvider.System);
@@ -106,6 +114,13 @@ public sealed partial class App : Application
             }
         };
         var shell = new FlyoutShell(_flyout, _model, OpenLogs);
+        _shell = shell;
+        shell.ShowToggles(_settings);
+        shell.ResourcesToggled += () => ChangeSettings(settings =>
+            settings.ResourcesExpanded = !settings.ResourcesExpanded);
+        shell.MetersChanged += meters => ChangeSettings(settings => settings.Meters = meters);
+        shell.NotificationsChanged += notifications =>
+            ChangeSettings(settings => settings.Notifications = notifications);
         shell.KillPressed += OnKillPressed;
         shell.RemovePressed += OnRemovePressed;
         shell.ConfirmCancelled += lease =>
@@ -199,8 +214,48 @@ public sealed partial class App : Application
 #endif
         var snapshot = FlyoutSnapshot.From(_status, state, stops, _clock.NowMs);
         _model.Apply(snapshot);
+        _model.Resources.Apply(ResourcesView.From(
+            _status,
+            state,
+            _settings.Meters,
+            _settings.ResourcesExpanded));
         ScheduleStops();
         return snapshot;
+    }
+
+    private void ChangeSettings(Action<TraySettings> change)
+    {
+        change(_settings);
+        _model.ApplyMenu(_settings);
+        SaveSettings();
+        _ = Show();
+    }
+
+    // Settings are a convenience: a failed write is logged, and the flyout keeps the change for
+    // this run.
+    private void SaveSettings()
+    {
+        try
+        {
+            _settingsStore?.Save(_settings);
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        {
+            AppLog.Write($"saving settings failed: {error.Message}");
+        }
+    }
+
+    // A Debug scenario keeps its own settings, so trying toggles there leaves the real tray
+    // app's tray.json alone.
+    private static string SettingsFile(DataDirectory data)
+    {
+#if DEBUG
+        if (DebugScenario.Name is not null)
+        {
+            return Path.Combine(data.Root, "tray-scenario.json");
+        }
+#endif
+        return data.SettingsFile;
     }
 
     private void ScheduleStops()
@@ -301,6 +356,15 @@ public sealed partial class App : Application
         AppLog.Write($"showing scenario {name}");
         _scenario = name;
         _scenarioStops = Core.Samples.Handoff.Stops(name);
+        if (Core.Samples.Handoff.Preset(name) is { } preset)
+        {
+            _settings.ResourcesExpanded = preset.Expanded;
+            _settings.Meters = preset.Meters ?? _settings.Meters;
+            _model.ApplyMenu(_settings);
+            _shell?.ShowToggles(_settings);
+            SaveSettings();
+        }
+
         var (status, state) = Core.Samples.Handoff.Scenario(name);
         Apply(status, status == ServiceStatus.Running ? state : null, state);
     }

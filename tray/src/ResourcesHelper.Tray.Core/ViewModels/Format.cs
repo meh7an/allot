@@ -147,7 +147,10 @@ public static class Format
         return new string(letters).ToUpperInvariant();
     }
 
-    // Whole gigabytes without decimals, others with one: 4 GB, 1.5 GB.
-    private static string Size(ulong megabytes) =>
+    /// <summary>
+    /// Megabytes as gigabytes, whole ones without decimals and others with one: <c>4</c>,
+    /// <c>1.5</c>.
+    /// </summary>
+    public static string Size(ulong megabytes) =>
         (megabytes / 1024.0).ToString("0.#", CultureInfo.InvariantCulture);
 }

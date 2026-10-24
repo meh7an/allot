@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  A meter's 6 px bullet bar (handoff section 5): a track whose last part is hatched headroom
+  that leases can't take, the used fill in accent from the left, and the reserved tick, a 2 x 14
+  ink mark ringed in the surface colour. The tick sits in a canvas so it can reach above and
+  below the bar.
+-->
+<UserControl
+  x:Class="ResourcesHelper.Tray.Flyout.BulletBar"
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  Height="6"
+  VerticalAlignment="Center"
+  IsTabStop="False">
+  <Grid>
+    <Grid x:Name="Bar" Background="{ThemeResource RhTrackBrush}">
+      <Grid
+        x:Name="Hatch"
+        HorizontalAlignment="Right"
+        Background="{ThemeResource RhHatchWeakBrush}">
+        <Path x:Name="Stripes" Stroke="{ThemeResource RhHatchStrongBrush}" StrokeThickness="1.5" />
+      </Grid>
+      <Border
+        x:Name="Fill"
+        Width="0"
+        HorizontalAlignment="Left"
+        Background="{ThemeResource RhAccentBrush}"
+        CornerRadius="2" />
+    </Grid>
+    <Canvas>
+      <Border
+        x:Name="Tick"
+        Canvas.Top="-5"
+        Width="4"
+        Height="16"
+        Background="{ThemeResource RhMarkerBrush}"
+        BorderBrush="{ThemeResource RhMarkerRingBrush}"
+        BorderThickness="1"
+        CornerRadius="2"
+        Visibility="Collapsed" />
+    </Canvas>
+  </Grid>
+</UserControl>

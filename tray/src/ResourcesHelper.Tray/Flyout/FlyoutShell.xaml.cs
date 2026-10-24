@@ -4,10 +4,12 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Automation.Peers;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Animation;
 
+using ResourcesHelper.Tray.Core.Settings;
 using ResourcesHelper.Tray.Core.ViewModels;
 
 using Windows.Foundation;
@@ -40,6 +42,16 @@ public sealed partial class FlyoutShell : UserControl, IFlyoutContent
     private bool _pinShown;
     private double _reportedHeight;
 
+    // A check item was toggled, so the menu's coming close is cancelled; set while the item's
+    // click runs, and cleared after it.
+    private bool _keepMenuOpen;
+
+    // Check items are being set from the settings, not by a click.
+    private bool _showingToggles;
+
+    // The Resources card's running expand or collapse, if any.
+    private Storyboard? _resourcesStoryboard;
+
     public FlyoutShell(FlyoutWindow window, FlyoutModel model, Action openLogs)
     {
         _window = window;
@@ -56,6 +68,28 @@ public sealed partial class FlyoutShell : UserControl, IFlyoutContent
         UpdateGaps();
         model.Rows.CollectionChanged += OnRowsChanged;
         _window.ModesChanged += SyncToggles;
+
+        foreach (var item in CheckItems())
+        {
+            _ = item.RegisterPropertyChangedCallback(
+                ToggleMenuFlyoutItem.IsCheckedProperty,
+                OnCheckItemToggled);
+        }
+
+        ResourcesRows.Visibility =
+            model.Resources.Expanded ? Visibility.Visible : Visibility.Collapsed;
+        model.Resources.PropertyChanged += (_, args) =>
+        {
+            if (args.PropertyName == nameof(ResourcesModel.Expanded))
+            {
+                ShowResourcesRows(Model.Resources.Expanded);
+            }
+        };
+
+        // A collapsed card raises no SizeChanged, so its visibility reports the height too.
+        _ = ResourcesCard.RegisterPropertyChangedCallback(
+            VisibilityProperty,
+            (_, _) => DispatcherQueue.TryEnqueue(ReportHeight));
     }
 
     public event Action? DesiredHeightChanged;
@@ -75,9 +109,43 @@ public sealed partial class FlyoutShell : UserControl, IFlyoutContent
     /// </summary>
     public event Action<long>? ConfirmCancelled;
 
+    /// <summary>
+    /// A press of the Resources card's chevron.
+    /// </summary>
+    public event Action? ResourcesToggled;
+
+    /// <summary>
+    /// A ⋯ › Meters item was toggled; carries every meter item's state.
+    /// </summary>
+    public event Action<MeterToggles>? MetersChanged;
+
+    /// <summary>
+    /// A ⋯ › Notifications item was toggled; carries every notification item's state.
+    /// </summary>
+    public event Action<NotificationToggles>? NotificationsChanged;
+
     public FlyoutModel Model { get; }
 
-    public double DesiredHeight => EdgeHeight + Header.ActualHeight + RowsPanel.ActualHeight;
+    public double DesiredHeight =>
+        EdgeHeight + Header.ActualHeight + RowsPanel.ActualHeight + ResourcesHeight;
+
+    // The docked card with its margin, or nothing while it is hidden.
+    private double ResourcesHeight =>
+        ResourcesCard.Visibility == Visibility.Visible
+            ? ResourcesCard.ActualHeight + ResourcesCard.Margin.Top + ResourcesCard.Margin.Bottom
+            : 0;
+
+    public static string ResourcesToggleName(bool expanded) =>
+        expanded ? "Collapse resources" : "Expand resources";
+
+    /// <summary>
+    /// A drive bar's fill as a star column; <see cref="RestShare"/> is the track after it.
+    /// </summary>
+    public static GridLength Share(double fraction) =>
+        new(Math.Clamp(fraction, 0, 1), GridUnitType.Star);
+
+    public static GridLength RestShare(double fraction) =>
+        new(1 - Math.Clamp(fraction, 0, 1), GridUnitType.Star);
 
     public static Visibility Shows(HeaderGlyph glyph, string name) =>
         glyph.ToString() == name ? Visibility.Visible : Visibility.Collapsed;
@@ -124,6 +192,30 @@ public sealed partial class FlyoutShell : UserControl, IFlyoutContent
     {
         Control first = _pinShown ? PinButton : StayOpenButton;
         _ = first.Focus(FocusState.Programmatic);
+    }
+
+    /// <summary>
+    /// Sets the ⋯ menu's check items from the settings; Drive activity is disabled while Drives
+    /// is off.
+    /// </summary>
+    public void ShowToggles(TraySettings settings)
+    {
+        _showingToggles = true;
+        var meters = settings.Meters;
+        CpuItem.IsChecked = meters.Cpu;
+        RamItem.IsChecked = meters.Ram;
+        GpuItem.IsChecked = meters.Gpu;
+        VramItem.IsChecked = meters.Vram;
+        DrivesItem.IsChecked = meters.Drives;
+        DriveActivityItem.IsChecked = meters.DriveActivity;
+        DriveActivityItem.IsEnabled = meters.Drives;
+        var notifications = settings.Notifications;
+        ServiceStoppedItem.IsChecked = notifications.ServiceStopped;
+        RunningLongItem.IsChecked = notifications.RunningLong;
+        BenchmarkFinishedItem.IsChecked = notifications.BenchmarkFinished;
+        JobFinishedItem.IsChecked = notifications.JobFinished;
+        KilledOutsideItem.IsChecked = notifications.KilledOutsideFlyout;
+        _showingToggles = false;
     }
 
 #if DEBUG
@@ -179,6 +271,74 @@ public sealed partial class FlyoutShell : UserControl, IFlyoutContent
 
     private bool Animate => _window.Behavior.IsOpen && IsLoaded;
 
+    /// <summary>
+    /// Expands or collapses the Resources card's rows over 240 ms, height and opacity together
+    /// as cards enter and leave; with reduced motion they only fade. The summary, which the model
+    /// fills as soon as the card collapses, fades in while the rows slide away. A toggle during
+    /// the animation turns around from where it is.
+    /// </summary>
+    private void ShowResourcesRows(bool expanded)
+    {
+        var height = ResourcesRows.ActualHeight;
+        var opacity = ResourcesRows.Opacity;
+        _resourcesStoryboard?.Stop();
+        _resourcesStoryboard = null;
+        ResourcesRows.ClearValue(HeightProperty);
+        ResourcesSummary.Opacity = 1;
+
+        if (!Animate || ResourcesCard.Visibility != Visibility.Visible)
+        {
+            ResourcesRows.Opacity = 1;
+            ResourcesRows.Visibility = expanded ? Visibility.Visible : Visibility.Collapsed;
+            return;
+        }
+
+        var wasShown = ResourcesRows.Visibility == Visibility.Visible;
+        ResourcesRows.Visibility = Visibility.Visible;
+        ResourcesRows.Opacity = wasShown ? opacity : 0;
+        var storyboard = new Storyboard();
+        storyboard.Children.Add(FadeTo(ResourcesRows, expanded ? 1 : 0, RowDuration));
+        if (_window.AnimationsEnabled)
+        {
+            var target = 0.0;
+            if (expanded)
+            {
+                ResourcesRows.Measure(new Size(
+                    ResourcesCard.ActualWidth - ResourcesCard.BorderThickness.Left
+                        - ResourcesCard.BorderThickness.Right,
+                    double.PositiveInfinity));
+                target = ResourcesRows.DesiredSize.Height;
+            }
+
+            ResourcesRows.Height = wasShown ? height : 0;
+            storyboard.Children.Add(
+                SplineTo(ResourcesRows, nameof(Height), target, RowDuration, RowCurve()));
+        }
+
+        if (!expanded)
+        {
+            ResourcesSummary.Opacity = 0;
+            storyboard.Children.Add(FadeTo(ResourcesSummary, 1, RowDuration));
+        }
+
+        storyboard.Completed += (_, _) =>
+        {
+            if (_resourcesStoryboard != storyboard)
+            {
+                return;
+            }
+
+            storyboard.Stop();
+            _resourcesStoryboard = null;
+            ResourcesRows.ClearValue(HeightProperty);
+            ResourcesRows.Opacity = 1;
+            ResourcesRows.Visibility = expanded ? Visibility.Visible : Visibility.Collapsed;
+            ResourcesSummary.Opacity = 1;
+        };
+        _resourcesStoryboard = storyboard;
+        storyboard.Begin();
+    }
+
     private void OnStayOpenClick(object sender, RoutedEventArgs e) =>
         _window.SetStayOpen(StayOpenButton.IsChecked == true);
 
@@ -198,6 +358,81 @@ public sealed partial class FlyoutShell : UserControl, IFlyoutContent
     }
 
     private void OnOpenLogsClick(object sender, RoutedEventArgs e) => _openLogs();
+
+    private IEnumerable<ToggleMenuFlyoutItem> CheckItems() =>
+    [
+        CpuItem, RamItem, GpuItem, VramItem, DrivesItem, DriveActivityItem,
+        ServiceStoppedItem, RunningLongItem, BenchmarkFinishedItem, JobFinishedItem,
+        KilledOutsideItem,
+    ];
+
+    // A check item flips before its click closes the menu, so the close that follows is the
+    // toggle's: the handoff keeps the menu open. The flag clears once the click is done, so a
+    // later dismissal still closes it.
+    private void OnCheckItemToggled(DependencyObject sender, DependencyProperty property)
+    {
+        if (_showingToggles)
+        {
+            return;
+        }
+
+        _keepMenuOpen = true;
+        _ = DispatcherQueue.TryEnqueue(
+            Microsoft.UI.Dispatching.DispatcherQueuePriority.Low,
+            () => _keepMenuOpen = false);
+    }
+
+    private void OnMenuClosing(FlyoutBase sender, FlyoutBaseClosingEventArgs args)
+    {
+        if (_keepMenuOpen)
+        {
+            args.Cancel = true;
+            _keepMenuOpen = false;
+        }
+    }
+
+    private void OnMeterClick(object sender, RoutedEventArgs e)
+    {
+        DriveActivityItem.IsEnabled = DrivesItem.IsChecked;
+        MetersChanged?.Invoke(new MeterToggles
+        {
+            Cpu = CpuItem.IsChecked,
+            Ram = RamItem.IsChecked,
+            Gpu = GpuItem.IsChecked,
+            Vram = VramItem.IsChecked,
+            Drives = DrivesItem.IsChecked,
+            DriveActivity = DriveActivityItem.IsChecked,
+        });
+    }
+
+    private void OnNotificationClick(object sender, RoutedEventArgs e) =>
+        NotificationsChanged?.Invoke(new NotificationToggles
+        {
+            ServiceStopped = ServiceStoppedItem.IsChecked,
+            RunningLong = RunningLongItem.IsChecked,
+            BenchmarkFinished = BenchmarkFinishedItem.IsChecked,
+            JobFinished = JobFinishedItem.IsChecked,
+            KilledOutsideFlyout = KilledOutsideItem.IsChecked,
+        });
+
+    private void OnResourcesToggleClick(object sender, RoutedEventArgs e) =>
+        ResourcesToggled?.Invoke();
+
+    // A tap on the chevron is its Click's; anywhere else in the header toggles the card too.
+    private void OnResourcesHeaderTapped(object sender, TappedRoutedEventArgs e)
+    {
+        for (var element = e.OriginalSource as DependencyObject;
+            element is not null;
+            element = VisualTreeHelper.GetParent(element))
+        {
+            if (element == ResourcesToggle)
+            {
+                return;
+            }
+        }
+
+        ResourcesToggled?.Invoke();
+    }
 
     private static JobCardRow? RowOf(object sender) =>
         (sender as FrameworkElement)?.DataContext as JobCardRow;
@@ -306,6 +541,8 @@ public sealed partial class FlyoutShell : UserControl, IFlyoutContent
     }
 
     private void OnRowsSizeChanged(object sender, SizeChangedEventArgs e) => ReportHeight();
+
+    private void OnResourcesSizeChanged(object sender, SizeChangedEventArgs e) => ReportHeight();
 
     // Pin slides out of a wrapper that clips it, so the summary truncates as the space shrinks.
     private void OnPinWrapperSizeChanged(object sender, SizeChangedEventArgs e) =>

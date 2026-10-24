@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  The production flyout (handoff sections 1, 2 and 4): a fixed header and a scrolling body of
-  rows (job cards, the idle line, Recently finished), with the Resources card docked below the
-  body.
+  The production flyout (handoff sections 1 to 5): a fixed header with the More options menu, a
+  scrolling body of rows (job cards, the idle line, Recently finished), and the Resources card
+  docked below the body.
 -->
 <UserControl
   x:Class="ResourcesHelper.Tray.Flyout.FlyoutShell"
@@ -472,6 +472,234 @@
         </StackPanel>
       </DataTemplate>
 
+      <!--
+        A copy of WinUI's DefaultMenuFlyoutSubItemStyle with a trailing count before the chevron
+        (Meters 4 of 5), taken from the item's Tag.
+      -->
+      <Style x:Key="RhCountedSubItemStyle" TargetType="MenuFlyoutSubItem">
+        <Setter Property="Background" Value="{ThemeResource MenuFlyoutSubItemBackground}" />
+        <Setter Property="BorderBrush" Value="{ThemeResource MenuFlyoutSubItemBackgroundBrush}" />
+        <Setter Property="BorderThickness" Value="{ThemeResource MenuFlyoutSubItemBorderThickness}" />
+        <Setter Property="Foreground" Value="{ThemeResource MenuFlyoutSubItemForeground}" />
+        <Setter Property="Padding" Value="{StaticResource MenuFlyoutItemThemePadding}" />
+        <Setter Property="FontSize" Value="{ThemeResource ControlContentThemeFontSize}" />
+        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+        <Setter Property="UseSystemFocusVisuals" Value="{StaticResource UseSystemFocusVisuals}" />
+        <Setter Property="CornerRadius" Value="{ThemeResource ControlCornerRadius}" />
+        <Setter Property="Template">
+          <Setter.Value>
+            <ControlTemplate TargetType="MenuFlyoutSubItem">
+              <Grid
+                x:Name="LayoutRoot"
+                Margin="{StaticResource MenuFlyoutItemMargin}"
+                Padding="{TemplateBinding Padding}"
+                Background="{TemplateBinding Background}"
+                BorderBrush="{TemplateBinding BorderBrush}"
+                BorderThickness="{TemplateBinding BorderThickness}"
+                CornerRadius="{TemplateBinding CornerRadius}">
+                <VisualStateManager.VisualStateGroups>
+                  <VisualStateGroup x:Name="CommonStates">
+                    <VisualState x:Name="Normal" />
+                    <VisualState x:Name="PointerOver">
+                      <VisualState.Setters>
+                        <Setter Target="LayoutRoot.Background" Value="{ThemeResource MenuFlyoutSubItemBackgroundPointerOver}" />
+                        <Setter Target="TextBlock.Foreground" Value="{ThemeResource MenuFlyoutSubItemForegroundPointerOver}" />
+                        <Setter Target="SubItemChevron.Foreground" Value="{ThemeResource MenuFlyoutSubItemChevronPointerOver}" />
+                        <Setter Target="IconContent.Foreground" Value="{ThemeResource MenuFlyoutSubItemForegroundPointerOver}" />
+                      </VisualState.Setters>
+                    </VisualState>
+                    <VisualState x:Name="Pressed">
+                      <VisualState.Setters>
+                        <Setter Target="LayoutRoot.Background" Value="{ThemeResource MenuFlyoutSubItemBackgroundPressed}" />
+                        <Setter Target="TextBlock.Foreground" Value="{ThemeResource MenuFlyoutSubItemForegroundPressed}" />
+                        <Setter Target="SubItemChevron.Foreground" Value="{ThemeResource MenuFlyoutSubItemChevronPressed}" />
+                        <Setter Target="IconContent.Foreground" Value="{ThemeResource MenuFlyoutSubItemForegroundPressed}" />
+                      </VisualState.Setters>
+                    </VisualState>
+                    <VisualState x:Name="SubMenuOpened">
+                      <VisualState.Setters>
+                        <Setter Target="LayoutRoot.Background" Value="{ThemeResource MenuFlyoutSubItemBackgroundSubMenuOpened}" />
+                        <Setter Target="TextBlock.Foreground" Value="{ThemeResource MenuFlyoutSubItemForegroundSubMenuOpened}" />
+                        <Setter Target="SubItemChevron.Foreground" Value="{ThemeResource MenuFlyoutSubItemChevronSubMenuOpened}" />
+                        <Setter Target="IconContent.Foreground" Value="{ThemeResource MenuFlyoutSubItemForegroundSubMenuOpened}" />
+                      </VisualState.Setters>
+                    </VisualState>
+                    <VisualState x:Name="Disabled">
+                      <VisualState.Setters>
+                        <Setter Target="LayoutRoot.Background" Value="{ThemeResource MenuFlyoutSubItemBackgroundDisabled}" />
+                        <Setter Target="TextBlock.Foreground" Value="{ThemeResource MenuFlyoutSubItemForegroundDisabled}" />
+                        <Setter Target="SubItemChevron.Foreground" Value="{ThemeResource MenuFlyoutSubItemChevronDisabled}" />
+                        <Setter Target="IconContent.Foreground" Value="{ThemeResource MenuFlyoutSubItemForegroundDisabled}" />
+                      </VisualState.Setters>
+                    </VisualState>
+                  </VisualStateGroup>
+                  <VisualStateGroup x:Name="CheckPlaceholderStates">
+                    <VisualState x:Name="NoPlaceholder" />
+                    <VisualState x:Name="CheckPlaceholder">
+                      <VisualState.Setters>
+                        <Setter Target="TextBlock.Margin" Value="{ThemeResource MenuFlyoutItemPlaceholderThemeThickness}" />
+                      </VisualState.Setters>
+                    </VisualState>
+                    <VisualState x:Name="IconPlaceholder">
+                      <VisualState.Setters>
+                        <Setter Target="TextBlock.Margin" Value="{ThemeResource MenuFlyoutItemPlaceholderThemeThickness}" />
+                        <Setter Target="IconRoot.Visibility" Value="Visible" />
+                      </VisualState.Setters>
+                    </VisualState>
+                    <VisualState x:Name="CheckAndIconPlaceholder">
+                      <VisualState.Setters>
+                        <Setter Target="TextBlock.Margin" Value="{ThemeResource MenuFlyoutItemDoublePlaceholderThemeThickness}" />
+                        <Setter Target="IconRoot.Margin" Value="{ThemeResource MenuFlyoutItemPlaceholderThemeThickness}" />
+                        <Setter Target="IconRoot.Visibility" Value="Visible" />
+                      </VisualState.Setters>
+                    </VisualState>
+                  </VisualStateGroup>
+                  <VisualStateGroup x:Name="PaddingSizeStates">
+                    <VisualState x:Name="DefaultPadding" />
+                    <VisualState x:Name="NarrowPadding">
+                      <Storyboard>
+                        <ObjectAnimationUsingKeyFrames Storyboard.TargetName="LayoutRoot" Storyboard.TargetProperty="Padding">
+                          <DiscreteObjectKeyFrame KeyTime="0" Value="{StaticResource MenuFlyoutItemThemePaddingNarrow}" />
+                        </ObjectAnimationUsingKeyFrames>
+                      </Storyboard>
+                    </VisualState>
+                  </VisualStateGroup>
+                </VisualStateManager.VisualStateGroups>
+
+                <Grid>
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                  </Grid.ColumnDefinitions>
+                  <Viewbox
+                    x:Name="IconRoot"
+                    Width="16"
+                    Height="16"
+                    HorizontalAlignment="Left"
+                    VerticalAlignment="Center"
+                    Visibility="Collapsed">
+                    <ContentPresenter x:Name="IconContent" Content="{TemplateBinding Icon}" Foreground="{TemplateBinding Foreground}" />
+                  </Viewbox>
+                  <TextBlock
+                    x:Name="TextBlock"
+                    HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                    VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
+                    Foreground="{TemplateBinding Foreground}"
+                    Text="{TemplateBinding Text}"
+                    TextTrimming="{ThemeResource MenuFlyoutItemTextTrimming}" />
+                  <TextBlock
+                    Grid.Column="1"
+                    Margin="12,0,0,0"
+                    VerticalAlignment="Center"
+                    Style="{StaticResource RhBodyTextStyle}"
+                    Foreground="{ThemeResource RhTextSecondaryBrush}"
+                    Text="{Binding Tag, RelativeSource={RelativeSource TemplatedParent}}"
+                    AutomationProperties.AccessibilityView="Raw" />
+                  <FontIcon
+                    x:Name="SubItemChevron"
+                    Grid.Column="2"
+                    Margin="8,0,0,0"
+                    AutomationProperties.AccessibilityView="Raw"
+                    FontFamily="{ThemeResource SymbolThemeFontFamily}"
+                    FontSize="12"
+                    Foreground="{ThemeResource MenuFlyoutSubItemChevron}"
+                    Glyph="&#xE974;"
+                    MirroredWhenRightToLeft="True" />
+                </Grid>
+              </Grid>
+            </ControlTemplate>
+          </Setter.Value>
+        </Setter>
+      </Style>
+
+      <DataTemplate x:Key="MeterRowTemplate" x:DataType="vm:MeterRowModel">
+        <Grid MinHeight="28" Padding="12,0,12,0" ColumnSpacing="8">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="48" />
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="108" />
+          </Grid.ColumnDefinitions>
+          <TextBlock
+            VerticalAlignment="Center"
+            Style="{StaticResource RhBodyTextStyle}"
+            FontWeight="SemiBold"
+            Text="{x:Bind Label, Mode=OneWay}" />
+          <!-- The tooltip covers the row's height, as the 6 px bar alone is hard to hover. -->
+          <Grid
+            Grid.Column="1"
+            Background="Transparent"
+            ToolTipService.ToolTip="{x:Bind Tooltip, Mode=OneWay}">
+            <local:BulletBar
+              Used="{x:Bind Used, Mode=OneWay}"
+              Reserved="{x:Bind Reserved, Mode=OneWay}"
+              HasReserved="{x:Bind HasReserved, Mode=OneWay}"
+              Headroom="{x:Bind Headroom, Mode=OneWay}" />
+          </Grid>
+          <StackPanel
+            Grid.Column="2"
+            HorizontalAlignment="Right"
+            VerticalAlignment="Center"
+            Orientation="Horizontal"
+            Spacing="6">
+            <local:Sparkline
+              VerticalAlignment="Center"
+              Samples="{x:Bind Spark, Mode=OneWay}"
+              Visibility="{x:Bind HasSpark, Mode=OneWay}" />
+            <TextBlock Style="{StaticResource RhBodyTextStyle}" Text="{x:Bind Value, Mode=OneWay}" />
+          </StackPanel>
+        </Grid>
+      </DataTemplate>
+
+      <DataTemplate x:Key="DriveRowTemplate" x:DataType="vm:DriveRowModel">
+        <Grid MinHeight="28" Padding="12,0,12,0" ColumnSpacing="8">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="48" />
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="108" />
+          </Grid.ColumnDefinitions>
+          <TextBlock
+            VerticalAlignment="Center"
+            Style="{StaticResource RhBodyTextStyle}"
+            FontWeight="SemiBold"
+            Text="{x:Bind Label}" />
+          <Grid Grid.Column="1" ColumnSpacing="8">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="*" />
+              <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <!-- The fill and the rest of the track share the bar as star columns. -->
+            <Grid
+              Height="4"
+              VerticalAlignment="Center"
+              Background="{ThemeResource RhTrackBrush}"
+              CornerRadius="2">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="{x:Bind local:FlyoutShell.Share(Used), Mode=OneWay}" />
+                <ColumnDefinition Width="{x:Bind local:FlyoutShell.RestShare(Used), Mode=OneWay}" />
+              </Grid.ColumnDefinitions>
+              <Border Background="{ThemeResource RhDriveBrush}" CornerRadius="2" />
+            </Grid>
+            <TextBlock
+              Grid.Column="1"
+              VerticalAlignment="Center"
+              Style="{StaticResource RhCaptionTextStyle}"
+              Text="{x:Bind Activity, Mode=OneWay}" />
+          </Grid>
+          <TextBlock
+            Grid.Column="2"
+            HorizontalAlignment="Right"
+            VerticalAlignment="Center"
+            Style="{StaticResource RhBodyTextStyle}"
+            Text="{x:Bind Value, Mode=OneWay}" />
+        </Grid>
+      </DataTemplate>
+
+      <Style x:Key="RhLegendTextStyle" TargetType="TextBlock" BasedOn="{StaticResource RhCaptionTextStyle}">
+        <Setter Property="VerticalAlignment" Value="Center" />
+      </Style>
+
       <local:RowTemplateSelector
         x:Key="RowTemplates"
         BenchmarkHeading="{StaticResource BenchmarkHeadingTemplate}"
@@ -492,6 +720,7 @@
       <Grid.RowDefinitions>
         <RowDefinition Height="Auto" />
         <RowDefinition Height="*" />
+        <RowDefinition Height="Auto" />
       </Grid.RowDefinitions>
 
       <!-- Header: its empty space is the drag handle while pinned. -->
@@ -589,7 +818,45 @@
             Style="{StaticResource RhHeaderButtonStyle}">
             <TextBlock Style="{StaticResource RhButtonIconRegularStyle}" Text="{StaticResource RhGlyphMoreHorizontalRegular}" />
             <Button.Flyout>
-              <MenuFlyout x:Name="MoreMenu" Placement="BottomEdgeAlignedRight" Opened="OnMenuOpened" Closed="OnMenuClosed">
+              <MenuFlyout
+                x:Name="MoreMenu"
+                Placement="BottomEdgeAlignedRight"
+                Opened="OnMenuOpened"
+                Closing="OnMenuClosing"
+                Closed="OnMenuClosed">
+                <MenuFlyoutSubItem
+                  Text="Meters"
+                  Tag="{x:Bind Model.MetersCount, Mode=OneWay}"
+                  Style="{StaticResource RhCountedSubItemStyle}">
+                  <MenuFlyoutSubItem.Icon>
+                    <FontIcon FontFamily="{StaticResource RhIconRegularFontFamily}" Glyph="{StaticResource RhGlyphDataBarHorizontalRegular}" />
+                  </MenuFlyoutSubItem.Icon>
+                  <ToggleMenuFlyoutItem x:Name="CpuItem" Text="CPU" Click="OnMeterClick" />
+                  <ToggleMenuFlyoutItem x:Name="RamItem" Text="RAM" Click="OnMeterClick" />
+                  <ToggleMenuFlyoutItem x:Name="GpuItem" Text="GPU" Click="OnMeterClick" />
+                  <ToggleMenuFlyoutItem x:Name="VramItem" Text="VRAM" Click="OnMeterClick" />
+                  <ToggleMenuFlyoutItem x:Name="DrivesItem" Text="Drives" Click="OnMeterClick" />
+                  <!-- Indented under Drives, and disabled while Drives is off. -->
+                  <ToggleMenuFlyoutItem
+                    x:Name="DriveActivityItem"
+                    Margin="16,0,0,0"
+                    Text="Drive activity"
+                    Click="OnMeterClick" />
+                </MenuFlyoutSubItem>
+                <MenuFlyoutSubItem
+                  Text="Notifications"
+                  Tag="{x:Bind Model.NotificationsCount, Mode=OneWay}"
+                  Style="{StaticResource RhCountedSubItemStyle}">
+                  <MenuFlyoutSubItem.Icon>
+                    <FontIcon FontFamily="{StaticResource RhIconRegularFontFamily}" Glyph="{StaticResource RhGlyphAlertRegular}" />
+                  </MenuFlyoutSubItem.Icon>
+                  <ToggleMenuFlyoutItem x:Name="ServiceStoppedItem" Text="Service stopped" Click="OnNotificationClick" />
+                  <ToggleMenuFlyoutItem x:Name="RunningLongItem" Text="Running long" Click="OnNotificationClick" />
+                  <ToggleMenuFlyoutItem x:Name="BenchmarkFinishedItem" Text="Benchmark finished" Click="OnNotificationClick" />
+                  <ToggleMenuFlyoutItem x:Name="JobFinishedItem" Text="Job finished" Click="OnNotificationClick" />
+                  <ToggleMenuFlyoutItem x:Name="KilledOutsideItem" Text="Killed outside the flyout" Click="OnNotificationClick" />
+                </MenuFlyoutSubItem>
+                <MenuFlyoutSeparator />
                 <MenuFlyoutItem Text="Open logs" Click="OnOpenLogsClick">
                   <MenuFlyoutItem.Icon>
                     <FontIcon FontFamily="{StaticResource RhIconRegularFontFamily}" Glyph="{StaticResource RhGlyphDocumentTextRegular}" />
@@ -613,6 +880,129 @@
           Opacity="{x:Bind local:FlyoutShell.Dimmed(Model.IsLastKnown), Mode=OneWay}"
           SizeChanged="OnRowsSizeChanged" />
       </ScrollViewer>
+
+      <!-- The Resources card stays docked below the body while the rows scroll. -->
+      <Border
+        x:Name="ResourcesCard"
+        Grid.Row="2"
+        Margin="{StaticResource RhResourcesMargin}"
+        Background="{ThemeResource RhCardBrush}"
+        BorderBrush="{ThemeResource RhCardBorderBrush}"
+        BorderThickness="1"
+        CornerRadius="{StaticResource RhCardCornerRadius}"
+        SizeChanged="OnResourcesSizeChanged"
+        Visibility="{x:Bind Model.Resources.Visible, Mode=OneWay}">
+        <StackPanel>
+          <!-- The whole header toggles the card; the chevron stays as its keyboard target. -->
+          <Grid
+            Height="40"
+            Padding="12,0,4,0"
+            Background="Transparent"
+            ColumnSpacing="8"
+            Tapped="OnResourcesHeaderTapped">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="Auto" />
+              <ColumnDefinition Width="*" />
+              <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <TextBlock
+              VerticalAlignment="Center"
+              Style="{StaticResource RhBodyTextStyle}"
+              FontWeight="SemiBold"
+              Text="Resources" />
+            <TextBlock
+              x:Name="ResourcesSummary"
+              Grid.Column="1"
+              VerticalAlignment="Center"
+              Style="{StaticResource RhDetailTextStyle}"
+              Text="{x:Bind Model.Resources.Summary, Mode=OneWay}" />
+            <Button
+              x:Name="ResourcesToggle"
+              Grid.Column="2"
+              Style="{StaticResource RhHeaderButtonStyle}"
+              AutomationProperties.Name="{x:Bind local:FlyoutShell.ResourcesToggleName(Model.Resources.Expanded), Mode=OneWay}"
+              ToolTipService.ToolTip="{x:Bind local:FlyoutShell.ResourcesToggleName(Model.Resources.Expanded), Mode=OneWay}"
+              Click="OnResourcesToggleClick">
+              <Grid>
+                <TextBlock
+                  Style="{StaticResource RhButtonIconRegularStyle}"
+                  Text="{StaticResource RhGlyphChevronUpRegular}"
+                  Visibility="{x:Bind local:FlyoutShell.Hides(Model.Resources.Expanded), Mode=OneWay}" />
+                <TextBlock
+                  Style="{StaticResource RhButtonIconRegularStyle}"
+                  Text="{StaticResource RhGlyphChevronDownRegular}"
+                  Visibility="{x:Bind Model.Resources.Expanded, Mode=OneWay}" />
+              </Grid>
+            </Button>
+          </Grid>
+
+          <!-- Shown, hidden and animated by the code as the card expands and collapses. -->
+          <StackPanel
+            x:Name="ResourcesRows"
+            Padding="0,0,0,8"
+            Spacing="2"
+            Visibility="Collapsed">
+            <ItemsControl
+              IsTabStop="False"
+              ItemsSource="{x:Bind Model.Resources.Meters}"
+              ItemTemplate="{StaticResource MeterRowTemplate}">
+              <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                  <StackPanel Spacing="2" />
+                </ItemsPanelTemplate>
+              </ItemsControl.ItemsPanel>
+            </ItemsControl>
+            <Border
+              Height="1"
+              Margin="12,4,12,4"
+              Background="{ThemeResource RhSeparatorBrush}"
+              Visibility="{x:Bind Model.Resources.ShowSeparator, Mode=OneWay}" />
+            <ItemsControl
+              IsTabStop="False"
+              ItemsSource="{x:Bind Model.Resources.Drives}"
+              ItemTemplate="{StaticResource DriveRowTemplate}">
+              <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                  <StackPanel Spacing="2" />
+                </ItemsPanelTemplate>
+              </ItemsControl.ItemsPanel>
+            </ItemsControl>
+            <TextBlock
+              Padding="12,4,12,4"
+              Style="{StaticResource RhDetailTextStyle}"
+              TextWrapping="WrapWholeWords"
+              Text="All meters are off. Turn them on from ⋯ › Meters."
+              Visibility="{x:Bind Model.Resources.AllOff, Mode=OneWay}" />
+            <StackPanel
+              Padding="12,6,12,0"
+              Orientation="Horizontal"
+              Spacing="12"
+              Visibility="{x:Bind Model.Resources.ShowLegend, Mode=OneWay}">
+              <StackPanel Orientation="Horizontal" Spacing="4">
+                <Border
+                  Width="10"
+                  Height="6"
+                  VerticalAlignment="Center"
+                  Background="{ThemeResource RhAccentBrush}"
+                  CornerRadius="1" />
+                <TextBlock Style="{StaticResource RhLegendTextStyle}" Text="Used" />
+              </StackPanel>
+              <StackPanel Orientation="Horizontal" Spacing="4">
+                <Border
+                  Width="2"
+                  Height="10"
+                  VerticalAlignment="Center"
+                  Background="{ThemeResource RhMarkerBrush}" />
+                <TextBlock Style="{StaticResource RhLegendTextStyle}" Text="Reserved" />
+              </StackPanel>
+              <StackPanel Orientation="Horizontal" Spacing="4">
+                <local:BulletBar Width="10" Headroom="0" />
+                <TextBlock Style="{StaticResource RhLegendTextStyle}" Text="Headroom" />
+              </StackPanel>
+            </StackPanel>
+          </StackPanel>
+        </StackPanel>
+      </Border>
     </Grid>
   </Border>
 </UserControl>

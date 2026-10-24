@@ -1,5 +1,7 @@
 using System.Collections.ObjectModel;
 
+using ResourcesHelper.Tray.Core.Settings;
+
 namespace ResourcesHelper.Tray.Core.ViewModels;
 
 /// <summary>
@@ -12,6 +14,8 @@ public sealed class FlyoutModel : Observable
     private HeaderGlyph _glyph = HeaderGlyph.Error;
     private string _summary = "Starting service…";
     private bool _isLastKnown = true;
+    private string _metersCount = MenuCounts.Meters(new MeterToggles());
+    private string _notificationsCount = MenuCounts.Notifications(new NotificationToggles());
 
     public HeaderGlyph Glyph
     {
@@ -34,7 +38,30 @@ public sealed class FlyoutModel : Observable
         private set => Set(ref _isLastKnown, value);
     }
 
+    /// <summary>
+    /// The trailing count of ⋯ › Meters, for example <c>4 of 5</c>.
+    /// </summary>
+    public string MetersCount
+    {
+        get => _metersCount;
+        private set => Set(ref _metersCount, value);
+    }
+
+    /// <summary>
+    /// The trailing count of ⋯ › Notifications.
+    /// </summary>
+    public string NotificationsCount
+    {
+        get => _notificationsCount;
+        private set => Set(ref _notificationsCount, value);
+    }
+
     public ObservableCollection<FlyoutRow> Rows { get; } = [];
+
+    /// <summary>
+    /// The Resources card docked below the rows.
+    /// </summary>
+    public ResourcesModel Resources { get; } = new();
 
     public void Apply(FlyoutSnapshot snapshot)
     {
@@ -42,6 +69,12 @@ public sealed class FlyoutModel : Observable
         Summary = snapshot.Header.Summary;
         IsLastKnown = snapshot.IsLastKnown;
         Sync(Rows, RowsOf(snapshot));
+    }
+
+    public void ApplyMenu(TraySettings settings)
+    {
+        MetersCount = MenuCounts.Meters(settings.Meters);
+        NotificationsCount = MenuCounts.Notifications(settings.Notifications);
     }
 
     /// <summary>
