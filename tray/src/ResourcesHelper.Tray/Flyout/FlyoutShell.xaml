@@ -1,0 +1,345 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The production flyout (handoff sections 1, 2 and 4): a fixed header and a scrolling body of
+  rows.
+-->
+<UserControl
+  x:Class="ResourcesHelper.Tray.Flyout.FlyoutShell"
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:local="using:ResourcesHelper.Tray.Flyout"
+  xmlns:vm="using:ResourcesHelper.Tray.Core.ViewModels">
+  <UserControl.Resources>
+    <ResourceDictionary>
+      <!-- Lightweight styling of the header buttons: subtle until checked, accent when on. -->
+      <ResourceDictionary.ThemeDictionaries>
+        <ResourceDictionary x:Key="Light">
+          <SolidColorBrush x:Key="ToggleButtonBackground" Color="Transparent" />
+          <StaticResource x:Key="ToggleButtonBackgroundPointerOver" ResourceKey="SubtleFillColorSecondaryBrush" />
+          <StaticResource x:Key="ToggleButtonBackgroundPressed" ResourceKey="SubtleFillColorTertiaryBrush" />
+          <StaticResource x:Key="ToggleButtonBackgroundChecked" ResourceKey="RhAccentBrush" />
+          <StaticResource x:Key="ToggleButtonBackgroundCheckedPointerOver" ResourceKey="RhAccentBrush" />
+          <StaticResource x:Key="ToggleButtonBackgroundCheckedPressed" ResourceKey="RhAccentBrush" />
+          <StaticResource x:Key="ToggleButtonForeground" ResourceKey="RhTextBrush" />
+          <StaticResource x:Key="ToggleButtonForegroundPointerOver" ResourceKey="RhTextBrush" />
+          <StaticResource x:Key="ToggleButtonForegroundPressed" ResourceKey="RhTextBrush" />
+          <StaticResource x:Key="ToggleButtonForegroundChecked" ResourceKey="RhAccentForegroundBrush" />
+          <StaticResource x:Key="ToggleButtonForegroundCheckedPointerOver" ResourceKey="RhAccentForegroundBrush" />
+          <StaticResource x:Key="ToggleButtonForegroundCheckedPressed" ResourceKey="RhAccentForegroundBrush" />
+          <SolidColorBrush x:Key="ToggleButtonBorderBrush" Color="Transparent" />
+          <SolidColorBrush x:Key="ToggleButtonBorderBrushPointerOver" Color="Transparent" />
+          <SolidColorBrush x:Key="ToggleButtonBorderBrushPressed" Color="Transparent" />
+          <SolidColorBrush x:Key="ToggleButtonBorderBrushChecked" Color="Transparent" />
+          <SolidColorBrush x:Key="ToggleButtonBorderBrushCheckedPointerOver" Color="Transparent" />
+          <SolidColorBrush x:Key="ToggleButtonBorderBrushCheckedPressed" Color="Transparent" />
+          <SolidColorBrush x:Key="ButtonBackground" Color="Transparent" />
+          <StaticResource x:Key="ButtonBackgroundPointerOver" ResourceKey="SubtleFillColorSecondaryBrush" />
+          <StaticResource x:Key="ButtonBackgroundPressed" ResourceKey="SubtleFillColorTertiaryBrush" />
+          <StaticResource x:Key="ButtonForeground" ResourceKey="RhTextBrush" />
+          <StaticResource x:Key="ButtonForegroundPointerOver" ResourceKey="RhTextBrush" />
+          <StaticResource x:Key="ButtonForegroundPressed" ResourceKey="RhTextBrush" />
+          <SolidColorBrush x:Key="ButtonBorderBrush" Color="Transparent" />
+          <SolidColorBrush x:Key="ButtonBorderBrushPointerOver" Color="Transparent" />
+          <SolidColorBrush x:Key="ButtonBorderBrushPressed" Color="Transparent" />
+        </ResourceDictionary>
+        <ResourceDictionary x:Key="Dark">
+          <SolidColorBrush x:Key="ToggleButtonBackground" Color="Transparent" />
+          <StaticResource x:Key="ToggleButtonBackgroundPointerOver" ResourceKey="SubtleFillColorSecondaryBrush" />
+          <StaticResource x:Key="ToggleButtonBackgroundPressed" ResourceKey="SubtleFillColorTertiaryBrush" />
+          <StaticResource x:Key="ToggleButtonBackgroundChecked" ResourceKey="RhAccentBrush" />
+          <StaticResource x:Key="ToggleButtonBackgroundCheckedPointerOver" ResourceKey="RhAccentBrush" />
+          <StaticResource x:Key="ToggleButtonBackgroundCheckedPressed" ResourceKey="RhAccentBrush" />
+          <StaticResource x:Key="ToggleButtonForeground" ResourceKey="RhTextBrush" />
+          <StaticResource x:Key="ToggleButtonForegroundPointerOver" ResourceKey="RhTextBrush" />
+          <StaticResource x:Key="ToggleButtonForegroundPressed" ResourceKey="RhTextBrush" />
+          <StaticResource x:Key="ToggleButtonForegroundChecked" ResourceKey="RhAccentForegroundBrush" />
+          <StaticResource x:Key="ToggleButtonForegroundCheckedPointerOver" ResourceKey="RhAccentForegroundBrush" />
+          <StaticResource x:Key="ToggleButtonForegroundCheckedPressed" ResourceKey="RhAccentForegroundBrush" />
+          <SolidColorBrush x:Key="ToggleButtonBorderBrush" Color="Transparent" />
+          <SolidColorBrush x:Key="ToggleButtonBorderBrushPointerOver" Color="Transparent" />
+          <SolidColorBrush x:Key="ToggleButtonBorderBrushPressed" Color="Transparent" />
+          <SolidColorBrush x:Key="ToggleButtonBorderBrushChecked" Color="Transparent" />
+          <SolidColorBrush x:Key="ToggleButtonBorderBrushCheckedPointerOver" Color="Transparent" />
+          <SolidColorBrush x:Key="ToggleButtonBorderBrushCheckedPressed" Color="Transparent" />
+          <SolidColorBrush x:Key="ButtonBackground" Color="Transparent" />
+          <StaticResource x:Key="ButtonBackgroundPointerOver" ResourceKey="SubtleFillColorSecondaryBrush" />
+          <StaticResource x:Key="ButtonBackgroundPressed" ResourceKey="SubtleFillColorTertiaryBrush" />
+          <StaticResource x:Key="ButtonForeground" ResourceKey="RhTextBrush" />
+          <StaticResource x:Key="ButtonForegroundPointerOver" ResourceKey="RhTextBrush" />
+          <StaticResource x:Key="ButtonForegroundPressed" ResourceKey="RhTextBrush" />
+          <SolidColorBrush x:Key="ButtonBorderBrush" Color="Transparent" />
+          <SolidColorBrush x:Key="ButtonBorderBrushPointerOver" Color="Transparent" />
+          <SolidColorBrush x:Key="ButtonBorderBrushPressed" Color="Transparent" />
+        </ResourceDictionary>
+      </ResourceDictionary.ThemeDictionaries>
+
+      <Style x:Key="RhHeaderToggleStyle" TargetType="ToggleButton" BasedOn="{StaticResource DefaultToggleButtonStyle}">
+        <Setter Property="Width" Value="{StaticResource RhButtonSize}" />
+        <Setter Property="Height" Value="{StaticResource RhButtonSize}" />
+        <Setter Property="Padding" Value="0" />
+        <Setter Property="CornerRadius" Value="{StaticResource RhControlCornerRadius}" />
+      </Style>
+      <Style x:Key="RhHeaderButtonStyle" TargetType="Button" BasedOn="{StaticResource DefaultButtonStyle}">
+        <Setter Property="Width" Value="{StaticResource RhButtonSize}" />
+        <Setter Property="Height" Value="{StaticResource RhButtonSize}" />
+        <Setter Property="Padding" Value="0" />
+        <Setter Property="CornerRadius" Value="{StaticResource RhControlCornerRadius}" />
+      </Style>
+      <!-- Icons inside buttons take the button's foreground, so they have no Foreground here. -->
+      <Style x:Key="RhButtonIconRegularStyle" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{StaticResource RhIconRegularFontFamily}" />
+        <Setter Property="FontSize" Value="{StaticResource RhIconSize}" />
+        <Setter Property="HorizontalAlignment" Value="Center" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+      </Style>
+      <Style x:Key="RhButtonIconFilledStyle" TargetType="TextBlock" BasedOn="{StaticResource RhButtonIconRegularStyle}">
+        <Setter Property="FontFamily" Value="{StaticResource RhIconFilledFontFamily}" />
+      </Style>
+      <Style x:Key="RhGroupIconStyle" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="{StaticResource RhGroupIconSize}" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+      </Style>
+
+      <DataTemplate x:Key="BenchmarkHeadingTemplate" x:DataType="vm:GroupHeadingRow">
+        <StackPanel Padding="{StaticResource RhGroupHeadingPadding}" Orientation="Horizontal" Spacing="6">
+          <TextBlock
+            Style="{StaticResource RhGroupIconStyle}"
+            FontFamily="{StaticResource RhIconRegularFontFamily}"
+            Foreground="{ThemeResource RhBenchmarkBrush}"
+            Text="{StaticResource RhGlyphTimerRegular}" />
+          <TextBlock Style="{StaticResource RhGroupHeadingTextStyle}" Text="{x:Bind Heading, Mode=OneWay}" />
+        </StackPanel>
+      </DataTemplate>
+      <DataTemplate x:Key="RunningHeadingTemplate" x:DataType="vm:GroupHeadingRow">
+        <StackPanel Padding="{StaticResource RhGroupHeadingPadding}" Orientation="Horizontal" Spacing="6">
+          <TextBlock
+            Style="{StaticResource RhGroupIconStyle}"
+            FontFamily="{StaticResource RhIconFilledFontFamily}"
+            Foreground="{ThemeResource RhRunningBrush}"
+            Text="{StaticResource RhGlyphPlayCircleFilled}" />
+          <TextBlock Style="{StaticResource RhGroupHeadingTextStyle}" Text="{x:Bind Heading, Mode=OneWay}" />
+        </StackPanel>
+      </DataTemplate>
+      <DataTemplate x:Key="WaitingHeadingTemplate" x:DataType="vm:GroupHeadingRow">
+        <StackPanel Padding="{StaticResource RhGroupHeadingPadding}" Orientation="Horizontal" Spacing="6">
+          <TextBlock
+            Style="{StaticResource RhGroupIconStyle}"
+            FontFamily="{StaticResource RhIconRegularFontFamily}"
+            Foreground="{ThemeResource RhWaitingBrush}"
+            Text="{StaticResource RhGlyphClockRegular}" />
+          <TextBlock Style="{StaticResource RhGroupHeadingTextStyle}" Text="{x:Bind Heading, Mode=OneWay}" />
+        </StackPanel>
+      </DataTemplate>
+
+      <DataTemplate x:Key="JobCardTemplate" x:DataType="vm:JobCardRow">
+        <Border
+          Background="{ThemeResource RhCardBrush}"
+          BorderBrush="{ThemeResource RhCardBorderBrush}"
+          BorderThickness="1"
+          CornerRadius="{StaticResource RhCardCornerRadius}">
+          <StackPanel>
+            <!-- Session strip; its radius sits inside the card's 1 px border. -->
+            <Border
+              Padding="{StaticResource RhStripPadding}"
+              Background="{ThemeResource RhStripBrush}"
+              BorderBrush="{ThemeResource RhCardBorderBrush}"
+              BorderThickness="0,0,0,1"
+              CornerRadius="5,5,0,0">
+              <Grid ColumnSpacing="8">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="Auto" />
+                  <ColumnDefinition Width="*" />
+                  <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBlock
+                  VerticalAlignment="Center"
+                  Style="{StaticResource RhSessionIdTextStyle}"
+                  Text="{x:Bind ShortId, Mode=OneWay}" />
+                <TextBlock
+                  Grid.Column="1"
+                  VerticalAlignment="Center"
+                  Style="{StaticResource RhDetailTextStyle}"
+                  Foreground="{ThemeResource RhTextStripBrush}"
+                  Text="{x:Bind Project, Mode=OneWay}"
+                  ToolTipService.ToolTip="{x:Bind ProjectPath, Mode=OneWay}" />
+                <TextBlock
+                  Grid.Column="2"
+                  VerticalAlignment="Center"
+                  Style="{StaticResource RhBodyTextStyle}"
+                  Foreground="{ThemeResource RhTextStripBrush}"
+                  Text="{x:Bind Usage, Mode=OneWay}" />
+              </Grid>
+            </Border>
+            <Grid Padding="{StaticResource RhRowPadding}">
+              <Grid Height="{StaticResource RhButtonSize}">
+                <TextBlock
+                  Margin="0,0,8,0"
+                  VerticalAlignment="Center"
+                  Style="{StaticResource RhCommandTextStyle}"
+                  Text="{x:Bind Command, Mode=OneWay}"
+                  ToolTipService.ToolTip="{x:Bind Command, Mode=OneWay}" />
+              </Grid>
+            </Grid>
+          </StackPanel>
+        </Border>
+      </DataTemplate>
+
+      <DataTemplate x:Key="IdleLineTemplate" x:DataType="vm:IdleRow">
+        <StackPanel Padding="{StaticResource RhIdleLinePadding}" Orientation="Horizontal" Spacing="8">
+          <TextBlock
+            Style="{StaticResource RhBodyTextStyle}"
+            Foreground="{ThemeResource RhTextSecondaryBrush}"
+            Text="{x:Bind Label, Mode=OneWay}" />
+          <TextBlock
+            VerticalAlignment="Center"
+            Style="{StaticResource RhRowIdTextStyle}"
+            Text="{x:Bind Ids, Mode=OneWay}" />
+          <TextBlock
+            Style="{StaticResource RhBodyTextStyle}"
+            Foreground="{ThemeResource RhTextSecondaryBrush}"
+            Text="{x:Bind Usage, Mode=OneWay}" />
+        </StackPanel>
+      </DataTemplate>
+
+      <local:RowTemplateSelector
+        x:Key="RowTemplates"
+        BenchmarkHeading="{StaticResource BenchmarkHeadingTemplate}"
+        RunningHeading="{StaticResource RunningHeadingTemplate}"
+        WaitingHeading="{StaticResource WaitingHeadingTemplate}"
+        JobCard="{StaticResource JobCardTemplate}"
+        IdleLine="{StaticResource IdleLineTemplate}" />
+    </ResourceDictionary>
+  </UserControl.Resources>
+
+  <Border
+    BorderBrush="{ThemeResource RhSurfaceEdgeBrush}"
+    BorderThickness="1"
+    CornerRadius="{StaticResource RhFlyoutCornerRadius}">
+    <Grid>
+      <Grid.RowDefinitions>
+        <RowDefinition Height="Auto" />
+        <RowDefinition Height="*" />
+      </Grid.RowDefinitions>
+
+      <!-- Header: its empty space is the drag handle while pinned. -->
+      <Grid
+        x:Name="Header"
+        Padding="{StaticResource RhHeaderPadding}"
+        Background="Transparent"
+        SizeChanged="OnHeaderSizeChanged">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="Auto" />
+        </Grid.ColumnDefinitions>
+
+        <!-- The meter mark, drawn from the handoff's tray SVGs (16 x 16 view box). -->
+        <Grid Width="16" Height="16" VerticalAlignment="Center">
+          <Canvas Visibility="{x:Bind local:FlyoutShell.Shows(Model.Glyph, 'Idle'), Mode=OneWay}">
+            <Rectangle Canvas.Left="1" Canvas.Top="14" Width="14" Height="1" Fill="{ThemeResource RhTextBrush}" />
+            <Rectangle Canvas.Left="2" Canvas.Top="10" Width="3.5" Height="3.5" RadiusX="1.1" RadiusY="1.1" Stroke="{ThemeResource RhTextBrush}" StrokeThickness="1" />
+            <Rectangle Canvas.Left="6.25" Canvas.Top="10" Width="3.5" Height="3.5" RadiusX="1.1" RadiusY="1.1" Stroke="{ThemeResource RhTextBrush}" StrokeThickness="1" />
+            <Rectangle Canvas.Left="10.5" Canvas.Top="10" Width="3.5" Height="3.5" RadiusX="1.1" RadiusY="1.1" Stroke="{ThemeResource RhTextBrush}" StrokeThickness="1" />
+          </Canvas>
+          <Canvas Visibility="{x:Bind local:FlyoutShell.Shows(Model.Glyph, 'Busy'), Mode=OneWay}">
+            <Rectangle Canvas.Left="1" Canvas.Top="14" Width="14" Height="1" Fill="{ThemeResource RhTextBrush}" />
+            <Rectangle Canvas.Left="2" Canvas.Top="7" Width="3.5" Height="6" RadiusX="0.8" RadiusY="0.8" Fill="{ThemeResource RhTextBrush}" />
+            <Rectangle Canvas.Left="6.25" Canvas.Top="2" Width="3.5" Height="11" RadiusX="0.8" RadiusY="0.8" Fill="{ThemeResource RhTextBrush}" />
+            <Rectangle Canvas.Left="10.5" Canvas.Top="5" Width="3.5" Height="8" RadiusX="0.8" RadiusY="0.8" Fill="{ThemeResource RhTextBrush}" />
+          </Canvas>
+          <TextBlock
+            Style="{StaticResource RhIconFilledTextStyle}"
+            Foreground="{ThemeResource RhDangerTextBrush}"
+            Text="{StaticResource RhGlyphErrorCircleFilled}"
+            Visibility="{x:Bind local:FlyoutShell.Shows(Model.Glyph, 'Error'), Mode=OneWay}" />
+        </Grid>
+
+        <TextBlock
+          x:Name="SummaryText"
+          Grid.Column="1"
+          Margin="10,0,10,0"
+          VerticalAlignment="Center"
+          Style="{StaticResource RhSummaryTextStyle}"
+          AutomationProperties.LiveSetting="Polite"
+          Text="{x:Bind Model.Summary, Mode=OneWay}" />
+
+        <!-- Pin exists only while Stay open is on; the wrapper's width reveals it. -->
+        <Grid
+          x:Name="PinWrapper"
+          Grid.Column="2"
+          Width="0"
+          SizeChanged="OnPinWrapperSizeChanged">
+          <ToggleButton
+            x:Name="PinButton"
+            HorizontalAlignment="Left"
+            Opacity="0"
+            IsTabStop="False"
+            IsHitTestVisible="False"
+            AutomationProperties.AccessibilityView="Raw"
+            AutomationProperties.Name="Pin"
+            ToolTipService.ToolTip="Pin"
+            Style="{StaticResource RhHeaderToggleStyle}"
+            Click="OnPinClick">
+            <Grid>
+              <TextBlock x:Name="PinIcon" Style="{StaticResource RhButtonIconRegularStyle}" Text="{StaticResource RhGlyphPinRegular}" />
+              <TextBlock x:Name="PinnedIcon" Style="{StaticResource RhButtonIconFilledStyle}" Text="{StaticResource RhGlyphPinFilled}" Visibility="Collapsed" />
+            </Grid>
+          </ToggleButton>
+        </Grid>
+
+        <ToggleButton
+          x:Name="StayOpenButton"
+          Grid.Column="3"
+          AutomationProperties.Name="Stay open"
+          ToolTipService.ToolTip="Stay open"
+          Style="{StaticResource RhHeaderToggleStyle}"
+          Click="OnStayOpenClick">
+          <Grid>
+            <TextBlock x:Name="LockOpenIcon" Style="{StaticResource RhButtonIconRegularStyle}" Text="{StaticResource RhGlyphLockOpenRegular}" />
+            <TextBlock x:Name="LockClosedIcon" Style="{StaticResource RhButtonIconFilledStyle}" Text="{StaticResource RhGlyphLockClosedFilled}" Visibility="Collapsed" />
+          </Grid>
+        </ToggleButton>
+
+        <!-- The pressed look stays on while the menu is open. -->
+        <Grid Grid.Column="4" Margin="4,0,0,0">
+          <Border
+            x:Name="MorePressed"
+            Background="{ThemeResource RhPressedBrush}"
+            CornerRadius="{StaticResource RhControlCornerRadius}"
+            Opacity="0" />
+          <Button
+            x:Name="MoreButton"
+            AutomationProperties.Name="More options"
+            ToolTipService.ToolTip="More options"
+            Style="{StaticResource RhHeaderButtonStyle}">
+            <TextBlock Style="{StaticResource RhButtonIconRegularStyle}" Text="{StaticResource RhGlyphMoreHorizontalRegular}" />
+            <Button.Flyout>
+              <MenuFlyout Placement="BottomEdgeAlignedRight" Opened="OnMenuOpened" Closed="OnMenuClosed">
+                <MenuFlyoutItem Text="Open logs" Click="OnOpenLogsClick">
+                  <MenuFlyoutItem.Icon>
+                    <FontIcon FontFamily="{StaticResource RhIconRegularFontFamily}" Glyph="{StaticResource RhGlyphDocumentTextRegular}" />
+                  </MenuFlyoutItem.Icon>
+                </MenuFlyoutItem>
+              </MenuFlyout>
+            </Button.Flyout>
+          </Button>
+        </Grid>
+      </Grid>
+
+      <!--
+        Top-aligned, so the panel's height is its content's: stretched, it would fill the
+        viewport and report the window's own height back as the height it needs.
+      -->
+      <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+        <StackPanel
+          x:Name="RowsPanel"
+          VerticalAlignment="Top"
+          Padding="{StaticResource RhBodyPadding}"
+          Opacity="{x:Bind local:FlyoutShell.Dimmed(Model.IsLastKnown), Mode=OneWay}"
+          SizeChanged="OnRowsSizeChanged" />
+      </ScrollViewer>
+    </Grid>
+  </Border>
+</UserControl>

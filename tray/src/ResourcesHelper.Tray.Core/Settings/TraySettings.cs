@@ -23,11 +23,6 @@ public sealed record TraySettings
     public bool ResourcesExpanded { get; set; }
 
     /// <summary>
-    /// Where the flyout was last pinned; <c>null</c> until it has been dragged while pinned.
-    /// </summary>
-    public PinnedPosition? PinnedPosition { get; set; }
-
-    /// <summary>
     /// The first-run card was dismissed with Done.
     /// </summary>
     public bool FirstRunDone { get; set; }
@@ -69,12 +64,6 @@ public sealed record NotificationToggles
 
     public bool KilledOutsideFlyout { get; set; }
 }
-
-/// <summary>
-/// The pinned flyout's top-left corner in physical virtual-screen pixels. The monitor it was on
-/// may be gone at the next pin, so the window code checks it before use.
-/// </summary>
-public sealed record PinnedPosition(int X, int Y);
 
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.SnakeCaseLower,

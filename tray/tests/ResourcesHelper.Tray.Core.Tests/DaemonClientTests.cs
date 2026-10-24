@@ -143,6 +143,62 @@ public sealed class DaemonClientTests
         Assert.AreEqual("0.1.0", health?.Version);
     }
 
+    [TestMethod]
+    public async Task ShutdownPostsWithTheToken()
+    {
+        using var directory = new TempDirectory();
+        var methods = new List<HttpMethod>();
+        var handler = new FakeHttpHandler(request =>
+        {
+            methods.Add(request.Method);
+            return FakeHttpHandler.Status(HttpStatusCode.Accepted);
+        });
+        using var client = Client(directory, handler, "secret");
+
+        var problem = await client.ShutdownAsync(TestContext.CancellationToken);
+
+        Assert.IsNull(problem);
+        Assert.AreEqual(new SeenRequest("/shutdown", "secret"), handler.Seen.Single());
+        Assert.AreEqual(HttpMethod.Post, methods.Single());
+    }
+
+    [TestMethod]
+    public async Task ShutdownReportsARefusal()
+    {
+        using var directory = new TempDirectory();
+        var handler = new FakeHttpHandler(_ => FakeHttpHandler.Status(HttpStatusCode.Forbidden));
+        using var client = Client(directory, handler, "secret");
+
+        var problem = await client.ShutdownAsync(TestContext.CancellationToken);
+
+        Assert.AreEqual("POST /shutdown answered 403", problem);
+    }
+
+    [TestMethod]
+    public async Task ShutdownOfAStoppedDaemonSaysWhy()
+    {
+        using var directory = new TempDirectory();
+        var handler = new FakeHttpHandler(_ => throw FakeHttpHandler.Refused());
+        using var client = Client(directory, handler, "secret");
+
+        var problem = await client.ShutdownAsync(TestContext.CancellationToken);
+
+        StringAssert.Contains(problem, "actively refused");
+    }
+
+    [TestMethod]
+    public async Task ShutdownWithoutATokenSendsNothing()
+    {
+        using var directory = new TempDirectory();
+        var handler = new FakeHttpHandler(_ => FakeHttpHandler.Status(HttpStatusCode.Accepted));
+        using var client = Client(directory, handler, token: null);
+
+        var problem = await client.ShutdownAsync(TestContext.CancellationToken);
+
+        StringAssert.StartsWith(problem, "no token in ");
+        Assert.IsEmpty(handler.Seen);
+    }
+
     internal static DaemonClient Client(
         TempDirectory directory,
         FakeHttpHandler handler,

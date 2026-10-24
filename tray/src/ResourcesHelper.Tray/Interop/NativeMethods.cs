@@ -21,6 +21,12 @@ internal static partial class NativeMethods
     public const uint WmSettingChange = 0x001A;
     public const uint WmDisplayChange = 0x007E;
     public const uint WmDpiChanged = 0x02E0;
+    public const uint WmNcRButtonDown = 0x00A4;
+    public const uint WmNcRButtonUp = 0x00A5;
+    public const uint WmMoving = 0x0216;
+    public const uint WmEnterSizeMove = 0x0231;
+    public const uint WmExitSizeMove = 0x0232;
+    public const nint HtCaption = 2;
     public const uint WmApp = 0x8000;
 
     public const uint WsPopup = 0x80000000;
@@ -41,6 +47,13 @@ internal static partial class NativeMethods
     public const int SmCxSmIcon = 49;
     public const int SmMenuDropAlignment = 40;
     public const uint MonitorDefaultToPrimary = 1;
+    public const uint MonitorDefaultToNearest = 2;
+
+    public const uint MbYesNo = 0x0004;
+    public const uint MbIconWarning = 0x0030;
+    public const uint MbDefButton2 = 0x0100;
+    public const uint MbSetForeground = 0x00010000;
+    public const int IdYes = 6;
 
     public const uint MfString = 0x0000;
     public const uint MfGrayed = 0x0001;
@@ -97,6 +110,44 @@ internal static partial class NativeMethods
 
     [LibraryImport("user32.dll")]
     public static partial nint MonitorFromPoint(NativePoint point, uint flags);
+
+    [LibraryImport("user32.dll")]
+    public static partial nint MonitorFromRect(in NativeRect rect, uint flags);
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool GetCursorPos(out NativePoint point);
+
+    [LibraryImport("user32.dll", EntryPoint = "GetMonitorInfoW")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool GetMonitorInfo(nint monitor, ref MonitorInfo info);
+
+    [LibraryImport(
+        "user32.dll",
+        EntryPoint = "MessageBoxW",
+        StringMarshalling = StringMarshalling.Utf16)]
+    public static partial int MessageBox(nint owner, string text, string caption, uint type);
+
+    /// <summary>
+    /// Needs Common Controls 6, which app.manifest asks for.
+    /// </summary>
+    [LibraryImport("comctl32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static unsafe partial bool SetWindowSubclass(
+        nint hwnd,
+        delegate* unmanaged<nint, uint, nint, nint, nuint, nuint, nint> subclassProc,
+        nuint id,
+        nuint referenceData);
+
+    [LibraryImport("comctl32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static unsafe partial bool RemoveWindowSubclass(
+        nint hwnd,
+        delegate* unmanaged<nint, uint, nint, nint, nuint, nuint, nint> subclassProc,
+        nuint id);
+
+    [LibraryImport("comctl32.dll")]
+    public static partial nint DefSubclassProc(nint hwnd, uint message, nint wParam, nint lParam);
 
     [LibraryImport("user32.dll")]
     public static partial int GetSystemMetrics(int index);
@@ -210,6 +261,18 @@ internal static partial class NativeMethods
         public int Top;
         public int Right;
         public int Bottom;
+    }
+
+    /// <summary>
+    /// MONITORINFO.
+    /// </summary>
+    [StructLayout(LayoutKind.Sequential)]
+    public struct MonitorInfo
+    {
+        public uint Size;
+        public NativeRect Monitor;
+        public NativeRect Work;
+        public uint Flags;
     }
 
     [StructLayout(LayoutKind.Sequential)]

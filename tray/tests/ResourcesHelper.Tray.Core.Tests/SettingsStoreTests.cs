@@ -33,7 +33,6 @@ public sealed class SettingsStoreTests
             },
             settings.Notifications);
         Assert.IsFalse(settings.ResourcesExpanded);
-        Assert.IsNull(settings.PinnedPosition);
         Assert.IsFalse(settings.FirstRunDone);
     }
 
@@ -57,7 +56,6 @@ public sealed class SettingsStoreTests
             Meters = new MeterToggles { Vram = false, DriveActivity = false },
             Notifications = new NotificationToggles { RunningLong = false, JobFinished = true },
             ResourcesExpanded = true,
-            PinnedPosition = new PinnedPosition(-1910, 412),
             FirstRunDone = true,
         };
 

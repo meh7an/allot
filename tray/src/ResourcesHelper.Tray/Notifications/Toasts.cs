@@ -3,15 +3,13 @@ using System.Runtime.InteropServices;
 using Microsoft.UI.Dispatching;
 using Microsoft.Windows.AppLifecycle;
 using Microsoft.Windows.AppNotifications;
-using Microsoft.Windows.AppNotifications.Builder;
 
-namespace ResourcesHelper.Tray.Spike;
+namespace ResourcesHelper.Tray.Notifications;
 
 /// <summary>
-/// Proves AppNotificationManager from the unpackaged, self-contained app with a two-button
-/// toast.
+/// Registration and activation for app notifications, which work unpackaged.
 /// </summary>
-internal static class SpikeToasts
+internal static class Toasts
 {
     public const string StartService = "start-service";
     public const string OpenLogs = "open-logs";
@@ -31,21 +29,19 @@ internal static class SpikeToasts
         manager.NotificationInvoked += (source, args) =>
         {
             var action = ActionOf(args.Arguments);
-            SpikeLog.Write($"toast invoked: action '{action}'");
+            AppLog.Write($"toast invoked: action '{action}'");
             _ = dispatcher.TryEnqueue(() => onAction(action));
         };
 
-        SpikeLog.Write($"toasts supported {AppNotificationManager.IsSupported()}");
         var icon = new Uri(Path.Combine(AppContext.BaseDirectory, "Assets", "AppIcon.ico"));
         try
         {
             manager.Register("Resources Helper", icon);
-            SpikeLog.Write($"toasts registered with name and {icon}");
         }
         catch (COMException e)
         {
             // Toasts are optional; the tray must keep working without them.
-            SpikeLog.Write($"toast register failed: 0x{e.HResult:X8} {e.Message}");
+            AppLog.Write($"toast register failed: 0x{e.HResult:X8} {e.Message}");
         }
     }
 
@@ -56,21 +52,6 @@ internal static class SpikeToasts
     /// </returns>
     public static string? ActionOf(AppActivationArguments activation) =>
         activation.Data is AppNotificationActivatedEventArgs args ? ActionOf(args.Arguments) : null;
-
-    public static void Show()
-    {
-        var notification = new AppNotificationBuilder()
-            .AddArgument("toast", "spike")
-            .AddText("Service stopped")
-            .AddText("Spike toast: both buttons should reach the running tray app.")
-            .AddButton(
-                new AppNotificationButton("Start service").AddArgument(ActionKey, StartService))
-            .AddButton(
-                new AppNotificationButton("Open logs").AddArgument(ActionKey, OpenLogs))
-            .BuildNotification();
-        AppNotificationManager.Default.Show(notification);
-        SpikeLog.Write($"toast shown: id {notification.Id}");
-    }
 
     private static string ActionOf(IDictionary<string, string> arguments) =>
         arguments.TryGetValue(ActionKey, out var action) ? action : string.Empty;

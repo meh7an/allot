@@ -43,7 +43,7 @@ public sealed class DaemonClient(HttpClient http, string tokenFile) : IDisposabl
     {
         try
         {
-            using var response = await SendWithTokenAsync("ui/state", cancellationToken)
+            using var response = await SendWithTokenAsync(HttpMethod.Get, "ui/state", cancellationToken)
                 .ConfigureAwait(false);
             if (response is null)
             {
@@ -105,6 +105,30 @@ public sealed class DaemonClient(HttpClient http, string tokenFile) : IDisposabl
         }
     }
 
+    /// <summary>
+    /// <c>POST /shutdown</c>: rhd answers 202, then stops gracefully. Only cancellation throws.
+    /// </summary>
+    /// <returns><c>null</c> when rhd accepted, else why not.</returns>
+    public async Task<string?> ShutdownAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var response = await SendWithTokenAsync(
+                    HttpMethod.Post, "shutdown", cancellationToken)
+                .ConfigureAwait(false);
+            return response switch
+            {
+                null => $"no token in {tokenFile}",
+                { StatusCode: HttpStatusCode.Accepted } => null,
+                _ => $"POST /shutdown answered {(int)response.StatusCode}",
+            };
+        }
+        catch (Exception error) when (IsUnreachable(error, cancellationToken))
+        {
+            return error.Message;
+        }
+    }
+
     public void Dispose() => http.Dispose();
 
     // A timeout surfaces as a cancellation that the caller did not ask for.
@@ -152,6 +176,7 @@ public sealed class DaemonClient(HttpClient http, string tokenFile) : IDisposabl
 
     /// <returns><c>null</c> when there is no token to send.</returns>
     private async Task<HttpResponseMessage?> SendWithTokenAsync(
+        HttpMethod method,
         string path,
         CancellationToken cancellationToken)
     {
@@ -160,7 +185,8 @@ public sealed class DaemonClient(HttpClient http, string tokenFile) : IDisposabl
             return null;
         }
 
-        var response = await SendAsync(path, token, cancellationToken).ConfigureAwait(false);
+        var response = await SendAsync(method, path, token, cancellationToken)
+            .ConfigureAwait(false);
         if (response.StatusCode != HttpStatusCode.Unauthorized)
         {
             return response;
@@ -171,16 +197,17 @@ public sealed class DaemonClient(HttpClient http, string tokenFile) : IDisposabl
         response.Dispose();
         _token = null;
         return Token() is { } fresh
-            ? await SendAsync(path, fresh, cancellationToken).ConfigureAwait(false)
+            ? await SendAsync(method, path, fresh, cancellationToken).ConfigureAwait(false)
             : null;
     }
 
     private async Task<HttpResponseMessage> SendAsync(
+        HttpMethod method,
         string path,
         string token,
         CancellationToken cancellationToken)
     {
-        using var request = new HttpRequestMessage(HttpMethod.Get, path);
+        using var request = new HttpRequestMessage(method, path);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
         return await http.SendAsync(request, cancellationToken).ConfigureAwait(false);
     }

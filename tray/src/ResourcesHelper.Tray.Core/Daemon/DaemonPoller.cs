@@ -39,17 +39,10 @@ public sealed class DaemonPoller(DaemonClient client, IServiceLauncher launcher,
     public void SetFlyoutOpen(bool open)
     {
         _flyoutOpen = open;
-        if (!open)
+        if (open)
         {
-            return;
+            PollNow();
         }
-
-        lock (_gate)
-        {
-            _schedule.Reset();
-        }
-
-        Wake();
     }
 
     /// <summary>
@@ -71,6 +64,30 @@ public sealed class DaemonPoller(DaemonClient client, IServiceLauncher launcher,
 
         Wake();
         return null;
+    }
+
+    /// <summary>
+    /// Asks rhd to stop, then polls at once so the icon and flyout show it stopped.
+    /// </summary>
+    /// <returns><c>null</c> when rhd accepted, else why not.</returns>
+    public async Task<string?> StopServiceAsync(CancellationToken cancellationToken)
+    {
+        var problem = await client.ShutdownAsync(cancellationToken).ConfigureAwait(false);
+        PollNow();
+        return problem;
+    }
+
+    /// <summary>
+    /// Polls at once and restarts the backoff.
+    /// </summary>
+    public void PollNow()
+    {
+        lock (_gate)
+        {
+            _schedule.Reset();
+        }
+
+        Wake();
     }
 
     /// <summary>
