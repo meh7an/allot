@@ -102,6 +102,14 @@
               "type": "null"
             }
           ]
+        },
+        "quiet_at_start": {
+          "description": "For a benchmark lease, whether the machine was quiet when it was granted; `false` means\nit was granted anyway after the longest quiet wait. `None` for other leases and when\nthe daemon restarted since the grant.",
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "default": null
         }
       },
       "required": [

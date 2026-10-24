@@ -121,6 +121,13 @@ public sealed record ActiveJob
     /// The command's process, or <c>null</c> when the session has no process to show.
     /// </summary>
     public JobProcess? Process { get; init; }
+
+    /// <summary>
+    /// For a benchmark lease, whether the machine was quiet when it was granted; <c>false</c> means
+    /// it was granted anyway after the longest quiet wait. <c>null</c> for other leases and when
+    /// the daemon restarted since the grant.
+    /// </summary>
+    public bool? QuietAtStart { get; init; }
 }
 
 /// <summary>

@@ -165,9 +165,9 @@ public sealed class JobCardTests
         var snapshot = FlyoutSnapshot.From(ServiceStatus.Running, MaxState());
 
         var cards = snapshot.Groups.SelectMany(group => group.Jobs).ToList();
-        var cargo = cards.Single(job => job.Lease.Id == Handoff.LeaseId("cargo"));
-        var ctest = cards.Single(job => job.Lease.Id == Handoff.LeaseId("ctest"));
-        var npm = cards.Single(job => job.Lease.Id == Handoff.LeaseId("npm"));
+        var cargo = cards.Single(job => job.Id == Handoff.LeaseId("cargo"));
+        var ctest = cards.Single(job => job.Id == Handoff.LeaseId("ctest"));
+        var npm = cards.Single(job => job.Id == Handoff.LeaseId("npm"));
         Assert.AreEqual("7.8 cores · 2.9 GB", cargo.Session.Usage);
         Assert.AreEqual("also running", ctest.Session.Usage);
         Assert.AreEqual("0.4 cores · 1.1 GB", npm.Session.Usage);
@@ -180,8 +180,7 @@ public sealed class JobCardTests
 
         Assert.IsTrue(card.IsBenchmark);
         Assert.AreEqual("Benchmark", card.Chip);
-        Assert.AreEqual("cargo.exe 30412 · 16 cores · 8 GB", card.Detail);
-        Assert.AreEqual("0:48 / ~2:00", card.Time);
+        Assert.AreEqual("Benchmark", card.ChipTooltip);
     }
 
     [TestMethod]
@@ -331,6 +330,6 @@ public sealed class JobCardTests
     private static JobCard CardOf(UiState state, string job) =>
         FlyoutSnapshot.From(ServiceStatus.Running, state)
             .Groups.SelectMany(group => group.Jobs)
-            .Single(item => item.Lease.Id == Handoff.LeaseId(job))
+            .Single(item => item.Id == Handoff.LeaseId(job))
             .Card;
 }

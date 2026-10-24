@@ -97,6 +97,11 @@ impl RunMeter {
         &self.session
     }
 
+    /// Whether the machine was quiet when the lease was granted.
+    pub fn quiet_at_start(&self) -> bool {
+        self.quiet_at_start
+    }
+
     /// Records that the session held another active lease during the run.
     pub fn mark_overlapped(&mut self) {
         self.overlapped = true;

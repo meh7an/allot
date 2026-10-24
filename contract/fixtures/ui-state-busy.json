@@ -69,7 +69,8 @@
         "name": "python.exe",
         "exe": null,
         "bound": false
-      }
+      },
+      "quiet_at_start": null
     },
     {
       "lease": {
@@ -101,7 +102,8 @@
         "name": "cargo.exe",
         "exe": "C:\\Users\\Mehran\\.cargo\\bin\\cargo.exe",
         "bound": true
-      }
+      },
+      "quiet_at_start": null
     }
   ],
   "queue": [

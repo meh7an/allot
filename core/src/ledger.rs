@@ -172,6 +172,20 @@ impl Ledger {
         &self.leases
     }
 
+    /// Whether the machine was quiet when the active benchmark lease `id` was granted;
+    /// `false` means it was granted anyway after the longest quiet wait. `None` for other
+    /// leases and for a lease restored after a restart, which has no run meter.
+    pub fn quiet_at_start(&self, id: LeaseId) -> Option<bool> {
+        let lease = self.leases.iter().find(|lease| lease.id == id)?;
+        if lease.kind != LeaseKind::BenchmarkExclusive {
+            return None;
+        }
+        self.meters
+            .iter()
+            .find(|meter| meter.lease_id() == id)
+            .map(RunMeter::quiet_at_start)
+    }
+
     /// Adds a newly stored lease to the back of the queue. It is granted on a later
     /// [`Ledger::tick`].
     ///
@@ -1060,6 +1074,7 @@ mod tests {
             "{transitions:?}"
         );
 
+        assert_eq!(ledger.quiet_at_start(LeaseId(1)), Some(false));
         tick_seconds(&mut ledger, 61, 62, 15.0);
         let released = ledger
             .release(LeaseId(1), &session("bench"), 63_000)
@@ -1072,6 +1087,7 @@ mod tests {
         let mut ledger = Ledger::new(settings());
         enqueue_benchmark(&mut ledger, 1, 0);
         assert_eq!(tick_seconds(&mut ledger, 0, 10, 0.0), [1]);
+        assert_eq!(ledger.quiet_at_start(LeaseId(1)), Some(true));
         for second in 11..=12 {
             let mut busy_sample = sample(second * 1_000, 60.0);
             busy_sample.sessions = vec![session_usage("bench", 8.0), session_usage("other", 0.32)];
@@ -1094,6 +1110,8 @@ mod tests {
         let mut ledger = Ledger::new(settings());
         enqueue(&mut ledger, 1, 8.0, 300, 0);
         assert_eq!(tick_seconds(&mut ledger, 0, 0, 0.0), [1]);
+        // Only benchmark leases say whether they started quiet.
+        assert_eq!(ledger.quiet_at_start(LeaseId(1)), None);
         for (second, cores) in [(1, 4.0), (2, 12.0)] {
             let mut busy_sample = sample(second * 1_000, 50.0);
             busy_sample.sessions = vec![session_usage("s", cores)];

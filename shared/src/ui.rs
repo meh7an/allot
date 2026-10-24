@@ -60,6 +60,11 @@ pub struct ActiveJob {
     pub lease: Lease,
     /// The command's process, or `None` when the session has no process to show.
     pub process: Option<JobProcess>,
+    /// For a benchmark lease, whether the machine was quiet when it was granted; `false` means
+    /// it was granted anyway after the longest quiet wait. `None` for other leases and when
+    /// the daemon restarted since the grant.
+    #[serde(default)]
+    pub quiet_at_start: Option<bool>,
 }
 
 /// The process shown for a job.

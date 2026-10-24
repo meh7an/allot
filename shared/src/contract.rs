@@ -265,6 +265,7 @@ fn busy() -> UiState {
                     exe: None,
                     bound: false,
                 }),
+                quiet_at_start: None,
             },
             ActiveJob {
                 lease: build,
@@ -274,6 +275,7 @@ fn busy() -> UiState {
                     exe: Some(r"C:\Users\Mehran\.cargo\bin\cargo.exe".into()),
                     bound: true,
                 }),
+                quiet_at_start: None,
             },
         ],
         queue: vec![

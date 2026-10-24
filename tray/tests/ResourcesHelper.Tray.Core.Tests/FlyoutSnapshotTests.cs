@@ -32,7 +32,10 @@ public sealed class FlyoutSnapshotTests
             Handoff.State(wait: ["npmB"], bench: "run"),
             "Benchmark running alone",
             HeaderGlyph.Busy),
-        ["bench-done"] = new(Handoff.State(wait: ["npmN"]), "1 waiting", HeaderGlyph.Idle),
+        ["bench-done"] = new(
+            Handoff.State(wait: ["npmN"], bench: "done"),
+            "1 waiting",
+            HeaderGlyph.Idle),
         ["down"] = new(
             Handoff.State(run: ["cargo"]),
             "Service stopped",
@@ -92,13 +95,14 @@ public sealed class FlyoutSnapshotTests
     [TestMethod]
     public void BenchmarkSequenceWalksThroughEveryPhase()
     {
-        // bench-seq: drain with a running job, quiet, run alone, then done (the lease is gone).
+        // bench-seq: drain with a running job, quiet, run alone, then done (the lease is gone and
+        // its run shows as Finished).
         UiState[] steps =
         [
             Handoff.State(run: ["cargo"], wait: ["npmB"], bench: "drain"),
             Handoff.State(wait: ["npmB"], bench: "quiet"),
             Handoff.State(wait: ["npmB"], bench: "run"),
-            Handoff.State(wait: ["npmN"]),
+            Handoff.State(wait: ["npmN"], bench: "done"),
         ];
 
         var summaries = steps.Select(state => FlyoutSnapshot.From(ServiceStatus.Running, state))

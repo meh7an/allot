@@ -85,6 +85,15 @@ public sealed partial class FlyoutShell : UserControl, IFlyoutContent
     public static Visibility ShowsAction(CardAction action, string name) =>
         action.ToString() == name ? Visibility.Visible : Visibility.Collapsed;
 
+    public static Visibility ShowsIcon(DetailIcon icon, string name) =>
+        icon.ToString() == name ? Visibility.Visible : Visibility.Collapsed;
+
+    /// <summary>
+    /// A detail line with a leading icon, a benchmark's status, wraps instead of truncating.
+    /// </summary>
+    public static TextWrapping Wraps(DetailIcon icon) =>
+        icon == DetailIcon.None ? TextWrapping.NoWrap : TextWrapping.WrapWholeWords;
+
     public static Visibility Hides(bool hidden) =>
         hidden ? Visibility.Collapsed : Visibility.Visible;
 

@@ -217,7 +217,7 @@ public sealed class StopCardTests
 
     private static JobCard CardOf(string scenario, string job) =>
         Snapshot(scenario).Groups.SelectMany(group => group.Jobs)
-            .Single(item => item.Lease.Id == Handoff.LeaseId(job))
+            .Single(item => item.Id == Handoff.LeaseId(job))
             .Card;
 
     private static JobCard CardWith(string job, StopView stop, long? nowMs = null)
@@ -229,7 +229,7 @@ public sealed class StopCardTests
             new Dictionary<long, StopView> { [Handoff.LeaseId(job)] = stop },
             nowMs);
         return snapshot.Groups.SelectMany(group => group.Jobs)
-            .Single(item => item.Lease.Id == Handoff.LeaseId(job))
+            .Single(item => item.Id == Handoff.LeaseId(job))
             .Card;
     }
 }

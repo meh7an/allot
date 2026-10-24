@@ -66,8 +66,9 @@ public static class Handoff
     public static IReadOnlyList<string> ScenarioNames { get; } =
     [
         "empty", "one", "several", "kill-confirm", "killed", "bench-drain", "bench-quiet",
-        "bench-run", "bench-done", "down", "max", "icons", "c-active", "c-over", "c-queued",
-        "c-bench", "c-confirm", "c-killed", "c-removed", "c-refused",
+        "bench-run", "bench-done", "bench-noisy", "bench-forced", "down", "max", "icons",
+        "c-active", "c-over", "c-queued", "c-bench", "c-confirm", "c-killed", "c-removed",
+        "c-refused",
     ];
 
     /// <summary>
@@ -101,7 +102,9 @@ public static class Handoff
             (ServiceStatus.Running, State(run: ["cargo"], wait: ["npmB"], bench: "drain")),
         "bench-quiet" => (ServiceStatus.Running, State(wait: ["npmB"], bench: "quiet")),
         "bench-run" => (ServiceStatus.Running, State(wait: ["npmB"], bench: "run")),
-        "bench-done" => (ServiceStatus.Running, State(wait: ["npmN"])),
+        "bench-done" => (ServiceStatus.Running, State(wait: ["npmN"], bench: "done")),
+        "bench-noisy" => (ServiceStatus.Running, State(wait: ["npmB"], bench: "noisy")),
+        "bench-forced" => (ServiceStatus.Running, State(wait: ["npmB"], bench: "forced")),
         "down" => (ServiceStatus.Stopped, State(run: ["cargo"])),
         "max" => (ServiceStatus.Running, MaxState(exes: false)),
         "icons" => (ServiceStatus.Running, MaxState(exes: true)),
@@ -134,8 +137,9 @@ public static class Handoff
 
     /// <param name="run">Active jobs, in grant order.</param>
     /// <param name="wait">Queued jobs, in queue order after a queued benchmark.</param>
-    /// <param name="bench"><c>drain</c>, <c>quiet</c> or <c>run</c>; <c>null</c> without
-    /// one.</param>
+    /// <param name="bench"><c>drain</c>, <c>quiet</c>, <c>noisy</c> (waiting for quiet past the
+    /// limits), <c>run</c>, <c>forced</c> (running after the longest quiet wait) or <c>done</c>
+    /// (finished 10 s ago); <c>null</c> without one.</param>
     /// <param name="idle">Adds the idle session <c>e09c7b3a</c>.</param>
     /// <param name="recent">Adds the two Recently finished runs of the <c>empty</c>
     /// scenario.</param>
@@ -153,32 +157,28 @@ public static class Handoff
         var active = run.Select(name => Active(name, exes)).ToList();
         var queue = new List<QueuedJob>();
         var used = run.Concat(wait).ToList();
+        var running = bench is "run" or "forced";
         if (bench is not null)
         {
             used.Add("bench");
-            if (bench == "run")
+        }
+
+        if (running)
+        {
+            active.Add(Active("bench", exes, LeaseKind.BenchmarkExclusive) with
             {
-                active.Add(Active("bench", exes, LeaseKind.BenchmarkExclusive));
-            }
-            else
-            {
-                var quiet = bench == "quiet";
-                BenchmarkProgress progress = quiet
-                    ? new BenchmarkProgress.Measuring
-                    {
-                        CpuAvgPct = 3,
-                        GpuAvgPct = 0,
-                        MeasuredSecs = 6,
-                        NeededSecs = 10,
-                    }
-                    : new BenchmarkProgress.Draining { ActiveLeases = (uint)run.Length };
-                queue.Add(Queued(
-                    Jobs["bench"],
-                    1,
-                    LeaseKind.BenchmarkExclusive,
-                    progress,
-                    quiet ? 4UL : null));
-            }
+                QuietAtStart = bench == "run",
+            });
+        }
+        else if (bench is "drain" or "quiet" or "noisy")
+        {
+            var (progress, waitLeft) = BenchmarkWait(bench, run.Length);
+            queue.Add(Queued(
+                Jobs["bench"],
+                1,
+                LeaseKind.BenchmarkExclusive,
+                progress,
+                waitLeft));
         }
 
         foreach (var name in wait)
@@ -186,9 +186,12 @@ public static class Handoff
             queue.Add(Queued(Jobs[name], (uint)queue.Count + 1));
         }
 
+        // A benchmark running alone has the machine's load to itself, as on the board.
         var sessions = used.Select(name => Jobs[name])
             .DistinctBy(job => job.Session)
-            .Select(job => Session(FullSession(job.Session), job.Cwd, job.Cores, job.RamMb))
+            .Select(job => running && job == Jobs["bench"]
+                ? Session(FullSession(job.Session), job.Cwd, 15.6f, 3174)
+                : Session(FullSession(job.Session), job.Cwd, job.Cores, job.RamMb))
             .ToList();
         if (idle)
         {
@@ -196,7 +199,41 @@ public static class Handoff
         }
 
         var state = Build(sessions, active, queue);
+        if (bench == "done")
+        {
+            state = state with { Recent = [FinishedBenchmark()] };
+        }
+
         return recent ? state with { Recent = RecentRuns() } : state;
+    }
+
+    /// <summary>
+    /// The benchmark of <c>bench-done</c>: it ran 2:04 and ended 10 s before the scenario's
+    /// moment, with background noise avg 1.8%, peak 6.2% CPU.
+    /// </summary>
+    public static RecentRun FinishedBenchmark(bool quietAtStart = true)
+    {
+        var job = Jobs["bench"];
+        var endedAtMs = NowMs - 10_000;
+        return new RecentRun
+        {
+            Command = job.Command,
+            Cwd = job.Cwd,
+            Declared = job.Profile,
+            EndCause = EndCause.Released,
+            EndedAtMs = endedAtMs,
+            LeaseId = job.Id,
+            Noise = new NoiseReport
+            {
+                AvgCpuPct = 1.8f,
+                AvgGpuPct = 0,
+                PeakCpuPct = 6.2f,
+                PeakGpuPct = 0,
+                QuietAtStart = quietAtStart,
+            },
+            Session = FullSession(job.Session),
+            StartedAtMs = endedAtMs - 124_000,
+        };
     }
 
     public static UiState Build(
@@ -273,6 +310,31 @@ public static class Handoff
                 : new JobProcess { Bound = true, Exe = exe, Name = job.Process, Pid = job.Pid },
         };
     }
+
+    // Draining behind the running jobs, 6 of 10 s of quiet at 3% CPU, or 14% CPU against a 5%
+    // limit with 42 s left before rhd grants it anyway.
+    private static (BenchmarkProgress Progress, ulong? WaitLeft) BenchmarkWait(
+        string bench,
+        int running) =>
+        bench switch
+        {
+            "quiet" => (new BenchmarkProgress.Measuring
+            {
+                CpuAvgPct = 3,
+                GpuAvgPct = 0,
+                MeasuredSecs = 6,
+                NeededSecs = 10,
+            }, 4),
+            "noisy" => (new BenchmarkProgress.Noisy
+            {
+                CpuAvgPct = 14,
+                CpuLimitPct = 5,
+                GpuAvgPct = 0,
+                GpuLimitPct = 10,
+                GrantAnywayInSecs = 42,
+            }, 42),
+            _ => (new BenchmarkProgress.Draining { ActiveLeases = (uint)running }, null),
+        };
 
     private static QueuedJob Queued(
         Job job,

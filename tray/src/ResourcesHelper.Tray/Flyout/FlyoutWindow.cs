@@ -40,6 +40,9 @@ public sealed unsafe partial class FlyoutWindow : Window
     private static readonly TimeSpan FadeInDuration = TimeSpan.FromMilliseconds(167);
     private static readonly TimeSpan FadeOutDuration = TimeSpan.FromMilliseconds(100);
     private const nuint SubclassId = 1;
+    // A larger gap between the visible frame and the client area is a transient state, not an
+    // edge DWM keeps.
+    private const int MaxClientShortfall = 8;
 
     // The subclass procedure is a static callback, so it finds the window here; there is only one.
     private static FlyoutWindow? s_current;
@@ -54,6 +57,9 @@ public sealed unsafe partial class FlyoutWindow : Window
     private IFlyoutContent? _content;
     private FrameInsets _insets;
     private FrameInsets _dragInsets;
+    // Effective px the client area is shorter than the visible frame.
+    private double _clientShortfall;
+    private bool _clientReported;
     private bool _framed;
     private bool _prewarming;
     private bool _dragging;
@@ -456,7 +462,8 @@ public sealed unsafe partial class FlyoutWindow : Window
         });
     }
 
-    private double ContentHeight => _content?.DesiredHeight ?? FlyoutPlacement.MaxHeight;
+    private double ContentHeight =>
+        (_content?.DesiredHeight ?? FlyoutPlacement.MaxHeight) + _clientShortfall;
 
     private PixelRect TrayCorner()
     {
@@ -555,17 +562,50 @@ public sealed unsafe partial class FlyoutWindow : Window
         var window = _insets.Around(target);
         AppWindow.MoveAndResize(new RectInt32(window.X, window.Y, window.Width, window.Height));
         var actual = CurrentInsets();
-        if (actual == _insets)
+        if (actual != _insets)
+        {
+            _insets = actual;
+            window = actual.Around(target);
+            AppWindow.MoveAndResize(
+                new RectInt32(window.X, window.Y, window.Width, window.Height));
+            Report(string.Create(
+                CultureInfo.InvariantCulture,
+                $"frame insets {actual.Left},{actual.Top},{actual.Right},{actual.Bottom}"));
+        }
+
+        CheckClient(target);
+    }
+
+    // DWM keeps a 1 px edge of the visible frame outside the client area (seen: client
+    // 358x227 in visible 360x228), and the body then scrolled by that 1 px. The shortfall is
+    // added to the content height, and the flyout is placed again when it changes. Growing the
+    // client area over the edge with WM_NCCALCSIZE does not work: DWM moves the visible frame
+    // out with it, and the measured insets then shrink on every placement.
+    private void CheckClient(PixelRect target)
+    {
+        var client = AppWindow.ClientSize;
+        var missing = target.Height - client.Height;
+        if (missing is < 0 or > MaxClientShortfall)
         {
             return;
         }
 
-        _insets = actual;
-        window = actual.Around(target);
-        AppWindow.MoveAndResize(new RectInt32(window.X, window.Y, window.Width, window.Height));
+        var area = DisplayArea.GetFromWindowId(AppWindow.Id, DisplayAreaFallback.Nearest);
+        var shortfall = missing / ScaleOf(area);
+        if (shortfall == _clientShortfall && _clientReported)
+        {
+            return;
+        }
+
+        _clientReported = true;
         Report(string.Create(
             CultureInfo.InvariantCulture,
-            $"frame insets {actual.Left},{actual.Top},{actual.Right},{actual.Bottom}"));
+            $"client {client.Width}x{client.Height} in visible {target.Width}x{target.Height}"));
+        if (shortfall != _clientShortfall)
+        {
+            _clientShortfall = shortfall;
+            _ = _dispatcher.TryEnqueue(OnDesiredHeightChanged);
+        }
     }
 
     private void OnDesiredHeightChanged()

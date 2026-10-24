@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The Drain / Quiet / Run stepper under a benchmark's status line (handoff section 4): three
+  segments of 1, 1.4 and 1, each a 3 px bar above an 11/14 label. Quiet is 10 ticks, one per
+  second of quiet; Run fills with elapsed against the estimate. The active segment is solid
+  purple, completed ones purple at 35%, upcoming ones the step track. Brushes stay theme
+  resources; the code only picks the visual state and sets the ticks and the run fill.
+-->
+<UserControl
+  x:Class="ResourcesHelper.Tray.Flyout.BenchmarkStepper"
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  IsTabStop="False"
+  IsHitTestVisible="False">
+  <Grid ColumnSpacing="6">
+    <Grid.ColumnDefinitions>
+      <ColumnDefinition Width="*" />
+      <ColumnDefinition Width="1.4*" />
+      <ColumnDefinition Width="*" />
+    </Grid.ColumnDefinitions>
+
+    <VisualStateManager.VisualStateGroups>
+      <VisualStateGroup x:Name="StepStates">
+        <VisualState x:Name="Drain">
+          <VisualState.Setters>
+            <Setter Target="DrainLabel.Foreground" Value="{ThemeResource RhTextBrush}" />
+            <Setter Target="QuietLabel.Foreground" Value="{ThemeResource RhTextSubtleBrush}" />
+            <Setter Target="RunLabel.Foreground" Value="{ThemeResource RhTextSubtleBrush}" />
+          </VisualState.Setters>
+        </VisualState>
+        <VisualState x:Name="Quiet">
+          <VisualState.Setters>
+            <Setter Target="DrainBar.Background" Value="{ThemeResource RhBenchmarkSoftBrush}" />
+            <Setter Target="QuietLabel.Foreground" Value="{ThemeResource RhTextBrush}" />
+            <Setter Target="RunLabel.Foreground" Value="{ThemeResource RhTextSubtleBrush}" />
+          </VisualState.Setters>
+        </VisualState>
+        <VisualState x:Name="Run">
+          <VisualState.Setters>
+            <Setter Target="DrainBar.Background" Value="{ThemeResource RhBenchmarkSoftBrush}" />
+            <Setter Target="DoneTicks.Visibility" Value="Visible" />
+            <Setter Target="RunLabel.Foreground" Value="{ThemeResource RhTextBrush}" />
+          </VisualState.Setters>
+        </VisualState>
+        <VisualState x:Name="Done">
+          <VisualState.Setters>
+            <Setter Target="DrainBar.Background" Value="{ThemeResource RhBenchmarkSoftBrush}" />
+            <Setter Target="DoneTicks.Visibility" Value="Visible" />
+            <Setter Target="RunFill.Background" Value="{ThemeResource RhBenchmarkSoftBrush}" />
+          </VisualState.Setters>
+        </VisualState>
+      </VisualStateGroup>
+    </VisualStateManager.VisualStateGroups>
+
+    <StackPanel Spacing="3">
+      <Border
+        x:Name="DrainBar"
+        Height="3"
+        CornerRadius="2"
+        Background="{ThemeResource RhBenchmarkBrush}" />
+      <TextBlock
+        x:Name="DrainLabel"
+        Style="{StaticResource RhCaptionTextStyle}"
+        Text="Drain" />
+    </StackPanel>
+
+    <StackPanel Grid.Column="1" Spacing="3">
+      <!-- Three layers of ticks: upcoming, completed (Run and Done), and the seconds of quiet. -->
+      <Grid x:Name="TickRow" Height="3" SizeChanged="OnTickRowSizeChanged">
+        <Path x:Name="UpcomingTicks" Fill="{ThemeResource RhStepUpcomingBrush}" />
+        <Path x:Name="DoneTicks" Fill="{ThemeResource RhBenchmarkSoftBrush}" Visibility="Collapsed" />
+        <Path x:Name="QuietTicks" Fill="{ThemeResource RhBenchmarkBrush}" />
+      </Grid>
+      <TextBlock
+        x:Name="QuietLabel"
+        Style="{StaticResource RhCaptionTextStyle}"
+        Text="Quiet" />
+    </StackPanel>
+
+    <StackPanel Grid.Column="2" Spacing="3">
+      <Grid Height="3" CornerRadius="2" Background="{ThemeResource RhTrackBrush}">
+        <Border
+          x:Name="RunFill"
+          CornerRadius="2"
+          Background="{ThemeResource RhBenchmarkBrush}"
+          RenderTransformOrigin="0,0.5">
+          <Border.RenderTransform>
+            <ScaleTransform x:Name="RunScale" ScaleX="0" />
+          </Border.RenderTransform>
+        </Border>
+      </Grid>
+      <TextBlock
+        x:Name="RunLabel"
+        Style="{StaticResource RhCaptionTextStyle}"
+        Text="Run" />
+    </StackPanel>
+  </Grid>
+</UserControl>

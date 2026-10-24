@@ -319,38 +319,69 @@
                   </Grid>
                 </Grid>
 
-                <!-- Detail line, inset to align with the command. -->
+                <!--
+                  Detail line, inset to align with the command. A benchmark's status line leads
+                  with a 14 px icon and wraps instead of truncating.
+                -->
                 <Grid Margin="28,0,8,0" ColumnSpacing="6">
                   <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
                   </Grid.ColumnDefinitions>
+                  <TextBlock
+                    Margin="0,1,0,0"
+                    VerticalAlignment="Top"
+                    FontFamily="{StaticResource RhIconRegularFontFamily}"
+                    FontSize="14"
+                    Foreground="{ThemeResource RhBenchmarkBrush}"
+                    Text="{StaticResource RhGlyphTimerRegular}"
+                    Visibility="{x:Bind local:FlyoutShell.ShowsIcon(Icon, 'Timer'), Mode=OneWay}" />
+                  <TextBlock
+                    Margin="0,1,0,0"
+                    VerticalAlignment="Top"
+                    FontFamily="{StaticResource RhIconFilledFontFamily}"
+                    FontSize="14"
+                    Foreground="{ThemeResource RhRunningBrush}"
+                    Text="{StaticResource RhGlyphCheckmarkCircleFilled}"
+                    Visibility="{x:Bind local:FlyoutShell.ShowsIcon(Icon, 'Check'), Mode=OneWay}" />
                   <!-- Stopped and Removed lead with a semibold word in full ink. -->
                   <TextBlock
+                    Grid.Column="1"
                     Style="{StaticResource RhDetailTextStyle}"
+                    TextWrapping="{x:Bind local:FlyoutShell.Wraps(Icon), Mode=OneWay}"
                     ToolTipService.ToolTip="{x:Bind local:FlyoutShell.Tip(DetailTooltip), Mode=OneWay}"
                     Visibility="{x:Bind local:FlyoutShell.Hides(DetailIsDanger), Mode=OneWay}">
                     <Run FontWeight="SemiBold" Foreground="{ThemeResource RhTextBrush}" Text="{x:Bind Strong, Mode=OneWay}" /><Run Text="{x:Bind Detail, Mode=OneWay}" />
                   </TextBlock>
                   <TextBlock
+                    Grid.Column="1"
                     Style="{StaticResource RhDetailTextStyle}"
                     Foreground="{ThemeResource RhDangerTextBrush}"
                     Text="{x:Bind Detail, Mode=OneWay}"
                     ToolTipService.ToolTip="{x:Bind local:FlyoutShell.Tip(DetailTooltip), Mode=OneWay}"
                     Visibility="{x:Bind DetailIsDanger, Mode=OneWay}" />
                   <TextBlock
-                    Grid.Column="1"
+                    Grid.Column="2"
                     Style="{StaticResource RhBodyTextStyle}"
                     Foreground="{ThemeResource RhTextSecondaryBrush}"
                     Text="{x:Bind Time, Mode=OneWay}"
                     Visibility="{x:Bind local:FlyoutShell.Hides(TimeIsWarning), Mode=OneWay}" />
                   <TextBlock
-                    Grid.Column="1"
+                    Grid.Column="2"
                     Style="{StaticResource RhBodyTextStyle}"
                     Foreground="{ThemeResource RhWaitingBrush}"
                     Text="{x:Bind Time, Mode=OneWay}"
                     Visibility="{x:Bind TimeIsWarning, Mode=OneWay}" />
                 </Grid>
+
+                <!-- A benchmark's Drain / Quiet / Run stepper. -->
+                <local:BenchmarkStepper
+                  Margin="28,8,8,0"
+                  Step="{x:Bind Step, Mode=OneWay}"
+                  Ticks="{x:Bind QuietTicks, Mode=OneWay}"
+                  RunFraction="{x:Bind RunFraction, Mode=OneWay}"
+                  Visibility="{x:Bind HasSteps, Mode=OneWay}" />
               </StackPanel>
               <local:EdgeBar
                 VerticalAlignment="Bottom"

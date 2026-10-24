@@ -41,7 +41,7 @@ struct Stored {
 pub async fn ui_state(state: &AppState, service: HealthResponse) -> Result<UiState, AppError> {
     let latest = state.latest().ok_or(AppError::Unavailable)?;
     let now = now_ms();
-    let (tracked, mut verdicts) = {
+    let (tracked, mut verdicts, quiet) = {
         let ledger = state.ledger.lock().await;
         let verdicts: HashMap<LeaseId, Verdict> = ledger
             .leases()
@@ -52,7 +52,12 @@ pub async fn ui_state(state: &AppState, service: HealthResponse) -> Result<UiSta
                 Some((lease.id, verdict))
             })
             .collect();
-        (ledger.leases().to_vec(), verdicts)
+        let quiet: HashMap<LeaseId, bool> = ledger
+            .leases()
+            .iter()
+            .filter_map(|lease| Some((lease.id, ledger.quiet_at_start(lease.id)?)))
+            .collect();
+        (ledger.leases().to_vec(), verdicts, quiet)
     };
 
     let sessions: Vec<SessionKey> = latest
@@ -114,6 +119,7 @@ pub async fn ui_state(state: &AppState, service: HealthResponse) -> Result<UiSta
             .map(|lease| ActiveJob {
                 lease: (*lease).clone(),
                 process: job_process(lease, &latest),
+                quiet_at_start: quiet.get(&lease.id).copied(),
             })
             .collect(),
         queue,

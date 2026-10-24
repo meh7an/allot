@@ -47,12 +47,12 @@ public sealed class JobCardRow : FlyoutRow
 
     public JobCardRow(JobItem job)
     {
-        LeaseId = job.Lease.Id;
+        LeaseId = job.Id;
         _shortId = job.Session.ShortId;
         _project = job.Session.Project;
         _projectPath = job.Session.ProjectPath;
         _usage = job.Session.Usage;
-        _command = job.Lease.Label;
+        _command = job.Command;
         _card = job.Card;
     }
 
@@ -131,6 +131,16 @@ public sealed class JobCardRow : FlyoutRow
 
     public bool IsEnded => _card.IsEnded;
 
+    public DetailIcon Icon => _card.Icon;
+
+    public bool HasSteps => _card.Steps is not null;
+
+    public BenchmarkStep Step => _card.Steps?.Current ?? BenchmarkStep.Drain;
+
+    public int QuietTicks => _card.Steps?.QuietTicks ?? 0;
+
+    public double RunFraction => _card.Steps?.RunFraction ?? 0;
+
     public override string Key => $"job:{LeaseId}";
 
     public override void Update(FlyoutRow fresh)
@@ -170,6 +180,11 @@ public sealed class JobCardRow : FlyoutRow
         Changed(old.Action != fresh.Action, nameof(Action));
         Changed(old.ActionName != fresh.ActionName, nameof(ActionName));
         Changed(old.IsEnded != fresh.IsEnded, nameof(IsEnded));
+        Changed(old.Icon != fresh.Icon, nameof(Icon));
+        Changed((old.Steps is null) != (fresh.Steps is null), nameof(HasSteps));
+        Changed(old.Steps?.Current != fresh.Steps?.Current, nameof(Step));
+        Changed(old.Steps?.QuietTicks != fresh.Steps?.QuietTicks, nameof(QuietTicks));
+        Changed(old.Steps?.RunFraction != fresh.Steps?.RunFraction, nameof(RunFraction));
         Changed(true, nameof(Card));
     }
 

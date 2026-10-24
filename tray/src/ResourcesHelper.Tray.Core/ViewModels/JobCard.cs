@@ -85,6 +85,9 @@ public enum CardAction
 /// <c>Kill cargo.exe</c>.</param>
 /// <param name="IsEnded">Stopped or removed: the command is struck through, and the tile,
 /// command and chip show at 50%.</param>
+/// <param name="Icon">The detail line's leading icon; with one, the line wraps instead of
+/// truncating.</param>
+/// <param name="Steps">A benchmark's Drain / Quiet / Run stepper, or <c>null</c> for none.</param>
 public sealed record JobCard(
     string Tile,
     bool IsQueued,
@@ -102,7 +105,9 @@ public sealed record JobCard(
     EdgeBarTone BarTone,
     CardAction Action,
     string ActionName,
-    bool IsEnded)
+    bool IsEnded,
+    DetailIcon Icon = DetailIcon.None,
+    BenchmarkSteps? Steps = null)
 {
     // A queued job this close to its start reads "starts next".
     private const ulong StartsNextSecs = 60;
@@ -118,6 +123,55 @@ public sealed record JobCard(
         long nowMs,
         bool lastKnown,
         StopView? stop = null)
+    {
+        var card = ActiveCard(job, nowMs, lastKnown, stop);
+        if (!card.IsBenchmark)
+        {
+            return card;
+        }
+
+        var lease = job.Lease;
+        var elapsed = Seconds(nowMs - (lease.GrantedAtMs ?? lease.RequestedAtMs));
+        var status = BenchmarkStatus.ForActive(job, elapsed);
+        return Benchmark(card, status, lastKnown, stop is { Kind: StopKind.Kill } ? stop : null);
+    }
+
+    /// <summary>
+    /// A benchmark that finished on its own: the green check, the run time and its background
+    /// noise, every step complete, and no action.
+    /// </summary>
+    /// <param name="run">The finished run.</param>
+    /// <param name="noise">Its background load.</param>
+    public static JobCard ForFinished(RecentRun run, NoiseReport noise)
+    {
+        var status = BenchmarkStatus.ForFinished(run, noise);
+        return new JobCard(
+            Format.Initials(FirstWord(run.Command)),
+            false,
+            null,
+            "Benchmark",
+            "Benchmark",
+            true,
+            "",
+            status.Text,
+            "",
+            false,
+            "",
+            false,
+            0,
+            EdgeBarTone.None,
+            CardAction.None,
+            "",
+            false,
+            status.Icon,
+            status.Steps);
+    }
+
+    private static JobCard ActiveCard(
+        ActiveJob job,
+        long nowMs,
+        bool lastKnown,
+        StopView? stop)
     {
         var lease = job.Lease;
         var process = job.Process;
@@ -212,14 +266,13 @@ public sealed record JobCard(
                     DetailIsDanger = true,
                 };
             default:
-                // The prototype's benchmark card shows no time once stopped.
                 var ran = Seconds((stop.EndedAtMs ?? nowMs) - started);
                 return card with
                 {
                     Strong = "Stopped",
                     Detail = Notified(stop.Message),
                     DetailTooltip = "",
-                    Time = benchmark ? "" : $"at {Format.Duration(ran)}",
+                    Time = $"at {Format.Duration(ran)}",
                     TimeIsWarning = false,
                     BarFraction = estimate > 0 ? Fraction(ran, estimate) : 0,
                     BarTone = EdgeBarTone.Frozen,
@@ -237,12 +290,31 @@ public sealed record JobCard(
     /// away.</param>
     /// <param name="stop">A Remove under way or done in this flyout, or <c>null</c>; ignored
     /// for last known state.</param>
+    /// <param name="othersActive">Another lease is active, which a queued benchmark drains.</param>
     public static JobCard ForQueued(
         QueuedJob job,
         long nowMs,
         bool afterBenchmark,
         bool lastKnown,
-        StopView? stop = null)
+        StopView? stop = null,
+        bool othersActive = false)
+    {
+        var card = QueuedCard(job, nowMs, afterBenchmark, lastKnown, stop);
+        return card.IsBenchmark
+            ? Benchmark(
+                card,
+                BenchmarkStatus.ForQueued(job, othersActive),
+                lastKnown,
+                stop is { Kind: StopKind.Remove } ? stop : null)
+            : card;
+    }
+
+    private static JobCard QueuedCard(
+        QueuedJob job,
+        long nowMs,
+        bool afterBenchmark,
+        bool lastKnown,
+        StopView? stop)
     {
         var lease = job.Lease;
         var waited = Seconds(nowMs - lease.RequestedAtMs);
@@ -324,6 +396,48 @@ public sealed record JobCard(
                 IsEnded = true,
             },
             _ => card,
+        };
+    }
+
+    // A benchmark shows its progress on the stepper instead of an edge bar, and its status line
+    // instead of the reservation. While a stop is under way the stepper stays and the line is
+    // the stop's; once stopped or removed, and in last known state, only the plain line is left,
+    // without a time, as in the prototype.
+    private static JobCard Benchmark(
+        JobCard card,
+        BenchmarkStatus status,
+        bool lastKnown,
+        StopView? stop)
+    {
+        card = card with { BarFraction = 0, BarTone = EdgeBarTone.None };
+        if (card.IsEnded)
+        {
+            return card with { Time = "" };
+        }
+
+        if (lastKnown)
+        {
+            return card;
+        }
+
+        if (stop is not null)
+        {
+            return card with
+            {
+                Time = stop.Phase == StopPhase.Confirming ? card.Time : "",
+                TimeIsWarning = false,
+                Steps = status.Steps,
+            };
+        }
+
+        return card with
+        {
+            Detail = status.Text,
+            DetailTooltip = "",
+            Time = "",
+            TimeIsWarning = false,
+            Icon = status.Icon,
+            Steps = status.Steps,
         };
     }
 

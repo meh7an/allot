@@ -61,20 +61,25 @@ public sealed record HeaderViewModel(HeaderGlyph Glyph, string Summary);
 public sealed record SessionStrip(string ShortId, string Project, string ProjectPath, string Usage);
 
 /// <summary>
-/// One card. Exactly one of <paramref name="Active"/> and <paramref name="Queued"/> is set.
+/// One card. Exactly one of <paramref name="Active"/>, <paramref name="Queued"/> and
+/// <paramref name="Finished"/> is set.
 /// </summary>
-/// <param name="Lease">The job's lease.</param>
+/// <param name="Id">The job's lease ID.</param>
+/// <param name="Command">The command, from the lease's label.</param>
 /// <param name="Session">The session strip.</param>
 /// <param name="Active">The running job, with the process shown for it.</param>
 /// <param name="Queued">The waiting request, with its position and verdict.</param>
+/// <param name="Finished">A benchmark that finished on its own a moment ago.</param>
 /// <param name="Card">The job row's text and state at the snapshot's moment.</param>
-/// <param name="Ending">Stopped or removed in this flyout and still showing its final state; it
-/// no longer counts in the summary.</param>
+/// <param name="Ending">Stopped or removed in this flyout and still showing its final state,
+/// or a finished benchmark; it no longer counts in the summary.</param>
 public sealed record JobItem(
-    Lease Lease,
+    long Id,
+    string Command,
     SessionStrip Session,
     ActiveJob? Active,
     QueuedJob? Queued,
+    RecentRun? Finished,
     JobCard Card,
     bool Ending);
 
@@ -122,6 +127,9 @@ public sealed record FlyoutSnapshot(
     BenchmarkPhase? Benchmark,
     bool IsLastKnown)
 {
+    // How long a benchmark that finished on its own keeps its card.
+    private const long FinishedHoldMs = 60_000;
+
     private static readonly Dictionary<long, StopView> NoStops = [];
 
     /// <param name="status">The service status of the latest poll.</param>
@@ -151,28 +159,41 @@ public sealed record FlyoutSnapshot(
             .ToHashSet(StringComparer.Ordinal);
         // A stopped or removed benchmark no longer holds anything back.
         var benchmarkAhead = active.Any(job => IsBenchmark(job.Lease) && !Ending(job.Lease));
+        var othersActive = active.Any(job => !Ending(job.Lease));
 
         var benchmark = new List<JobItem>();
         var running = new List<JobItem>();
         var waiting = new List<JobItem>();
         foreach (var job in active)
         {
-            var strip = Strip(job.Lease, sessions, alsoRunning: false);
-            var card = JobCard.ForActive(job, now, lastKnown, StopOf(job.Lease));
-            var item = new JobItem(job.Lease, strip, job, null, card, Ending(job.Lease));
-            (IsBenchmark(job.Lease) ? benchmark : running).Add(item);
+            var lease = job.Lease;
+            var strip = Strip(lease.Holder.Session, lease.Cwd, sessions, alsoRunning: false);
+            var card = JobCard.ForActive(job, now, lastKnown, StopOf(lease));
+            var ending = Ending(lease);
+            var item = new JobItem(lease.Id, lease.Label, strip, job, null, null, card, ending);
+            (IsBenchmark(lease) ? benchmark : running).Add(item);
         }
 
         foreach (var job in state?.Queue ?? [])
         {
-            var alsoRunning = runningSessions.Contains(job.Lease.Holder.Session);
-            var strip = Strip(job.Lease, sessions, alsoRunning);
-            var afterBenchmark = benchmarkAhead && !IsBenchmark(job.Lease);
-            var card = JobCard.ForQueued(job, now, afterBenchmark, lastKnown, StopOf(job.Lease));
-            var item = new JobItem(job.Lease, strip, null, job, card, Ending(job.Lease));
-            (IsBenchmark(job.Lease) ? benchmark : waiting).Add(item);
-            benchmarkAhead |= IsBenchmark(job.Lease) && !Ending(job.Lease);
+            var lease = job.Lease;
+            var alsoRunning = runningSessions.Contains(lease.Holder.Session);
+            var strip = Strip(lease.Holder.Session, lease.Cwd, sessions, alsoRunning);
+            var afterBenchmark = benchmarkAhead && !IsBenchmark(lease);
+            var card = JobCard.ForQueued(
+                job,
+                now,
+                afterBenchmark,
+                lastKnown,
+                StopOf(lease),
+                othersActive);
+            var ending = Ending(lease);
+            var item = new JobItem(lease.Id, lease.Label, strip, null, job, null, card, ending);
+            (IsBenchmark(lease) ? benchmark : waiting).Add(item);
+            benchmarkAhead |= IsBenchmark(lease) && !ending;
         }
+
+        benchmark.AddRange(FinishedOf(state, sessions, now));
 
         var groups = new List<JobGroup>();
         AddGroup(groups, JobGroupKind.Benchmark, "Benchmark", benchmark);
@@ -283,6 +304,37 @@ public sealed record FlyoutSnapshot(
         return new IdleLine($"Idle · {idle.Count}", ids, usage);
     }
 
+    // Benchmarks that finished on their own in the last FinishedHoldMs, from rhd's recent runs,
+    // so the card survives a tray restart. A killed one already showed Stopped instead.
+    private static IEnumerable<JobItem> FinishedOf(
+        UiState? state,
+        Dictionary<string, UiSession> sessions,
+        long now)
+    {
+        if (state is null)
+        {
+            yield break;
+        }
+
+        var live = state.Active.Select(job => job.Lease.Id)
+            .Concat(state.Queue.Select(job => job.Lease.Id))
+            .ToHashSet();
+        foreach (var run in state.Recent)
+        {
+            if (run is not { Noise: { } noise, LeaseId: { } id }
+                || run.EndCause is not (null or EndCause.Released)
+                || now - run.EndedAtMs >= FinishedHoldMs
+                || live.Contains(id))
+            {
+                continue;
+            }
+
+            var strip = Strip(run.Session ?? "", run.Cwd, sessions, alsoRunning: false);
+            var card = JobCard.ForFinished(run, noise);
+            yield return new JobItem(id, run.Command, strip, null, null, run, card, true);
+        }
+    }
+
     private static List<RecentLine> RecentOf(UiState? state, long now) =>
         (state?.Recent ?? []).Select((run, index) => new RecentLine(
                 run.Command,
@@ -319,13 +371,13 @@ public sealed record FlyoutSnapshot(
     // A queued card of a session that also runs a job says so instead of repeating the
     // session's usage, which its running card already shows.
     private static SessionStrip Strip(
-        Lease lease,
+        string key,
+        string jobCwd,
         Dictionary<string, UiSession> sessions,
         bool alsoRunning)
     {
-        var key = lease.Holder.Session;
         var session = sessions.GetValueOrDefault(key);
-        var cwd = string.IsNullOrEmpty(session?.Cwd) ? lease.Cwd : session.Cwd;
+        var cwd = string.IsNullOrEmpty(session?.Cwd) ? jobCwd : session.Cwd;
         var usage = alsoRunning ? "also running"
             : session is null ? ""
             : Format.Usage(session.Usage);
