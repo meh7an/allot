@@ -21,6 +21,10 @@ public sealed partial class RowTemplateSelector : DataTemplateSelector
 
     public DataTemplate? IdleLine { get; set; }
 
+    public DataTemplate? Nothing { get; set; }
+
+    public DataTemplate? Recent { get; set; }
+
     protected override DataTemplate? SelectTemplateCore(object item) => item switch
     {
         GroupHeadingRow { Kind: JobGroupKind.Benchmark } => BenchmarkHeading,
@@ -28,6 +32,8 @@ public sealed partial class RowTemplateSelector : DataTemplateSelector
         GroupHeadingRow { Kind: JobGroupKind.Waiting } => WaitingHeading,
         JobCardRow => JobCard,
         IdleRow => IdleLine,
+        NothingRow => Nothing,
+        RecentRow => Recent,
         _ => null,
     };
 

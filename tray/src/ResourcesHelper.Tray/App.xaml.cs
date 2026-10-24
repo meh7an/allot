@@ -4,6 +4,7 @@ using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.Windows.AppLifecycle;
 
+using ResourcesHelper.Tray.Core.Contract;
 using ResourcesHelper.Tray.Core.Daemon;
 using ResourcesHelper.Tray.Core.Logging;
 using ResourcesHelper.Tray.Core.TrayIcon;
@@ -22,7 +23,12 @@ public sealed partial class App : Application
 {
     private readonly CancellationTokenSource _stopping = new();
     private readonly FlyoutModel _model = new();
+    private readonly StateClock _clock = new(TimeProvider.System);
     private DispatcherQueue? _dispatcher;
+    private DispatcherQueueTimer? _ticker;
+    private ServiceStatus _status = ServiceStatus.Starting;
+    private UiState? _state;
+    private bool _toasts = true;
     private DataDirectory? _data;
     private DaemonClient? _client;
     private DaemonPoller? _poller;
@@ -46,7 +52,11 @@ public sealed partial class App : Application
         _stopping.Cancel();
         _tray?.Dispose();
         _client?.Dispose();
-        Toasts.Unregister();
+        if (_toasts)
+        {
+            Toasts.Unregister();
+        }
+
         Exit();
     }
 
@@ -59,7 +69,14 @@ public sealed partial class App : Application
         AppLog.Write($"started, data in {_data.Root}");
         AppInstance.GetCurrent().Activated += OnRedirectedActivation;
 
-        Toasts.Register(_dispatcher, OnToastAction);
+#if DEBUG
+        // A scenario instance runs beside the real one, which owns the toast registration.
+        _toasts = DebugScenario.Name is null;
+#endif
+        if (_toasts)
+        {
+            Toasts.Register(_dispatcher, OnToastAction);
+        }
 
         _client = DaemonClient.ForInstall(_data);
         _poller = new DaemonPoller(_client, new ServiceLauncher(_data), TimeProvider.System);
@@ -67,12 +84,26 @@ public sealed partial class App : Application
         _flyout = new FlyoutWindow();
         _flyout.Diagnostic += message => AppLog.Write($"flyout: {message}");
         _flyout.OpenChanged += open => _poller.SetFlyoutOpen(open);
+        _flyout.OpenChanged += Tick;
         var shell = new FlyoutShell(_flyout, _model, OpenLogs);
         _flyout.SetContent(shell, shell);
         _flyout.Prewarm();
 
+        // Times tick every second while the flyout is open, between polls too.
+        _ticker = _dispatcher.CreateTimer();
+        _ticker.Interval = TimeSpan.FromSeconds(1);
+        _ticker.Tick += (_, _) => Show();
+
         _tray = new TrayController(
             _poller, _data.LogDirectory, ToggleFlyout, OpenFlyout, Quit);
+#if DEBUG
+        if (DebugScenario.Name is { } scenario)
+        {
+            shell.AddScenarios(Core.Samples.Handoff.ScenarioNames, ShowScenario);
+            ShowScenario(scenario);
+            return;
+        }
+#endif
         _poller.Updated += (_, result) => _dispatcher.TryEnqueue(() => Apply(result));
         _ = PollAsync(_poller);
 
@@ -95,13 +126,49 @@ public sealed partial class App : Application
         }
     }
 
-    private void Apply(PollResult result)
+    private void Apply(PollResult result) =>
+        Apply(result.Status, result.State, result.State ?? _poller?.LastKnown);
+
+    /// <param name="status">The service status of the poll.</param>
+    /// <param name="live">The state rhd served, or <c>null</c> while it is not running.</param>
+    /// <param name="shown">The state to show: the live one, or the last known one.</param>
+    private void Apply(ServiceStatus status, UiState? live, UiState? shown)
     {
-        var state = result.State ?? _poller?.LastKnown;
-        var snapshot = FlyoutSnapshot.From(result.Status, state);
-        _model.Apply(snapshot);
-        _tray?.Update(result.Status, result.State, TrayStatus.From(snapshot));
+        _status = status;
+        _state = shown;
+        _clock.Received(live);
+        var snapshot = Show();
+        _tray?.Update(status, live, TrayStatus.From(snapshot));
     }
+
+    private FlyoutSnapshot Show()
+    {
+        var snapshot = FlyoutSnapshot.From(_status, _state, nowMs: _clock.NowMs);
+        _model.Apply(snapshot);
+        return snapshot;
+    }
+
+    private void Tick(bool open)
+    {
+        if (open)
+        {
+            _ = Show();
+            _ticker?.Start();
+        }
+        else
+        {
+            _ticker?.Stop();
+        }
+    }
+
+#if DEBUG
+    private void ShowScenario(string name)
+    {
+        AppLog.Write($"showing scenario {name}");
+        var (status, state) = Core.Samples.Handoff.Scenario(name);
+        Apply(status, status == ServiceStatus.Running ? state : null, state);
+    }
+#endif
 
     // A second launch means the user wants to see the flyout. The event arrives on a background
     // thread.

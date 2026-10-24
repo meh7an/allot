@@ -14,10 +14,18 @@ public static class Program
     {
         WinRT.ComWrappersSupport.InitializeComWrappers();
 
+#if DEBUG
+        // A Debug build showing a handoff scenario runs beside the real tray app.
+        if (DebugScenario.Name is null && RedirectToRunningInstance())
+        {
+            return;
+        }
+#else
         if (RedirectToRunningInstance())
         {
             return;
         }
+#endif
 
         Application.Start(p =>
         {

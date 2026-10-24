@@ -46,4 +46,61 @@ public sealed class FormatTests
     [DataRow(32768UL, "32.0")]
     public void GigabytesDivideBy1024(ulong megabytes, string expected) =>
         Assert.AreEqual(expected, Format.Gigabytes(megabytes));
+
+    [TestMethod]
+    [DataRow(0L, "0:00")]
+    [DataRow(186L, "3:06")]
+    [DataRow(3599L, "59:59")]
+    [DataRow(3723L, "1:02:03")]
+    [DataRow(-5L, "0:00")]
+    public void DurationIsMinutesAndSecondsThenHours(long seconds, string expected) =>
+        Assert.AreEqual(expected, Format.Duration(seconds));
+
+    [TestMethod]
+    [DataRow(0UL, "1 min")]
+    [DataRow(29UL, "1 min")]
+    [DataRow(90UL, "2 min")]
+    [DataRow(120UL, "2 min")]
+    [DataRow(3600UL, "1 h")]
+    [DataRow(4800UL, "1 h 20 min")]
+    public void MinutesRoundAndNeverReadZero(ulong seconds, string expected) =>
+        Assert.AreEqual(expected, Format.Minutes(seconds));
+
+    [TestMethod]
+    [DataRow(0L, "just now")]
+    [DataRow(59L, "just now")]
+    [DataRow(240L, "4 min ago")]
+    [DataRow(7200L, "2 h ago")]
+    [DataRow(259_200L, "3 d ago")]
+    public void AgoGrowsFromMinutesToDays(long seconds, string expected) =>
+        Assert.AreEqual(expected, Format.Ago(seconds));
+
+    [TestMethod]
+    [DataRow(1f, "1 core")]
+    [DataRow(8f, "8 cores")]
+    [DataRow(2.5f, "2.5 cores")]
+    public void CoresAreSingularForOne(float cores, string expected) =>
+        Assert.AreEqual(expected, Format.Cores(cores));
+
+    [TestMethod]
+    public void ReservationLeavesOutWhatIsNotReserved()
+    {
+        var profile = new JobProfile { Cores = 2, EstSecs = 60, GpuPct = 0, RamMb = 0, VramMb = 0 };
+
+        Assert.AreEqual("2 cores", Format.Reservation(profile));
+        Assert.AreEqual(
+            "2 cores · 1.5 GB · GPU 80% · 4 GB VRAM",
+            Format.Reservation(profile with { RamMb = 1536, GpuPct = 80, VramMb = 4096 }));
+    }
+
+    [TestMethod]
+    [DataRow("cargo.exe", "CA")]
+    [DataRow("go.exe", "GO")]
+    [DataRow("NODE.EXE", "NO")]
+    [DataRow(@"C:\tools\x.exe", "X")]
+    [DataRow(@"""C:\Program Files\py\python.exe""", "PY")]
+    [DataRow("7z", "7Z")]
+    [DataRow("", "")]
+    public void InitialsAreTheFirstTwoLettersOfTheProgram(string program, string expected) =>
+        Assert.AreEqual(expected, Format.Initials(program));
 }

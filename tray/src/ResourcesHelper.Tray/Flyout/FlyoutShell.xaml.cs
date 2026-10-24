@@ -64,6 +64,22 @@ public sealed partial class FlyoutShell : UserControl, IFlyoutContent
     public static Visibility Shows(HeaderGlyph glyph, string name) =>
         glyph.ToString() == name ? Visibility.Visible : Visibility.Collapsed;
 
+    public static Visibility ShowsAction(CardAction action, string name) =>
+        action.ToString() == name ? Visibility.Visible : Visibility.Collapsed;
+
+    public static Visibility Hides(bool hidden) =>
+        hidden ? Visibility.Collapsed : Visibility.Visible;
+
+    /// <summary>
+    /// A tooltip for non-empty text; an empty string would still show an empty tooltip.
+    /// </summary>
+    public static object? Tip(string text) => string.IsNullOrEmpty(text) ? null : text;
+
+    /// <summary>
+    /// The hairline above every Recently finished row but the first.
+    /// </summary>
+    public static Thickness TopLine(bool first) => new(0, first ? 0 : 1, 0, 0);
+
     /// <summary>
     /// Last known rows show at 55% while the service is down (handoff section 6).
     /// </summary>
@@ -74,6 +90,24 @@ public sealed partial class FlyoutShell : UserControl, IFlyoutContent
         Control first = _pinShown ? PinButton : StayOpenButton;
         _ = first.Focus(FocusState.Programmatic);
     }
+
+#if DEBUG
+    /// <summary>
+    /// Lists the handoff scenarios under More options while a Debug build shows one.
+    /// </summary>
+    public void AddScenarios(IReadOnlyList<string> names, Action<string> show)
+    {
+        var scenarios = new MenuFlyoutSubItem { Text = "Scenario" };
+        foreach (var name in names)
+        {
+            var item = new MenuFlyoutItem { Text = name };
+            item.Click += (_, _) => show(name);
+            scenarios.Items.Add(item);
+        }
+
+        MoreMenu.Items.Insert(0, scenarios);
+    }
+#endif
 
     private static KeySpline Spline(double x1, double y1, double x2, double y2) =>
         new() { ControlPoint1 = new Point(x1, y1), ControlPoint2 = new Point(x2, y2) };

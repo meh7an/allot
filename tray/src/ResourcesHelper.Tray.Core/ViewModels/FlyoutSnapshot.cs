@@ -67,6 +67,7 @@ public sealed record SessionStrip(string ShortId, string Project, string Project
 /// <param name="Session">The session strip.</param>
 /// <param name="Active">The running job, with the process shown for it.</param>
 /// <param name="Queued">The waiting request, with its position and verdict.</param>
+/// <param name="Card">The job row's text and state at the snapshot's moment.</param>
 /// <param name="Ending">Stopped or removed in this flyout and still showing its final state; it
 /// no longer counts in the summary.</param>
 public sealed record JobItem(
@@ -74,6 +75,7 @@ public sealed record JobItem(
     SessionStrip Session,
     ActiveJob? Active,
     QueuedJob? Queued,
+    JobCard Card,
     bool Ending);
 
 public sealed record JobGroup(JobGroupKind Kind, string Heading, IReadOnlyList<JobItem> Jobs);
@@ -87,6 +89,16 @@ public sealed record JobGroup(JobGroupKind Kind, string Heading, IReadOnlyList<J
 public sealed record IdleLine(string Label, string Ids, string Usage);
 
 /// <summary>
+/// One row of the Recently finished card.
+/// </summary>
+/// <param name="Command">The command as it ran.</param>
+/// <param name="ShortId">The session's short ID, or empty for runs recorded before sessions
+/// were.</param>
+/// <param name="Meta">Run time and age, for example <c>4:52 · 4 min ago</c>.</param>
+/// <param name="First">The first row, which has no separator above it.</param>
+public sealed record RecentLine(string Command, string ShortId, string Meta, bool First);
+
+/// <summary>
 /// Everything the flyout header and job list show for one poll, built by a pure function so that
 /// every string is testable. The window layer updates only what changed between snapshots.
 /// </summary>
@@ -94,6 +106,10 @@ public sealed record IdleLine(string Label, string Ids, string Usage);
 /// <param name="Groups">Benchmark, Running and Waiting, in that order, each only when it has
 /// jobs.</param>
 /// <param name="Idle">The idle line, or <c>null</c> when no session is idle.</param>
+/// <param name="Recent">Recently finished runs, newest first; only while no job runs or
+/// waits.</param>
+/// <param name="ShowNothing">The "No jobs running or waiting." line: the service runs, and there
+/// are no jobs and no recent runs.</param>
 /// <param name="Benchmark">The live benchmark's phase, or <c>null</c> without one.</param>
 /// <param name="IsLastKnown">The jobs come from the last state rhd served before it went away;
 /// they show dimmed and without actions.</param>
@@ -101,6 +117,8 @@ public sealed record FlyoutSnapshot(
     HeaderViewModel Header,
     IReadOnlyList<JobGroup> Groups,
     IdleLine? Idle,
+    IReadOnlyList<RecentLine> Recent,
+    bool ShowNothing,
     BenchmarkPhase? Benchmark,
     bool IsLastKnown)
 {
@@ -110,33 +128,48 @@ public sealed record FlyoutSnapshot(
     /// <param name="state">The latest state, or the last known one while rhd is not
     /// running.</param>
     /// <param name="ending">Leases whose cards show Stopped or Removed in this flyout.</param>
+    /// <param name="nowMs">The moment times are shown for, in the daemon's clock; the state's
+    /// own time when <c>null</c>. Last known state always shows its own time.</param>
     public static FlyoutSnapshot From(
         ServiceStatus status,
         UiState? state,
-        IReadOnlySet<long>? ending = null)
+        IReadOnlySet<long>? ending = null,
+        long? nowMs = null)
     {
         ending ??= NoLeases;
+        var lastKnown = status != ServiceStatus.Running;
+        var now = lastKnown ? state?.GeneratedAtMs ?? 0 : nowMs ?? state?.GeneratedAtMs ?? 0;
         var sessions = new Dictionary<string, UiSession>(StringComparer.Ordinal);
         foreach (var session in state?.Sessions ?? [])
         {
             _ = sessions.TryAdd(session.Session, session);
         }
 
+        var active = state?.Active ?? [];
+        var runningSessions = active.Select(job => job.Lease.Holder.Session)
+            .ToHashSet(StringComparer.Ordinal);
+        var benchmarkAhead = active.Any(job => IsBenchmark(job.Lease));
+
         var benchmark = new List<JobItem>();
         var running = new List<JobItem>();
         var waiting = new List<JobItem>();
-        foreach (var job in state?.Active ?? [])
+        foreach (var job in active)
         {
-            var strip = Strip(job.Lease, sessions);
-            var item = new JobItem(job.Lease, strip, job, null, Ending(job.Lease));
+            var strip = Strip(job.Lease, sessions, alsoRunning: false);
+            var card = JobCard.ForActive(job, now, lastKnown);
+            var item = new JobItem(job.Lease, strip, job, null, card, Ending(job.Lease));
             (IsBenchmark(job.Lease) ? benchmark : running).Add(item);
         }
 
         foreach (var job in state?.Queue ?? [])
         {
-            var strip = Strip(job.Lease, sessions);
-            var item = new JobItem(job.Lease, strip, null, job, Ending(job.Lease));
+            var alsoRunning = runningSessions.Contains(job.Lease.Holder.Session);
+            var strip = Strip(job.Lease, sessions, alsoRunning);
+            var afterBenchmark = benchmarkAhead && !IsBenchmark(job.Lease);
+            var card = JobCard.ForQueued(job, now, afterBenchmark, lastKnown);
+            var item = new JobItem(job.Lease, strip, null, job, card, Ending(job.Lease));
             (IsBenchmark(job.Lease) ? benchmark : waiting).Add(item);
+            benchmarkAhead |= IsBenchmark(job.Lease);
         }
 
         var groups = new List<JobGroup>();
@@ -147,7 +180,9 @@ public sealed record FlyoutSnapshot(
         var phase = PhaseOf(benchmark);
         var header = HeaderOf(status, Alive(running), Alive(waiting), phase);
         var idle = IdleOf(state, sessions);
-        return new FlyoutSnapshot(header, groups, idle, phase, status != ServiceStatus.Running);
+        var recent = groups.Count == 0 ? RecentOf(state, now) : [];
+        var nothing = !lastKnown && groups.Count == 0 && recent.Count == 0;
+        return new FlyoutSnapshot(header, groups, idle, recent, nothing, phase, lastKnown);
 
         bool Ending(Lease lease) => ending.Contains(lease.Id);
     }
@@ -244,6 +279,15 @@ public sealed record FlyoutSnapshot(
         return new IdleLine($"Idle · {idle.Count}", ids, usage);
     }
 
+    private static List<RecentLine> RecentOf(UiState? state, long now) =>
+        (state?.Recent ?? []).Select((run, index) => new RecentLine(
+                run.Command,
+                run.Session is null ? "" : Format.ShortId(run.Session),
+                $"{Format.Duration((run.EndedAtMs - run.StartedAtMs) / 1000)} · "
+                    + Format.Ago(Math.Max(0, now - run.EndedAtMs) / 1000),
+                index == 0))
+            .ToList();
+
     private static void AddGroup(
         List<JobGroup> groups,
         JobGroupKind kind,
@@ -268,12 +312,19 @@ public sealed record FlyoutSnapshot(
 
     private static bool IsBenchmark(Lease lease) => lease.Kind == LeaseKind.BenchmarkExclusive;
 
-    private static SessionStrip Strip(Lease lease, Dictionary<string, UiSession> sessions)
+    // A queued card of a session that also runs a job says so instead of repeating the
+    // session's usage, which its running card already shows.
+    private static SessionStrip Strip(
+        Lease lease,
+        Dictionary<string, UiSession> sessions,
+        bool alsoRunning)
     {
         var key = lease.Holder.Session;
         var session = sessions.GetValueOrDefault(key);
         var cwd = string.IsNullOrEmpty(session?.Cwd) ? lease.Cwd : session.Cwd;
-        var usage = session is null ? "" : Format.Usage(session.Usage);
+        var usage = alsoRunning ? "also running"
+            : session is null ? ""
+            : Format.Usage(session.Usage);
         return new SessionStrip(Format.ShortId(key), Format.Project(cwd), cwd, usage);
     }
 }

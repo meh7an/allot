@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   The production flyout (handoff sections 1, 2 and 4): a fixed header and a scrolling body of
-  rows.
+  rows (job cards, the idle line, Recently finished), with the Resources card docked below the
+  body.
 -->
 <UserControl
   x:Class="ResourcesHelper.Tray.Flyout.FlyoutShell"
@@ -131,6 +132,12 @@
         </StackPanel>
       </DataTemplate>
 
+      <Style x:Key="RhChipTextStyle" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{StaticResource RhTextFontFamily}" />
+        <Setter Property="FontSize" Value="11" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+      </Style>
+
       <DataTemplate x:Key="JobCardTemplate" x:DataType="vm:JobCardRow">
         <Border
           Background="{ThemeResource RhCardBrush}"
@@ -170,34 +177,212 @@
                   Text="{x:Bind Usage, Mode=OneWay}" />
               </Grid>
             </Border>
-            <Grid Padding="{StaticResource RhRowPadding}">
-              <Grid Height="{StaticResource RhButtonSize}">
-                <TextBlock
-                  Margin="0,0,8,0"
-                  VerticalAlignment="Center"
-                  Style="{StaticResource RhCommandTextStyle}"
-                  Text="{x:Bind Command, Mode=OneWay}"
-                  ToolTipService.ToolTip="{x:Bind Command, Mode=OneWay}" />
-              </Grid>
+
+            <!-- Job row; the edge bar lies along the card's bottom, under the row's padding. -->
+            <Grid>
+              <StackPanel Padding="{StaticResource RhRowPadding}">
+                <Grid Height="{StaticResource RhButtonSize}" ColumnSpacing="8">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                  </Grid.ColumnDefinitions>
+                  <local:ProcessTile
+                    VerticalAlignment="Center"
+                    Text="{x:Bind Tile, Mode=OneWay}"
+                    IsQueued="{x:Bind IsQueued, Mode=OneWay}"
+                    ExePath="{x:Bind ExePath, Mode=OneWay}" />
+                  <TextBlock
+                    Grid.Column="1"
+                    VerticalAlignment="Center"
+                    Style="{StaticResource RhCommandTextStyle}"
+                    Text="{x:Bind Command, Mode=OneWay}"
+                    ToolTipService.ToolTip="{x:Bind Command, Mode=OneWay}" />
+
+                  <!-- Class chip, or the solid Benchmark chip with its timer glyph. -->
+                  <Grid Grid.Column="2" VerticalAlignment="Center">
+                    <Border
+                      Height="{StaticResource RhChipHeight}"
+                      Padding="{StaticResource RhChipPadding}"
+                      Background="{ThemeResource RhChipBackgroundBrush}"
+                      CornerRadius="{StaticResource RhChipCornerRadius}"
+                      ToolTipService.ToolTip="{x:Bind ChipTooltip, Mode=OneWay}"
+                      Visibility="{x:Bind local:FlyoutShell.Hides(IsBenchmark), Mode=OneWay}">
+                      <TextBlock
+                        Style="{StaticResource RhChipTextStyle}"
+                        Foreground="{ThemeResource RhChipForegroundBrush}"
+                        Text="{x:Bind Chip, Mode=OneWay}" />
+                    </Border>
+                    <Border
+                      Height="{StaticResource RhChipHeight}"
+                      Padding="{StaticResource RhBenchmarkChipPadding}"
+                      Background="{ThemeResource RhBenchmarkBrush}"
+                      CornerRadius="{StaticResource RhChipCornerRadius}"
+                      ToolTipService.ToolTip="{x:Bind ChipTooltip, Mode=OneWay}"
+                      Visibility="{x:Bind IsBenchmark, Mode=OneWay}">
+                      <StackPanel Orientation="Horizontal" Spacing="3">
+                        <TextBlock
+                          VerticalAlignment="Center"
+                          FontFamily="{StaticResource RhIconRegularFontFamily}"
+                          FontSize="12"
+                          Foreground="{ThemeResource RhBenchmarkForegroundBrush}"
+                          Text="{StaticResource RhGlyphTimerRegular}" />
+                        <TextBlock
+                          Style="{StaticResource RhChipTextStyle}"
+                          Foreground="{ThemeResource RhBenchmarkForegroundBrush}"
+                          Text="{x:Bind Chip, Mode=OneWay}" />
+                      </StackPanel>
+                    </Border>
+                  </Grid>
+
+                  <Grid Grid.Column="3">
+                    <Button
+                      Style="{StaticResource RhHeaderButtonStyle}"
+                      AutomationProperties.Name="{x:Bind ActionName, Mode=OneWay}"
+                      ToolTipService.ToolTip="Kill"
+                      Visibility="{x:Bind local:FlyoutShell.ShowsAction(Action, 'Kill'), Mode=OneWay}">
+                      <Button.Resources>
+                        <StaticResource x:Key="ButtonBackgroundPointerOver" ResourceKey="RhKillHoverBrush" />
+                        <StaticResource x:Key="ButtonBackgroundPressed" ResourceKey="RhKillHoverBrush" />
+                      </Button.Resources>
+                      <TextBlock
+                        Style="{StaticResource RhButtonIconRegularStyle}"
+                        Foreground="{ThemeResource RhTextSecondaryBrush}"
+                        Text="{StaticResource RhGlyphDismissCircleRegular}" />
+                    </Button>
+                    <Button
+                      Height="{StaticResource RhButtonSize}"
+                      Padding="8,0,8,0"
+                      CornerRadius="{StaticResource RhControlCornerRadius}"
+                      AutomationProperties.Name="{x:Bind ActionName, Mode=OneWay}"
+                      Visibility="{x:Bind local:FlyoutShell.ShowsAction(Action, 'Remove'), Mode=OneWay}">
+                      <Button.Resources>
+                        <StaticResource x:Key="ButtonBackgroundPointerOver" ResourceKey="RhMenuHoverBrush" />
+                        <StaticResource x:Key="ButtonBackgroundPressed" ResourceKey="RhMenuHoverBrush" />
+                      </Button.Resources>
+                      <TextBlock
+                        Style="{StaticResource RhBodyTextStyle}"
+                        Foreground="{ThemeResource RhTextSecondaryBrush}"
+                        Text="Remove" />
+                    </Button>
+                    <Border
+                      Width="{StaticResource RhButtonSize}"
+                      Height="{StaticResource RhButtonSize}"
+                      Visibility="{x:Bind local:FlyoutShell.ShowsAction(Action, 'None'), Mode=OneWay}" />
+                  </Grid>
+                </Grid>
+
+                <!-- Detail line, inset to align with the command. -->
+                <Grid Margin="28,0,8,0" ColumnSpacing="6">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                  </Grid.ColumnDefinitions>
+                  <TextBlock
+                    Style="{StaticResource RhDetailTextStyle}"
+                    Text="{x:Bind Detail, Mode=OneWay}"
+                    ToolTipService.ToolTip="{x:Bind local:FlyoutShell.Tip(DetailTooltip), Mode=OneWay}" />
+                  <TextBlock
+                    Grid.Column="1"
+                    Style="{StaticResource RhBodyTextStyle}"
+                    Foreground="{ThemeResource RhTextSecondaryBrush}"
+                    Text="{x:Bind Time, Mode=OneWay}"
+                    Visibility="{x:Bind local:FlyoutShell.Hides(TimeIsWarning), Mode=OneWay}" />
+                  <TextBlock
+                    Grid.Column="1"
+                    Style="{StaticResource RhBodyTextStyle}"
+                    Foreground="{ThemeResource RhWaitingBrush}"
+                    Text="{x:Bind Time, Mode=OneWay}"
+                    Visibility="{x:Bind TimeIsWarning, Mode=OneWay}" />
+                </Grid>
+              </StackPanel>
+              <local:EdgeBar
+                VerticalAlignment="Bottom"
+                Fraction="{x:Bind BarFraction, Mode=OneWay}"
+                Tone="{x:Bind BarTone, Mode=OneWay}" />
             </Grid>
           </StackPanel>
         </Border>
       </DataTemplate>
 
       <DataTemplate x:Key="IdleLineTemplate" x:DataType="vm:IdleRow">
-        <StackPanel Padding="{StaticResource RhIdleLinePadding}" Orientation="Horizontal" Spacing="8">
+        <Grid Padding="{StaticResource RhIdleLinePadding}" ColumnSpacing="6">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="*" />
+          </Grid.ColumnDefinitions>
+          <TextBlock Style="{StaticResource RhGroupHeadingTextStyle}" Text="{x:Bind Label, Mode=OneWay}" />
           <TextBlock
-            Style="{StaticResource RhBodyTextStyle}"
+            Grid.Column="1"
+            Style="{StaticResource RhSessionIdTextStyle}"
             Foreground="{ThemeResource RhTextSecondaryBrush}"
-            Text="{x:Bind Label, Mode=OneWay}" />
-          <TextBlock
-            VerticalAlignment="Center"
-            Style="{StaticResource RhRowIdTextStyle}"
             Text="{x:Bind Ids, Mode=OneWay}" />
           <TextBlock
+            Grid.Column="2"
+            HorizontalAlignment="Right"
             Style="{StaticResource RhBodyTextStyle}"
             Foreground="{ThemeResource RhTextSecondaryBrush}"
             Text="{x:Bind Usage, Mode=OneWay}" />
+        </Grid>
+      </DataTemplate>
+
+      <DataTemplate x:Key="NothingTemplate" x:DataType="vm:NothingRow">
+        <TextBlock Padding="12,14,12,14" Style="{StaticResource RhMenuTextStyle}" Text="No jobs running or waiting." />
+      </DataTemplate>
+
+      <DataTemplate x:Key="RecentLineTemplate" x:DataType="vm:RecentLine">
+        <Grid
+          MinHeight="36"
+          Padding="12,0,12,0"
+          BorderBrush="{ThemeResource RhSeparatorBrush}"
+          BorderThickness="{x:Bind local:FlyoutShell.TopLine(First)}"
+          ColumnSpacing="8">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="Auto" />
+          </Grid.ColumnDefinitions>
+          <TextBlock
+            VerticalAlignment="Center"
+            Style="{StaticResource RhCommandTextStyle}"
+            Text="{x:Bind Command}"
+            ToolTipService.ToolTip="{x:Bind Command}" />
+          <TextBlock
+            Grid.Column="1"
+            VerticalAlignment="Center"
+            Style="{StaticResource RhRowIdTextStyle}"
+            Text="{x:Bind ShortId}" />
+          <TextBlock
+            Grid.Column="2"
+            VerticalAlignment="Center"
+            Style="{StaticResource RhBodyTextStyle}"
+            Foreground="{ThemeResource RhTextSecondaryBrush}"
+            Text="{x:Bind Meta}" />
+        </Grid>
+      </DataTemplate>
+
+      <DataTemplate x:Key="RecentTemplate" x:DataType="vm:RecentRow">
+        <StackPanel Spacing="6">
+          <StackPanel Padding="{StaticResource RhGroupHeadingPadding}" Orientation="Horizontal" Spacing="6">
+            <TextBlock
+              Style="{StaticResource RhGroupIconStyle}"
+              FontFamily="{StaticResource RhIconFilledFontFamily}"
+              Foreground="{ThemeResource RhRunningBrush}"
+              Text="{StaticResource RhGlyphCheckmarkCircleFilled}" />
+            <TextBlock Style="{StaticResource RhGroupHeadingTextStyle}" Text="Recently finished" />
+          </StackPanel>
+          <Border
+            Background="{ThemeResource RhCardBrush}"
+            BorderBrush="{ThemeResource RhCardBorderBrush}"
+            BorderThickness="1"
+            CornerRadius="{StaticResource RhCardCornerRadius}">
+            <ItemsControl
+              IsTabStop="False"
+              ItemsSource="{x:Bind Lines, Mode=OneWay}"
+              ItemTemplate="{StaticResource RecentLineTemplate}" />
+          </Border>
         </StackPanel>
       </DataTemplate>
 
@@ -207,7 +392,9 @@
         RunningHeading="{StaticResource RunningHeadingTemplate}"
         WaitingHeading="{StaticResource WaitingHeadingTemplate}"
         JobCard="{StaticResource JobCardTemplate}"
-        IdleLine="{StaticResource IdleLineTemplate}" />
+        IdleLine="{StaticResource IdleLineTemplate}"
+        Nothing="{StaticResource NothingTemplate}"
+        Recent="{StaticResource RecentTemplate}" />
     </ResourceDictionary>
   </UserControl.Resources>
 
@@ -316,7 +503,7 @@
             Style="{StaticResource RhHeaderButtonStyle}">
             <TextBlock Style="{StaticResource RhButtonIconRegularStyle}" Text="{StaticResource RhGlyphMoreHorizontalRegular}" />
             <Button.Flyout>
-              <MenuFlyout Placement="BottomEdgeAlignedRight" Opened="OnMenuOpened" Closed="OnMenuClosed">
+              <MenuFlyout x:Name="MoreMenu" Placement="BottomEdgeAlignedRight" Opened="OnMenuOpened" Closed="OnMenuClosed">
                 <MenuFlyoutItem Text="Open logs" Click="OnOpenLogsClick">
                   <MenuFlyoutItem.Icon>
                     <FontIcon FontFamily="{StaticResource RhIconRegularFontFamily}" Glyph="{StaticResource RhGlyphDocumentTextRegular}" />

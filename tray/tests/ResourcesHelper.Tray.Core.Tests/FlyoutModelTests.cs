@@ -2,7 +2,7 @@ using System.Collections.Specialized;
 
 using ResourcesHelper.Tray.Core.Contract;
 using ResourcesHelper.Tray.Core.Daemon;
-using ResourcesHelper.Tray.Core.Tests.Support;
+using ResourcesHelper.Tray.Core.Samples;
 using ResourcesHelper.Tray.Core.ViewModels;
 
 namespace ResourcesHelper.Tray.Core.Tests;
@@ -130,6 +130,59 @@ public sealed class FlyoutModelTests
         Assert.AreEqual("group:Waiting job:8 job:5", Keys(model));
         Assert.AreSame(npm, model.Rows[2]);
         CollectionAssert.AreEqual(new[] { NotifyCollectionChangedAction.Move }, changes);
+    }
+
+    [TestMethod]
+    public void ATickChangesOnlyTheTimeAndTheBar()
+    {
+        var state = Handoff.State(run: ["cargo"]);
+        var model = Applied(state);
+        var card = model.Rows.OfType<JobCardRow>().Single();
+        var properties = new List<string?>();
+        card.PropertyChanged += (_, args) => properties.Add(args.PropertyName);
+
+        var later = Handoff.NowMs + 1_000;
+        model.Apply(FlyoutSnapshot.From(ServiceStatus.Running, state, nowMs: later));
+
+        Assert.AreEqual("3:07 / ~5:00", card.Time);
+        Assert.AreEqual("Time BarFraction Card", string.Join(" ", properties));
+    }
+
+    [TestMethod]
+    public void CardShowsTheJobRow()
+    {
+        var card = Applied(Handoff.State(run: ["cargo"])).Rows.OfType<JobCardRow>().Single();
+
+        Assert.AreEqual("CA", card.Tile);
+        Assert.AreEqual("CPU heavy", card.Chip);
+        Assert.AreEqual("cargo.exe 18244 · 8 cores · 4 GB", card.Detail);
+        Assert.AreEqual("3:06 / ~5:00", card.Time);
+        Assert.AreEqual(CardAction.Kill, card.Action);
+        Assert.AreEqual(EdgeBarTone.Running, card.BarTone);
+    }
+
+    [TestMethod]
+    public void NothingAndRecentRowsFollowTheIdleLine()
+    {
+        Assert.AreEqual("nothing", Keys(Applied(Handoff.State())));
+        Assert.AreEqual("recent", Keys(Applied(Handoff.State(recent: true))));
+    }
+
+    [TestMethod]
+    public void RecentRowUpdatesOnlyWhenItsLinesChange()
+    {
+        var state = Handoff.State(recent: true);
+        var model = Applied(state);
+        var recent = model.Rows.OfType<RecentRow>().Single();
+        var properties = new List<string?>();
+        recent.PropertyChanged += (_, args) => properties.Add(args.PropertyName);
+
+        model.Apply(FlyoutSnapshot.From(ServiceStatus.Running, state));
+        var later = Handoff.NowMs + 60_000;
+        model.Apply(FlyoutSnapshot.From(ServiceStatus.Running, state, nowMs: later));
+
+        Assert.AreEqual("Lines", properties.Single());
+        Assert.AreEqual("4:52 · 5 min ago", recent.Lines[0].Meta);
     }
 
     [TestMethod]

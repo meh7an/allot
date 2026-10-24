@@ -1,9 +1,9 @@
 namespace ResourcesHelper.Tray.Core.ViewModels;
 
 /// <summary>
-/// One entry of the flyout body, in display order: a group heading, a job card or the idle
-/// line. Rows are matched between polls by <see cref="Key"/>, so a row that stays keeps its
-/// control and only its changed values update.
+/// One entry of the flyout body, in display order: a group heading, a job card, the idle line,
+/// the Recently finished card or the empty line. Rows are matched between polls by
+/// <see cref="Key"/>, so a row that stays keeps its control and only its changed values update.
 /// </summary>
 public abstract class FlyoutRow : Observable
 {
@@ -33,7 +33,8 @@ public sealed class GroupHeadingRow(JobGroupKind kind, string heading) : FlyoutR
 }
 
 /// <summary>
-/// A job card: the session strip and the command line.
+/// A job card: the session strip, then the job row with its tile, command, chip, action, detail
+/// line, time and edge bar.
 /// </summary>
 public sealed class JobCardRow : FlyoutRow
 {
@@ -42,7 +43,7 @@ public sealed class JobCardRow : FlyoutRow
     private string _projectPath;
     private string _usage;
     private string _command;
-    private bool _isQueued;
+    private JobCard _card;
 
     public JobCardRow(JobItem job)
     {
@@ -52,7 +53,7 @@ public sealed class JobCardRow : FlyoutRow
         _projectPath = job.Session.ProjectPath;
         _usage = job.Session.Usage;
         _command = job.Lease.Label;
-        _isQueued = job.Queued is not null;
+        _card = job.Card;
     }
 
     public long LeaseId { get; }
@@ -90,11 +91,39 @@ public sealed class JobCardRow : FlyoutRow
         private set => Set(ref _command, value);
     }
 
-    public bool IsQueued
-    {
-        get => _isQueued;
-        private set => Set(ref _isQueued, value);
-    }
+    /// <summary>
+    /// The job row. Bindings read its members through the properties below, which raise a change
+    /// only for the members that changed.
+    /// </summary>
+    public JobCard Card => _card;
+
+    public string Tile => _card.Tile;
+
+    public bool IsQueued => _card.IsQueued;
+
+    public string? ExePath => _card.ExePath;
+
+    public string Chip => _card.Chip;
+
+    public string ChipTooltip => _card.ChipTooltip;
+
+    public bool IsBenchmark => _card.IsBenchmark;
+
+    public string Detail => _card.Detail;
+
+    public string DetailTooltip => _card.DetailTooltip;
+
+    public string Time => _card.Time;
+
+    public bool TimeIsWarning => _card.TimeIsWarning;
+
+    public double BarFraction => _card.BarFraction;
+
+    public EdgeBarTone BarTone => _card.BarTone;
+
+    public CardAction Action => _card.Action;
+
+    public string ActionName => _card.ActionName;
 
     public override string Key => $"job:{LeaseId}";
 
@@ -106,7 +135,41 @@ public sealed class JobCardRow : FlyoutRow
         ProjectPath = card.ProjectPath;
         Usage = card.Usage;
         Command = card.Command;
-        IsQueued = card.IsQueued;
+        UpdateCard(card._card);
+    }
+
+    private void UpdateCard(JobCard fresh)
+    {
+        var old = _card;
+        if (old == fresh)
+        {
+            return;
+        }
+
+        _card = fresh;
+        Changed(old.Tile != fresh.Tile, nameof(Tile));
+        Changed(old.IsQueued != fresh.IsQueued, nameof(IsQueued));
+        Changed(old.ExePath != fresh.ExePath, nameof(ExePath));
+        Changed(old.Chip != fresh.Chip, nameof(Chip));
+        Changed(old.ChipTooltip != fresh.ChipTooltip, nameof(ChipTooltip));
+        Changed(old.IsBenchmark != fresh.IsBenchmark, nameof(IsBenchmark));
+        Changed(old.Detail != fresh.Detail, nameof(Detail));
+        Changed(old.DetailTooltip != fresh.DetailTooltip, nameof(DetailTooltip));
+        Changed(old.Time != fresh.Time, nameof(Time));
+        Changed(old.TimeIsWarning != fresh.TimeIsWarning, nameof(TimeIsWarning));
+        Changed(old.BarFraction != fresh.BarFraction, nameof(BarFraction));
+        Changed(old.BarTone != fresh.BarTone, nameof(BarTone));
+        Changed(old.Action != fresh.Action, nameof(Action));
+        Changed(old.ActionName != fresh.ActionName, nameof(ActionName));
+        Changed(true, nameof(Card));
+    }
+
+    private void Changed(bool changed, string name)
+    {
+        if (changed)
+        {
+            Raise(name);
+        }
     }
 }
 
@@ -142,5 +205,42 @@ public sealed class IdleRow(IdleLine line) : FlyoutRow
         Label = idle.Label;
         Ids = idle.Ids;
         Usage = idle.Usage;
+    }
+}
+
+/// <summary>
+/// The Recently finished heading and its card of rows, shown while nothing runs or waits.
+/// </summary>
+public sealed class RecentRow(IReadOnlyList<RecentLine> lines) : FlyoutRow
+{
+    private IReadOnlyList<RecentLine> _lines = lines;
+
+    public IReadOnlyList<RecentLine> Lines
+    {
+        get => _lines;
+        private set => Set(ref _lines, value);
+    }
+
+    public override string Key => "recent";
+
+    public override void Update(FlyoutRow fresh)
+    {
+        var lines = ((RecentRow)fresh).Lines;
+        if (!lines.SequenceEqual(Lines))
+        {
+            Lines = lines;
+        }
+    }
+}
+
+/// <summary>
+/// The "No jobs running or waiting." line.
+/// </summary>
+public sealed class NothingRow : FlyoutRow
+{
+    public override string Key => "nothing";
+
+    public override void Update(FlyoutRow fresh)
+    {
     }
 }

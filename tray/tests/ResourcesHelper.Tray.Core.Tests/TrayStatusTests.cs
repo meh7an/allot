@@ -1,6 +1,6 @@
 using ResourcesHelper.Tray.Core.Contract;
 using ResourcesHelper.Tray.Core.Daemon;
-using ResourcesHelper.Tray.Core.Tests.Support;
+using ResourcesHelper.Tray.Core.Samples;
 using ResourcesHelper.Tray.Core.TrayIcon;
 using ResourcesHelper.Tray.Core.ViewModels;
 

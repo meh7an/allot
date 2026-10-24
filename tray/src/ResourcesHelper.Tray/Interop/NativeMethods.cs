@@ -55,6 +55,9 @@ internal static partial class NativeMethods
     public const uint MbSetForeground = 0x00010000;
     public const int IdYes = 6;
 
+    public const uint DibRgbColors = 0;
+    public const uint BiRgb = 0;
+
     public const uint MfString = 0x0000;
     public const uint MfGrayed = 0x0001;
     public const uint MfChecked = 0x0008;
@@ -254,6 +257,51 @@ internal static partial class NativeMethods
     [LibraryImport("kernel32.dll")]
     public static partial nint GetProcAddress(nint module, nint ordinal);
 
+    /// <summary>
+    /// Extracts icon <paramref name="index"/> of a file at <paramref name="size"/> pixels (the
+    /// low word; the high word is the small icon's size, unused here). S_FALSE when the file has
+    /// no icon.
+    /// </summary>
+    [LibraryImport(
+        "shell32.dll",
+        EntryPoint = "SHDefExtractIconW",
+        StringMarshalling = StringMarshalling.Utf16)]
+    public static partial int SHDefExtractIcon(
+        string iconFile,
+        int index,
+        uint flags,
+        out nint large,
+        nint small,
+        uint size);
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool GetIconInfo(nint icon, out IconInfo info);
+
+    [LibraryImport("gdi32.dll", EntryPoint = "GetObjectW")]
+    public static unsafe partial int GetObject(nint gdiObject, int size, void* buffer);
+
+    [LibraryImport("gdi32.dll")]
+    public static unsafe partial int GetDIBits(
+        nint dc,
+        nint bitmap,
+        uint start,
+        uint lines,
+        void* bits,
+        BitmapInfoHeader* info,
+        uint usage);
+
+    [LibraryImport("gdi32.dll")]
+    public static partial nint CreateCompatibleDC(nint dc);
+
+    [LibraryImport("gdi32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool DeleteDC(nint dc);
+
+    [LibraryImport("gdi32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool DeleteObject(nint gdiObject);
+
     [StructLayout(LayoutKind.Sequential)]
     public struct NativeRect
     {
@@ -324,5 +372,52 @@ internal static partial class NativeMethods
         public uint InfoFlags;
         public Guid Item;
         public nint BalloonIcon;
+    }
+
+    /// <summary>
+    /// ICONINFO.
+    /// </summary>
+    [StructLayout(LayoutKind.Sequential)]
+    public struct IconInfo
+    {
+        public int IsIcon;
+        public uint HotspotX;
+        public uint HotspotY;
+        public nint Mask;
+        public nint Color;
+    }
+
+    /// <summary>
+    /// BITMAP, as GetObject fills it for a bitmap handle.
+    /// </summary>
+    [StructLayout(LayoutKind.Sequential)]
+    public struct NativeBitmap
+    {
+        public int Type;
+        public int Width;
+        public int Height;
+        public int WidthBytes;
+        public ushort Planes;
+        public ushort BitsPixel;
+        public nint Bits;
+    }
+
+    /// <summary>
+    /// BITMAPINFOHEADER; a negative height asks for top-down rows.
+    /// </summary>
+    [StructLayout(LayoutKind.Sequential)]
+    public struct BitmapInfoHeader
+    {
+        public uint Size;
+        public int Width;
+        public int Height;
+        public ushort Planes;
+        public ushort BitCount;
+        public uint Compression;
+        public uint SizeImage;
+        public int XPelsPerMeter;
+        public int YPelsPerMeter;
+        public uint ClrUsed;
+        public uint ClrImportant;
     }
 }

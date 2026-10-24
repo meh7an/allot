@@ -1,5 +1,5 @@
 using ResourcesHelper.Tray.Core.Daemon;
-using ResourcesHelper.Tray.Core.Tests.Support;
+using ResourcesHelper.Tray.Core.Samples;
 using ResourcesHelper.Tray.Core.TrayIcon;
 
 namespace ResourcesHelper.Tray.Core.Tests;

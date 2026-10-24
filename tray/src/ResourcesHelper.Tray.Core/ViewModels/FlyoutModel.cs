@@ -92,6 +92,16 @@ public sealed class FlyoutModel : Observable
             rows.Add(new IdleRow(idle));
         }
 
+        if (snapshot.ShowNothing)
+        {
+            rows.Add(new NothingRow());
+        }
+
+        if (snapshot.Recent.Count > 0)
+        {
+            rows.Add(new RecentRow(snapshot.Recent));
+        }
+
         return rows;
     }
 
