@@ -188,8 +188,10 @@
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="Auto" />
                   </Grid.ColumnDefinitions>
+                  <!-- Stopped and Removed cards show tile, command and chip at 50%. -->
                   <local:ProcessTile
                     VerticalAlignment="Center"
+                    Opacity="{x:Bind local:FlyoutShell.Ended(IsEnded), Mode=OneWay}"
                     Text="{x:Bind Tile, Mode=OneWay}"
                     IsQueued="{x:Bind IsQueued, Mode=OneWay}"
                     ExePath="{x:Bind ExePath, Mode=OneWay}" />
@@ -197,11 +199,16 @@
                     Grid.Column="1"
                     VerticalAlignment="Center"
                     Style="{StaticResource RhCommandTextStyle}"
+                    Opacity="{x:Bind local:FlyoutShell.Ended(IsEnded), Mode=OneWay}"
+                    TextDecorations="{x:Bind local:FlyoutShell.StruckThrough(IsEnded), Mode=OneWay}"
                     Text="{x:Bind Command, Mode=OneWay}"
                     ToolTipService.ToolTip="{x:Bind Command, Mode=OneWay}" />
 
                   <!-- Class chip, or the solid Benchmark chip with its timer glyph. -->
-                  <Grid Grid.Column="2" VerticalAlignment="Center">
+                  <Grid
+                    Grid.Column="2"
+                    VerticalAlignment="Center"
+                    Opacity="{x:Bind local:FlyoutShell.Ended(IsEnded), Mode=OneWay}">
                     <Border
                       Height="{StaticResource RhChipHeight}"
                       Padding="{StaticResource RhChipPadding}"
@@ -236,11 +243,14 @@
                     </Border>
                   </Grid>
 
+                  <!-- Kill, its red Kill? confirm, Remove, or a spacer. -->
                   <Grid Grid.Column="3">
                     <Button
+                      x:Name="KillButton"
                       Style="{StaticResource RhHeaderButtonStyle}"
                       AutomationProperties.Name="{x:Bind ActionName, Mode=OneWay}"
                       ToolTipService.ToolTip="Kill"
+                      Click="OnKillClick"
                       Visibility="{x:Bind local:FlyoutShell.ShowsAction(Action, 'Kill'), Mode=OneWay}">
                       <Button.Resources>
                         <StaticResource x:Key="ButtonBackgroundPointerOver" ResourceKey="RhKillHoverBrush" />
@@ -252,10 +262,46 @@
                         Text="{StaticResource RhGlyphDismissCircleRegular}" />
                     </Button>
                     <Button
+                      x:Name="ConfirmButton"
+                      Height="{StaticResource RhButtonSize}"
+                      Padding="8,0,10,0"
+                      CornerRadius="{StaticResource RhControlCornerRadius}"
+                      AutomationProperties.Name="{x:Bind ActionName, Mode=OneWay}"
+                      Click="OnKillClick"
+                      KeyDown="OnConfirmKeyDown"
+                      LostFocus="OnConfirmLostFocus"
+                      Loaded="OnConfirmLoaded"
+                      Visibility="{x:Bind local:FlyoutShell.ShowsAction(Action, 'Confirm'), Mode=OneWay}">
+                      <Button.Resources>
+                        <StaticResource x:Key="ButtonBackground" ResourceKey="RhDangerFillBrush" />
+                        <StaticResource x:Key="ButtonBackgroundPointerOver" ResourceKey="RhDangerFillHoverBrush" />
+                        <StaticResource x:Key="ButtonBackgroundPressed" ResourceKey="RhDangerFillHoverBrush" />
+                        <StaticResource x:Key="ButtonForeground" ResourceKey="RhDangerForegroundBrush" />
+                        <StaticResource x:Key="ButtonForegroundPointerOver" ResourceKey="RhDangerForegroundBrush" />
+                        <StaticResource x:Key="ButtonForegroundPressed" ResourceKey="RhDangerForegroundBrush" />
+                        <SolidColorBrush x:Key="ButtonBorderBrush" Color="Transparent" />
+                        <SolidColorBrush x:Key="ButtonBorderBrushPointerOver" Color="Transparent" />
+                        <SolidColorBrush x:Key="ButtonBorderBrushPressed" Color="Transparent" />
+                      </Button.Resources>
+                      <StackPanel Orientation="Horizontal" Spacing="6">
+                        <TextBlock
+                          FontFamily="{StaticResource RhIconFilledFontFamily}"
+                          FontSize="16"
+                          VerticalAlignment="Center"
+                          Text="{StaticResource RhGlyphDismissCircleFilled}" />
+                        <TextBlock
+                          VerticalAlignment="Center"
+                          FontSize="12"
+                          FontWeight="SemiBold"
+                          Text="Kill?" />
+                      </StackPanel>
+                    </Button>
+                    <Button
                       Height="{StaticResource RhButtonSize}"
                       Padding="8,0,8,0"
                       CornerRadius="{StaticResource RhControlCornerRadius}"
                       AutomationProperties.Name="{x:Bind ActionName, Mode=OneWay}"
+                      Click="OnRemoveClick"
                       Visibility="{x:Bind local:FlyoutShell.ShowsAction(Action, 'Remove'), Mode=OneWay}">
                       <Button.Resources>
                         <StaticResource x:Key="ButtonBackgroundPointerOver" ResourceKey="RhMenuHoverBrush" />
@@ -279,10 +325,19 @@
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
                   </Grid.ColumnDefinitions>
+                  <!-- Stopped and Removed lead with a semibold word in full ink. -->
                   <TextBlock
                     Style="{StaticResource RhDetailTextStyle}"
+                    ToolTipService.ToolTip="{x:Bind local:FlyoutShell.Tip(DetailTooltip), Mode=OneWay}"
+                    Visibility="{x:Bind local:FlyoutShell.Hides(DetailIsDanger), Mode=OneWay}">
+                    <Run FontWeight="SemiBold" Foreground="{ThemeResource RhTextBrush}" Text="{x:Bind Strong, Mode=OneWay}" /><Run Text="{x:Bind Detail, Mode=OneWay}" />
+                  </TextBlock>
+                  <TextBlock
+                    Style="{StaticResource RhDetailTextStyle}"
+                    Foreground="{ThemeResource RhDangerTextBrush}"
                     Text="{x:Bind Detail, Mode=OneWay}"
-                    ToolTipService.ToolTip="{x:Bind local:FlyoutShell.Tip(DetailTooltip), Mode=OneWay}" />
+                    ToolTipService.ToolTip="{x:Bind local:FlyoutShell.Tip(DetailTooltip), Mode=OneWay}"
+                    Visibility="{x:Bind DetailIsDanger, Mode=OneWay}" />
                   <TextBlock
                     Grid.Column="1"
                     Style="{StaticResource RhBodyTextStyle}"

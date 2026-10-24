@@ -122,22 +122,23 @@ public sealed record FlyoutSnapshot(
     BenchmarkPhase? Benchmark,
     bool IsLastKnown)
 {
-    private static readonly HashSet<long> NoLeases = [];
+    private static readonly Dictionary<long, StopView> NoStops = [];
 
     /// <param name="status">The service status of the latest poll.</param>
     /// <param name="state">The latest state, or the last known one while rhd is not
     /// running.</param>
-    /// <param name="ending">Leases whose cards show Stopped or Removed in this flyout.</param>
+    /// <param name="stops">Kills and removals of this flyout by lease; ended ones show Stopped
+    /// or Removed and no longer count. Ignored for last known state.</param>
     /// <param name="nowMs">The moment times are shown for, in the daemon's clock; the state's
     /// own time when <c>null</c>. Last known state always shows its own time.</param>
     public static FlyoutSnapshot From(
         ServiceStatus status,
         UiState? state,
-        IReadOnlySet<long>? ending = null,
+        IReadOnlyDictionary<long, StopView>? stops = null,
         long? nowMs = null)
     {
-        ending ??= NoLeases;
         var lastKnown = status != ServiceStatus.Running;
+        stops = lastKnown || stops is null ? NoStops : stops;
         var now = lastKnown ? state?.GeneratedAtMs ?? 0 : nowMs ?? state?.GeneratedAtMs ?? 0;
         var sessions = new Dictionary<string, UiSession>(StringComparer.Ordinal);
         foreach (var session in state?.Sessions ?? [])
@@ -148,7 +149,8 @@ public sealed record FlyoutSnapshot(
         var active = state?.Active ?? [];
         var runningSessions = active.Select(job => job.Lease.Holder.Session)
             .ToHashSet(StringComparer.Ordinal);
-        var benchmarkAhead = active.Any(job => IsBenchmark(job.Lease));
+        // A stopped or removed benchmark no longer holds anything back.
+        var benchmarkAhead = active.Any(job => IsBenchmark(job.Lease) && !Ending(job.Lease));
 
         var benchmark = new List<JobItem>();
         var running = new List<JobItem>();
@@ -156,7 +158,7 @@ public sealed record FlyoutSnapshot(
         foreach (var job in active)
         {
             var strip = Strip(job.Lease, sessions, alsoRunning: false);
-            var card = JobCard.ForActive(job, now, lastKnown);
+            var card = JobCard.ForActive(job, now, lastKnown, StopOf(job.Lease));
             var item = new JobItem(job.Lease, strip, job, null, card, Ending(job.Lease));
             (IsBenchmark(job.Lease) ? benchmark : running).Add(item);
         }
@@ -166,10 +168,10 @@ public sealed record FlyoutSnapshot(
             var alsoRunning = runningSessions.Contains(job.Lease.Holder.Session);
             var strip = Strip(job.Lease, sessions, alsoRunning);
             var afterBenchmark = benchmarkAhead && !IsBenchmark(job.Lease);
-            var card = JobCard.ForQueued(job, now, afterBenchmark, lastKnown);
+            var card = JobCard.ForQueued(job, now, afterBenchmark, lastKnown, StopOf(job.Lease));
             var item = new JobItem(job.Lease, strip, null, job, card, Ending(job.Lease));
             (IsBenchmark(job.Lease) ? benchmark : waiting).Add(item);
-            benchmarkAhead |= IsBenchmark(job.Lease);
+            benchmarkAhead |= IsBenchmark(job.Lease) && !Ending(job.Lease);
         }
 
         var groups = new List<JobGroup>();
@@ -184,7 +186,9 @@ public sealed record FlyoutSnapshot(
         var nothing = !lastKnown && groups.Count == 0 && recent.Count == 0;
         return new FlyoutSnapshot(header, groups, idle, recent, nothing, phase, lastKnown);
 
-        bool Ending(Lease lease) => ending.Contains(lease.Id);
+        StopView? StopOf(Lease lease) => stops.GetValueOrDefault(lease.Id);
+
+        bool Ending(Lease lease) => StopOf(lease)?.Phase == StopPhase.Ended;
     }
 
     private static HeaderViewModel HeaderOf(

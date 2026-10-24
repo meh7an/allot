@@ -669,7 +669,8 @@ public sealed unsafe partial class FlyoutWindow : Window
 
     private void OnKeyDown(object sender, KeyRoutedEventArgs args)
     {
-        if (args.Key == VirtualKey.Escape && _behavior.Escape())
+        // A Kill? confirm handles its own Esc first (handoff, Interactions).
+        if (args.Key == VirtualKey.Escape && !args.Handled && _behavior.Escape())
         {
             args.Handled = true;
             Hide();

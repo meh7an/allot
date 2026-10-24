@@ -94,6 +94,7 @@ public sealed partial class EdgeBar : UserControl
     private void ShowTone(EdgeBarTone tone)
     {
         var dashed = tone == EdgeBarTone.WaitingDashed;
+        Visibility = Shown(tone != EdgeBarTone.None);
         Dashes.Visibility = dashed ? Visibility.Visible : Visibility.Collapsed;
         Fill.Visibility = dashed ? Visibility.Collapsed : Visibility.Visible;
         RunningFill.Visibility = Shown(tone == EdgeBarTone.Running);

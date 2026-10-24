@@ -109,9 +109,13 @@ public sealed class JobCardRow : FlyoutRow
 
     public bool IsBenchmark => _card.IsBenchmark;
 
+    public string Strong => _card.Strong;
+
     public string Detail => _card.Detail;
 
     public string DetailTooltip => _card.DetailTooltip;
+
+    public bool DetailIsDanger => _card.DetailIsDanger;
 
     public string Time => _card.Time;
 
@@ -124,6 +128,8 @@ public sealed class JobCardRow : FlyoutRow
     public CardAction Action => _card.Action;
 
     public string ActionName => _card.ActionName;
+
+    public bool IsEnded => _card.IsEnded;
 
     public override string Key => $"job:{LeaseId}";
 
@@ -153,14 +159,17 @@ public sealed class JobCardRow : FlyoutRow
         Changed(old.Chip != fresh.Chip, nameof(Chip));
         Changed(old.ChipTooltip != fresh.ChipTooltip, nameof(ChipTooltip));
         Changed(old.IsBenchmark != fresh.IsBenchmark, nameof(IsBenchmark));
+        Changed(old.Strong != fresh.Strong, nameof(Strong));
         Changed(old.Detail != fresh.Detail, nameof(Detail));
         Changed(old.DetailTooltip != fresh.DetailTooltip, nameof(DetailTooltip));
+        Changed(old.DetailIsDanger != fresh.DetailIsDanger, nameof(DetailIsDanger));
         Changed(old.Time != fresh.Time, nameof(Time));
         Changed(old.TimeIsWarning != fresh.TimeIsWarning, nameof(TimeIsWarning));
         Changed(old.BarFraction != fresh.BarFraction, nameof(BarFraction));
         Changed(old.BarTone != fresh.BarTone, nameof(BarTone));
         Changed(old.Action != fresh.Action, nameof(Action));
         Changed(old.ActionName != fresh.ActionName, nameof(ActionName));
+        Changed(old.IsEnded != fresh.IsEnded, nameof(IsEnded));
         Changed(true, nameof(Card));
     }
 

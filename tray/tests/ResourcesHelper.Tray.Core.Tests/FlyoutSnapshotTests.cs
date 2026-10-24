@@ -240,10 +240,58 @@ public sealed class FlyoutSnapshotTests
         var snapshot = FlyoutSnapshot.From(
             ServiceStatus.Running,
             state,
-            new HashSet<long> { Handoff.LeaseId("bench") });
+            new Dictionary<long, StopView>
+            {
+                [Handoff.LeaseId("bench")] = new(StopKind.Kill, StopPhase.Ended),
+            });
 
         Assert.IsNull(snapshot.Benchmark);
         Assert.AreEqual("1 waiting", snapshot.Header.Summary);
+    }
+
+    [TestMethod]
+    public void StoppedBenchmarkNoLongerHoldsTheQueueBack()
+    {
+        var state = Handoff.State(wait: ["npmB"], bench: "run");
+
+        var snapshot = FlyoutSnapshot.From(
+            ServiceStatus.Running,
+            state,
+            new Dictionary<long, StopView>
+            {
+                [Handoff.LeaseId("bench")] = new(StopKind.Kill, StopPhase.Ended),
+            });
+
+        var waiting = snapshot.Groups.Single(group => group.Kind == JobGroupKind.Waiting);
+        Assert.AreEqual("1:12 · depends on queue", waiting.Jobs.Single().Card.Time);
+    }
+
+    [TestMethod]
+    public void ConfirmingAndSendingStillCount()
+    {
+        var snapshot = FlyoutSnapshot.From(
+            ServiceStatus.Running,
+            SeveralState(),
+            new Dictionary<long, StopView>
+            {
+                [Handoff.LeaseId("cargo")] = new(StopKind.Kill, StopPhase.Sending),
+                [Handoff.LeaseId("py")] = new(StopKind.Kill, StopPhase.Confirming, 4),
+            });
+
+        Assert.AreEqual("2 running · 1 waiting", snapshot.Header.Summary);
+    }
+
+    [TestMethod]
+    public void LastKnownStateIgnoresStops()
+    {
+        var snapshot = FlyoutSnapshot.From(
+            ServiceStatus.Stopped,
+            Handoff.State(run: ["cargo"]),
+            Handoff.Stops("c-confirm"));
+
+        var card = snapshot.Groups.Single().Jobs.Single().Card;
+        Assert.AreEqual(CardAction.None, card.Action);
+        Assert.AreEqual("cargo.exe 18244 · was at 3:06 / ~5:00", card.Detail);
     }
 
     [TestMethod]
@@ -308,7 +356,9 @@ public sealed class FlyoutSnapshotTests
 
     private static FlyoutSnapshot Build(Scenario scenario)
     {
-        var ending = scenario.Ending.Select(Handoff.LeaseId).ToHashSet();
+        var ending = scenario.Ending.ToDictionary(
+            Handoff.LeaseId,
+            _ => new StopView(StopKind.Kill, StopPhase.Ended));
         return FlyoutSnapshot.From(scenario.Status, scenario.State, ending);
     }
 

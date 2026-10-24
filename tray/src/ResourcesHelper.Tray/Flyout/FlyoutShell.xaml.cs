@@ -4,12 +4,15 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Automation.Peers;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Animation;
 
 using ResourcesHelper.Tray.Core.ViewModels;
 
 using Windows.Foundation;
+using Windows.System;
+using Windows.UI.Text;
 
 namespace ResourcesHelper.Tray.Flyout;
 
@@ -57,6 +60,21 @@ public sealed partial class FlyoutShell : UserControl, IFlyoutContent
 
     public event Action? DesiredHeightChanged;
 
+    /// <summary>
+    /// A press of a card's Kill or Kill?, with its lease.
+    /// </summary>
+    public event Action<long>? KillPressed;
+
+    /// <summary>
+    /// A press of a card's Remove, with its lease.
+    /// </summary>
+    public event Action<long>? RemovePressed;
+
+    /// <summary>
+    /// Esc on a card's Kill?, or focus leaving it, with its lease.
+    /// </summary>
+    public event Action<long>? ConfirmCancelled;
+
     public FlyoutModel Model { get; }
 
     public double DesiredHeight => EdgeHeight + Header.ActualHeight + RowsPanel.ActualHeight;
@@ -84,6 +102,14 @@ public sealed partial class FlyoutShell : UserControl, IFlyoutContent
     /// Last known rows show at 55% while the service is down (handoff section 6).
     /// </summary>
     public static double Dimmed(bool isLastKnown) => isLastKnown ? 0.55 : 1;
+
+    /// <summary>
+    /// Stopped and Removed cards show tile, command and chip at 50%.
+    /// </summary>
+    public static double Ended(bool isEnded) => isEnded ? 0.5 : 1;
+
+    public static TextDecorations StruckThrough(bool isEnded) =>
+        isEnded ? TextDecorations.Strikethrough : TextDecorations.None;
 
     public void FocusFirst()
     {
@@ -163,6 +189,106 @@ public sealed partial class FlyoutShell : UserControl, IFlyoutContent
     }
 
     private void OnOpenLogsClick(object sender, RoutedEventArgs e) => _openLogs();
+
+    private static JobCardRow? RowOf(object sender) =>
+        (sender as FrameworkElement)?.DataContext as JobCardRow;
+
+    // Kill and Kill? share one cell of the card's top line.
+    private static Button? Sibling(DependencyObject button, string name) =>
+        (VisualTreeHelper.GetParent(button) as Panel)?.Children.OfType<Button>()
+            .FirstOrDefault(sibling => sibling.Name == name);
+
+    /// <summary>
+    /// Kill turns into Kill? and focus moves to it; a press of Kill? that goes through moves
+    /// focus on to the next control, as the button is gone.
+    /// </summary>
+    private void OnKillClick(object sender, RoutedEventArgs e)
+    {
+        if (RowOf(sender) is not { } row)
+        {
+            return;
+        }
+
+        var button = (Button)sender;
+        var confirming = row.Action == CardAction.Confirm;
+        var next = confirming
+            ? FocusManager.FindNextElement(
+                FocusNavigationDirection.Next,
+                new FindNextElementOptions { SearchRoot = XamlRoot.Content }) as Control
+            : null;
+        KillPressed?.Invoke(row.LeaseId);
+
+        if (!confirming && row.Action == CardAction.Confirm
+            && Sibling(button, "ConfirmButton") is { } confirm)
+        {
+            _ = DispatcherQueue.TryEnqueue(() => confirm.Focus(FocusState.Programmatic));
+        }
+        else if (confirming && row.Action != CardAction.Confirm)
+        {
+            _ = DispatcherQueue.TryEnqueue(() =>
+            {
+                if (next?.Focus(FocusState.Programmatic) != true)
+                {
+                    FocusFirst();
+                }
+            });
+        }
+    }
+
+    private void OnRemoveClick(object sender, RoutedEventArgs e)
+    {
+        if (RowOf(sender) is { } row)
+        {
+            RemovePressed?.Invoke(row.LeaseId);
+        }
+    }
+
+    // Esc cancels the confirm and stays in the flyout; the window's own Esc handler skips a
+    // handled key.
+    private void OnConfirmKeyDown(object sender, KeyRoutedEventArgs e)
+    {
+        if (e.Key == VirtualKey.Escape && RowOf(sender) is { } row)
+        {
+            e.Handled = true;
+            ConfirmCancelled?.Invoke(row.LeaseId);
+        }
+    }
+
+    private void OnConfirmLostFocus(object sender, RoutedEventArgs e)
+    {
+        if (RowOf(sender) is { Action: CardAction.Confirm } row)
+        {
+            ConfirmCancelled?.Invoke(row.LeaseId);
+        }
+    }
+
+    private void OnConfirmLoaded(object sender, RoutedEventArgs e)
+    {
+        var confirm = (Button)sender;
+        confirm.Loaded -= OnConfirmLoaded;
+        _ = confirm.RegisterPropertyChangedCallback(VisibilityProperty, OnConfirmVisibilityChanged);
+    }
+
+    /// <summary>
+    /// When Kill? goes back to Kill (the countdown ran out, or Esc) while it has focus, focus
+    /// goes back to Kill instead of being lost.
+    /// </summary>
+    private void OnConfirmVisibilityChanged(DependencyObject sender, DependencyProperty property)
+    {
+        var confirm = (Button)sender;
+        if (confirm.Visibility != Visibility.Collapsed || confirm.FocusState == FocusState.Unfocused)
+        {
+            return;
+        }
+
+        _ = DispatcherQueue.TryEnqueue(() =>
+        {
+            if (Sibling(confirm, "KillButton") is { Visibility: Visibility.Visible } kill)
+            {
+                _ = kill.Focus(FocusState.Programmatic);
+            }
+        });
+    }
 
     private void OnHeaderSizeChanged(object sender, SizeChangedEventArgs e)
     {

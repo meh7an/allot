@@ -46,6 +46,7 @@ public sealed class TokenResourceTests
         ("RhDangerTextBrush", "#c42b1c", "#ff99a4"),
         ("RhDangerFillBrush", "#c42b1c", "#c42b1c"),
         ("RhDangerFillHoverBrush", "#a32317", "#a32317"),
+        ("RhDangerForegroundBrush", "#ffffff", "#ffffff"),
         ("RhKillHoverBrush", "rgba(196,43,28,.14)", "rgba(196,43,28,.14)"),
         ("RhStoppedBrush", "#8a8a8a", "#8a8a8a"),
         ("RhPressedBrush", "rgba(0,0,0,.06)", "rgba(255,255,255,.08)"),

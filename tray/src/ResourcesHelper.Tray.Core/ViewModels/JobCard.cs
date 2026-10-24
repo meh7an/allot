@@ -28,9 +28,14 @@ public enum EdgeBarTone
     WaitingDashed,
 
     /// <summary>
-    /// Gray and still: last known state while the service is down.
+    /// Gray and still: a stopped job, or last known state while the service is down.
     /// </summary>
     Frozen,
+
+    /// <summary>
+    /// No bar and no track: a removed request.
+    /// </summary>
+    None,
 }
 
 public enum CardAction
@@ -44,6 +49,11 @@ public enum CardAction
     /// The Kill icon button of a running job.
     /// </summary>
     Kill,
+
+    /// <summary>
+    /// The red Kill? button that confirms a kill.
+    /// </summary>
+    Confirm,
 
     /// <summary>
     /// The Remove text button of a queued request.
@@ -61,8 +71,11 @@ public enum CardAction
 /// <param name="Chip">The class chip label.</param>
 /// <param name="ChipTooltip">The chip's tooltip.</param>
 /// <param name="IsBenchmark">The chip is the solid purple Benchmark chip.</param>
-/// <param name="Detail">The detail line's left part.</param>
+/// <param name="Strong">The semibold start of the detail line, <c>Stopped</c> or
+/// <c>Removed</c>; empty otherwise.</param>
+/// <param name="Detail">The detail line's left part, after <paramref name="Strong"/>.</param>
 /// <param name="DetailTooltip">The detail's tooltip, or empty for none.</param>
+/// <param name="DetailIsDanger">The detail reads in red: the Kill? confirm, or a refusal.</param>
 /// <param name="Time">The detail line's right part.</param>
 /// <param name="TimeIsWarning">The time reads in amber: past the estimate, or waiting.</param>
 /// <param name="BarFraction">How much of the edge bar is filled, from 0 to 1.</param>
@@ -70,6 +83,8 @@ public enum CardAction
 /// <param name="Action">The control at the row's right.</param>
 /// <param name="ActionName">The action's accessible name, for example
 /// <c>Kill cargo.exe</c>.</param>
+/// <param name="IsEnded">Stopped or removed: the command is struck through, and the tile,
+/// command and chip show at 50%.</param>
 public sealed record JobCard(
     string Tile,
     bool IsQueued,
@@ -77,14 +92,17 @@ public sealed record JobCard(
     string Chip,
     string ChipTooltip,
     bool IsBenchmark,
+    string Strong,
     string Detail,
     string DetailTooltip,
+    bool DetailIsDanger,
     string Time,
     bool TimeIsWarning,
     double BarFraction,
     EdgeBarTone BarTone,
     CardAction Action,
-    string ActionName)
+    string ActionName,
+    bool IsEnded)
 {
     // A queued job this close to its start reads "starts next".
     private const ulong StartsNextSecs = 60;
@@ -93,7 +111,13 @@ public sealed record JobCard(
     /// <param name="nowMs">The moment to show, in the daemon's clock.</param>
     /// <param name="lastKnown">The job comes from the last state rhd served before it went
     /// away.</param>
-    public static JobCard ForActive(ActiveJob job, long nowMs, bool lastKnown)
+    /// <param name="stop">A Kill under way or done in this flyout, or <c>null</c>; ignored for
+    /// last known state.</param>
+    public static JobCard ForActive(
+        ActiveJob job,
+        long nowMs,
+        bool lastKnown,
+        StopView? stop = null)
     {
         var lease = job.Lease;
         var process = job.Process;
@@ -118,32 +142,92 @@ public sealed record JobCard(
                 chip,
                 chipTooltip,
                 benchmark,
+                "",
                 $"{prefix}was at {time}",
                 "",
+                false,
                 "",
                 false,
                 progress,
                 EdgeBarTone.Frozen,
                 CardAction.None,
-                "");
+                "",
+                false);
         }
 
         var detail = prefix + Format.Reservation(lease.Profile);
-        return new JobCard(
+        var name = process?.Name ?? lease.Label;
+        var card = new JobCard(
             tile,
             false,
             process?.Exe,
             chip,
             chipTooltip,
             benchmark,
+            "",
             detail,
             detail,
+            false,
             over ? $"{Format.Duration(elapsed - estimate)} over" : time,
             over,
             over ? 1 : progress,
             over ? EdgeBarTone.Over : EdgeBarTone.Running,
             CardAction.Kill,
-            $"Kill {process?.Name ?? lease.Label}");
+            $"Kill {name}",
+            false);
+        if (stop is not { Kind: StopKind.Kill })
+        {
+            return card;
+        }
+
+        switch (stop.Phase)
+        {
+            case StopPhase.Confirming:
+                var confirm = $"Stops {process?.Name ?? "the command"} and its child processes";
+                return card with
+                {
+                    Detail = confirm,
+                    DetailTooltip = confirm,
+                    DetailIsDanger = true,
+                    Time = $"{stop.SecondsLeft}s",
+                    TimeIsWarning = false,
+                    Action = CardAction.Confirm,
+                    ActionName = $"Confirm kill {name}",
+                };
+            case StopPhase.Sending:
+                return card with
+                {
+                    Detail = process is null ? "Stopping…" : $"Stopping {process.Name}…",
+                    DetailTooltip = "",
+                    Time = "",
+                    TimeIsWarning = false,
+                    Action = CardAction.None,
+                    ActionName = "",
+                };
+            case StopPhase.Failed:
+                return card with
+                {
+                    Detail = $"Not stopped: {stop.Message}",
+                    DetailTooltip = $"Not stopped: {stop.Message}",
+                    DetailIsDanger = true,
+                };
+            default:
+                // The prototype's benchmark card shows no time once stopped.
+                var ran = Seconds((stop.EndedAtMs ?? nowMs) - started);
+                return card with
+                {
+                    Strong = "Stopped",
+                    Detail = Notified(stop.Message),
+                    DetailTooltip = "",
+                    Time = benchmark ? "" : $"at {Format.Duration(ran)}",
+                    TimeIsWarning = false,
+                    BarFraction = estimate > 0 ? Fraction(ran, estimate) : 0,
+                    BarTone = EdgeBarTone.Frozen,
+                    Action = CardAction.None,
+                    ActionName = "",
+                    IsEnded = true,
+                };
+        }
     }
 
     /// <param name="job">The waiting request.</param>
@@ -151,11 +235,14 @@ public sealed record JobCard(
     /// <param name="afterBenchmark">A benchmark runs or waits ahead of it.</param>
     /// <param name="lastKnown">The job comes from the last state rhd served before it went
     /// away.</param>
+    /// <param name="stop">A Remove under way or done in this flyout, or <c>null</c>; ignored
+    /// for last known state.</param>
     public static JobCard ForQueued(
         QueuedJob job,
         long nowMs,
         bool afterBenchmark,
-        bool lastKnown)
+        bool lastKnown,
+        StopView? stop = null)
     {
         var lease = job.Lease;
         var waited = Seconds(nowMs - lease.RequestedAtMs);
@@ -187,22 +274,61 @@ public sealed record JobCard(
                 ($"{Format.Duration(waited)} · depends on queue", 1, EdgeBarTone.WaitingDashed);
         }
 
-        return new JobCard(
+        var card = new JobCard(
             $"#{job.Position}",
             true,
             null,
             chip,
             chipTooltip,
             benchmark,
+            "",
             Format.Reservation(lease.Profile),
             "",
+            false,
             time,
             true,
             fraction,
             lastKnown ? EdgeBarTone.Frozen : tone,
             lastKnown ? CardAction.None : CardAction.Remove,
-            lastKnown ? "" : $"Remove {lease.Label} from queue");
+            lastKnown ? "" : $"Remove {lease.Label} from queue",
+            false);
+        if (lastKnown || stop is not { Kind: StopKind.Remove })
+        {
+            return card;
+        }
+
+        return stop.Phase switch
+        {
+            StopPhase.Sending => card with
+            {
+                Detail = "Removing…",
+                Action = CardAction.None,
+                ActionName = "",
+            },
+            StopPhase.Failed => card with
+            {
+                Detail = $"Not removed: {stop.Message}",
+                DetailTooltip = $"Not removed: {stop.Message}",
+                DetailIsDanger = true,
+            },
+            StopPhase.Ended => card with
+            {
+                Strong = "Removed",
+                Detail = Notified(stop.Message),
+                Time = "",
+                TimeIsWarning = false,
+                BarFraction = 0,
+                BarTone = EdgeBarTone.None,
+                Action = CardAction.None,
+                ActionName = "",
+                IsEnded = true,
+            },
+            _ => card,
+        };
     }
+
+    private static string Notified(string note) =>
+        note.Length == 0 ? " · Claude was notified" : $" · {note} · Claude was notified";
 
     private static (string Label, string Tooltip, bool IsBenchmark) ChipOf(Lease lease)
     {

@@ -1,5 +1,6 @@
 using ResourcesHelper.Tray.Core.Contract;
 using ResourcesHelper.Tray.Core.Daemon;
+using ResourcesHelper.Tray.Core.ViewModels;
 
 namespace ResourcesHelper.Tray.Core.Samples;
 
@@ -64,9 +65,21 @@ public static class Handoff
     /// </summary>
     public static IReadOnlyList<string> ScenarioNames { get; } =
     [
-        "empty", "one", "several", "bench-drain", "bench-quiet", "bench-run", "bench-done",
-        "down", "max", "icons", "c-active", "c-over", "c-queued", "c-bench",
+        "empty", "one", "several", "kill-confirm", "killed", "bench-drain", "bench-quiet",
+        "bench-run", "bench-done", "down", "max", "icons", "c-active", "c-over", "c-queued",
+        "c-bench", "c-confirm", "c-killed", "c-removed", "c-refused",
     ];
+
+    /// <summary>
+    /// The scenario whose Kill the Debug build's fake daemon refuses, to show the inline error;
+    /// not on the handoff's board.
+    /// </summary>
+    public const string RefusedScenario = "c-refused";
+
+    /// <summary>
+    /// The refusal of <see cref="RefusedScenario"/>, as <c>DaemonClient</c> words a 409.
+    /// </summary>
+    public const string RefusedReason = "the bound process 18244 (cargo.exe) is protected";
 
     public static long LeaseId(string job) => Jobs[job].Id;
 
@@ -79,8 +92,11 @@ public static class Handoff
     public static (ServiceStatus Status, UiState State) Scenario(string name) => name switch
     {
         "empty" => (ServiceStatus.Running, State(recent: true)),
-        "one" or "c-active" => (ServiceStatus.Running, State(run: ["cargo"])),
-        "several" => (ServiceStatus.Running, State(run: Several, wait: ["npm"], idle: true)),
+        "one" or "c-active" or "c-confirm" or "c-killed" or RefusedScenario =>
+            (ServiceStatus.Running, State(run: ["cargo"])),
+        "several" or "kill-confirm" or "killed" =>
+            (ServiceStatus.Running, State(run: Several, wait: ["npm"], idle: true)),
+        "c-removed" => (ServiceStatus.Running, State(wait: ["npm"])),
         "bench-drain" =>
             (ServiceStatus.Running, State(run: ["cargo"], wait: ["npmB"], bench: "drain")),
         "bench-quiet" => (ServiceStatus.Running, State(wait: ["npmB"], bench: "quiet")),
@@ -93,6 +109,27 @@ public static class Handoff
         "c-queued" => (ServiceStatus.Running, State(wait: ["npm", "ctest"])),
         "c-bench" => (ServiceStatus.Running, State(bench: "quiet")),
         _ => throw new ArgumentException($"unknown scenario {name}", nameof(name)),
+    };
+
+    /// <summary>
+    /// The Kill and Remove states a scenario starts in (the prototype's <c>init</c>): Kill?
+    /// with 3 s left, or Stopped or Removed at the scenario's moment. Empty for the others.
+    /// </summary>
+    public static IReadOnlyDictionary<long, StopView> Stops(string name) => name switch
+    {
+        "kill-confirm" or "c-confirm" => new Dictionary<long, StopView>
+        {
+            [LeaseId("cargo")] = new(StopKind.Kill, StopPhase.Confirming, SecondsLeft: 3),
+        },
+        "killed" or "c-killed" => new Dictionary<long, StopView>
+        {
+            [LeaseId("cargo")] = new(StopKind.Kill, StopPhase.Ended, EndedAtMs: NowMs),
+        },
+        "c-removed" => new Dictionary<long, StopView>
+        {
+            [LeaseId("npm")] = new(StopKind.Remove, StopPhase.Ended, EndedAtMs: NowMs),
+        },
+        _ => new Dictionary<long, StopView>(),
     };
 
     /// <param name="run">Active jobs, in grant order.</param>

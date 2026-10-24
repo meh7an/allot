@@ -47,6 +47,7 @@
       <SolidColorBrush x:Key="RhDangerTextBrush" Color="#FFC42B1C" />
       <SolidColorBrush x:Key="RhDangerFillBrush" Color="#FFC42B1C" />
       <SolidColorBrush x:Key="RhDangerFillHoverBrush" Color="#FFA32317" />
+      <SolidColorBrush x:Key="RhDangerForegroundBrush" Color="#FFFFFFFF" />
       <SolidColorBrush x:Key="RhKillHoverBrush" Color="#24C42B1C" />
       <SolidColorBrush x:Key="RhStoppedBrush" Color="#FF8A8A8A" />
 
@@ -108,6 +109,7 @@
       <SolidColorBrush x:Key="RhDangerTextBrush" Color="#FFFF99A4" />
       <SolidColorBrush x:Key="RhDangerFillBrush" Color="#FFC42B1C" />
       <SolidColorBrush x:Key="RhDangerFillHoverBrush" Color="#FFA32317" />
+      <SolidColorBrush x:Key="RhDangerForegroundBrush" Color="#FFFFFFFF" />
       <SolidColorBrush x:Key="RhKillHoverBrush" Color="#24C42B1C" />
       <SolidColorBrush x:Key="RhStoppedBrush" Color="#FF8A8A8A" />
 
@@ -165,6 +167,7 @@
       <SolidColorBrush x:Key="RhDangerTextBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
       <SolidColorBrush x:Key="RhDangerFillBrush" Color="{ThemeResource SystemColorHighlightColor}" />
       <SolidColorBrush x:Key="RhDangerFillHoverBrush" Color="{ThemeResource SystemColorHighlightColor}" />
+      <SolidColorBrush x:Key="RhDangerForegroundBrush" Color="{ThemeResource SystemColorHighlightTextColor}" />
       <SolidColorBrush x:Key="RhKillHoverBrush" Color="{ThemeResource SystemColorHighlightColor}" />
       <SolidColorBrush x:Key="RhStoppedBrush" Color="{ThemeResource SystemColorGrayTextColor}" />
 

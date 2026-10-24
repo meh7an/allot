@@ -14,7 +14,9 @@ public sealed class TrayStatusTests
         ServiceStatus status = ServiceStatus.Running,
         params string[] ending)
     {
-        var leases = ending.Select(Handoff.LeaseId).ToHashSet();
+        var leases = ending.ToDictionary(
+            Handoff.LeaseId,
+            _ => new StopView(StopKind.Remove, StopPhase.Ended));
         return TrayStatus.From(FlyoutSnapshot.From(status, state, leases));
     }
 
