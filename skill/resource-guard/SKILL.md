@@ -5,8 +5,9 @@ description: >
   resources-helper MCP tools (system_snapshot, can_fit, acquire_lease, release_lease,
   list_leases). Use before running any build, test suite, benchmark, training run, render, or
   other command that loads the CPU or GPU for more than a few seconds; whenever a tool call is
-  "Blocked by resources-helper"; when an acquire_lease result says "queued"; and when the user
-  asks for timing or performance numbers or about machine load.
+  "Blocked by resources-helper"; when an acquire_lease result says "queued"; when a note or
+  tool result says the user stopped a job or removed a request from Resources Helper; and
+  when the user asks for timing or performance numbers or about machine load.
 ---
 
 # Resource Guard
@@ -118,6 +119,22 @@ the Resources Helper tray app if they want to.
    one line that the queued command was cancelled. Continue with any work that does not need
    it.
 
+## When the user stops a job or removes a request
+
+The user can stop a running job (its whole process tree) or remove a queued request from the
+Resources Helper tray app, or with `rh kill` and `rh remove`. You hear about it once: as a
+note after a Bash or PowerShell call ("The user stopped `cargo build` (lease 42) from
+Resources Helper. ..."), or in a tool result whose `end_cause` is `killed` or `removed`
+(`acquire_lease`, `release_lease`, or `stopped_by_user` in `list_leases`).
+
+- **Stopped:** the command failed because the user stopped it, usually with exit code 255.
+  It is not a bug in the command or the code, so do not debug it. Say in one line that it
+  was stopped, then ask the user whether to retry or skip. Never retry on your own, even if
+  the next step needs the result. On retry, acquire a new lease as usual (the stopped one has
+  ended, and releasing it is harmless); on skip, carry on without that result.
+- **Removed from the queue:** do not run the command and do not acquire it again. Say in one
+  line that it was cancelled, without asking, and continue with work that does not need it.
+
 ## Reading the machine
 
 `system_snapshot` returns:
@@ -189,6 +206,8 @@ Keep it to one line per event, in plain words:
 - Long or unknown wait: say why (from `reasons`) in the same one line, then keep waiting.
 - Removed from the queue: "The queued `cargo build` was cancelled from Resources Helper, so I
   didn't run it."
+- Stopped while running: "`cargo build` was stopped from Resources Helper. Should I retry it
+  or skip it?"
 - Benchmark: "Waiting for a quiet machine for the benchmark; other sessions' builds are
   held until it finishes." Once it ends, give the noise report with the results.
 - Granted after a wait: "Lease granted after 2 min; running `cargo test`."

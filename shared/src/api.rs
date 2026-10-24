@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     types::{
-        Holder, JobClass, JobProfile, JobRun, Lease, LeaseKind, LeaseState, NoiseReport,
+        EndCause, Holder, JobClass, JobProfile, JobRun, Lease, LeaseKind, LeaseState, NoiseReport,
         SessionKey, SessionUsage,
     },
     ui::Notice,
@@ -155,6 +155,10 @@ pub struct HeartbeatResponse {
     pub state: LeaseState,
     /// New expiry, in milliseconds since the Unix epoch.
     pub expires_at_ms: i64,
+    /// Why the lease ended, once it has; for example [`EndCause::Killed`] when the user
+    /// stopped its job.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub end_cause: Option<EndCause>,
 }
 
 /// Response of `DELETE /leases/{id}`.
@@ -463,7 +467,20 @@ mod tests {
         assert_json_round_trip(&HeartbeatResponse {
             state: LeaseState::Queued,
             expires_at_ms: 1_793_000_060_000,
+            end_cause: None,
         });
+        assert_json_round_trip(&HeartbeatResponse {
+            state: LeaseState::Expired,
+            expires_at_ms: 1_793_000_060_000,
+            end_cause: Some(EndCause::Killed),
+        });
+    }
+
+    #[test]
+    fn test_heartbeat_response_from_an_older_rhd_has_no_cause() {
+        let old: HeartbeatResponse =
+            serde_json::from_str(r#"{"state":"expired","expires_at_ms":5}"#).unwrap();
+        assert_eq!(old.end_cause, None);
     }
 
     #[test]

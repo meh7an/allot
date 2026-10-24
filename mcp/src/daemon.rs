@@ -9,6 +9,7 @@ use rh_shared::{
         ReleaseResponse, Verdict,
     },
     types::{Holder, Lease, LeaseId, SessionKey, Snapshot},
+    ui::Notice,
 };
 
 /// The subset of [`Client`] the MCP server uses.
@@ -45,6 +46,14 @@ pub trait DaemonApi: Send + Sync + 'static {
     fn leases(&self, query: &LeaseQuery) -> impl Future<Output = Result<Vec<Lease>>> + Send;
     /// See [`Client::register_session`].
     fn register_session(&self, holder: &Holder) -> impl Future<Output = Result<()>> + Send;
+    /// See [`Client::notices`].
+    fn notices(&self, session: &SessionKey) -> impl Future<Output = Result<Vec<Notice>>> + Send;
+    /// See [`Client::mark_delivered`].
+    fn mark_delivered(
+        &self,
+        id: LeaseId,
+        session: &SessionKey,
+    ) -> impl Future<Output = Result<bool>> + Send;
 }
 
 /// Registers `holder` with the daemon. Failing only costs per-session usage in snapshots,
@@ -102,5 +111,17 @@ impl DaemonApi for Client {
 
     fn register_session(&self, holder: &Holder) -> impl Future<Output = Result<()>> + Send {
         Client::register_session(self, holder)
+    }
+
+    fn notices(&self, session: &SessionKey) -> impl Future<Output = Result<Vec<Notice>>> + Send {
+        Client::notices(self, session)
+    }
+
+    fn mark_delivered(
+        &self,
+        id: LeaseId,
+        session: &SessionKey,
+    ) -> impl Future<Output = Result<bool>> + Send {
+        Client::mark_delivered(self, id, session)
     }
 }

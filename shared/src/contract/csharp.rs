@@ -218,10 +218,10 @@ fn emit_properties(
         let is_required = required.contains(&json_name.as_str());
         // The source generator sets every init-only property in its object initializer, so an
         // absent member would overwrite the default with null; a setter is only called when
-        // the member is present.
+        // the member is present. A null default is what an absent member gets anyway.
         let (accessors, initializer) =
             match (is_required, cs_type.nullable, property.get("default")) {
-                (true, _, None) | (false, true, None) => ("get; init;", ""),
+                (true, _, None) | (false, true, None | Some(Value::Null)) => ("get; init;", ""),
                 (false, false, Some(Value::String(text))) if text.is_empty() => {
                     ("get; set;", " = \"\";")
                 }

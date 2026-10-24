@@ -10,10 +10,11 @@ use rh_shared::{
         ReleaseResponse, Verdict,
     },
     types::{
-        CpuStats, GpuAdapter, GpuEngines, Holder, JobClass, JobProfile, Lease, LeaseId, LeaseKind,
-        LeaseState, MemStats, NoiseReport, ProcessUsage, ResourceUsage, Rolling, SessionKey,
-        SessionUsage, Snapshot,
+        CpuStats, EndCause, GpuAdapter, GpuEngines, Holder, JobClass, JobProfile, Lease, LeaseId,
+        LeaseKind, LeaseState, MemStats, NoiseReport, ProcessUsage, ResourceUsage, Rolling,
+        SessionKey, SessionUsage, Snapshot,
     },
+    ui::Notice,
 };
 
 use crate::daemon::DaemonApi;
@@ -95,6 +96,7 @@ struct MockState {
     next_id: i64,
     heartbeats: Vec<LeaseId>,
     releases: Vec<LeaseId>,
+    delivered: Vec<LeaseId>,
 }
 
 impl MockDaemon {
@@ -124,6 +126,21 @@ impl MockDaemon {
 
     pub(crate) fn releases(&self) -> Vec<LeaseId> {
         self.lock().releases.clone()
+    }
+
+    /// Ends lease `id` as the user's kill or removal does.
+    pub(crate) fn stop(&self, id: LeaseId, cause: EndCause) {
+        let mut state = self.lock();
+        let lease = state.leases.iter_mut().find(|lease| lease.id == id);
+        let lease = lease.expect("stop needs a known lease");
+        lease.state = LeaseState::Expired;
+        lease.end_cause = Some(cause);
+        lease.ended_at_ms = Some(5_000);
+    }
+
+    /// The notices marked delivered, in order.
+    pub(crate) fn delivered(&self) -> Vec<LeaseId> {
+        self.lock().delivered.clone()
     }
 
     pub(crate) fn leases_count(&self) -> usize {
@@ -294,6 +311,7 @@ impl DaemonApi for MockDaemon {
             Ok(HeartbeatResponse {
                 state: lease.state,
                 expires_at_ms: lease.expires_at_ms,
+                end_cause: lease.end_cause,
             })
         });
         async move { result }
@@ -309,7 +327,10 @@ impl DaemonApi for MockDaemon {
             state.releases.push(id);
             let lease = state.leases.iter_mut().find(|lease| lease.id == id);
             let lease = lease.ok_or_else(|| not_found(id))?;
-            lease.state = LeaseState::Released;
+            if !matches!(lease.state, LeaseState::Released | LeaseState::Expired) {
+                lease.state = LeaseState::Released;
+                lease.end_cause = Some(EndCause::Released);
+            }
             let noise = (lease.kind == LeaseKind::BenchmarkExclusive).then_some(NoiseReport {
                 avg_cpu_pct: 1.5,
                 peak_cpu_pct: 4.0,
@@ -343,4 +364,47 @@ impl DaemonApi for MockDaemon {
         let result = self.reply(|_| Ok(()));
         async move { result }
     }
+
+    fn notices(&self, session: &SessionKey) -> impl Future<Output = Result<Vec<Notice>>> + Send {
+        let result = self.reply(|state| {
+            let pending = state.leases.iter().filter(|lease| {
+                &lease.holder.session == session
+                    && is_notice(lease)
+                    && !state.delivered.contains(&lease.id)
+            });
+            Ok(pending
+                .map(|lease| Notice {
+                    lease_id: lease.id,
+                    session: lease.holder.session.clone(),
+                    cause: lease.end_cause.unwrap_or(EndCause::Killed),
+                    command: lease.label.clone(),
+                    tool_use_id: None,
+                    ended_at_ms: lease.ended_at_ms.unwrap_or_default(),
+                    delivered_at_ms: None,
+                })
+                .collect())
+        });
+        async move { result }
+    }
+
+    fn mark_delivered(
+        &self,
+        id: LeaseId,
+        _session: &SessionKey,
+    ) -> impl Future<Output = Result<bool>> + Send {
+        let result = self.reply(|state| {
+            let lease = state.leases.iter().find(|lease| lease.id == id);
+            let lease = lease.ok_or_else(|| not_found(id))?;
+            if !is_notice(lease) || state.delivered.contains(&id) {
+                return Ok(false);
+            }
+            state.delivered.push(id);
+            Ok(true)
+        });
+        async move { result }
+    }
+}
+
+fn is_notice(lease: &Lease) -> bool {
+    matches!(lease.end_cause, Some(EndCause::Killed | EndCause::Removed))
 }

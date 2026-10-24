@@ -5,7 +5,7 @@ use std::sync::Arc;
 use rh_client::ClientError;
 use rh_shared::{
     api::{AcquireRequest, CanFitRequest, LeaseQuery, Verdict},
-    types::{Holder, JobProfile, Lease, LeaseId, LeaseKind, LeaseState, NoiseReport},
+    types::{EndCause, Holder, JobProfile, Lease, LeaseId, LeaseKind, LeaseState, NoiseReport},
 };
 use rmcp::{
     ServerHandler,
@@ -47,6 +47,9 @@ struct AcquireOutcome {
     kind: LeaseKind,
     profile: JobProfile,
     label: String,
+    /// Why the lease ended, when it did without starting or while it waited.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    end_cause: Option<EndCause>,
     verdict: Verdict,
     next_step: &'static str,
 }
@@ -58,12 +61,27 @@ struct ReleaseOutcome {
     lease: Lease,
     #[serde(skip_serializing_if = "Option::is_none")]
     noise: Option<NoiseReport>,
+    /// What the user did to the lease, when they stopped it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    note: Option<&'static str>,
 }
 
 /// What `list_leases` reports.
 #[derive(Debug, Serialize)]
 struct LeaseList {
     leases: Vec<Lease>,
+    /// This session's leases the user stopped or removed that it had not been told about.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    stopped_by_user: Vec<StoppedLease>,
+}
+
+/// One lease the user stopped or removed from Resources Helper.
+#[derive(Debug, Serialize)]
+struct StoppedLease {
+    lease_id: i64,
+    label: String,
+    end_cause: EndCause,
+    note: &'static str,
 }
 
 #[tool_router]
@@ -187,15 +205,28 @@ impl<C: DaemonApi> RhServer<C> {
             }
             _ => {
                 self.held.remove(lease.id);
-                "The lease ended before it started; do not run the command."
+                match lease.end_cause {
+                    Some(EndCause::Removed) => {
+                        "The user removed this request from the queue in Resources Helper; it \
+                         did not run. Do not run the command or acquire it again; tell the user \
+                         in one line that it was cancelled."
+                    }
+                    Some(EndCause::Killed) => {
+                        "The user stopped this job from Resources Helper. Do not run the \
+                         command again on your own; ask the user whether to retry or skip."
+                    }
+                    _ => "The lease ended before it started; do not run the command.",
+                }
             }
         };
+        self.mark_told(lease.id, lease.end_cause).await;
         to_json(&AcquireOutcome {
             lease_id: lease.id.0,
             state: lease.state,
             kind: lease.kind,
             profile: lease.profile,
             label: lease.label,
+            end_cause: lease.end_cause,
             verdict: response.verdict,
             next_step,
         })
@@ -218,15 +249,20 @@ impl<C: DaemonApi> RhServer<C> {
             .await
             .map_err(|e| e.to_string())?;
         self.held.remove(id);
+        let note = stopped_note(response.lease.end_cause);
+        self.mark_told(id, response.lease.end_cause).await;
         to_json(&ReleaseOutcome {
             lease: response.lease,
             noise: response.noise,
+            note,
         })
     }
 
     #[tool(
         description = "Active and queued leases: this session's by default, or every \
-                       session's with all_sessions.",
+                       session's with all_sessions. stopped_by_user lists this session's \
+                       leases the user stopped or removed from Resources Helper since it was \
+                       last told.",
         annotations(read_only_hint = true)
     )]
     async fn list_leases(
@@ -247,11 +283,57 @@ impl<C: DaemonApi> RhServer<C> {
                     .map_err(|e| e.to_string())?,
             );
         }
-        to_json(&LeaseList { leases })
+        let stopped_by_user = self.untold_stops().await;
+        to_json(&LeaseList {
+            leases,
+            stopped_by_user,
+        })
     }
 }
 
 impl<C: DaemonApi> RhServer<C> {
+    /// Records that this session was told about the user's kill or removal of lease `id`, so
+    /// the hooks do not tell it again. A failure only means a hook repeats it.
+    async fn mark_told(&self, id: LeaseId, cause: Option<EndCause>) {
+        if !cause.is_some_and(EndCause::is_notice) {
+            return;
+        }
+        if let Err(error) = self.client.mark_delivered(id, &self.holder.session).await {
+            eprintln!(
+                "rh-mcp: marking the notice of lease {} failed: {error}",
+                id.0
+            );
+        }
+    }
+
+    /// This session's kills and removals not told yet, each marked told. Leaves out any that
+    /// a hook told in the meantime, and is empty when the daemon cannot be asked.
+    async fn untold_stops(&self) -> Vec<StoppedLease> {
+        let session = &self.holder.session;
+        let notices = match self.client.notices(session).await {
+            Ok(notices) => notices,
+            Err(error) => {
+                eprintln!("rh-mcp: listing notices failed: {error}");
+                return Vec::new();
+            }
+        };
+        let mut stopped = Vec::new();
+        for notice in notices {
+            let Some(note) = stopped_note(Some(notice.cause)) else {
+                continue;
+            };
+            if let Ok(true) = self.client.mark_delivered(notice.lease_id, session).await {
+                stopped.push(StoppedLease {
+                    lease_id: notice.lease_id.0,
+                    label: notice.command,
+                    end_cause: notice.cause,
+                    note,
+                });
+            }
+        }
+        stopped
+    }
+
     /// `cwd` as given, or the session's working directory when it is missing or blank.
     fn cwd_or_default(&self, cwd: Option<String>) -> String {
         cwd.filter(|cwd| !cwd.trim().is_empty())
@@ -265,6 +347,21 @@ impl<C: DaemonApi> ServerHandler for RhServer<C> {
         ServerConfig::new(ServerCapabilities::builder().enable_tools().build())
             .with_server_info(Implementation::new("rh-mcp", env!("CARGO_PKG_VERSION")))
             .with_instructions(INSTRUCTIONS)
+    }
+}
+
+/// What the user did to a lease, in words, or `None` for an ordinary end.
+fn stopped_note(cause: Option<EndCause>) -> Option<&'static str> {
+    match cause? {
+        EndCause::Killed => Some(
+            "The user stopped this job from Resources Helper. They have not said whether to \
+             retry or skip.",
+        ),
+        EndCause::Removed => Some(
+            "The user removed this request from the queue in Resources Helper before it \
+             started; it did not run.",
+        ),
+        _ => None,
     }
 }
 
@@ -433,6 +530,110 @@ mod tests {
         assert_eq!(outcome["state"], "active");
         assert_eq!(daemon.leases_count(), 1);
         assert_eq!(server.held.ids(), [LeaseId(1)]);
+    }
+
+    fn resume(id: i64) -> Parameters<AcquireParams> {
+        Parameters(AcquireParams {
+            lease_id: Some(id),
+            ..AcquireParams::default()
+        })
+    }
+
+    #[tokio::test]
+    async fn test_resume_of_a_removed_lease_says_it_did_not_run_and_tells_once() {
+        let (server, daemon) = server_with(MockDaemon::default());
+        server
+            .acquire_lease(acquire(ClassParam::GpuHeavy))
+            .await
+            .unwrap();
+        daemon.stop(LeaseId(1), EndCause::Removed);
+
+        let outcome = json(server.acquire_lease(resume(1)).await);
+        assert_eq!(outcome["state"], "expired");
+        assert_eq!(outcome["end_cause"], "removed");
+        let next_step = outcome["next_step"].as_str().unwrap();
+        assert!(next_step.contains("it did not run"), "{next_step}");
+        assert!(next_step.contains("cancelled"), "{next_step}");
+        assert!(server.held.ids().is_empty());
+        assert_eq!(daemon.delivered(), [LeaseId(1)]);
+    }
+
+    #[tokio::test]
+    async fn test_resume_of_a_killed_lease_says_to_ask_retry_or_skip() {
+        let (server, daemon) = server_with(MockDaemon::default());
+        server
+            .acquire_lease(acquire(ClassParam::CpuHeavy))
+            .await
+            .unwrap();
+        daemon.stop(LeaseId(1), EndCause::Killed);
+        let outcome = json(server.acquire_lease(resume(1)).await);
+        assert_eq!(outcome["end_cause"], "killed");
+        let next_step = outcome["next_step"].as_str().unwrap();
+        assert!(next_step.contains("retry or skip"), "{next_step}");
+        assert_eq!(daemon.delivered(), [LeaseId(1)]);
+    }
+
+    #[tokio::test]
+    async fn test_ordinary_acquire_has_no_cause_and_tells_nothing() {
+        let (server, daemon) = server_with(MockDaemon::default());
+        let outcome = json(server.acquire_lease(acquire(ClassParam::CpuHeavy)).await);
+        assert!(outcome.get("end_cause").is_none());
+        assert!(daemon.delivered().is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_release_of_a_killed_lease_reports_the_kill_and_tells_once() {
+        let (server, daemon) = server_with(MockDaemon::default());
+        server
+            .acquire_lease(acquire(ClassParam::CpuHeavy))
+            .await
+            .unwrap();
+        daemon.stop(LeaseId(1), EndCause::Killed);
+        let released = json(
+            server
+                .release_lease(Parameters(ReleaseParams { lease_id: 1 }))
+                .await,
+        );
+        assert_eq!(released["state"], "expired");
+        assert_eq!(released["end_cause"], "killed");
+        assert!(
+            released["note"]
+                .as_str()
+                .unwrap()
+                .starts_with("The user stopped this job")
+        );
+        assert_eq!(daemon.delivered(), [LeaseId(1)]);
+        assert!(server.held.ids().is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_list_leases_reports_untold_stops_once() {
+        let (server, daemon) = server_with(MockDaemon::default());
+        daemon.add_lease(lease(1, holder("me"), LeaseState::Active));
+        daemon.add_lease(lease(2, holder("me"), LeaseState::Queued));
+        daemon.add_lease(lease(3, holder("them"), LeaseState::Active));
+        daemon.stop(LeaseId(2), EndCause::Removed);
+        daemon.stop(LeaseId(3), EndCause::Killed);
+
+        let listed = json(
+            server
+                .list_leases(Parameters(ListLeasesParams::default()))
+                .await,
+        );
+        assert_eq!(listed["leases"].as_array().unwrap().len(), 1);
+        let stopped = listed["stopped_by_user"].as_array().unwrap();
+        assert_eq!(stopped.len(), 1);
+        assert_eq!(stopped[0]["lease_id"], 2);
+        assert_eq!(stopped[0]["end_cause"], "removed");
+        assert_eq!(stopped[0]["label"], "cargo build");
+        assert_eq!(daemon.delivered(), [LeaseId(2)]);
+
+        let again = json(
+            server
+                .list_leases(Parameters(ListLeasesParams::default()))
+                .await,
+        );
+        assert!(again.get("stopped_by_user").is_none());
     }
 
     #[tokio::test]

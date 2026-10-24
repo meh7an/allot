@@ -40,7 +40,12 @@ impl HeldLeases {
 pub async fn heartbeat_once<C: DaemonApi>(client: &C, session: &SessionKey, held: &HeldLeases) {
     for id in held.ids() {
         match client.heartbeat(id, session).await {
-            Ok(response) if is_ended(response.state) => held.remove(id),
+            Ok(response) if is_ended(response.state) || response.end_cause.is_some() => {
+                if let Some(cause) = response.end_cause.filter(|cause| cause.is_notice()) {
+                    eprintln!("rh-mcp: lease {} was {} by the user", id.0, cause.as_str());
+                }
+                held.remove(id);
+            }
             Ok(_) => {}
             Err(error) if matches!(error.status(), Some(403 | 404)) => held.remove(id),
             Err(error) => eprintln!("rh-mcp: heartbeat for lease {} failed: {error}", id.0),
@@ -79,6 +84,8 @@ fn is_ended(state: LeaseState) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use rh_shared::types::EndCause;
+
     use super::*;
     use crate::test_support::{MockDaemon, holder, lease};
 
@@ -104,6 +111,20 @@ mod tests {
         heartbeat_once(&daemon, &me(), &held).await;
         assert_eq!(held.ids(), [LeaseId(1), LeaseId(2)]);
         assert_eq!(daemon.heartbeats().len(), 4);
+    }
+
+    #[tokio::test]
+    async fn test_heartbeat_once_drops_leases_the_user_stopped() {
+        let daemon = MockDaemon::default();
+        daemon.add_lease(lease(1, holder("me"), LeaseState::Active));
+        daemon.add_lease(lease(2, holder("me"), LeaseState::Active));
+        daemon.stop(LeaseId(1), EndCause::Killed);
+        let held = HeldLeases::default();
+        held.insert(LeaseId(1));
+        held.insert(LeaseId(2));
+
+        heartbeat_once(&daemon, &me(), &held).await;
+        assert_eq!(held.ids(), [LeaseId(2)]);
     }
 
     #[tokio::test]

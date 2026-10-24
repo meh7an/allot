@@ -86,9 +86,12 @@ enum Command {
 
 #[derive(Debug, Subcommand)]
 enum HookEvent {
-    /// PreToolUse for the Bash and PowerShell tools: reads the hook payload from stdin and
-    /// denies heavy commands without a covering lease.
+    /// PreToolUse for the Bash and PowerShell tools: reads the hook payload from stdin,
+    /// denies heavy commands without a covering lease, and binds the lease to the call.
     PreTool,
+    /// PostToolUse and PostToolUseFailure for the Bash and PowerShell tools: tells Claude,
+    /// once, when the user stopped one of its jobs or removed a queued request.
+    PostTool,
 }
 
 #[derive(Debug, Subcommand)]
@@ -125,9 +128,10 @@ fn main() -> ExitCode {
         Command::Install { from } => install::install(from.as_deref()),
         Command::Uninstall { purge } => install::uninstall(purge),
         Command::Probe(args) => probe::run(&args),
-        Command::Hook {
-            event: HookEvent::PreTool,
-        } => return hook::pre_tool(),
+        Command::Hook { event } => match event {
+            HookEvent::PreTool => return hook::pre_tool(),
+            HookEvent::PostTool => return hook::post_tool(),
+        },
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,

@@ -879,6 +879,14 @@
               "$ref": "#/definitions/SessionKey"
             }
           ]
+        },
+        "tool_use_id": {
+          "description": "Claude Code's ID for the tool call the lease was bound to, or `None` when no hook\nreported one. A hook compares it with its own call to say \"this command\".",
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
         }
       },
       "required": [

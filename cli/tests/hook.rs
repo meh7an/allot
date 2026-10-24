@@ -1,5 +1,5 @@
-//! Runs the built `rh hook pre-tool` the way Claude Code does: payload on stdin, decision on
-//! stdout, and always exit code 0.
+//! Runs the built `rh hook pre-tool` and `rh hook post-tool` the way Claude Code does:
+//! payload on stdin, decision on stdout, and always exit code 0.
 
 use std::{
     env, fs,
@@ -13,6 +13,7 @@ use serde_json::Value;
 
 const BASH_CARGO_BUILD: &str = include_str!("../fixtures/hook/bash_cargo_build.json");
 const BASH_LIGHT: &str = include_str!("../fixtures/hook/bash_light.json");
+const POST_BASH_FAILURE: &str = include_str!("../fixtures/hook/post_bash_cargo_build_failure.json");
 
 /// A home directory whose config points at a port nothing listens on and that has no token,
 /// so the daemon is unreachable.
@@ -101,8 +102,25 @@ fn test_hook_bad_arguments_warn_and_exit_zero() {
 #[test]
 fn test_hook_unknown_event_warns_and_exits_zero() {
     let home = Home::new("event", "");
-    let json = stdout_json(&run(&home, &["hook", "post-tool"], BASH_CARGO_BUILD));
+    let json = stdout_json(&run(&home, &["hook", "on-stop"], BASH_CARGO_BUILD));
     assert!(json["systemMessage"].is_string(), "{json}");
+}
+
+#[test]
+fn test_post_tool_daemon_down_prints_nothing() {
+    let home = Home::new("post-down", "");
+    let output = run(&home, &["hook", "post-tool"], POST_BASH_FAILURE);
+    assert!(output.stdout.is_empty(), "{output:?}");
+}
+
+#[test]
+fn test_post_tool_garbage_input_warns_and_exits_zero() {
+    let home = Home::new("post-garbage", "");
+    for stdin in [&b"{\"tool_name\":"[..], b"", b"\xff\xfe"] {
+        let json = stdout_json(&run_bytes(&home, &["hook", "post-tool"], stdin));
+        let message = json["systemMessage"].as_str().unwrap();
+        assert!(message.contains("notice check skipped"), "{message}");
+    }
 }
 
 #[test]

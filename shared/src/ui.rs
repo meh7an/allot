@@ -203,6 +203,10 @@ pub struct Notice {
     pub cause: EndCause,
     /// The lease's label, usually the command.
     pub command: String,
+    /// Claude Code's ID for the tool call the lease was bound to, or `None` when no hook
+    /// reported one. A hook compares it with its own call to say "this command".
+    #[serde(default)]
+    pub tool_use_id: Option<String>,
     /// When the lease ended, in milliseconds since the Unix epoch.
     pub ended_at_ms: i64,
     /// When a hook or tool result told the session, or `None` while it has not been told.
@@ -221,6 +225,7 @@ mod tests {
             session: SessionKey("3f2a9c1e-session".into()),
             cause: EndCause::Removed,
             command: "cargo test".into(),
+            tool_use_id: Some("toolu_01".into()),
             ended_at_ms: 1_793_000_090_000,
             delivered_at_ms: None,
         };
@@ -228,6 +233,15 @@ mod tests {
         let value = serde_json::to_value(&notice).unwrap();
         assert_eq!(value["lease_id"], 44);
         assert_eq!(value["cause"], "removed");
+        assert_eq!(value["tool_use_id"], "toolu_01");
         assert!(value["delivered_at_ms"].is_null());
+    }
+
+    #[test]
+    fn test_notice_from_an_older_rhd_has_no_tool_use_id() {
+        let old = r#"{"lease_id":1,"session":"s","cause":"killed","command":"cargo build",
+                      "ended_at_ms":5,"delivered_at_ms":null}"#;
+        let notice: Notice = serde_json::from_str(old).unwrap();
+        assert_eq!(notice.tool_use_id, None);
     }
 }

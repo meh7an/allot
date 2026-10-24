@@ -338,16 +338,17 @@ async fn heartbeat(
     Query(owner): Query<LeaseOwner>,
 ) -> Result<Json<HeartbeatResponse>, AppError> {
     let id = LeaseId(id);
-    let (lease_state, expires_at_ms) = match renew(&state, id, &owner.session).await? {
-        Some(renewed) => renewed,
+    let (lease_state, expires_at_ms, end_cause) = match renew(&state, id, &owner.session).await? {
+        Some((lease_state, expires_at_ms)) => (lease_state, expires_at_ms, None),
         None => {
             let lease = stored_lease(&state, id, &owner.session).await?;
-            (lease.state, lease.expires_at_ms)
+            (lease.state, lease.expires_at_ms, lease.end_cause)
         }
     };
     Ok(Json(HeartbeatResponse {
         state: lease_state,
         expires_at_ms,
+        end_cause,
     }))
 }
 

@@ -129,8 +129,15 @@ fn test_install_copies_binaries_skill_and_rule_and_prints_the_steps() {
         stdout.contains("claude mcp add --scope user resources-helper -- \""),
         "{stdout}"
     );
-    assert!(stdout.contains("2. [todo] PreToolUse hook"), "{stdout}");
-    assert!(stdout.contains("\"args\": ["), "{stdout}");
+    assert!(stdout.contains("2. [todo] Hooks in"), "{stdout}");
+    for event in [
+        "\"PreToolUse\":",
+        "\"PostToolUse\":",
+        "\"PostToolUseFailure\":",
+    ] {
+        assert!(stdout.contains(event), "{event}: {stdout}");
+    }
+    assert!(stdout.contains("\"post-tool\""), "{stdout}");
     assert!(stdout.contains("3. [todo] CLAUDE.md rule"), "{stdout}");
     // The machine running the tests may already have the real logon task.
     let task_step = stdout.contains("Register-ScheduledTask -TaskName 'resources-helper'")
@@ -150,12 +157,17 @@ fn test_install_marks_registered_steps_done() {
     let claude = home.0.join(".claude");
     fs::create_dir_all(&claude).unwrap();
     let hook = bin.join("rh.exe").to_string_lossy().replace('\\', "/");
+    let entry = |args: [&str; 2]| {
+        serde_json::json!([{
+            "matcher": "Bash|PowerShell",
+            "hooks": [{ "type": "command", "command": hook, "args": args }],
+        }])
+    };
     let settings = serde_json::json!({
         "hooks": {
-            "PreToolUse": [{
-                "matcher": "Bash|PowerShell",
-                "hooks": [{ "type": "command", "command": hook, "args": ["hook", "pre-tool"] }],
-            }],
+            "PreToolUse": entry(["hook", "pre-tool"]),
+            "PostToolUse": entry(["hook", "post-tool"]),
+            "PostToolUseFailure": entry(["hook", "post-tool"]),
         },
     });
     fs::write(claude.join("settings.json"), settings.to_string()).unwrap();
@@ -174,7 +186,7 @@ fn test_install_marks_registered_steps_done() {
     let stdout = home.install();
 
     assert!(stdout.contains("1. [done] MCP server"), "{stdout}");
-    assert!(stdout.contains("2. [done] PreToolUse hook"), "{stdout}");
+    assert!(stdout.contains("2. [done] Hooks in"), "{stdout}");
     assert!(stdout.contains("3. [done] CLAUDE.md rule"), "{stdout}");
     assert!(!stdout.contains("claude mcp add"), "{stdout}");
 }

@@ -1,5 +1,5 @@
 //! The parts of the setup that live in Claude Code's and Windows' own configuration: the MCP
-//! server, the PreToolUse hook, the CLAUDE.md rule, and the logon task. `rh install` and
+//! server, the hooks, the CLAUDE.md rule, and the logon task. `rh install` and
 //! `rh uninstall` print the commands for them, because Claude Code refuses edits to its own
 //! settings from a session, and look up which ones are already in place.
 
@@ -19,7 +19,16 @@ const TASK_NAME: &str = "resources-helper";
 /// The rule for the global CLAUDE.md, with how to add it; the section itself is the fenced
 /// block.
 pub const CLAUDE_MD_RULE: &str = include_str!("../../skill/claude-md-rule.md");
-const HOOK_ARGS: [&str; 2] = ["hook", "pre-tool"];
+
+/// A hook entry `settings.json` needs: the event and the `rh` arguments it runs.
+type HookSpec = (&'static str, [&'static str; 2]);
+
+/// Every hook entry: the lease check before a call, and the notices after one.
+const HOOKS: [HookSpec; 3] = [
+    ("PreToolUse", ["hook", "pre-tool"]),
+    ("PostToolUse", ["hook", "post-tool"]),
+    ("PostToolUseFailure", ["hook", "post-tool"]),
+];
 
 /// Whether a step is already done, as far as rh can tell.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -94,11 +103,20 @@ pub fn print_install_steps(paths: &Paths, rule_copy: &Path) {
         println!("   Sessions load it when they start; restart open sessions to get it.");
     }
 
-    let settings = format!("PreToolUse hook in {}", settings_json(paths).display());
-    if step(2, hook_state(paths), &settings) {
-        println!("   Add this entry to the \"hooks\".\"PreToolUse\" array (it loads live):");
-        for line in hook_entry(paths).lines() {
-            println!("     {line}");
+    let missing = missing_hooks(paths);
+    let state = match &missing {
+        Some(missing) if missing.is_empty() => State::Done,
+        Some(_) => State::Missing,
+        None => State::Unknown,
+    };
+    let settings = format!("Hooks in {}", settings_json(paths).display());
+    if step(2, state, &settings) {
+        println!("   Add each entry to the array of its event under \"hooks\" (they load live):");
+        for (event, args) in missing.unwrap_or_else(|| HOOKS.to_vec()) {
+            println!("   \"{event}\":");
+            for line in hook_entry(paths, args).lines() {
+                println!("     {line}");
+            }
         }
     }
 
@@ -138,12 +156,19 @@ pub fn print_uninstall_steps(paths: &Paths) {
     if mcp_state(paths) != State::Missing {
         steps.push(format!("claude mcp remove --scope user {MCP_NAME}"));
     }
-    if hook_state(paths) != State::Missing {
-        steps.push(format!(
-            "Remove the PreToolUse entry that runs {} from {}",
-            hook_command(paths),
-            settings_json(paths).display()
-        ));
+    let missing = missing_hooks(paths);
+    for (event, args) in HOOKS {
+        if missing
+            .as_ref()
+            .is_none_or(|missing| !missing.contains(&(event, args)))
+        {
+            steps.push(format!(
+                "Remove the {event} entry that runs {} {} from {}",
+                hook_command(paths),
+                args.join(" "),
+                settings_json(paths).display()
+            ));
+        }
     }
     if rule_state(paths) != State::Missing {
         let first_line = rule_body().lines().next().unwrap_or_default();
@@ -173,11 +198,21 @@ fn mcp_state(paths: &Paths) -> State {
     State::from_lookup(found)
 }
 
-fn hook_state(paths: &Paths) -> State {
-    let found = read_json(&settings_json(paths)).map(|settings| {
-        settings.is_some_and(|settings| hook_registered(&settings, &rh_exe(paths)))
-    });
-    State::from_lookup(found)
+/// The hook entries `settings.json` lacks, in [`HOOKS`] order; `None` when it cannot be read
+/// or parsed.
+fn missing_hooks(paths: &Paths) -> Option<Vec<HookSpec>> {
+    let settings = read_json(&settings_json(paths))?;
+    let exe = rh_exe(paths);
+    Some(
+        HOOKS
+            .into_iter()
+            .filter(|&(event, args)| {
+                !settings
+                    .as_ref()
+                    .is_some_and(|settings| hook_registered(settings, event, args, &exe))
+            })
+            .collect(),
+    )
 }
 
 fn rule_state(paths: &Paths) -> State {
@@ -238,9 +273,9 @@ fn mcp_registered(config: &Value, exe: &Path) -> bool {
         .is_some_and(|command| same_path(command, exe))
 }
 
-/// Whether `settings.json` has a PreToolUse hook that runs `exe hook pre-tool`.
-fn hook_registered(settings: &Value, exe: &Path) -> bool {
-    let Some(entries) = settings["hooks"]["PreToolUse"].as_array() else {
+/// Whether `settings.json` has an `event` hook that runs `exe` with `args`.
+fn hook_registered(settings: &Value, event: &str, args: [&str; 2], exe: &Path) -> bool {
+    let Some(entries) = settings["hooks"][event].as_array() else {
         return false;
     };
     entries
@@ -253,7 +288,7 @@ fn hook_registered(settings: &Value, exe: &Path) -> bool {
                 .is_some_and(|command| same_path(command, exe))
                 && hook["args"]
                     .as_array()
-                    .is_some_and(|args| args.iter().map(Value::as_str).eq(HOOK_ARGS.map(Some)))
+                    .is_some_and(|found| found.iter().map(Value::as_str).eq(args.map(Some)))
         })
 }
 
@@ -268,15 +303,15 @@ fn hook_command(paths: &Paths) -> String {
     rh_exe(paths).to_string_lossy().replace('\\', "/")
 }
 
-/// The PreToolUse entry for `settings.json`, as pretty JSON. Exec form (`args`, no shell),
-/// so the hook's parent is the session's `claude.exe`.
-fn hook_entry(paths: &Paths) -> String {
+/// A hook entry for `settings.json` that runs `rh` with `args`, as pretty JSON. Exec form
+/// (`args`, no shell), so the hook's parent is the session's `claude.exe`.
+fn hook_entry(paths: &Paths, args: [&str; 2]) -> String {
     let entry = json!({
         "matcher": "Bash|PowerShell",
         "hooks": [{
             "type": "command",
             "command": hook_command(paths),
-            "args": HOOK_ARGS,
+            "args": args,
             "timeout": 10,
         }],
     });
@@ -340,43 +375,76 @@ mod tests {
         }
     }
 
+    const PRE_TOOL: [&str; 2] = ["hook", "pre-tool"];
+    const POST_TOOL: [&str; 2] = ["hook", "post-tool"];
+
+    fn entry(args: [&str; 2]) -> Value {
+        serde_json::from_str(&hook_entry(&paths(), args)).unwrap()
+    }
+
     #[test]
     fn test_hook_registered_finds_the_entry_beside_other_hooks() {
         let settings = json!({
             "hooks": {
                 "PreToolUse": [
                     { "matcher": "Bash", "hooks": [{ "type": "command", "command": "rtk hook" }] },
-                    serde_json::from_str::<Value>(&hook_entry(&paths())).unwrap(),
+                    entry(PRE_TOOL),
                 ],
             },
         });
-        assert!(hook_registered(&settings, &rh_exe(&paths())));
+        let exe = rh_exe(&paths());
+        assert!(hook_registered(&settings, "PreToolUse", PRE_TOOL, &exe));
+        assert!(!hook_registered(&settings, "PostToolUse", POST_TOOL, &exe));
     }
 
     #[test]
-    fn test_hook_registered_needs_the_pre_tool_args() {
+    fn test_hook_registered_needs_the_args_under_their_event() {
+        let exe = rh_exe(&paths());
         let settings = json!({
             "hooks": {
                 "PreToolUse": [{
                     "matcher": "Bash",
                     "hooks": [{ "command": hook_command(&paths()), "args": ["probe"] }],
                 }],
+                "PostToolUse": [entry(PRE_TOOL)],
             },
         });
-        assert!(!hook_registered(&settings, &rh_exe(&paths())));
-        assert!(!hook_registered(&json!({ "hooks": {} }), &rh_exe(&paths())));
+        assert!(!hook_registered(&settings, "PreToolUse", PRE_TOOL, &exe));
+        assert!(!hook_registered(&settings, "PostToolUse", POST_TOOL, &exe));
+        assert!(!hook_registered(
+            &json!({ "hooks": {} }),
+            "PreToolUse",
+            PRE_TOOL,
+            &exe
+        ));
     }
 
     #[test]
     fn test_hook_entry_uses_forward_slashes_and_exec_form() {
-        let entry: Value = serde_json::from_str(&hook_entry(&paths())).unwrap();
+        let entry = entry(POST_TOOL);
         let hook = &entry["hooks"][0];
         assert_eq!(
             hook["command"],
             "C:/Users/someone/.resources-helper/bin/rh.exe"
         );
-        assert_eq!(hook["args"], json!(["hook", "pre-tool"]));
+        assert_eq!(hook["args"], json!(["hook", "post-tool"]));
         assert_eq!(entry["matcher"], "Bash|PowerShell");
+    }
+
+    #[test]
+    fn test_hooks_cover_both_post_tool_events() {
+        let events: Vec<_> = HOOKS
+            .iter()
+            .map(|(event, args)| (*event, args[1]))
+            .collect();
+        assert_eq!(
+            events,
+            [
+                ("PreToolUse", "pre-tool"),
+                ("PostToolUse", "post-tool"),
+                ("PostToolUseFailure", "post-tool"),
+            ]
+        );
     }
 
     #[test]

@@ -753,6 +753,12 @@ public sealed record Notice
     /// Session to tell.
     /// </summary>
     public required string Session { get; init; }
+
+    /// <summary>
+    /// Claude Code's ID for the tool call the lease was bound to, or <c>null</c> when no hook
+    /// reported one. A hook compares it with its own call to say "this command".
+    /// </summary>
+    public string? ToolUseId { get; init; }
 }
 
 /// <summary>

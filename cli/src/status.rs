@@ -394,6 +394,7 @@ mod tests {
             session: SessionKey("3f2a9c1e-aaaa-bbbb".into()),
             cause,
             command: "cargo clippy".into(),
+            tool_use_id: None,
             ended_at_ms,
             delivered_at_ms,
         };

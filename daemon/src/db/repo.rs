@@ -365,6 +365,7 @@ fn notice((row, delivered_at_ms): (LeaseRow, Option<i64>)) -> anyhow::Result<Not
         session: lease.holder.session,
         cause,
         command: lease.label,
+        tool_use_id: lease.binding.map(|binding| binding.tool_use_id),
         ended_at_ms,
         delivered_at_ms,
     })
@@ -1106,6 +1107,7 @@ mod tests {
                 session: session.clone(),
                 cause: EndCause::Killed,
                 command: "cargo build --release".into(),
+                tool_use_id: None,
                 ended_at_ms: 5_000,
                 delivered_at_ms: None,
             }
@@ -1181,6 +1183,16 @@ mod tests {
         );
         assert!(!bind_lease(&mut conn, LeaseId(404), &binding(None)).unwrap());
         assert_eq!(lease_events(&mut conn, id).unwrap().len(), 2);
+    }
+
+    #[test]
+    fn test_notice_of_a_bound_lease_names_its_tool_call() {
+        let mut conn = memory_conn();
+        let id = active_lease(&mut conn, "s1");
+        bind_lease(&mut conn, id, &binding(Some(ROOT))).unwrap();
+        end_lease(&mut conn, id, EndCause::Killed, 5_000, "killed").unwrap();
+        let pending = undelivered_notices(&mut conn, &SessionKey("s1".into())).unwrap();
+        assert_eq!(pending[0].tool_use_id.as_deref(), Some("toolu_01AbC"));
     }
 
     #[test]

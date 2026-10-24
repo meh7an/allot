@@ -3,8 +3,9 @@
 Add the section below to the global `~/.claude/CLAUDE.md` between sessions (editing it inside
 a running session breaks the prompt cache). It is global because the daemon coordinates
 every session on the machine, whatever the project. It assumes the `resource-guard` skill is
-installed in `~/.claude/skills/resource-guard/` and the `resources-helper` MCP server and the
-`rh hook pre-tool` PreToolUse hook are registered.
+installed in `~/.claude/skills/resource-guard/` and the `resources-helper` MCP server, the
+`rh hook pre-tool` PreToolUse hook, and the `rh hook post-tool` PostToolUse and
+PostToolUseFailure hooks are registered.
 
 ---
 
@@ -22,5 +23,7 @@ This PC is shared by several Claude sessions, coordinated by the resources-helpe
 - When a lease is queued, tell the user in one line what is ahead and the estimated wait, then
   keep waiting; never ask whether to queue or wait. If it ends without starting (removed from
   the queue), don't run the command; say in one line that it was cancelled.
+- When a note says the user stopped a running job from Resources Helper, say so and ask
+  whether to retry or skip; never retry on your own.
 - Lease handling never needs the user's approval; it is not a state-changing command.
 ```
