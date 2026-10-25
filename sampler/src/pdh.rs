@@ -2,7 +2,7 @@
 
 use std::mem;
 
-use rh_shared::{Error, Result};
+use allot_shared::{Error, Result};
 use windows::{
     Win32::System::Performance::{
         PDH_CSTATUS_NEW_DATA, PDH_CSTATUS_VALID_DATA, PDH_FMT_COUNTERVALUE,

@@ -1,12 +1,12 @@
-//! Adds and removes rh's hook entries in `~/.claude/settings.json`. The file is edited as an
-//! ordered tree, so its key order and every entry rh does not own come back unchanged.
+//! Adds and removes allot's hook entries in `~/.claude/settings.json`. The file is edited as an
+//! ordered tree, so its key order and every entry allot does not own come back unchanged.
 
 use std::path::Path;
 
 use anyhow::Context;
 
 use super::{
-    HOOKS, HookSpec, is_rh_hook,
+    HOOKS, HookSpec, is_allot_hook,
     json::{Json, parse, text},
 };
 
@@ -60,7 +60,7 @@ pub(super) fn add_hooks(
     Ok(text(&tree, settings))
 }
 
-/// `settings` without the hooks that run `exe` with rh's arguments, dropping entries and
+/// `settings` without the hooks that run `exe` with allot's arguments, dropping entries and
 /// events left empty by that; `None` when it has none.
 ///
 /// # Errors
@@ -79,29 +79,29 @@ pub(super) fn remove_hooks(settings: &str, exe: &Path) -> anyhow::Result<Option<
         let Some(entries) = hooks[index].1.array_mut() else {
             continue;
         };
-        let mut emptied_by_rh = false;
+        let mut emptied_by_allot = false;
         entries.retain_mut(|entry| {
             let Some(list) = entry.field_mut("hooks").and_then(Json::array_mut) else {
                 return true;
             };
             let before = list.len();
-            list.retain(|hook| !runs_rh(hook, exe, args));
+            list.retain(|hook| !runs_allot(hook, exe, args));
             if list.len() == before {
                 return true;
             }
             changed = true;
-            emptied_by_rh |= list.is_empty();
+            emptied_by_allot |= list.is_empty();
             !list.is_empty()
         });
-        if emptied_by_rh && entries.is_empty() {
+        if emptied_by_allot && entries.is_empty() {
             hooks.remove(index);
         }
     }
     Ok(changed.then(|| text(&tree, settings)))
 }
 
-fn runs_rh(hook: &Json, exe: &Path, args: [&str; 2]) -> bool {
-    serde_json::to_value(hook).is_ok_and(|hook| is_rh_hook(&hook, exe, args))
+fn runs_allot(hook: &Json, exe: &Path, args: [&str; 2]) -> bool {
+    serde_json::to_value(hook).is_ok_and(|hook| is_allot_hook(&hook, exe, args))
 }
 
 #[cfg(test)]
@@ -110,10 +110,10 @@ mod tests {
 
     use super::*;
 
-    const COMMAND: &str = "C:/Users/someone/.resources-helper/bin/rh.exe";
+    const COMMAND: &str = "C:/Users/someone/.allot/bin/allot.exe";
 
     fn exe() -> PathBuf {
-        PathBuf::from(r"C:\Users\someone\.resources-helper\bin\rh.exe")
+        PathBuf::from(r"C:\Users\someone\.allot\bin\allot.exe")
     }
 
     #[test]
@@ -176,7 +176,7 @@ mod tests {
         let settings = "{\r\n  \"hooks\": {\r\n    \"PreToolUse\": [\r\n      {\r\n        \
             \"matcher\": \"Bash|PowerShell\",\r\n        \"hooks\": [\r\n          \
             { \"command\": \"rtk hook\" },\r\n          \
-            { \"command\": \"c:\\\\users\\\\someone\\\\.resources-helper\\\\bin\\\\rh.exe\", \
+            { \"command\": \"c:\\\\users\\\\someone\\\\.allot\\\\bin\\\\allot.exe\", \
             \"args\": [\"hook\", \"pre-tool\"] }\r\n        ]\r\n      }\r\n    ]\r\n  }\r\n}";
 
         let removed = remove_hooks(settings, &exe()).unwrap().unwrap();

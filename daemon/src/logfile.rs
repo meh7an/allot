@@ -1,4 +1,4 @@
-//! A log file that rotates by size: `rhd.log` is renamed to `rhd.1.log` once it would grow
+//! A log file that rotates by size: `allotd.log` is renamed to `allotd.1.log` once it would grow
 //! past the limit, older files move up one number, and the oldest is deleted.
 
 use std::{
@@ -116,36 +116,36 @@ mod tests {
     #[test]
     fn test_rotating_file_shifts_files_and_drops_the_oldest() {
         let dir = TempDir::new().unwrap();
-        let mut log = RotatingFile::open(dir.path(), "rhd", 10, 3).unwrap();
+        let mut log = RotatingFile::open(dir.path(), "allotd", 10, 3).unwrap();
         for line in ["first...\n", "second..\n", "third...\n", "fourth..\n"] {
             log.write_all(line.as_bytes()).unwrap();
         }
         log.flush().unwrap();
 
-        assert_eq!(read(dir.path(), "rhd.log"), "fourth..\n");
-        assert_eq!(read(dir.path(), "rhd.1.log"), "third...\n");
-        assert_eq!(read(dir.path(), "rhd.2.log"), "second..\n");
-        assert!(!dir.path().join("rhd.3.log").exists());
+        assert_eq!(read(dir.path(), "allotd.log"), "fourth..\n");
+        assert_eq!(read(dir.path(), "allotd.1.log"), "third...\n");
+        assert_eq!(read(dir.path(), "allotd.2.log"), "second..\n");
+        assert!(!dir.path().join("allotd.3.log").exists());
     }
 
     #[test]
     fn test_rotating_file_counts_what_an_earlier_run_wrote() {
         let dir = TempDir::new().unwrap();
-        fs::write(dir.path().join("rhd.log"), "0123456789").unwrap();
-        let mut log = RotatingFile::open(dir.path(), "rhd", 10, 2).unwrap();
+        fs::write(dir.path().join("allotd.log"), "0123456789").unwrap();
+        let mut log = RotatingFile::open(dir.path(), "allotd", 10, 2).unwrap();
         log.write_all(b"new\n").unwrap();
         log.flush().unwrap();
 
-        assert_eq!(read(dir.path(), "rhd.log"), "new\n");
-        assert_eq!(read(dir.path(), "rhd.1.log"), "0123456789");
+        assert_eq!(read(dir.path(), "allotd.log"), "new\n");
+        assert_eq!(read(dir.path(), "allotd.1.log"), "0123456789");
     }
 
     #[test]
     fn test_rotating_file_never_splits_a_write_larger_than_the_limit() {
         let dir = TempDir::new().unwrap();
-        let mut log = RotatingFile::open(dir.path(), "rhd", 4, 2).unwrap();
+        let mut log = RotatingFile::open(dir.path(), "allotd", 4, 2).unwrap();
         log.write_all(b"a long line\n").unwrap();
         log.flush().unwrap();
-        assert_eq!(read(dir.path(), "rhd.log"), "a long line\n");
+        assert_eq!(read(dir.path(), "allotd.log"), "a long line\n");
     }
 }

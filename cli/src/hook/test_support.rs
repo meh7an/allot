@@ -2,8 +2,8 @@
 
 use std::cell::RefCell;
 
-use rh_client::ClientError;
-use rh_shared::{
+use allot_client::ClientError;
+use allot_shared::{
     api::BindRequest,
     types::{EndCause, Holder, JobProfile, Lease, LeaseId, LeaseKind, LeaseState, SessionKey},
     ui::Notice,
@@ -20,7 +20,7 @@ pub struct FakeDaemon {
     pub notices: Vec<Notice>,
     /// Notices another channel marks delivered between the list and the mark.
     pub taken_elsewhere: Vec<LeaseId>,
-    /// Every call fails as if rhd were not running.
+    /// Every call fails as if allotd were not running.
     pub down: bool,
     pub fail_bind: bool,
     pub(in crate::hook) asked: RefCell<Vec<String>>,
@@ -43,13 +43,13 @@ impl FakeDaemon {
         self.delivered.borrow().clone()
     }
 
-    fn up(&self) -> rh_client::Result<()> {
+    fn up(&self) -> allot_client::Result<()> {
         if self.down { Err(down()) } else { Ok(()) }
     }
 }
 
 impl HookDaemon for FakeDaemon {
-    fn leases(&self, session: &SessionKey) -> rh_client::Result<Vec<Lease>> {
+    fn leases(&self, session: &SessionKey) -> allot_client::Result<Vec<Lease>> {
         self.up()?;
         self.asked.borrow_mut().push(session.0.clone());
         Ok(self.leases.clone())
@@ -60,7 +60,7 @@ impl HookDaemon for FakeDaemon {
         id: LeaseId,
         _session: &SessionKey,
         request: &BindRequest,
-    ) -> rh_client::Result<()> {
+    ) -> allot_client::Result<()> {
         self.up()?;
         if self.fail_bind {
             return Err(ClientError::Http {
@@ -72,7 +72,7 @@ impl HookDaemon for FakeDaemon {
         Ok(())
     }
 
-    fn notices(&self, _session: &SessionKey) -> rh_client::Result<Vec<Notice>> {
+    fn notices(&self, _session: &SessionKey) -> allot_client::Result<Vec<Notice>> {
         self.up()?;
         let delivered = self.delivered.borrow();
         Ok(self
@@ -83,7 +83,7 @@ impl HookDaemon for FakeDaemon {
             .collect())
     }
 
-    fn mark_delivered(&self, id: LeaseId, _session: &SessionKey) -> rh_client::Result<bool> {
+    fn mark_delivered(&self, id: LeaseId, _session: &SessionKey) -> allot_client::Result<bool> {
         self.up()?;
         if self.taken_elsewhere.contains(&id) || self.delivered.borrow().contains(&id) {
             return Ok(false);
@@ -94,7 +94,7 @@ impl HookDaemon for FakeDaemon {
 }
 
 impl HookDaemon for &FakeDaemon {
-    fn leases(&self, session: &SessionKey) -> rh_client::Result<Vec<Lease>> {
+    fn leases(&self, session: &SessionKey) -> allot_client::Result<Vec<Lease>> {
         (*self).leases(session)
     }
 
@@ -103,15 +103,15 @@ impl HookDaemon for &FakeDaemon {
         id: LeaseId,
         session: &SessionKey,
         request: &BindRequest,
-    ) -> rh_client::Result<()> {
+    ) -> allot_client::Result<()> {
         (*self).bind(id, session, request)
     }
 
-    fn notices(&self, session: &SessionKey) -> rh_client::Result<Vec<Notice>> {
+    fn notices(&self, session: &SessionKey) -> allot_client::Result<Vec<Notice>> {
         (*self).notices(session)
     }
 
-    fn mark_delivered(&self, id: LeaseId, session: &SessionKey) -> rh_client::Result<bool> {
+    fn mark_delivered(&self, id: LeaseId, session: &SessionKey) -> allot_client::Result<bool> {
         (*self).mark_delivered(id, session)
     }
 }
@@ -123,13 +123,13 @@ fn down() -> ClientError {
     }
 }
 
-/// A connect that fails as if rhd were not running.
-pub fn unreachable() -> rh_client::Result<FakeDaemon> {
+/// A connect that fails as if allotd were not running.
+pub fn unreachable() -> allot_client::Result<FakeDaemon> {
     Err(down())
 }
 
 /// A connect that must not happen.
-pub fn never() -> rh_client::Result<FakeDaemon> {
+pub fn never() -> allot_client::Result<FakeDaemon> {
     panic!("this payload must not reach the daemon");
 }
 

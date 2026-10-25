@@ -1,4 +1,4 @@
-//! Types shared by every crate in the resources-helper workspace.
+//! Types shared by every crate in the allot workspace.
 
 pub mod api;
 pub mod config;

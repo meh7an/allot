@@ -6,7 +6,7 @@ use std::{
     time::Duration,
 };
 
-use rh_shared::types::{LeaseId, LeaseState, SessionKey};
+use allot_shared::types::{LeaseId, LeaseState, SessionKey};
 
 use crate::daemon::DaemonApi;
 
@@ -42,13 +42,17 @@ pub async fn heartbeat_once<C: DaemonApi>(client: &C, session: &SessionKey, held
         match client.heartbeat(id, session).await {
             Ok(response) if is_ended(response.state) || response.end_cause.is_some() => {
                 if let Some(cause) = response.end_cause.filter(|cause| cause.is_notice()) {
-                    eprintln!("rh-mcp: lease {} was {} by the user", id.0, cause.as_str());
+                    eprintln!(
+                        "allot-mcp: lease {} was {} by the user",
+                        id.0,
+                        cause.as_str()
+                    );
                 }
                 held.remove(id);
             }
             Ok(_) => {}
             Err(error) if matches!(error.status(), Some(403 | 404)) => held.remove(id),
-            Err(error) => eprintln!("rh-mcp: heartbeat for lease {} failed: {error}", id.0),
+            Err(error) => eprintln!("allot-mcp: heartbeat for lease {} failed: {error}", id.0),
         }
     }
 }
@@ -72,7 +76,7 @@ pub async fn heartbeat_loop<C: DaemonApi>(
 pub async fn release_all<C: DaemonApi>(client: &C, session: &SessionKey, held: &HeldLeases) {
     for id in held.ids() {
         if let Err(error) = client.release(id, session).await {
-            eprintln!("rh-mcp: releasing lease {} failed: {error}", id.0);
+            eprintln!("allot-mcp: releasing lease {} failed: {error}", id.0);
         }
         held.remove(id);
     }
@@ -84,7 +88,7 @@ fn is_ended(state: LeaseState) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use rh_shared::types::EndCause;
+    use allot_shared::types::EndCause;
 
     use super::*;
     use crate::test_support::{MockDaemon, holder, lease};

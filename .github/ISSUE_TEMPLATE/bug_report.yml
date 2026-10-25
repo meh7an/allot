@@ -21,14 +21,14 @@ body:
   - type: textarea
     id: status
     attributes:
-      label: rh daemon status and rh status
+      label: allot daemon status and allot status
       description: The output of both commands. Remove anything private.
       render: text
   - type: textarea
     id: log
     attributes:
-      label: Relevant rhd.log lines
-      description: From `%USERPROFILE%\.resources-helper\logs\rhd.log`, if any.
+      label: Relevant allotd.log lines
+      description: From `%USERPROFILE%\.allot\logs\allotd.log`, if any.
       render: text
   - type: input
     id: windows

@@ -1,4 +1,4 @@
-//! Typed client for the `rhd` daemon API, shared by the MCP server, hook, and CLI.
+//! Typed client for the `allotd` daemon API, shared by the MCP server, hook, and CLI.
 //!
 //! [`Client`] is async; [`BlockingClient`] wraps it for callers without a runtime. Both can
 //! start the daemon in the background when it is not running and retry once.
@@ -13,8 +13,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use reqwest::{RequestBuilder, Response};
-use rh_shared::{
+use allot_shared::{
     api::{
         AcquireRequest, AcquireResponse, BindRequest, CanFitRequest, DeliveredResponse,
         HealthResponse, HeartbeatResponse, HistoryResponse, HistoryRunsResponse, JobSummary,
@@ -26,6 +25,7 @@ use rh_shared::{
     types::{Holder, JobRun, Lease, LeaseId, SessionKey, SessionUsage, Snapshot},
     ui::{Notice, UiState},
 };
+use reqwest::{RequestBuilder, Response};
 use serde::de::DeserializeOwned;
 
 pub use crate::{blocking::BlockingClient, error::ClientError, spawn::SpawnOptions};
@@ -46,7 +46,7 @@ const KILL_WAIT: Duration = Duration::from_secs(30);
 pub enum TokenSource {
     /// A known token, for tests.
     Fixed(String),
-    /// The daemon's token file, read when first needed and again after starting rhd.
+    /// The daemon's token file, read when first needed and again after starting allotd.
     File(PathBuf),
 }
 
@@ -61,13 +61,13 @@ pub struct ClientOptions {
     pub connect_timeout: Duration,
     /// Timeout for every request; acquire adds its own wait on top.
     pub request_timeout: Duration,
-    /// Start rhd and retry once when it is unreachable; `None` never starts it.
+    /// Start allotd and retry once when it is unreachable; `None` never starts it.
     pub spawn: Option<SpawnOptions>,
 }
 
 impl ClientOptions {
     /// Options for the local install: the port from `config.toml` and the token file under
-    /// `%USERPROFILE%\.resources-helper\`.
+    /// `%USERPROFILE%\.allot\`.
     ///
     /// # Errors
     ///
@@ -528,7 +528,7 @@ impl Client {
             tokio::time::sleep(READY_POLL).await;
         }
         Err(ClientError::Spawn(format!(
-            "{} started but did not answer within {} s; see %USERPROFILE%\\.resources-helper\\logs\\rhd.log",
+            "{} started but did not answer within {} s; see %USERPROFILE%\\.allot\\logs\\allotd.log",
             spawn.daemon_exe.display(),
             spawn.ready_timeout.as_secs()
         )))

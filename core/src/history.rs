@@ -8,7 +8,7 @@
 //! use their whole-lease average. Raised values stop at what the machine can free, so a
 //! learned profile never turns into a request that can never start.
 
-use rh_shared::{
+use allot_shared::{
     api::JobSummary,
     types::{EndCause, JobProfile, JobRun},
 };
@@ -289,7 +289,7 @@ fn raise(declared: f64, p90: f64, cap: Option<f64>) -> Option<Raised> {
 
 #[cfg(test)]
 mod tests {
-    use rh_shared::{
+    use allot_shared::{
         config::ClassifierConfig,
         types::{BusyUsage, JobProfile, ResourceUsage},
     };
@@ -352,17 +352,20 @@ mod tests {
     #[test]
     fn test_fingerprint_ignores_wrappers_redirects_and_path_spelling() {
         let classifier = classifier();
-        let plain = fingerprint(&classifier, "cargo build -p rhd", r"E:\Work\App");
-        assert_eq!(plain, r"cargo build -p rhd|e:\work\app");
+        let plain = fingerprint(&classifier, "cargo build -p allotd", r"E:\Work\App");
+        assert_eq!(plain, r"cargo build -p allotd|e:\work\app");
         for (label, cwd) in [
             (
-                "cd sub && cargo build -p rhd 2>&1 | tail -5",
+                "cd sub && cargo build -p allotd 2>&1 | tail -5",
                 "E:/Work/App/",
             ),
-            ("Cargo  build   -p rhd", "/e/work/app"),
-            ("cargo build -p rhd; echo done", r"e:\work\app\"),
-            ("cargo build -p rhd > build.log 2> err.log", r"e:\work\app"),
-            ("cargo build -p rhd *>&1", r"e:\work\app"),
+            ("Cargo  build   -p allotd", "/e/work/app"),
+            ("cargo build -p allotd; echo done", r"e:\work\app\"),
+            (
+                "cargo build -p allotd > build.log 2> err.log",
+                r"e:\work\app",
+            ),
+            ("cargo build -p allotd *>&1", r"e:\work\app"),
         ] {
             assert_eq!(
                 fingerprint(&classifier, label, cwd),

@@ -91,7 +91,7 @@ mod tests {
     };
     use tempfile::TempDir;
 
-    use rh_shared::types::{EndCause, LeaseId, SessionKey};
+    use allot_shared::types::{EndCause, LeaseId, SessionKey};
 
     use super::*;
     use crate::db::{repo, test_support::sample_draft};
@@ -133,7 +133,7 @@ mod tests {
     #[test]
     fn test_open_pool_missing_directory_creates_database_with_every_table() {
         let dir = TempDir::new().unwrap();
-        let path = dir.path().join("nested").join("rh.db");
+        let path = dir.path().join("nested").join("allot.db");
         let pool = open_pool(&path).unwrap();
         assert!(path.is_file());
         assert_eq!(table_names(&mut pool.get().unwrap()), TABLES);
@@ -142,7 +142,7 @@ mod tests {
     #[test]
     fn test_migrations_revert_and_rerun_cleanly() {
         let dir = TempDir::new().unwrap();
-        let pool = open_pool(&dir.path().join("rh.db")).unwrap();
+        let pool = open_pool(&dir.path().join("allot.db")).unwrap();
         let mut conn = pool.get().unwrap();
         conn.revert_all_migrations(MIGRATIONS).unwrap();
         assert!(table_names(&mut conn).is_empty());
@@ -153,7 +153,7 @@ mod tests {
     #[test]
     fn test_open_pool_connections_use_wal_and_foreign_keys() {
         let dir = TempDir::new().unwrap();
-        let pool = open_pool(&dir.path().join("rh.db")).unwrap();
+        let pool = open_pool(&dir.path().join("allot.db")).unwrap();
         let mut conn = pool.get().unwrap();
         let mode = sql_query("PRAGMA journal_mode").get_result::<JournalMode>(&mut conn);
         assert_eq!(mode.unwrap().journal_mode, "wal");
@@ -164,7 +164,7 @@ mod tests {
     #[test]
     fn test_open_pool_existing_database_keeps_stored_leases() {
         let dir = TempDir::new().unwrap();
-        let path = dir.path().join("rh.db");
+        let path = dir.path().join("allot.db");
         let pool = open_pool(&path).unwrap();
         let lease = repo::insert_lease(&mut pool.get().unwrap(), &sample_draft("s1", 1_000));
         let lease = lease.unwrap();
@@ -178,7 +178,7 @@ mod tests {
     #[test]
     fn test_v0_2_migrations_fill_in_causes_sessions_and_the_first_session() {
         let dir = TempDir::new().unwrap();
-        let pool = open_pool(&dir.path().join("rh.db")).unwrap();
+        let pool = open_pool(&dir.path().join("allot.db")).unwrap();
         let mut conn = pool.get().unwrap();
         for _ in 0..V0_2_MIGRATIONS {
             conn.revert_last_migration(MIGRATIONS).unwrap();

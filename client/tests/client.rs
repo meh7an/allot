@@ -7,19 +7,19 @@ use std::{
     time::Duration,
 };
 
-use rh_client::{
+use allot_client::{
     BlockingClient, Client, ClientError, ClientOptions, DEFAULT_CONNECT_TIMEOUT,
     DEFAULT_REQUEST_TIMEOUT, DaemonStart, SpawnOptions, TokenSource,
 };
-use rh_core::sampler::{RawProcess, RawSample, Sampler};
-use rh_shared::{
+use allot_core::sampler::{RawProcess, RawSample, Sampler};
+use allot_shared::{
     api::{AcquireRequest, BindRequest, CanFitRequest, LeaseQuery, ProfileSpec},
     config::Config,
     types::{
         EndCause, Holder, JobClass, LeaseKind, LeaseState, MemStats, ResourceUsage, SessionKey,
     },
 };
-use rhd::{DaemonOptions, Maintenance, db::open_pool};
+use allotd::{DaemonOptions, Maintenance, db::open_pool};
 use tempfile::TempDir;
 use tokio::{net::TcpListener, sync::oneshot, task::JoinHandle};
 
@@ -29,7 +29,7 @@ const HOLDER_PID: u32 = 4_242;
 struct FakeSampler(Arc<Mutex<RawSample>>);
 
 impl Sampler for FakeSampler {
-    fn sample(&mut self) -> rh_shared::Result<RawSample> {
+    fn sample(&mut self) -> allot_shared::Result<RawSample> {
         Ok(self.0.lock().unwrap().clone())
     }
 }
@@ -104,7 +104,7 @@ struct Daemon {
 impl Daemon {
     async fn start() -> Self {
         let dir = TempDir::new().unwrap();
-        let pool = open_pool(&dir.path().join("rh.db")).unwrap();
+        let pool = open_pool(&dir.path().join("allot.db")).unwrap();
         let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
         let addr = listener.local_addr().unwrap();
         let sampled = Arc::new(Mutex::new(machine()));
@@ -121,7 +121,7 @@ impl Daemon {
             let shutdown = async {
                 let _ = stopped.await;
             };
-            rhd::serve(listener, options, shutdown).await.unwrap();
+            allotd::serve(listener, options, shutdown).await.unwrap();
         });
         let daemon = Self {
             addr,
@@ -335,7 +335,7 @@ async fn test_client_never_resends_a_request_the_daemon_dropped() {
     let mut options = options(addr, TokenSource::Fixed(TOKEN.into()));
     // Sending the acquire again would start this and fail with `Spawn` instead.
     options.spawn = Some(SpawnOptions {
-        daemon_exe: PathBuf::from("Z:\\no\\such\\rhd.exe"),
+        daemon_exe: PathBuf::from("Z:\\no\\such\\allotd.exe"),
         ready_timeout: Duration::from_millis(200),
     });
     let client = Client::new(options).unwrap();
@@ -351,7 +351,7 @@ async fn test_client_spawn_failure_is_reported() {
     let addr = closed_addr().await;
     let mut options = options(addr, TokenSource::Fixed(TOKEN.into()));
     options.spawn = Some(SpawnOptions {
-        daemon_exe: PathBuf::from("Z:\\no\\such\\rhd.exe"),
+        daemon_exe: PathBuf::from("Z:\\no\\such\\allotd.exe"),
         ready_timeout: Duration::from_millis(200),
     });
     let client = Client::new(options).unwrap();

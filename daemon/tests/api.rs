@@ -11,10 +11,8 @@ use std::{
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
-use diesel::{Connection, sqlite::SqliteConnection};
-use reqwest::{RequestBuilder, Response, StatusCode};
-use rh_core::sampler::{RawProcess, RawSample, Sampler};
-use rh_shared::{
+use allot_core::sampler::{RawProcess, RawSample, Sampler};
+use allot_shared::{
     api::{
         AcquireRequest, AcquireResponse, BenchmarkProgress, BindRequest, CanFitRequest,
         DeliveredResponse, HealthResponse, HeartbeatResponse, HistoryResponse, HistoryRunsResponse,
@@ -28,13 +26,15 @@ use rh_shared::{
     },
     ui::{Notice, UiState},
 };
-use rhd::{
+use allotd::{
     DaemonOptions, Maintenance,
     db::{
         open_pool,
         repo::{self, LeaseDraft},
     },
 };
+use diesel::{Connection, sqlite::SqliteConnection};
+use reqwest::{RequestBuilder, Response, StatusCode};
 use serde_json::Value;
 use tempfile::TempDir;
 use tokio::{net::TcpListener, sync::oneshot, task::JoinHandle};
@@ -48,7 +48,7 @@ struct FakeSampler(Arc<Mutex<RawSample>>);
 impl Sampler for FakeSampler {
     /// The current machine state, stamped now: the quiet window and the benchmark meter
     /// count each sample once, by its timestamp.
-    fn sample(&mut self) -> rh_shared::Result<RawSample> {
+    fn sample(&mut self) -> allot_shared::Result<RawSample> {
         let mut sample = self.0.lock().unwrap().clone();
         sample.taken_at_ms = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -173,7 +173,7 @@ impl Daemon {
             },
         };
         let (stop, stopped) = oneshot::channel::<()>();
-        let server = tokio::spawn(rhd::serve(listener, options, async {
+        let server = tokio::spawn(allotd::serve(listener, options, async {
             let _ = stopped.await;
         }));
         let daemon = Self {
@@ -325,7 +325,7 @@ impl Daemon {
 }
 
 fn database(dir: &TempDir) -> PathBuf {
-    dir.path().join("rh.db")
+    dir.path().join("allot.db")
 }
 
 #[tokio::test]
@@ -886,7 +886,7 @@ async fn test_benchmark_on_a_quiet_machine_reports_and_stores_its_noise() {
     assert!(noise.quiet_at_start);
     assert_eq!((noise.avg_cpu_pct, noise.peak_cpu_pct), (0.0, 0.0));
 
-    let pool = open_pool(&daemon._dir.path().join("rh.db")).unwrap();
+    let pool = open_pool(&daemon._dir.path().join("allot.db")).unwrap();
     let mut conn = pool.get().unwrap();
     let runs = repo::recent_job_runs(&mut conn, "cargo bench|", 10).unwrap();
     assert_eq!(runs.len(), 1);
@@ -926,7 +926,7 @@ async fn test_benchmark_on_a_busy_machine_is_granted_without_quiet() {
 
     let released = daemon.release_response(queued.lease.id, "alice").await;
     assert!(!released.noise.expect("a noise report").quiet_at_start);
-    let pool = open_pool(&daemon._dir.path().join("rh.db")).unwrap();
+    let pool = open_pool(&daemon._dir.path().join("allot.db")).unwrap();
     let events = repo::lease_events(&mut pool.get().unwrap(), queued.lease.id).unwrap();
     assert!(
         events[1]
@@ -1051,7 +1051,7 @@ async fn assert_answered_for_restart(waiting: JoinHandle<Response>) {
     let answer: AcquireResponse = response.json().await.unwrap();
     assert_eq!(answer.lease.state, LeaseState::Queued);
     let reasons = answer.verdict.reasons.join(" | ");
-    assert!(reasons.contains("rhd is restarting"), "{reasons}");
+    assert!(reasons.contains("allotd is restarting"), "{reasons}");
 }
 
 #[tokio::test]
@@ -1103,13 +1103,13 @@ async fn test_shutdown_route_stops_the_server() {
 }
 
 /// Makes the test binary, run as `sleep_helper`, sleep instead of returning at once.
-const HELPER_VAR: &str = "RH_DAEMON_TEST_HELPER";
+const HELPER_VAR: &str = "ALLOT_DAEMON_TEST_HELPER";
 
 /// How long a helper lives when nobody kills it, so a failed test leaves nothing behind.
 const HELPER_LIFETIME: Duration = Duration::from_secs(60);
 
 #[test]
-#[ignore = "helper process for the kill test; does nothing without RH_DAEMON_TEST_HELPER"]
+#[ignore = "helper process for the kill test; does nothing without ALLOT_DAEMON_TEST_HELPER"]
 fn sleep_helper() {
     if env::var_os(HELPER_VAR).is_some() {
         thread::sleep(HELPER_LIFETIME);
@@ -1131,7 +1131,7 @@ impl Helper {
             .stdout(Stdio::null())
             .spawn()
             .unwrap();
-        let start_time = rh_sampler::process_table()
+        let start_time = allot_sampler::process_table()
             .get(child.id())
             .expect("the helper is running")
             .start_time;

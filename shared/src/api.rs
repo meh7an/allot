@@ -480,7 +480,7 @@ mod tests {
     }
 
     #[test]
-    fn test_heartbeat_response_from_an_older_rhd_has_no_cause() {
+    fn test_heartbeat_response_from_an_older_allotd_has_no_cause() {
         let old: HeartbeatResponse =
             serde_json::from_str(r#"{"state":"expired","expires_at_ms":5}"#).unwrap();
         assert_eq!(old.end_cause, None);

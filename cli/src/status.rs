@@ -1,4 +1,4 @@
-//! `rh status` and `rh leases`: a human view of the machine, its sessions, and their leases.
+//! `allot status` and `allot leases`: a human view of the machine, its sessions, and their leases.
 
 use std::{
     collections::HashSet,
@@ -6,8 +6,8 @@ use std::{
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
-use rh_client::BlockingClient;
-use rh_shared::{
+use allot_client::BlockingClient;
+use allot_shared::{
     api::{HealthResponse, LeaseQuery},
     types::{JobClass, Lease, LeaseState, ResourceUsage, SessionKey, Snapshot},
     ui::Notice,
@@ -20,12 +20,12 @@ const SESSION_ID_SHOWN: usize = 8;
 // Kills and removals older than this are history, not status.
 const NOTICES_SHOWN_MS: i64 = 60 * 60 * 1_000;
 
-/// Prints machine usage, every session with its leases, and the rest. Starts rhd when it is
+/// Prints machine usage, every session with its leases, and the rest. Starts allotd when it is
 /// not running.
 ///
 /// # Errors
 ///
-/// Fails when rhd cannot be reached or started.
+/// Fails when allotd cannot be reached or started.
 pub fn status() -> anyhow::Result<()> {
     let client = BlockingClient::discover(true)?;
     let snapshot = snapshot_when_ready(&client)?;
@@ -39,7 +39,7 @@ pub fn status() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// The newest kills and removals; none from an rhd built before they existed.
+/// The newest kills and removals; none from an allotd built before they existed.
 fn recent_notices(client: &BlockingClient) -> anyhow::Result<Vec<Notice>> {
     match client.ui_state() {
         Ok(state) => Ok(state.notices),
@@ -52,7 +52,7 @@ fn recent_notices(client: &BlockingClient) -> anyhow::Result<Vec<Notice>> {
 ///
 /// # Errors
 ///
-/// Fails when rhd cannot be reached or started.
+/// Fails when allotd cannot be reached or started.
 pub fn leases(all: bool) -> anyhow::Result<()> {
     let client = BlockingClient::discover(true)?;
     let leases = if all {
@@ -76,7 +76,7 @@ pub fn leases(all: bool) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// A freshly started rhd answers 503 until its first sample; wait that out briefly.
+/// A freshly started allotd answers 503 until its first sample; wait that out briefly.
 fn snapshot_when_ready(client: &BlockingClient) -> anyhow::Result<Snapshot> {
     let deadline = Instant::now() + SNAPSHOT_WAIT;
     loop {
@@ -111,7 +111,7 @@ fn format_status(
     let cpu = snapshot.cpu.usage_pct;
     let memory = &snapshot.memory;
     let mut text = format!(
-        "rhd {} (pid {}, up {})\n",
+        "allotd {} (pid {}, up {})\n",
         health.version,
         health.pid,
         duration(i64::try_from(health.uptime_secs).unwrap_or(i64::MAX) * 1_000)
@@ -270,7 +270,7 @@ pub(crate) fn now_ms() -> i64 {
 
 #[cfg(test)]
 mod tests {
-    use rh_shared::types::{
+    use allot_shared::types::{
         CpuStats, EndCause, Holder, JobProfile, LeaseId, LeaseKind, MemStats, Rolling, SessionUsage,
     };
 
@@ -358,7 +358,7 @@ mod tests {
         ];
         let text = format_status(&health, &snapshot(), &leases, &[], 62_000);
         assert!(
-            text.starts_with("rhd 0.1.0 (pid 1234, up 1h 02m)\n"),
+            text.starts_with("allotd 0.1.0 (pid 1234, up 1h 02m)\n"),
             "{text}"
         );
         assert!(text.contains("cpu      23.4% (10s 20.0%, 60s 15.0%) of 16 logical cores"));

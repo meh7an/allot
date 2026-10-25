@@ -38,16 +38,16 @@ pub(super) fn set_server(config: &str, exe: &Path) -> anyhow::Result<String> {
     Ok(text(&tree, config))
 }
 
-/// `config` without the MCP server, or `None` when it has none at user scope.
+/// `config` without the MCP server called `name`, or `None` when it has none at user scope.
 ///
 /// # Errors
 ///
 /// Fails when the text is not JSON.
-pub(super) fn remove_server(config: &str) -> anyhow::Result<Option<String>> {
+pub(super) fn remove_server(config: &str, name: &str) -> anyhow::Result<Option<String>> {
     let mut tree = parse(config)?;
     let removed = tree
         .field_mut("mcpServers")
-        .is_some_and(|servers| servers.remove(MCP_NAME));
+        .is_some_and(|servers| servers.remove(name));
     Ok(removed.then(|| text(&tree, config)))
 }
 
@@ -60,7 +60,7 @@ mod tests {
     use super::*;
 
     fn exe() -> PathBuf {
-        PathBuf::from(r"C:\Users\someone\.resources-helper\bin\rh-mcp.exe")
+        PathBuf::from(r"C:\Users\someone\.allot\bin\allot-mcp.exe")
     }
 
     #[test]
@@ -76,10 +76,10 @@ mod tests {
         let tree: Value = serde_json::from_str(&updated).unwrap();
         assert_eq!(tree["mcpServers"]["other"], json!({ "command": "x" }));
         assert_eq!(
-            tree["mcpServers"]["resources-helper"],
+            tree["mcpServers"]["allot"],
             json!({
                 "type": "stdio",
-                "command": r"C:\Users\someone\.resources-helper\bin\rh-mcp.exe",
+                "command": r"C:\Users\someone\.allot\bin\allot-mcp.exe",
                 "args": [],
                 "env": {},
             })
@@ -89,7 +89,7 @@ mod tests {
 
     #[test]
     fn test_set_server_replaces_one_that_runs_another_exe() {
-        let config = r#"{"mcpServers": {"resources-helper": {"command": "E:/target/rh-mcp.exe"}}}"#;
+        let config = r#"{"mcpServers": {"allot": {"command": "E:/target/allot-mcp.exe"}}}"#;
         let tree: Value = serde_json::from_str(&set_server(config, &exe()).unwrap()).unwrap();
         assert!(super::super::mcp_registered(&tree, &exe()));
         assert_eq!(tree["mcpServers"].as_object().unwrap().len(), 1);
@@ -98,9 +98,10 @@ mod tests {
     #[test]
     fn test_remove_server_only_when_present() {
         let added = set_server("", &exe()).unwrap();
-        let removed = remove_server(&added).unwrap().unwrap();
+        assert_eq!(remove_server(&added, "other").unwrap(), None);
+        let removed = remove_server(&added, MCP_NAME).unwrap().unwrap();
         assert_eq!(removed, "{\n  \"mcpServers\": {}\n}\n");
-        assert_eq!(remove_server(&removed).unwrap(), None);
-        assert_eq!(remove_server("{}").unwrap(), None);
+        assert_eq!(remove_server(&removed, MCP_NAME).unwrap(), None);
+        assert_eq!(remove_server("{}", MCP_NAME).unwrap(), None);
     }
 }

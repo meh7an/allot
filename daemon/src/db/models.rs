@@ -3,12 +3,12 @@
 //! SQLite has no unsigned integers, so every `u64`/`u32` is stored as `i64` and checked on
 //! the way back out. Enums are stored as their `as_str` names.
 
-use anyhow::{Context, anyhow, bail};
-use diesel::prelude::*;
-use rh_shared::types::{
+use allot_shared::types::{
     BoundProcess, BusyUsage, EndCause, Holder, JobClass, JobProfile, JobRun, Lease, LeaseBinding,
     LeaseId, LeaseKind, LeaseState, NoiseReport, ResourceUsage, SessionKey,
 };
+use anyhow::{Context, anyhow, bail};
+use diesel::prelude::*;
 
 use super::{
     repo::{LeaseDraft, LeaseEvent},

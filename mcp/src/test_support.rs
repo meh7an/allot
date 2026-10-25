@@ -3,8 +3,8 @@ use std::{
     sync::{Mutex, MutexGuard, PoisonError},
 };
 
-use rh_client::{ClientError, Result};
-use rh_shared::{
+use allot_client::{ClientError, Result};
+use allot_shared::{
     api::{
         AcquireRequest, AcquireResponse, CanFitRequest, HeartbeatResponse, LeaseQuery, ProfileSpec,
         ReleaseResponse, Verdict,
@@ -138,7 +138,7 @@ impl MockDaemon {
         lease.ended_at_ms = Some(5_000);
     }
 
-    /// Ends lease `id` as rhd does once it was granted and then sat unused.
+    /// Ends lease `id` as allotd does once it was granted and then sat unused.
     pub(crate) fn expire_unused(&self, id: LeaseId) {
         let mut state = self.lock();
         let lease = state.leases.iter_mut().find(|lease| lease.id == id);

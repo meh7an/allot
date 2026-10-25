@@ -2,8 +2,8 @@
 
 use std::sync::Arc;
 
-use rh_client::ClientError;
-use rh_shared::{
+use allot_client::ClientError;
+use allot_shared::{
     api::{AcquireRequest, CanFitRequest, LeaseQuery, Verdict},
     types::{EndCause, Holder, JobProfile, Lease, LeaseId, LeaseKind, LeaseState, NoiseReport},
 };
@@ -30,7 +30,7 @@ machine, and kind benchmark_exclusive when measurements must not be disturbed. L
 kept alive automatically and released when the session ends.";
 
 /// The tools of one Claude session, backed by the daemon through `C`.
-pub struct RhServer<C: DaemonApi> {
+pub struct AllotServer<C: DaemonApi> {
     client: Arc<C>,
     holder: Holder,
     held: Arc<HeldLeases>,
@@ -75,7 +75,7 @@ struct LeaseList {
     stopped_by_user: Vec<StoppedLease>,
 }
 
-/// One lease the user stopped or removed from Resources Helper.
+/// One lease the user stopped or removed from Allot.
 #[derive(Debug, Serialize)]
 struct StoppedLease {
     lease_id: i64,
@@ -85,7 +85,7 @@ struct StoppedLease {
 }
 
 #[tool_router]
-impl<C: DaemonApi> RhServer<C> {
+impl<C: DaemonApi> AllotServer<C> {
     /// A server acting for `holder`, tracking acquired leases in `held`. Requests without a
     /// working directory get `cwd`.
     pub fn new(client: Arc<C>, holder: Holder, held: Arc<HeldLeases>, cwd: String) -> Self {
@@ -161,7 +161,7 @@ impl<C: DaemonApi> RhServer<C> {
                     let mut message = error.to_string();
                     if matches!(error, ClientError::Interrupted { .. }) {
                         message.push_str(&format!(
-                            ". A restarted rhd keeps the lease: call acquire_lease with only \
+                            ". A restarted allotd keeps the lease: call acquire_lease with only \
                              lease_id {id} again."
                         ));
                     }
@@ -207,16 +207,16 @@ impl<C: DaemonApi> RhServer<C> {
                 self.held.remove(lease.id);
                 match lease.end_cause {
                     Some(EndCause::Removed) => {
-                        "The user removed this request from the queue in Resources Helper; it \
+                        "The user removed this request from the queue in Allot; it \
                          did not run. Do not run the command or acquire it again; tell the user \
                          in one line that it was cancelled."
                     }
                     Some(EndCause::Killed) => {
-                        "The user stopped this job from Resources Helper. Do not run the \
+                        "The user stopped this job from Allot. Do not run the \
                          command again on your own; ask the user whether to retry or skip."
                     }
                     _ if lease.state == LeaseState::Expired && lease.granted_at_ms.is_some() => {
-                        "rhd ended this lease after it started, because nothing ran under it \
+                        "allotd ended this lease after it started, because nothing ran under it \
                          while the session was idle. The command still needs to run: acquire a \
                          new lease for it (without lease_id), then run it."
                     }
@@ -266,7 +266,7 @@ impl<C: DaemonApi> RhServer<C> {
     #[tool(
         description = "Active and queued leases: this session's by default, or every \
                        session's with all_sessions. stopped_by_user lists this session's \
-                       leases the user stopped or removed from Resources Helper since it was \
+                       leases the user stopped or removed from Allot since it was \
                        last told.",
         annotations(read_only_hint = true)
     )]
@@ -296,7 +296,7 @@ impl<C: DaemonApi> RhServer<C> {
     }
 }
 
-impl<C: DaemonApi> RhServer<C> {
+impl<C: DaemonApi> AllotServer<C> {
     /// Records that this session was told about the user's kill or removal of lease `id`, so
     /// the hooks do not tell it again. A failure only means a hook repeats it.
     async fn mark_told(&self, id: LeaseId, cause: Option<EndCause>) {
@@ -305,7 +305,7 @@ impl<C: DaemonApi> RhServer<C> {
         }
         if let Err(error) = self.client.mark_delivered(id, &self.holder.session).await {
             eprintln!(
-                "rh-mcp: marking the notice of lease {} failed: {error}",
+                "allot-mcp: marking the notice of lease {} failed: {error}",
                 id.0
             );
         }
@@ -318,7 +318,7 @@ impl<C: DaemonApi> RhServer<C> {
         let notices = match self.client.notices(session).await {
             Ok(notices) => notices,
             Err(error) => {
-                eprintln!("rh-mcp: listing notices failed: {error}");
+                eprintln!("allot-mcp: listing notices failed: {error}");
                 return Vec::new();
             }
         };
@@ -347,10 +347,10 @@ impl<C: DaemonApi> RhServer<C> {
 }
 
 #[tool_handler(router = self.tool_router)]
-impl<C: DaemonApi> ServerHandler for RhServer<C> {
+impl<C: DaemonApi> ServerHandler for AllotServer<C> {
     fn get_info(&self) -> ServerConfig {
         ServerConfig::new(ServerCapabilities::builder().enable_tools().build())
-            .with_server_info(Implementation::new("rh-mcp", env!("CARGO_PKG_VERSION")))
+            .with_server_info(Implementation::new("allot-mcp", env!("CARGO_PKG_VERSION")))
             .with_instructions(INSTRUCTIONS)
     }
 }
@@ -359,11 +359,11 @@ impl<C: DaemonApi> ServerHandler for RhServer<C> {
 fn stopped_note(cause: Option<EndCause>) -> Option<&'static str> {
     match cause? {
         EndCause::Killed => Some(
-            "The user stopped this job from Resources Helper. They have not said whether to \
+            "The user stopped this job from Allot. They have not said whether to \
              retry or skip.",
         ),
         EndCause::Removed => Some(
-            "The user removed this request from the queue in Resources Helper before it \
+            "The user removed this request from the queue in Allot before it \
              started; it did not run.",
         ),
         _ => None,
@@ -384,9 +384,9 @@ mod tests {
         test_support::{MockDaemon, holder, lease},
     };
 
-    fn server_with(daemon: MockDaemon) -> (RhServer<MockDaemon>, Arc<MockDaemon>) {
+    fn server_with(daemon: MockDaemon) -> (AllotServer<MockDaemon>, Arc<MockDaemon>) {
         let daemon = Arc::new(daemon);
-        let server = RhServer::new(
+        let server = AllotServer::new(
             daemon.clone(),
             holder("me"),
             Arc::default(),
@@ -769,12 +769,12 @@ mod tests {
         let info = server.get_info();
         assert!(info.capabilities.tools.is_some());
         assert!(info.instructions.unwrap().contains("acquire_lease"));
-        assert_eq!(info.server_info.name, "rh-mcp");
+        assert_eq!(info.server_info.name, "allot-mcp");
     }
 
     #[test]
     fn test_tool_router_lists_the_five_tools() {
-        let mut names: Vec<String> = RhServer::<MockDaemon>::tool_router()
+        let mut names: Vec<String> = AllotServer::<MockDaemon>::tool_router()
             .list_all()
             .into_iter()
             .map(|tool| tool.name.to_string())

@@ -1,4 +1,4 @@
-//! Starting `rhd` as a detached background process.
+//! Starting `allotd` as a detached background process.
 
 use std::{
     env, io,
@@ -7,10 +7,10 @@ use std::{
     time::Duration,
 };
 
-const DAEMON_EXE: &str = "rhd.exe";
+const DAEMON_EXE: &str = "allotd.exe";
 const DEFAULT_READY_TIMEOUT: Duration = Duration::from_secs(5);
 
-// Win32 process creation flags. DETACHED_PROCESS gives rhd no console, so closing the
+// Win32 process creation flags. DETACHED_PROCESS gives allotd no console, so closing the
 // terminal that started it does not stop it; a new process group keeps Ctrl+C in that
 // terminal from reaching it.
 #[cfg(windows)]
@@ -21,15 +21,15 @@ const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
 /// How the client starts the daemon when it is not running.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SpawnOptions {
-    /// The `rhd` executable.
+    /// The `allotd` executable.
     pub daemon_exe: PathBuf,
     /// How long to wait for `/health` to answer after starting it.
     pub ready_timeout: Duration,
 }
 
 impl SpawnOptions {
-    /// `rhd.exe` from the directory of the running executable, where the install puts both
-    /// binaries; plain `rhd.exe` (found on `PATH`) when that directory has none.
+    /// `allotd.exe` from the directory of the running executable, where the install puts both
+    /// binaries; plain `allotd.exe` (found on `PATH`) when that directory has none.
     pub fn beside_current_exe() -> Self {
         let beside = env::current_exe()
             .ok()

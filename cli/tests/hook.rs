@@ -1,4 +1,4 @@
-//! Runs the built `rh hook pre-tool` and `rh hook post-tool` the way Claude Code does:
+//! Runs the built `allot hook pre-tool` and `allot hook post-tool` the way Claude Code does:
 //! payload on stdin, decision on stdout, and always exit code 0.
 
 use std::{
@@ -21,8 +21,8 @@ struct Home(PathBuf);
 
 impl Home {
     fn new(name: &str, extra_config: &str) -> Self {
-        let root = env::temp_dir().join(format!("rh-hook-{}-{name}", process::id()));
-        let app = root.join(".resources-helper");
+        let root = env::temp_dir().join(format!("allot-hook-{}-{name}", process::id()));
+        let app = root.join(".allot");
         fs::create_dir_all(&app).unwrap();
         let port = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
             .unwrap()
@@ -46,7 +46,7 @@ fn run(home: &Home, args: &[&str], stdin: &str) -> Output {
 }
 
 fn run_bytes(home: &Home, args: &[&str], stdin: &[u8]) -> Output {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_rh"))
+    let mut child = Command::new(env!("CARGO_BIN_EXE_allot"))
         .args(args)
         .env("USERPROFILE", &home.0)
         .stdin(Stdio::piped())
@@ -77,7 +77,7 @@ fn test_hook_daemon_down_fails_open_with_system_message() {
     let json = stdout_json(&run(&home, &["hook", "pre-tool"], BASH_CARGO_BUILD));
     assert!(json.get("hookSpecificOutput").is_none(), "{json}");
     let message = json["systemMessage"].as_str().unwrap();
-    assert!(message.contains("rhd is unavailable"), "{message}");
+    assert!(message.contains("allotd is unavailable"), "{message}");
 }
 
 #[test]

@@ -1,4 +1,4 @@
-//! The scheduled task that starts rhd at logon, registered with `schtasks` from a task XML,
+//! The scheduled task that starts allotd at logon, registered with `schtasks` from a task XML,
 //! which sets what the command-line flags cannot: no time limit and running on battery. A
 //! per-user logon task needs no admin.
 
@@ -23,15 +23,16 @@ pub(super) enum Found {
 }
 
 impl Found {
-    /// Whether the task exists and starts `rhd`.
-    pub(super) fn starts(&self, rhd: &Path) -> bool {
-        matches!(self, Self::Runs(command) if same_path(command, rhd))
+    /// Whether the task exists and starts `allotd`.
+    pub(super) fn starts(&self, allotd: &Path) -> bool {
+        matches!(self, Self::Runs(command) if same_path(command, allotd))
     }
 }
 
-pub(super) fn find() -> Found {
+/// What `schtasks` knows about the task called `name`.
+pub(super) fn find(name: &str) -> Found {
     let output = Command::new("schtasks")
-        .args(["/Query", "/TN", TASK_NAME, "/XML"])
+        .args(["/Query", "/TN", name, "/XML"])
         .stdin(Stdio::null())
         .stderr(Stdio::null())
         .output();
@@ -47,13 +48,13 @@ pub(super) fn find() -> Found {
     }
 }
 
-/// Registers the task for the current user to start `rhd`, replacing one of the same name.
+/// Registers the task for the current user to start `allotd`, replacing one of the same name.
 /// The XML goes through a file in `scratch`, which is deleted afterwards.
 ///
 /// # Errors
 ///
 /// Fails when the user is unknown or `schtasks` refuses.
-pub(super) fn register(rhd: &Path, scratch: &Path) -> anyhow::Result<()> {
+pub(super) fn register(allotd: &Path, scratch: &Path) -> anyhow::Result<()> {
     let user = match (env::var("USERDOMAIN"), env::var("USERNAME")) {
         (Ok(domain), Ok(name)) if !name.is_empty() => format!("{domain}\\{name}"),
         _ => bail!("USERNAME is not set"),
@@ -61,7 +62,7 @@ pub(super) fn register(rhd: &Path, scratch: &Path) -> anyhow::Result<()> {
     let file = scratch.join("logon-task.xml");
     fs::create_dir_all(scratch).with_context(|| format!("creating {}", scratch.display()))?;
     // Task Scheduler reads the encoding the declaration names: UTF-16 with a byte order mark.
-    let xml = task_xml(rhd, &user);
+    let xml = task_xml(allotd, &user);
     let bytes: Vec<u8> = [0xFEFF_u16]
         .into_iter()
         .chain(xml.encode_utf16())
@@ -80,13 +81,13 @@ pub(super) fn register(rhd: &Path, scratch: &Path) -> anyhow::Result<()> {
     result
 }
 
-/// Deletes the task.
+/// Deletes the task called `name`.
 ///
 /// # Errors
 ///
 /// Fails when `schtasks` refuses.
-pub(super) fn delete() -> anyhow::Result<()> {
-    schtasks(&["/Delete", "/TN", TASK_NAME, "/F"])
+pub(super) fn delete(name: &str) -> anyhow::Result<()> {
+    schtasks(&["/Delete", "/TN", name, "/F"])
 }
 
 fn schtasks(args: &[&str]) -> anyhow::Result<()> {
@@ -105,16 +106,16 @@ fn schtasks(args: &[&str]) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// The task: at `user`'s logon, start `rhd` with the user's own rights, with no time limit, on
+/// The task: at `user`'s logon, start `allotd` with the user's own rights, with no time limit, on
 /// battery too, and not again while it runs.
-fn task_xml(rhd: &Path, user: &str) -> String {
+fn task_xml(allotd: &Path, user: &str) -> String {
     let user = escape(user);
-    let rhd = escape(&rhd.to_string_lossy());
+    let allotd = escape(&allotd.to_string_lossy());
     format!(
         r#"<?xml version="1.0" encoding="UTF-16"?>
 <Task version="1.3" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
   <RegistrationInfo>
-    <Description>Starts the resources-helper daemon (rhd) at logon</Description>
+    <Description>Starts the allot daemon (allotd) at logon</Description>
   </RegistrationInfo>
   <Principals>
     <Principal id="Author">
@@ -137,7 +138,7 @@ fn task_xml(rhd: &Path, user: &str) -> String {
   </Triggers>
   <Actions Context="Author">
     <Exec>
-      <Command>{rhd}</Command>
+      <Command>{allotd}</Command>
     </Exec>
   </Actions>
 </Task>
@@ -178,8 +179,8 @@ mod tests {
 
     #[test]
     fn test_task_xml_escapes_and_reads_back_its_command() {
-        let rhd = Path::new(r"C:\Users\A&B <x>\.resources-helper\bin\rhd.exe");
-        let xml = task_xml(rhd, r"PC\A&B");
+        let allotd = Path::new(r"C:\Users\A&B <x>\.allot\bin\allotd.exe");
+        let xml = task_xml(allotd, r"PC\A&B");
 
         assert!(xml.contains(r"<UserId>PC\A&amp;B</UserId>"), "{xml}");
         assert!(xml.contains("<ExecutionTimeLimit>PT0S</ExecutionTimeLimit>"));
@@ -187,17 +188,17 @@ mod tests {
         assert!(xml.contains("<MultipleInstancesPolicy>IgnoreNew"));
         assert_eq!(
             command_of(&xml).as_deref(),
-            Some(r"C:\Users\A&B <x>\.resources-helper\bin\rhd.exe")
+            Some(r"C:\Users\A&B <x>\.allot\bin\allotd.exe")
         );
     }
 
     #[test]
     fn test_command_of_a_queried_task_unquotes_it() {
         let xml = "<Task>\r\r\n  <Actions>\r\r\n    <Exec>\r\r\n      \
-            <Command>\"C:\\Users\\me\\.resources-helper\\bin\\rhd.exe\"</Command>\r\r\n";
+            <Command>\"C:\\Users\\me\\.allot\\bin\\allotd.exe\"</Command>\r\r\n";
         let found = Found::Runs(command_of(xml).unwrap());
-        assert!(found.starts(Path::new(r"c:\users\ME\.resources-helper\bin\rhd.exe")));
-        assert!(!found.starts(Path::new(r"C:\other\rhd.exe")));
+        assert!(found.starts(Path::new(r"c:\users\ME\.allot\bin\allotd.exe")));
+        assert!(!found.starts(Path::new(r"C:\other\allotd.exe")));
         assert_eq!(command_of("<Task></Task>"), None);
     }
 }

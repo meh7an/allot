@@ -2,22 +2,13 @@
 
 use std::time::{Duration, Instant};
 
-use anyhow::anyhow;
-use axum::{
-    Json, Router,
-    extract::{Path, Query, Request, State},
-    http::{StatusCode, header::AUTHORIZATION},
-    middleware::{self, Next},
-    response::Response,
-    routing::{delete, get, post},
-};
-use rh_core::{
+use allot_core::{
     history::{self, ESTIMATE_RUNS, Estimate},
     kill::{KillPlan, KillRefusal, KillReport, Protected, SpareReason},
     ledger::{Ledger, LedgerError, Transition},
     meter::MeteredRun,
 };
-use rh_shared::{
+use allot_shared::{
     api::{
         AcquireRequest, AcquireResponse, BindRequest, CanFitRequest, DeliveredResponse,
         HealthResponse, HeartbeatResponse, HistoryResponse, HistoryRunsQuery, HistoryRunsResponse,
@@ -31,6 +22,15 @@ use rh_shared::{
         LeaseState, SessionKey, Snapshot,
     },
     ui::UiState,
+};
+use anyhow::anyhow;
+use axum::{
+    Json, Router,
+    extract::{Path, Query, Request, State},
+    http::{StatusCode, header::AUTHORIZATION},
+    middleware::{self, Next},
+    response::Response,
+    routing::{delete, get, post},
 };
 use tokio::sync::watch;
 
@@ -324,8 +324,8 @@ async fn wait_for_grant(
     let mut verdict = lease_verdict(state, &lease).await;
     if lease.state == LeaseState::Queued && *stopping.borrow() {
         verdict.reasons.push(format!(
-            "rhd is restarting; the lease keeps its place, so resume it with lease_id {} once \
-             rhd is back",
+            "allotd is restarting; the lease keeps its place, so resume it with lease_id {} once \
+             allotd is back",
             id.0
         ));
     }
@@ -503,7 +503,7 @@ async fn kill(
 
     let (report, untouched_reason) = match plan {
         Ok(mut plan) => {
-            let report = tokio::task::spawn_blocking(move || rh_sampler::kill_tree(&mut plan))
+            let report = tokio::task::spawn_blocking(move || allot_sampler::kill_tree(&mut plan))
                 .await
                 .map_err(|error| anyhow!("the kill task failed: {error}"))?;
             (report, None)
@@ -751,16 +751,13 @@ async fn lease_verdict(state: &AppState, lease: &Lease) -> Verdict {
         let reason = match (lease.state, lease.end_cause) {
             (LeaseState::Queued, _) => "waiting for the first machine sample".to_owned(),
             (_, Some(EndCause::Removed)) => {
-                "the user removed this request from the queue in Resources Helper; it did not run"
-                    .to_owned()
+                "the user removed this request from the queue in Allot; it did not run".to_owned()
             }
-            (_, Some(EndCause::Killed)) => {
-                "the user stopped this job in Resources Helper".to_owned()
-            }
+            (_, Some(EndCause::Killed)) => "the user stopped this job in Allot".to_owned(),
             // Granted while the session was not waiting, then ended unused: the command still
             // has to run, so it needs a new lease.
             (LeaseState::Expired, _) if lease.granted_at_ms.is_some() => {
-                "rhd ended this lease after it started, because no command ran under it while \
+                "allotd ended this lease after it started, because no command ran under it while \
                  the session was idle or its heartbeat stopped; the command did not run under it"
                     .to_owned()
             }

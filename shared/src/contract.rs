@@ -3,7 +3,7 @@
 //! repository root, and the C# types generated from the schemas in the tray's logic library.
 //!
 //! The tests fail when a file no longer matches the types. Rerun them with
-//! `RH_UPDATE_CONTRACT=1` to rewrite the files, then review the diff.
+//! `ALLOT_UPDATE_CONTRACT=1` to rewrite the files, then review the diff.
 
 mod csharp;
 
@@ -27,11 +27,11 @@ use crate::{
     },
 };
 
-const UPDATE_VAR: &str = "RH_UPDATE_CONTRACT";
+const UPDATE_VAR: &str = "ALLOT_UPDATE_CONTRACT";
 const SCHEMA_FILE: &str = "contract/ui-state.schema.json";
 const KILL_SCHEMA_FILE: &str = "contract/kill-response.schema.json";
 const REMOVE_SCHEMA_FILE: &str = "contract/remove-response.schema.json";
-const CSHARP_FILE: &str = "tray/src/ResourcesHelper.Tray.Core/Contract/UiState.g.cs";
+const CSHARP_FILE: &str = "tray/src/Allot.Tray.Core/Contract/UiState.g.cs";
 
 // 2026-10-24 06:52 UTC; every scenario is built relative to it.
 const NOW_MS: i64 = 1_792_824_720_000;
@@ -325,7 +325,7 @@ pub(crate) fn busy() -> UiState {
                 session: SessionKey(APP.into()),
                 command: "cargo clippy --workspace".into(),
                 cause: EndCause::Killed,
-                reason: "the user stopped this job in Resources Helper".into(),
+                reason: "the user stopped this job in Allot".into(),
                 granted_at_ms: Some(NOW_MS - 95_000),
                 ended_at_ms: NOW_MS - 20_000,
             },

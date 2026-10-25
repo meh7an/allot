@@ -1,14 +1,13 @@
 # Contributing
 
-Thanks for your interest in resources-helper. Bug reports, ideas, and pull requests are all
-welcome.
+Thanks for your interest in Allot. Bug reports, ideas, and pull requests are all welcome.
 
 ## Before you start
 
 - For anything larger than a small fix, open an issue first so the approach can be agreed on
   before you spend time on it.
-- resources-helper runs on Windows only. The sampler uses Windows APIs, so the workspace does
-  not build on other platforms.
+- Allot runs on Windows only. The sampler uses Windows APIs, so the workspace does not build
+  on other platforms.
 
 ## Development setup
 
@@ -24,19 +23,19 @@ The workspace crates:
 
 | Crate | Path | Role |
 |-------|------|------|
-| `rh-shared` | `shared/` | Protocol, config, and path types |
-| `rh-core` | `core/` | Ledger, admission, classifier, sampler trait, history |
-| `rh-sampler` | `sampler/` | Windows CPU, RAM, GPU, and VRAM sampling |
-| `rhd` | `daemon/` | The daemon: HTTP API, SQLite persistence |
-| `rh-client` | `client/` | HTTP client for rhd |
-| `rh-mcp` | `mcp/` | The MCP server |
-| `rh` | `cli/` | The CLI and the PreToolUse hook |
+| `allot-shared` | `shared/` | Protocol, config, and path types |
+| `allot-core` | `core/` | Ledger, admission, classifier, sampler trait, history |
+| `allot-sampler` | `sampler/` | Windows CPU, RAM, GPU, and VRAM sampling |
+| `allotd` | `daemon/` | The daemon: HTTP API, SQLite persistence |
+| `allot-client` | `client/` | HTTP client for allotd |
+| `allot-mcp` | `mcp/` | The MCP server |
+| `allot-cli` | `cli/` | The `allot` CLI and the hooks |
 
 Database changes go through Diesel migrations in `daemon/migrations/`; regenerate
 `daemon/src/db/schema.rs` with the Diesel CLI after adding one.
 
-If you run resources-helper while developing it, your own sessions will ask for a `cpu_heavy`
-lease before these builds, like any other.
+If you run Allot while developing it, your own sessions will ask for a `cpu_heavy` lease
+before these builds, like any other.
 
 ## Checks
 
@@ -48,7 +47,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 ```
 
-The tests use a fake sampler and temporary databases, so they do not touch an installed rhd.
+The tests use a fake sampler and temporary databases, so they do not touch an installed allotd.
 
 ## Pull requests
 

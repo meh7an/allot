@@ -1,17 +1,17 @@
-//! `rh hook post-tool`: the PostToolUse and PostToolUseFailure hook for the Bash and
+//! `allot hook post-tool`: the PostToolUse and PostToolUseFailure hook for the Bash and
 //! PowerShell tools. Tells Claude, once, when the user stopped one of its jobs or removed a
-//! queued request from Resources Helper, and after a heavy command that the lease it ran under
+//! queued request from Allot, and after a heavy command that the lease it ran under
 //! is still held.
 //!
 //! A killed command fails (exit code 255), so PostToolUseFailure carries most notices, and the
 //! daemon ends the lease before it terminates the tree, so the notice is already there. The
-//! hook says nothing when rhd is unavailable: it runs after every call, and the PreToolUse
+//! hook says nothing when allotd is unavailable: it runs after every call, and the PreToolUse
 //! hook already warns for the heavy ones.
 
 use std::{fmt::Write as _, process::ExitCode};
 
-use rh_core::classifier::{Classification, Classifier, Shell};
-use rh_shared::{
+use allot_core::classifier::{Classification, Classifier, Shell};
+use allot_shared::{
     config::Config,
     types::{Lease, LeaseState, SessionKey},
 };
@@ -55,7 +55,7 @@ pub fn post_tool() -> ExitCode {
 fn respond<D: HookDaemon>(
     stdin: &str,
     config: &Config,
-    connect: impl FnOnce() -> rh_client::Result<D>,
+    connect: impl FnOnce() -> allot_client::Result<D>,
 ) -> Outcome {
     let input: PostInput = match serde_json::from_str(stdin) {
         Ok(input) => input,
@@ -134,7 +134,7 @@ fn held_text(lease: &Lease, idle_release_secs: u64) -> String {
         // Writing to a String cannot fail.
         let _ = write!(
             text,
-            " rhd ends it after {wait} with no command running under it and the session idle."
+            " allotd ends it after {wait} with no command running under it and the session idle."
         );
     }
     text
@@ -147,7 +147,7 @@ fn skipped(why: std::fmt::Arguments<'_>) -> Outcome {
 
 #[cfg(test)]
 mod tests {
-    use rh_shared::types::{EndCause, LeaseBinding, LeaseId};
+    use allot_shared::types::{EndCause, LeaseBinding, LeaseId};
     use serde_json::Value;
 
     use super::*;
@@ -167,7 +167,7 @@ mod tests {
     /// The hook with the default config.
     fn respond<D: HookDaemon>(
         stdin: &str,
-        connect: impl FnOnce() -> rh_client::Result<D>,
+        connect: impl FnOnce() -> allot_client::Result<D>,
     ) -> Outcome {
         super::respond(stdin, &Config::default(), connect)
     }
@@ -308,7 +308,7 @@ mod tests {
     #[test]
     fn test_respond_malformed_payloads_never_panic() {
         for (seed, fixture) in (11..).zip([BASH_FAILURE, POWERSHELL_SUCCESS]) {
-            for payload in rh_shared::mutate::mutations(fixture, seed, 500) {
+            for payload in allot_shared::mutate::mutations(fixture, seed, 500) {
                 let daemon = FakeDaemon {
                     notices: vec![notice(42, EndCause::Killed, Some(FAILED_CALL))],
                     ..FakeDaemon::default()
@@ -332,7 +332,7 @@ mod tests {
         assert_eq!(
             text,
             "This command has finished, and lease 7 (`cargo test --workspace`) that covered it \
-             is still held. rhd ends it after 3 min with no command running under it and the \
+             is still held. allotd ends it after 3 min with no command running under it and the \
              session idle."
         );
         assert_eq!(daemon.asked(), [FIXTURE_SESSION]);

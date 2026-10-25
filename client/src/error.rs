@@ -5,7 +5,7 @@ use std::path::PathBuf;
 #[non_exhaustive]
 pub enum ClientError {
     /// No connection to the daemon could be made, so the request was never sent.
-    #[error("rhd is not reachable at {url}: {reason}")]
+    #[error("allotd is not reachable at {url}: {reason}")]
     Unreachable {
         /// The address the client tried.
         url: String,
@@ -15,7 +15,7 @@ pub enum ClientError {
     /// The request was sent but no answer came back: the daemon stopped, restarted, or took
     /// too long. The request may have taken effect, so it is not repeated.
     #[error(
-        "rhd at {url} did not answer ({reason}); it may have stopped or restarted, and the \
+        "allotd at {url} did not answer ({reason}); it may have stopped or restarted, and the \
          request may still have taken effect"
     )]
     Interrupted {
@@ -24,11 +24,11 @@ pub enum ClientError {
         /// What the transport reported.
         reason: String,
     },
-    /// The token file does not exist yet, so rhd has never started on this machine.
-    #[error("no token at {}; rhd has not run yet, start it with `rh daemon start`", .0.display())]
+    /// The token file does not exist yet, so allotd has never started on this machine.
+    #[error("no token at {}; allotd has not run yet, start it with `allot daemon start`", .0.display())]
     NoToken(PathBuf),
     /// The daemon answered with an error status.
-    #[error("rhd answered {status}: {message}")]
+    #[error("allotd answered {status}: {message}")]
     Http {
         /// HTTP status code.
         status: u16,
@@ -37,19 +37,19 @@ pub enum ClientError {
     },
     /// The daemon answered with a body the client could not read.
     #[error(
-        "unexpected response from rhd: {0}; rh, rh-mcp, and rhd may come from different \
+        "unexpected response from allotd: {0}; allot, allot-mcp, and allotd may come from different \
          builds, so install them together"
     )]
     Decode(String),
-    /// Starting rhd in the background failed or it never became ready.
-    #[error("could not start rhd: {0}")]
+    /// Starting allotd in the background failed or it never became ready.
+    #[error("could not start allotd: {0}")]
     Spawn(String),
     /// The HTTP client or runtime could not be set up.
     #[error("client setup failed: {0}")]
     Setup(String),
     /// Local configuration or files.
     #[error(transparent)]
-    Local(#[from] rh_shared::Error),
+    Local(#[from] allot_shared::Error),
 }
 
 impl ClientError {

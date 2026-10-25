@@ -4,7 +4,7 @@
 //! cancelled) is in the resource-guard skill, because imperatives injected into a tool result
 //! can trip prompt-injection defenses.
 
-use rh_shared::{
+use allot_shared::{
     types::{EndCause, SessionKey},
     ui::Notice,
 };
@@ -45,9 +45,9 @@ pub fn describe(notice: &Notice, current: Option<&str>, failed: bool) -> String 
     }
     let this_call = current.is_some() && notice.tool_use_id.as_deref() == current;
     let mut text = if this_call {
-        format!("The user stopped this command (`{command}`, lease {id}) from Resources Helper")
+        format!("The user stopped this command (`{command}`, lease {id}) from Allot")
     } else {
-        format!("The user stopped `{command}` (lease {id}) from Resources Helper")
+        format!("The user stopped `{command}` (lease {id}) from Allot")
     };
     if this_call && failed {
         text.push_str("; the exit code comes from that, not from the command itself");
@@ -58,7 +58,7 @@ pub fn describe(notice: &Notice, current: Option<&str>, failed: bool) -> String 
 
 #[cfg(test)]
 mod tests {
-    use rh_shared::types::LeaseId;
+    use allot_shared::types::LeaseId;
 
     use super::*;
     use crate::hook::test_support::{FakeDaemon, notice};
@@ -68,7 +68,7 @@ mod tests {
         let text = describe(&notice(42, EndCause::Killed, Some("toolu_a")), None, false);
         assert_eq!(
             text,
-            "The user stopped `cargo build` (lease 42) from Resources Helper. They have not \
+            "The user stopped `cargo build` (lease 42) from Allot. They have not \
              said whether to retry or skip."
         );
         let other = describe(
@@ -88,7 +88,7 @@ mod tests {
         );
         assert_eq!(
             text,
-            "The user stopped this command (`cargo build`, lease 42) from Resources Helper; \
+            "The user stopped this command (`cargo build`, lease 42) from Allot; \
              the exit code comes from that, not from the command itself. They have not said \
              whether to retry or skip."
         );

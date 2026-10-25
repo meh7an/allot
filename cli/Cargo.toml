@@ -1,6 +1,6 @@
 [package]
-name = "rh"
-description = "CLI for resources-helper: status, leases, history, daemon control, install, and the PreToolUse hook"
+name = "allot-cli"
+description = "CLI for Allot: status, leases, history, daemon control, install, and the PreToolUse hook"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -12,12 +12,16 @@ keywords.workspace = true
 categories.workspace = true
 publish.workspace = true
 
+[[bin]]
+name = "allot"
+path = "src/main.rs"
+
 [dependencies]
+allot-client = { version = "0.2.0", path = "../client" }
+allot-core = { version = "0.2.0", path = "../core" }
+allot-sampler = { version = "0.2.0", path = "../sampler" }
+allot-shared = { version = "0.2.0", path = "../shared" }
 anyhow = "1.0.104"
 clap = { version = "4.6.7", features = ["derive"] }
-rh-client = { version = "0.2.0", path = "../client" }
-rh-core = { version = "0.2.0", path = "../core" }
-rh-sampler = { version = "0.2.0", path = "../sampler" }
-rh-shared = { version = "0.2.0", path = "../shared" }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"

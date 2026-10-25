@@ -2,8 +2,8 @@
 
 use std::collections::HashMap;
 
-use rh_core::{admission, ancestry::ProcessNode, binding};
-use rh_shared::{
+use allot_core::{admission, ancestry::ProcessNode, binding};
+use allot_shared::{
     api::{HealthResponse, Verdict},
     types::{Holder, Lease, LeaseId, LeaseState, SessionKey, Snapshot},
     ui::{

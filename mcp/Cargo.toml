@@ -1,6 +1,6 @@
 [package]
-name = "rh-mcp"
-description = "MCP server that lets Claude Code sessions lease CPU and GPU capacity from resources-helper"
+name = "allot-mcp"
+description = "MCP server that lets Claude Code sessions lease CPU and GPU capacity from Allot"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -13,12 +13,12 @@ categories.workspace = true
 publish.workspace = true
 
 [dependencies]
+allot-client = { version = "0.2.0", path = "../client" }
+allot-core = { version = "0.2.0", path = "../core" }
+allot-sampler = { version = "0.2.0", path = "../sampler" }
+allot-shared = { version = "0.2.0", path = "../shared" }
 anyhow = "1.0.104"
 clap = { version = "4.6.7", features = ["derive"] }
-rh-client = { version = "0.2.0", path = "../client" }
-rh-core = { version = "0.2.0", path = "../core" }
-rh-sampler = { version = "0.2.0", path = "../sampler" }
-rh-shared = { version = "0.2.0", path = "../shared" }
 rmcp = { version = "3.6.0", features = ["server", "macros", "transport-io"] }
 schemars = "1.2.3"
 serde = { version = "1.0.229", features = ["derive"] }

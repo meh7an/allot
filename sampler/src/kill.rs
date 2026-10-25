@@ -3,12 +3,12 @@
 
 use std::{collections::HashMap, thread, time::Duration};
 
-use rh_core::{
+use allot_core::{
     kill::{KillFailure, KillPlan, KillReport, KillTarget},
     process::ProcessTable,
     sampler::RawProcess,
 };
-use rh_shared::types::ResourceUsage;
+use allot_shared::types::ResourceUsage;
 use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System};
 use windows::Win32::{
     Foundation::{CloseHandle, ERROR_INVALID_PARAMETER, FILETIME, HANDLE, WAIT_OBJECT_0},

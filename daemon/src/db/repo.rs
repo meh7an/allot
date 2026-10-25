@@ -6,9 +6,7 @@
 
 use std::collections::HashMap;
 
-use anyhow::{Context, bail};
-use diesel::prelude::*;
-use rh_shared::{
+use allot_shared::{
     api::LeaseQuery,
     config::RetentionConfig,
     types::{
@@ -17,6 +15,8 @@ use rh_shared::{
     },
     ui::{EndedLease, Notice, RecentRun},
 };
+use anyhow::{Context, bail};
+use diesel::prelude::*;
 
 use super::{
     models::{
@@ -623,8 +623,8 @@ fn append_event(
 
 #[cfg(test)]
 mod tests {
+    use allot_shared::types::{BoundProcess, BusyUsage, NoiseReport, ResourceUsage};
     use diesel::sql_query;
-    use rh_shared::types::{BoundProcess, BusyUsage, NoiseReport, ResourceUsage};
 
     use super::*;
     use crate::db::test_support::{memory_conn, sample_draft};

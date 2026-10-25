@@ -1,0 +1,84 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows10.0.26100.0</TargetFramework>
+    <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
+    <RootNamespace>Allot.Tray</RootNamespace>
+    <AssemblyName>allot-tray</AssemblyName>
+    <!-- Released together with the Rust workspace; the release workflow checks both against
+         the tag. -->
+    <Version>0.2.0</Version>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\AppIcon.ico</ApplicationIcon>
+    <Platforms>x64</Platforms>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <UseWinUI>true</UseWinUI>
+    <WinUISDKReferences>false</WinUISDKReferences>
+    <WindowsPackageType>None</WindowsPackageType>
+    <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
+    <SelfContained>true</SelfContained>
+    <!-- LibraryImport generates unsafe marshalling code for Interop/NativeMethods.cs. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!-- Program.cs owns Main so a second launch can hand off before any XAML starts. -->
+    <DefineConstants>$(DefineConstants);DISABLE_XAML_GENERATED_MAIN</DefineConstants>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Also the toast registration's icon, so a publish needs it too (without it Register
+         throws FileNotFoundException). -->
+    <Content Include="Assets\AppIcon.ico" CopyToOutputDirectory="PreserveNewest" />
+    <!-- Handoff tray icons; LoadImage picks the frame for the DPI straight from these files. -->
+    <Content Include="Assets\Tray\*.ico" CopyToOutputDirectory="PreserveNewest" />
+    <!-- Their 256 px PNGs, the toast logos (toast images cannot be ICO files). -->
+    <Content Include="Assets\Tray\*.png" CopyToOutputDirectory="PreserveNewest" />
+    <!-- Fluent System Icons (MIT), microsoft/fluentui-system-icons at commit 463d58b. -->
+    <Content Include="Assets\Fonts\*.ttf" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Manifest Include="$(ApplicationManifest)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.28000.2705" />
+    <PackageReference Include="Microsoft.WindowsAppSDK.Foundation" Version="2.3.12" />
+    <PackageReference Include="Microsoft.WindowsAppSDK.InteractiveExperiences" Version="2.1.9" />
+    <!-- Only for its MSIX, which holds the Insights DLL (see AddInsightsResource below); none of
+         its build logic or assets. -->
+    <PackageReference Include="Microsoft.WindowsAppSDK.Runtime" Version="2.5.1" ExcludeAssets="all" />
+    <PackageReference Include="Microsoft.WindowsAppSDK.WinUI" Version="2.3.9" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Allot.Tray.Core\Allot.Tray.Core.csproj" />
+  </ItemGroup>
+
+  <!--
+    Windows App SDK 2.5.1 bug (microsoft/WindowsAppSDK#6774): a self-contained build lacks
+    Microsoft.WindowsAppRuntime.Insights.Resource.dll, so AppNotificationManager.Register throws
+    0x8007007E. The DLL ships only inside the runtime MSIX; copy it next to the exe. Delete this
+    block once a release with the fix ships; the Error fires when the SDK version moves.
+  -->
+  <PropertyGroup>
+    <InsightsResourceDll>Microsoft.WindowsAppRuntime.Insights.Resource.dll</InsightsResourceDll>
+    <InsightsResourceMsix>$(NuGetPackageRoot)microsoft.windowsappsdk.runtime\2.5.1\tools\MSIX\win10-x64\Microsoft.WindowsAppRuntime.2.msix</InsightsResourceMsix>
+  </PropertyGroup>
+
+  <Target Name="AddInsightsResource" BeforeTargets="AssignTargetPaths">
+    <Error Condition="!Exists('$(InsightsResourceMsix)')" Text="$(InsightsResourceMsix) is missing. If the Windows App SDK was bumped, check whether #6774 is fixed and drop this workaround, or update the path." />
+    <Unzip SourceFiles="$(InsightsResourceMsix)" DestinationFolder="$(IntermediateOutputPath)insights" Include="$(InsightsResourceDll)" SkipUnchangedFiles="true" />
+    <ItemGroup>
+      <None Include="$(IntermediateOutputPath)insights\$(InsightsResourceDll)" Link="$(InsightsResourceDll)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    </ItemGroup>
+  </Target>
+
+  <!--
+    Publish: Native AOT for Release (68 MB, the fastest start and the lowest idle CPU of the
+    builds measured; it needs the MSVC linker, found through vswhere on PATH). MSIX tooling stays
+    on for publishing even though the app is unpackaged: without it the publish has no
+    allot-tray.pri, which holds the compiled XAML.
+  -->
+  <PropertyGroup>
+    <EnableMsixTooling>true</EnableMsixTooling>
+    <PublishAot Condition="'$(Configuration)' != 'Debug'">true</PublishAot>
+  </PropertyGroup>
+</Project>

@@ -1,4 +1,4 @@
-//! Windows implementation of [`rh_core::sampler::Sampler`]: sysinfo for CPU, memory, and
+//! Windows implementation of [`allot_core::sampler::Sampler`]: sysinfo for CPU, memory, and
 //! processes; PDH for commit charge, GPU load, and drive activity; DXGI for adapter names and
 //! VRAM sizes; the volume APIs for drive space. Also reads the current process's ancestry,
 //! which the CLI and MCP server use to find their Claude session.
@@ -22,8 +22,8 @@ use std::{
     time::{Instant, SystemTime, UNIX_EPOCH},
 };
 
-use rh_core::sampler::{RawGpu, RawProcess, RawSample, Sampler};
-use rh_shared::{
+use allot_core::sampler::{RawGpu, RawProcess, RawSample, Sampler};
+use allot_shared::{
     Result,
     types::{MemStats, ResourceUsage},
 };
@@ -91,7 +91,7 @@ impl SystemSampler {
     ///
     /// # Errors
     ///
-    /// Returns [`rh_shared::Error::Sampler`] when the PDH query or the memory counters cannot
+    /// Returns [`allot_shared::Error::Sampler`] when the PDH query or the memory counters cannot
     /// be opened.
     pub fn new() -> Result<Self> {
         let query = pdh::Query::open()?;
@@ -297,12 +297,12 @@ mod tests {
         assert!(raw.memory.commit_used_mb <= raw.memory.commit_limit_mb);
     }
 
-    const BURN_MS_VAR: &str = "RH_SAMPLER_TEST_BURN_MS";
+    const BURN_MS_VAR: &str = "ALLOT_SAMPLER_TEST_BURN_MS";
     /// CPU time a child must have used before it counts as busy; start-up alone stays below.
     const BUSY_CPU_MS: u64 = 100;
 
     /// Not a test: the child process of [`busy_child`]. Keeps one core busy for
-    /// `RH_SAMPLER_TEST_BURN_MS` milliseconds and does nothing without it.
+    /// `ALLOT_SAMPLER_TEST_BURN_MS` milliseconds and does nothing without it.
     #[test]
     #[ignore = "helper process for the CPU sampling tests"]
     fn burn_cpu_helper() {

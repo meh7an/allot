@@ -38,7 +38,7 @@ pub struct UiState {
     /// Kills and removals, with whether Claude has been told yet.
     pub notices: Vec<Notice>,
     /// Leases that ended in the last minute, however they ended, newest first, so the flyout
-    /// can hold a card that just went away with how it ended. Older rhd builds send none.
+    /// can hold a card that just went away with how it ended. Older allotd builds send none.
     #[serde(default)]
     pub ended: Vec<EndedLease>,
 }
@@ -200,7 +200,7 @@ impl From<JobRun> for RecentRun {
     }
 }
 
-/// A lease that ended a moment ago: released by its holder, ended by rhd, killed or removed.
+/// A lease that ended a moment ago: released by its holder, ended by allotd, killed or removed.
 #[cfg_attr(any(feature = "schema", test), derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EndedLease {
@@ -212,7 +212,7 @@ pub struct EndedLease {
     pub command: String,
     /// How it ended.
     pub cause: EndCause,
-    /// rhd's reason for the end, for example "no command running and the session idle for
+    /// allotd's reason for the end, for example "no command running and the session idle for
     /// 180s"; empty when none was recorded.
     pub reason: String,
     /// When it was granted, or `None` for a request that never started.
@@ -285,7 +285,7 @@ mod tests {
     }
 
     #[test]
-    fn test_ui_state_from_an_older_rhd_has_no_ended_leases() {
+    fn test_ui_state_from_an_older_allotd_has_no_ended_leases() {
         let mut value = serde_json::to_value(crate::contract::busy()).unwrap();
         value.as_object_mut().unwrap().remove("ended");
         let state: UiState = serde_json::from_value(value).unwrap();
@@ -293,7 +293,7 @@ mod tests {
     }
 
     #[test]
-    fn test_notice_from_an_older_rhd_has_no_tool_use_id() {
+    fn test_notice_from_an_older_allotd_has_no_tool_use_id() {
         let old = r#"{"lease_id":1,"session":"s","cause":"killed","command":"cargo build",
                       "ended_at_ms":5,"delivered_at_ms":null}"#;
         let notice: Notice = serde_json::from_str(old).unwrap();

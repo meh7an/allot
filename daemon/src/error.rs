@@ -1,10 +1,10 @@
 //! The one error type handlers return, and its HTTP mapping.
 
+use allot_core::ledger::LedgerError;
 use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
 };
-use rh_core::ledger::LedgerError;
 
 /// Everything a handler can fail with.
 #[derive(Debug, thiserror::Error)]
@@ -12,7 +12,7 @@ pub enum AppError {
     /// The bearer token is missing or wrong.
     #[error(
         "missing or invalid bearer token; clients read it from the token file in \
-         %USERPROFILE%\\.resources-helper"
+         %USERPROFILE%\\.allot"
     )]
     Unauthorized,
     /// The lease or resource does not exist.
@@ -29,7 +29,7 @@ pub enum AppError {
     #[error("{0}")]
     Validation(String),
     /// No machine sample has arrived yet.
-    #[error("rhd has just started and has no machine sample yet; retry in a second")]
+    #[error("allotd has just started and has no machine sample yet; retry in a second")]
     Unavailable,
     /// Anything else; logged, never shown to the client.
     #[error(transparent)]
@@ -59,7 +59,7 @@ impl IntoResponse for AppError {
             Self::Internal(error) => {
                 tracing::error!("request failed: {error:#}");
                 let message = "internal error; the details are in \
-                               %USERPROFILE%\\.resources-helper\\logs\\rhd.log";
+                               %USERPROFILE%\\.allot\\logs\\allotd.log";
                 return (StatusCode::INTERNAL_SERVER_ERROR, message).into_response();
             }
         };

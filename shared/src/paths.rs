@@ -6,10 +6,10 @@ use std::{
 
 use crate::{Error, Result};
 
-const APP_DIR: &str = ".resources-helper";
+const APP_DIR: &str = ".allot";
 const HOME_VAR: &str = "USERPROFILE";
 
-/// Locations of the per-user files under `%USERPROFILE%\.resources-helper\`.
+/// Locations of the per-user files under `%USERPROFILE%\.allot\`.
 ///
 /// Not under `AppData`: Windows redirects writes there from MSIX-packaged apps, such as the
 /// Claude desktop app and every process it starts, into a per-package folder that processes
@@ -40,7 +40,7 @@ impl Paths {
         }
     }
 
-    /// Paths rooted at `<base>\.resources-helper`, for tests and non-default installs.
+    /// Paths rooted at `<base>\.allot`, for tests and non-default installs.
     pub fn under(base: impl Into<PathBuf>) -> Self {
         let home = base.into();
         Self {
@@ -55,12 +55,12 @@ impl Paths {
         &self.home
     }
 
-    /// The `.resources-helper` directory itself.
+    /// The `.allot` directory itself.
     pub fn root(&self) -> &Path {
         &self.root
     }
 
-    /// Where the installed `rh`, `rhd`, and `rh-mcp` executables live.
+    /// Where the installed `allot`, `allotd`, and `allot-mcp` executables live.
     pub fn bin_dir(&self) -> PathBuf {
         self.root.join("bin")
     }
@@ -77,12 +77,12 @@ impl Paths {
 
     /// The SQLite database.
     pub fn database_file(&self) -> PathBuf {
-        self.root.join("rh.db")
+        self.root.join("allot.db")
     }
 
     /// The file the running daemon keeps locked, so a second one refuses to start.
     pub fn lock_file(&self) -> PathBuf {
-        self.root.join("rhd.lock")
+        self.root.join("allotd.lock")
     }
 
     /// Directory for the daemon's log files.
@@ -99,15 +99,15 @@ mod tests {
     fn test_paths_from_home_roots_under_dot_dir() {
         let home = PathBuf::from(r"C:\Users\someone");
         let paths = Paths::from_home(Some(home.clone().into_os_string())).unwrap();
-        let root = home.join(".resources-helper");
+        let root = home.join(".allot");
         assert_eq!(paths.home(), home);
         assert_eq!(paths.root(), root);
         assert_eq!(paths.bin_dir(), root.join("bin"));
         assert_eq!(paths.config_file(), root.join("config.toml"));
         assert_eq!(paths.token_file(), root.join("token"));
-        assert_eq!(paths.database_file(), root.join("rh.db"));
+        assert_eq!(paths.database_file(), root.join("allot.db"));
         assert_eq!(paths.log_dir(), root.join("logs"));
-        assert_eq!(paths.lock_file(), root.join("rhd.lock"));
+        assert_eq!(paths.lock_file(), root.join("allotd.lock"));
     }
 
     #[test]

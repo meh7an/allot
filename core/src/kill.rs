@@ -7,7 +7,7 @@
 
 use std::collections::HashSet;
 
-use rh_shared::types::{Holder, LeaseBinding};
+use allot_shared::types::{Holder, LeaseBinding};
 
 use crate::{
     ancestry::{ProcessNode, ancestry},
@@ -16,7 +16,7 @@ use crate::{
 };
 
 /// The coordinator's own executables, which a kill never touches.
-pub const RH_BINARIES: [&str; 3] = ["rh.exe", "rhd.exe", "rh-mcp.exe"];
+pub const ALLOT_BINARIES: [&str; 3] = ["allot.exe", "allotd.exe", "allot-mcp.exe"];
 
 /// A process identified across PID reuse.
 type ProcessKey = (u32, u64);
@@ -51,7 +51,7 @@ pub struct Spared {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum SpareReason {
-    /// A lease holder, one of its ancestors, the daemon or its ancestors, or an `rh` binary.
+    /// A lease holder, one of its ancestors, the daemon or its ancestors, or an `allot` binary.
     Protected,
     /// It started before the command was reported, so it is not part of the command.
     OlderThanReport,
@@ -112,7 +112,7 @@ pub struct KillFailure {
 
 /// Processes no kill may terminate: the lease's holder and its ancestors (the terminal or
 /// editor it runs in), every other running lease holder, the daemon and its ancestors, and
-/// anything named like an `rh` binary.
+/// anything named like an `allot` binary.
 ///
 /// Other holders' ancestors are not protected: a command that starts a nested Claude session
 /// is that session's ancestor, and only the nested session itself must survive the kill.
@@ -144,7 +144,7 @@ impl Protected {
     /// Whether `node` must never be terminated.
     pub fn covers(&self, node: &ProcessNode) -> bool {
         self.processes.contains(&key(node))
-            || RH_BINARIES
+            || ALLOT_BINARIES
                 .iter()
                 .any(|binary| node.name.eq_ignore_ascii_case(binary))
     }
@@ -287,7 +287,7 @@ fn target(node: &ProcessNode, depth: u32) -> KillTarget {
 
 #[cfg(test)]
 mod tests {
-    use rh_shared::types::{BoundProcess, SessionKey};
+    use allot_shared::types::{BoundProcess, SessionKey};
 
     use super::*;
     use crate::{sampler::RawProcess, test_support::raw_process};
@@ -295,7 +295,7 @@ mod tests {
     /// The command was reported at 100.5 s.
     const REPORT_MS: i64 = 100_500;
     /// The daemon's PID.
-    const RHD: u32 = 5;
+    const ALLOTD: u32 = 5;
 
     fn holder(pid: u32, pid_start_time: u64) -> Holder {
         Holder {
@@ -313,14 +313,14 @@ mod tests {
         }
     }
 
-    /// Explorer runs a terminal running the session's claude.exe (PID 10) and rhd.
+    /// Explorer runs a terminal running the session's claude.exe (PID 10) and allotd.
     fn base() -> Vec<RawProcess> {
         vec![
             raw_process(1, None, "explorer.exe", 1),
             raw_process(2, Some(1), "WindowsTerminal.exe", 20),
             raw_process(10, Some(2), "claude.exe", 50),
-            raw_process(11, Some(10), "rh-mcp.exe", 51),
-            raw_process(RHD, Some(11), "rhd.exe", 52),
+            raw_process(11, Some(10), "allot-mcp.exe", 51),
+            raw_process(ALLOTD, Some(11), "allotd.exe", 52),
         ]
     }
 
@@ -332,7 +332,7 @@ mod tests {
 
     /// Session A (PID 10) holds the lease; `others` hold other leases.
     fn protected(table: &ProcessTable, others: &[Holder]) -> Protected {
-        Protected::new(table, &holder(10, 50), others, RHD)
+        Protected::new(table, &holder(10, 50), others, ALLOTD)
     }
 
     fn plan(table: &ProcessTable, binding: &LeaseBinding) -> Result<KillPlan, KillRefusal> {
@@ -398,14 +398,14 @@ mod tests {
     }
 
     #[test]
-    fn test_plan_refuses_the_holder_its_ancestors_and_rh_binaries() {
+    fn test_plan_refuses_the_holder_its_ancestors_and_allot_binaries() {
         let table = with(&bash_command());
         for (pid, start_time, name) in [
             (10, 50, "claude.exe"),
             (2, 20, "WindowsTerminal.exe"),
             (1, 1, "explorer.exe"),
-            (11, 51, "rh-mcp.exe"),
-            (RHD, 52, "rhd.exe"),
+            (11, 51, "allot-mcp.exe"),
+            (ALLOTD, 52, "allotd.exe"),
         ] {
             let mut root = binding(pid, start_time);
             root.bound_at_ms = 0;
@@ -451,8 +451,8 @@ mod tests {
         let mut extra = bash_command();
         extra.push(raw_process(40, Some(22), "claude.exe", 104));
         extra.push(raw_process(41, Some(40), "bash.exe", 105));
-        extra.push(raw_process(42, Some(40), "rh.exe", 105));
-        extra.push(raw_process(43, Some(22), "RH.EXE", 104));
+        extra.push(raw_process(42, Some(40), "allot.exe", 105));
+        extra.push(raw_process(43, Some(22), "ALLOT.EXE", 104));
         let table = with(&extra);
         let others = [holder(40, 104)];
         let plan = KillPlan::new(&binding(20, 101), &table, protected(&table, &others)).unwrap();
@@ -485,7 +485,7 @@ mod tests {
             protected(&table, &[holder(60, 70)]),
         )
         .unwrap();
-        let protected_b = Protected::new(&table, &holder(60, 70), &[holder(10, 50)], RHD);
+        let protected_b = Protected::new(&table, &holder(60, 70), &[holder(10, 50)], ALLOTD);
         let plan_b = KillPlan::new(&binding(61, 101), &table, protected_b).unwrap();
         assert_eq!(pids(plan_a.planned()), [20, 21, 22, 23, 24, 25]);
         assert_eq!(pids(plan_b.planned()), [61, 62, 63]);

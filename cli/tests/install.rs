@@ -1,5 +1,5 @@
-//! Runs the built `rh install` and `rh uninstall` against a temporary `USERPROFILE`, including
-//! over an `rh.exe` that is running. A copy of `rh.exe` stands in for the tray app: it exits
+//! Runs the built `allot install` and `allot uninstall` against a temporary `USERPROFILE`, including
+//! over an `allot.exe` that is running. A copy of `allot.exe` stands in for the tray app: it exits
 //! with a usage error on the tray app's switches, which the install reports as warnings.
 
 use std::{
@@ -11,7 +11,7 @@ use std::{
 
 const SKILL: &str = include_str!("../../skill/resource-guard/SKILL.md");
 const RULE: &str = include_str!("../../skill/claude-md-rule.md");
-const BINARIES: [&str; 3] = ["rh.exe", "rhd.exe", "rh-mcp.exe"];
+const BINARIES: [&str; 3] = ["allot.exe", "allotd.exe", "allot-mcp.exe"];
 
 /// A home directory with a build output to install from and a config that points at a port
 /// nothing listens on, so no test reaches a real daemon.
@@ -19,9 +19,9 @@ struct Home(PathBuf);
 
 impl Home {
     fn new(name: &str) -> Self {
-        let root = env::temp_dir().join(format!("rh-install-{}-{name}", process::id()));
+        let root = env::temp_dir().join(format!("allot-install-{}-{name}", process::id()));
         let _ = fs::remove_dir_all(&root);
-        let app = root.join(".resources-helper");
+        let app = root.join(".allot");
         fs::create_dir_all(&app).unwrap();
         let port = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
             .unwrap()
@@ -34,17 +34,17 @@ impl Home {
         )
         .unwrap();
 
-        // Only rh.exe has to run; the other two are never started by these tests.
+        // Only allot.exe has to run; the other two are never started by these tests.
         let build = root.join("build");
         fs::create_dir_all(&build).unwrap();
-        fs::copy(env!("CARGO_BIN_EXE_rh"), build.join("rh.exe")).unwrap();
-        fs::write(build.join("rhd.exe"), "rhd").unwrap();
-        fs::write(build.join("rh-mcp.exe"), "rh-mcp").unwrap();
+        fs::copy(env!("CARGO_BIN_EXE_allot"), build.join("allot.exe")).unwrap();
+        fs::write(build.join("allotd.exe"), "allotd").unwrap();
+        fs::write(build.join("allot-mcp.exe"), "allot-mcp").unwrap();
         Self(root)
     }
 
     fn app(&self) -> PathBuf {
-        self.0.join(".resources-helper")
+        self.0.join(".allot")
     }
 
     fn bin(&self) -> PathBuf {
@@ -71,18 +71,18 @@ impl Home {
     fn add_tray_build(&self) {
         let tray = self.build().join("tray");
         fs::create_dir_all(tray.join("en-US")).unwrap();
-        fs::copy(env!("CARGO_BIN_EXE_rh"), tray.join("rh-tray.exe")).unwrap();
+        fs::copy(env!("CARGO_BIN_EXE_allot"), tray.join("allot-tray.exe")).unwrap();
         fs::write(tray.join("en-US").join("Microsoft.ui.xaml.dll.mui"), "mui").unwrap();
-        fs::write(tray.join("rh-tray.pri"), "pri").unwrap();
+        fs::write(tray.join("allot-tray.pri"), "pri").unwrap();
     }
 
-    /// Runs the built `rh` in this home. `claude` points nowhere, so no test registers the MCP
+    /// Runs the built `allot` in this home. `claude` points nowhere, so no test registers the MCP
     /// server with the real Claude Code.
-    fn rh(&self, args: &[&str]) -> Output {
-        Command::new(env!("CARGO_BIN_EXE_rh"))
+    fn allot(&self, args: &[&str]) -> Output {
+        Command::new(env!("CARGO_BIN_EXE_allot"))
             .args(args)
             .env("USERPROFILE", &self.0)
-            .env("RH_CLAUDE", self.0.join("no-claude.exe"))
+            .env("ALLOT_CLAUDE", self.0.join("no-claude.exe"))
             .stdin(Stdio::null())
             .output()
             .unwrap()
@@ -92,7 +92,7 @@ impl Home {
     /// test would replace the real one.
     fn install(&self) -> String {
         let build = self.build();
-        let output = self.rh(&[
+        let output = self.allot(&[
             "install",
             "--from",
             build.to_str().unwrap(),
@@ -102,13 +102,80 @@ impl Home {
         String::from_utf8(output.stdout).unwrap()
     }
 
-    /// Starts the installed `rh.exe` as a hook that waits for its stdin, so the file stays in
-    /// use until [`finish`] closes it.
-    fn run_installed_rh(&self) -> Child {
-        self.run_held(&self.bin().join("rh.exe"))
+    fn legacy(&self) -> PathBuf {
+        self.0.join(".resources-helper")
     }
 
-    /// Starts `exe`, a copy of `rh.exe`, the same way.
+    /// Lays out an install from before the rename, as the v0.2.0 setup left it, in place of
+    /// the new folder: its data, binaries, tray app, and Claude Code registrations. `rh-mcp.exe`
+    /// is a copy of `allot.exe`, so a test can keep it running.
+    fn add_legacy_install(&self) {
+        let old = self.legacy();
+        let bin = old.join("bin");
+        fs::create_dir_all(bin.join("tray")).unwrap();
+        fs::create_dir_all(old.join("logs")).unwrap();
+        fs::rename(self.app().join("config.toml"), old.join("config.toml")).unwrap();
+        fs::remove_dir_all(self.app()).unwrap();
+        for (name, contents) in [
+            ("token", "old token"),
+            ("rh.db", "old db"),
+            ("tray.json", "{}"),
+            (r"logs\rhd.log", "daemon log"),
+            (r"logs\rhd.1.log", "older daemon log"),
+            (r"logs\tray.log", "tray log"),
+            (r"bin\rh.exe", "rh"),
+            (r"bin\rhd.exe", "rhd"),
+        ] {
+            fs::write(old.join(name), contents).unwrap();
+        }
+        fs::copy(env!("CARGO_BIN_EXE_allot"), bin.join("rh-mcp.exe")).unwrap();
+        fs::copy(env!("CARGO_BIN_EXE_allot"), bin.join(r"tray\rh-tray.exe")).unwrap();
+
+        let claude_json = serde_json::json!({
+            "mcpServers": {
+                "other": { "command": "other.exe" },
+                "resources-helper": { "type": "stdio", "command": bin.join("rh-mcp.exe") },
+            },
+        });
+        fs::write(self.0.join(".claude.json"), claude_json.to_string()).unwrap();
+        let claude = self.0.join(".claude");
+        fs::create_dir_all(self.skill().parent().unwrap()).unwrap();
+        fs::write(self.skill(), "the old skill").unwrap();
+        let hook = bin.join("rh.exe").to_string_lossy().replace('\\', "/");
+        let entry = |args: [&str; 2]| {
+            serde_json::json!({
+                "matcher": "Bash|PowerShell",
+                "hooks": [{ "type": "command", "command": hook, "args": args }],
+            })
+        };
+        let rtk = serde_json::json!({ "matcher": "Bash", "hooks": [{ "command": "rtk hook" }] });
+        let settings = serde_json::json!({
+            "hooks": {
+                "PreToolUse": [rtk, entry(["hook", "pre-tool"])],
+                "PostToolUse": [entry(["hook", "post-tool"])],
+                "PostToolUseFailure": [entry(["hook", "post-tool"])],
+            },
+        });
+        fs::write(
+            claude.join("settings.json"),
+            serde_json::to_string_pretty(&settings).unwrap(),
+        )
+        .unwrap();
+        fs::write(
+            claude.join("CLAUDE.md"),
+            "# Mine\n\n@resources-helper.md\n\n@RTK.md\n",
+        )
+        .unwrap();
+        fs::write(claude.join("resources-helper.md"), "the old rule").unwrap();
+    }
+
+    /// Starts the installed `allot.exe` as a hook that waits for its stdin, so the file stays in
+    /// use until [`finish`] closes it.
+    fn run_installed_allot(&self) -> Child {
+        self.run_held(&self.bin().join("allot.exe"))
+    }
+
+    /// Starts `exe`, a copy of `allot.exe`, the same way.
     fn run_held(&self, exe: &Path) -> Child {
         Command::new(exe)
             .args(["hook", "pre-tool"])
@@ -157,7 +224,7 @@ fn test_install_copies_binaries_and_skill_and_registers_hooks_and_rule() {
     }
     assert_eq!(fs::read_to_string(home.skill()).unwrap(), SKILL);
     assert!(!home.app().join("claude-md-rule.md").exists());
-    assert!(stdout.contains("rhd is not running"), "{stdout}");
+    assert!(stdout.contains("allotd is not running"), "{stdout}");
     assert!(stdout.contains("no tray app in"), "{stdout}");
     assert!(!home.tray().exists());
 
@@ -169,8 +236,8 @@ fn test_install_copies_binaries_and_skill_and_registers_hooks_and_rule() {
     let config: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(home.0.join(".claude.json")).unwrap()).unwrap();
     assert_eq!(
-        config["mcpServers"]["resources-helper"]["command"],
-        home.bin().join("rh-mcp.exe").to_str().unwrap()
+        config["mcpServers"]["allot"]["command"],
+        home.bin().join("allot-mcp.exe").to_str().unwrap()
     );
 
     assert!(
@@ -182,7 +249,7 @@ fn test_install_copies_binaries_and_skill_and_registers_hooks_and_rule() {
         serde_json::from_str(&fs::read_to_string(home.claude("settings.json")).unwrap()).unwrap();
     let hook = home
         .bin()
-        .join("rh.exe")
+        .join("allot.exe")
         .to_string_lossy()
         .replace('\\', "/");
     for (event, arg) in [
@@ -199,13 +266,10 @@ fn test_install_copies_binaries_and_skill_and_registers_hooks_and_rule() {
         stdout.contains("3. [done] CLAUDE.md rule") && stdout.contains("added the import"),
         "{stdout}"
     );
-    assert_eq!(
-        fs::read_to_string(home.claude("resources-helper.md")).unwrap(),
-        RULE
-    );
+    assert_eq!(fs::read_to_string(home.claude("allot.md")).unwrap(), RULE);
     assert_eq!(
         fs::read_to_string(home.claude("CLAUDE.md")).unwrap(),
-        "@resources-helper.md\n"
+        "@allot.md\n"
     );
     assert!(!stdout.contains("scheduled task"), "{stdout}");
     assert!(stdout.contains("restart them"), "{stdout}");
@@ -220,14 +284,14 @@ fn test_install_copies_binaries_and_skill_and_registers_hooks_and_rule() {
 fn test_install_marks_registered_steps_done() {
     let home = Home::new("registered");
     let bin = home.bin();
-    let mcp = bin.join("rh-mcp.exe");
+    let mcp = bin.join("allot-mcp.exe");
     let claude_json = serde_json::json!({
-        "mcpServers": { "resources-helper": { "type": "stdio", "command": mcp, "args": [] } },
+        "mcpServers": { "allot": { "type": "stdio", "command": mcp, "args": [] } },
     });
     fs::write(home.0.join(".claude.json"), claude_json.to_string()).unwrap();
     let claude = home.0.join(".claude");
     fs::create_dir_all(&claude).unwrap();
-    let hook = bin.join("rh.exe").to_string_lossy().replace('\\', "/");
+    let hook = bin.join("allot.exe").to_string_lossy().replace('\\', "/");
     let entry = |args: [&str; 2]| {
         serde_json::json!([{
             "matcher": "Bash|PowerShell",
@@ -269,10 +333,10 @@ fn test_install_marks_registered_steps_done() {
     );
     assert_eq!(
         fs::read_to_string(claude.join("CLAUDE.md")).unwrap(),
-        "# Rules\n\n@resources-helper.md\n"
+        "# Rules\n\n@allot.md\n"
     );
     assert_eq!(
-        fs::read_to_string(claude.join("CLAUDE.md.rh-backup")).unwrap(),
+        fs::read_to_string(claude.join("CLAUDE.md.allot-backup")).unwrap(),
         format!("# Rules\n\n{rule}")
     );
 }
@@ -284,28 +348,28 @@ fn test_install_mirrors_the_tray_build_and_reports_the_stand_in_exe() {
     let stray = home.tray().join("fr-FR").join("old.mui");
     fs::create_dir_all(stray.parent().unwrap()).unwrap();
     fs::write(&stray, "old").unwrap();
-    fs::write(home.tray().join("rh-tray.exe"), "an older build").unwrap();
+    fs::write(home.tray().join("allot-tray.exe"), "an older build").unwrap();
 
     let stdout = home.install();
 
     assert!(stdout.contains("installed the tray app into"), "{stdout}");
     assert_eq!(
-        fs::read(home.tray().join("rh-tray.exe")).unwrap(),
-        fs::read(env!("CARGO_BIN_EXE_rh")).unwrap()
+        fs::read(home.tray().join("allot-tray.exe")).unwrap(),
+        fs::read(env!("CARGO_BIN_EXE_allot")).unwrap()
     );
     assert!(
         home.tray()
             .join(r"en-US\Microsoft.ui.xaml.dll.mui")
             .is_file()
     );
-    assert!(home.tray().join("rh-tray.pri").is_file());
+    assert!(home.tray().join("allot-tray.pri").is_file());
     assert!(!home.tray().join("fr-FR").exists());
     // A tray app was installed before, so Launch at logon is left as the user set it.
     assert!(!stdout.contains("Launch at logon"), "{stdout}");
     // The stand-in exits at once, as a tray app does when another copy runs.
     assert!(stdout.contains("exited at once"), "{stdout}");
 
-    let output = home.rh(&[
+    let output = home.allot(&[
         "install",
         "--from",
         home.build().to_str().unwrap(),
@@ -313,7 +377,7 @@ fn test_install_mirrors_the_tray_build_and_reports_the_stand_in_exe() {
         home.build().to_str().unwrap(),
     ]);
     assert_eq!(output.status.code(), Some(1));
-    assert!(String::from_utf8_lossy(&output.stderr).contains("has no rh-tray.exe"));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("has no allot-tray.exe"));
 }
 
 #[test]
@@ -336,7 +400,7 @@ fn test_reinstall_over_a_tray_app_that_does_not_quit_renames_its_files_aside() {
     let home = Home::new("tray-running");
     home.add_tray_build();
     home.install();
-    let running = home.run_held(&home.tray().join("rh-tray.exe"));
+    let running = home.run_held(&home.tray().join("allot-tray.exe"));
 
     let stdout = home.install();
 
@@ -344,7 +408,7 @@ fn test_reinstall_over_a_tray_app_that_does_not_quit_renames_its_files_aside() {
     assert!(stdout.contains("still in use"), "{stdout}");
     let old = old_copies(&home.tray());
     assert_eq!(old.len(), 1, "{old:?}");
-    assert!(old[0].starts_with("rh-tray.exe.old-"), "{old:?}");
+    assert!(old[0].starts_with("allot-tray.exe.old-"), "{old:?}");
 
     finish(running);
     home.install();
@@ -352,18 +416,18 @@ fn test_reinstall_over_a_tray_app_that_does_not_quit_renames_its_files_aside() {
 }
 
 #[test]
-fn test_reinstall_over_a_running_rh_sets_the_old_copy_aside_until_it_exits() {
+fn test_reinstall_over_a_running_allot_sets_the_old_copy_aside_until_it_exits() {
     let home = Home::new("running");
     home.install();
-    let running = home.run_installed_rh();
+    let running = home.run_installed_allot();
 
     let stdout = home.install();
 
     assert!(stdout.contains("still in use"), "{stdout}");
     let old = old_copies(&home.bin());
     assert_eq!(old.len(), 1, "{old:?}");
-    assert!(old[0].starts_with("rh.old-"), "{old:?}");
-    assert!(home.bin().join("rh.exe").is_file());
+    assert!(old[0].starts_with("allot.old-"), "{old:?}");
+    assert!(home.bin().join("allot.exe").is_file());
 
     finish(running);
     let stdout = home.install();
@@ -372,20 +436,115 @@ fn test_reinstall_over_a_running_rh_sets_the_old_copy_aside_until_it_exits() {
 }
 
 #[test]
+fn test_install_takes_over_a_resources_helper_install() {
+    let home = Home::new("legacy");
+    home.add_legacy_install();
+    let config = fs::read_to_string(home.legacy().join("config.toml")).unwrap();
+
+    let stdout = home.install();
+
+    assert!(
+        stdout.contains("taking over the Resources Helper install"),
+        "{stdout}"
+    );
+    for (name, contents) in [
+        ("config.toml", config.as_str()),
+        ("token", "old token"),
+        ("allot.db", "old db"),
+        ("tray.json", "{}"),
+        (r"logs\allotd.log", "daemon log"),
+        (r"logs\allotd.1.log", "older daemon log"),
+        (r"logs\tray.log", "tray log"),
+    ] {
+        assert_eq!(
+            fs::read_to_string(home.app().join(name)).unwrap(),
+            contents,
+            "{name}"
+        );
+    }
+    assert!(!home.legacy().exists(), "{stdout}");
+    assert_eq!(fs::read_to_string(home.skill()).unwrap(), SKILL);
+
+    let config: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(home.0.join(".claude.json")).unwrap()).unwrap();
+    let mut servers: Vec<_> = config["mcpServers"].as_object().unwrap().keys().collect();
+    servers.sort();
+    assert_eq!(servers, ["allot", "other"], "{stdout}");
+    assert!(
+        stdout.contains("removed the MCP server \"resources-helper\""),
+        "{stdout}"
+    );
+
+    let settings = fs::read_to_string(home.claude("settings.json")).unwrap();
+    assert!(!settings.contains(".resources-helper"), "{settings}");
+    let settings: serde_json::Value = serde_json::from_str(&settings).unwrap();
+    let pre_tool = settings["hooks"]["PreToolUse"].as_array().unwrap();
+    assert_eq!(pre_tool.len(), 2, "{settings}");
+    assert_eq!(pre_tool[0]["hooks"][0]["command"], "rtk hook");
+    for event in ["PostToolUse", "PostToolUseFailure"] {
+        assert_eq!(
+            settings["hooks"][event].as_array().unwrap().len(),
+            1,
+            "{event}"
+        );
+    }
+
+    assert!(
+        stdout.contains("replaced the Resources Helper import in CLAUDE.md"),
+        "{stdout}"
+    );
+    assert_eq!(
+        fs::read_to_string(home.claude("CLAUDE.md")).unwrap(),
+        "# Mine\n\n@allot.md\n\n@RTK.md\n"
+    );
+    assert_eq!(fs::read_to_string(home.claude("allot.md")).unwrap(), RULE);
+    assert!(!home.claude("resources-helper.md").exists());
+
+    let stdout = home.install();
+    assert!(!stdout.contains("Resources Helper"), "{stdout}");
+}
+
+#[test]
+fn test_take_over_keeps_what_open_sessions_read_until_they_exit() {
+    let home = Home::new("legacy-running");
+    home.add_legacy_install();
+    let running = home.run_held(&home.legacy().join(r"bin\rh-mcp.exe"));
+
+    let stdout = home.install();
+
+    assert!(stdout.contains("still in use"), "{stdout}");
+    let mut left: Vec<_> = fs::read_dir(home.legacy())
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    left.sort();
+    assert_eq!(left, ["bin", "config.toml", "token"]);
+    assert_eq!(
+        fs::read_dir(home.legacy().join("bin")).unwrap().count(),
+        1,
+        "only rh-mcp.exe"
+    );
+
+    finish(running);
+    let stdout = home.install();
+    assert!(!home.legacy().exists(), "{stdout}");
+}
+
+#[test]
 fn test_install_from_the_bin_dir_or_without_a_binary_is_refused() {
     let home = Home::new("refused");
     home.install();
 
     let bin = home.bin();
-    let output = home.rh(&["install", "--from", bin.to_str().unwrap()]);
+    let output = home.allot(&["install", "--from", bin.to_str().unwrap()]);
     assert_eq!(output.status.code(), Some(1));
     assert!(String::from_utf8_lossy(&output.stderr).contains("is the install itself"));
 
-    fs::remove_file(home.build().join("rh-mcp.exe")).unwrap();
+    fs::remove_file(home.build().join("allot-mcp.exe")).unwrap();
     let build = home.build();
-    let output = home.rh(&["install", "--from", build.to_str().unwrap()]);
+    let output = home.allot(&["install", "--from", build.to_str().unwrap()]);
     assert_eq!(output.status.code(), Some(1));
-    assert!(String::from_utf8_lossy(&output.stderr).contains("has no rh-mcp.exe"));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("has no allot-mcp.exe"));
 }
 
 #[test]
@@ -395,10 +554,10 @@ fn test_uninstall_keeps_the_data_and_purge_removes_it() {
     fs::create_dir_all(home.claude("")).unwrap();
     fs::write(home.claude("CLAUDE.md"), "# Mine\n").unwrap();
     home.install();
-    fs::write(home.app().join("rh.db"), "db").unwrap();
+    fs::write(home.app().join("allot.db"), "db").unwrap();
     fs::write(home.app().join("token"), "token").unwrap();
 
-    let output = home.rh(&["uninstall"]);
+    let output = home.allot(&["uninstall"]);
     assert!(output.status.success(), "{output:?}");
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("removed the tray app"), "{stdout}");
@@ -413,35 +572,35 @@ fn test_uninstall_keeps_the_data_and_purge_removes_it() {
         fs::read_to_string(home.claude("CLAUDE.md")).unwrap(),
         "# Mine\n"
     );
-    assert!(!home.claude("resources-helper.md").exists());
+    assert!(!home.claude("allot.md").exists());
     // claude is not found, so the entry is removed from ~/.claude.json directly.
     assert!(stdout.contains("removed the MCP server from"), "{stdout}");
     assert_eq!(
         fs::read_to_string(home.0.join(".claude.json")).unwrap(),
         "{\n  \"mcpServers\": {}\n}\n"
     );
-    for kept in ["rh.db", "token", "config.toml"] {
+    for kept in ["allot.db", "token", "config.toml"] {
         assert!(home.app().join(kept).is_file(), "{kept}");
     }
 
-    let output = home.rh(&["uninstall", "--purge"]);
+    let output = home.allot(&["uninstall", "--purge"]);
     assert!(output.status.success(), "{output:?}");
     assert!(!home.app().exists());
 }
 
 #[test]
-fn test_uninstall_sets_a_running_rh_aside() {
+fn test_uninstall_sets_a_running_allot_aside() {
     let home = Home::new("uninstall-running");
     home.install();
-    let running = home.run_installed_rh();
+    let running = home.run_installed_allot();
 
-    let output = home.rh(&["uninstall"]);
+    let output = home.allot(&["uninstall"]);
 
     assert!(output.status.success(), "{output:?}");
     let stdout = String::from_utf8(output.stdout).unwrap();
     assert!(stdout.contains("still in use"), "{stdout}");
-    assert!(!home.bin().join("rh.exe").exists());
-    assert!(!home.bin().join("rhd.exe").exists());
+    assert!(!home.bin().join("allot.exe").exists());
+    assert!(!home.bin().join("allotd.exe").exists());
     assert_eq!(old_copies(&home.bin()).len(), 1);
     finish(running);
 }

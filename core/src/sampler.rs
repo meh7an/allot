@@ -5,7 +5,7 @@
 
 use std::collections::{HashMap, HashSet, VecDeque};
 
-use rh_shared::{
+use allot_shared::{
     Result,
     types::{
         CpuStats, DriveUsage, GpuAdapter, GpuEngines, Holder, MemStats, ProcessUsage,
@@ -23,7 +23,7 @@ pub trait Sampler {
     ///
     /// # Errors
     ///
-    /// Returns [`rh_shared::Error::Sampler`] when the OS counters cannot be read.
+    /// Returns [`allot_shared::Error::Sampler`] when the OS counters cannot be read.
     fn sample(&mut self) -> Result<RawSample>;
 }
 
@@ -316,7 +316,7 @@ fn owning_session(
 
 #[cfg(test)]
 mod tests {
-    use rh_shared::types::SessionKey;
+    use allot_shared::types::SessionKey;
 
     use super::*;
 

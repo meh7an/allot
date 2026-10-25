@@ -2,17 +2,17 @@
 name: resource-guard
 description: >
   Coordinates heavy shell commands with the other Claude sessions on this machine through the
-  resources-helper MCP tools (system_snapshot, can_fit, acquire_lease, release_lease,
-  list_leases). Use before running any build, test suite, benchmark, training run, render, or
-  other command that loads the CPU or GPU for more than a few seconds; whenever a tool call is
-  "Blocked by resources-helper"; when an acquire_lease result says "queued"; when a note or
-  tool result says the user stopped a job or removed a request from Resources Helper; and
-  when the user asks for timing or performance numbers or about machine load.
+  Allot MCP tools (system_snapshot, can_fit, acquire_lease, release_lease, list_leases). Use
+  before running any build, test suite, benchmark, training run, render, or other command that
+  loads the CPU or GPU for more than a few seconds; whenever a tool call is "Blocked by
+  allot"; when an acquire_lease result says "queued"; when a note or tool result says the
+  user stopped a job or removed a request from Allot; and when the user asks for timing or
+  performance numbers or about machine load.
 ---
 
 # Resource Guard
 
-Several Claude sessions share this PC. A per-user daemon (`rhd`) keeps a ledger of *leases*:
+Several Claude sessions share this PC. A per-user daemon (`allotd`) keeps a ledger of *leases*:
 reservations of cores, RAM, GPU and VRAM for heavy jobs. A session runs a heavy command only
 while it holds an active lease that covers it. A PreToolUse hook enforces this for the Bash
 and PowerShell tools, but the hook only knows the rules below; the policy also covers heavy
@@ -21,10 +21,10 @@ work it cannot recognize.
 ## What counts as heavy
 
 The hook classifies commands with these rules. They come from the default config; the user's
-`%USERPROFILE%\.resources-helper\config.toml` can replace them, so run `rh classes` (light,
-no lease needed) when the hook's verdict surprises you or before relying on this list.
+`%USERPROFILE%\.allot\config.toml` can replace them, so run `allot classes` (light, no lease
+needed) when the hook's verdict surprises you or before relying on this list.
 
-<!-- rh classes: begin -->
+<!-- allot classes: begin -->
 A command line is heavy when any command in it (after `&&`, `;`, `|`, env prefixes, and wrappers such as `npx` or `bash -c`) matches a rule:
 
 - `cargo build|test|run|bench -> cpu_heavy`
@@ -50,7 +50,7 @@ A command with any of `--help` `-h` `--version` `-V` `/?` is light whatever it r
 | gpu_small | 1 | 2048 | 30 | 2048 | 300 |
 | low_impact | 0.25 | 256 | 0 | 0 | 60 |
 | quick | 4 | 2048 | 0 | 0 | 10 |
-<!-- rh classes: end -->
+<!-- allot classes: end -->
 
 Matching is case-insensitive and `*` is a wildcard. An argument pattern starting with `-`
 matches that flag anywhere; any other pattern matches the first positional argument, and
@@ -62,7 +62,7 @@ of a large module, `docker build`, `ffmpeg` encodes, Blender or other renders, M
 servers, game or app executables, large `pytest` runs. Size them like any other job (below).
 
 Light, never leased: reading and searching files, `git`, `cargo check`, `cargo clippy`,
-`cargo fmt`, single quick scripts, `rh` itself, and anything with a light flag above.
+`cargo fmt`, single quick scripts, `allot` itself, and anything with a light flag above.
 
 ## Sizing the lease
 
@@ -78,7 +78,7 @@ needs: a `class`, a `preset` (table above), or a custom profile (`cores` and `ra
 - **`gpu_small`**: short GPU checks, previews, inference smoke runs.
 - **`quick`**: only when you are certain the command ends within about 10 seconds, such as
   rerunning tests whose binaries are already built. A quick lease may start while a
-  benchmark waits for longer jobs to drain. rhd ends one that is still active after 60
+  benchmark waits for longer jobs to drain. allotd ends one that is still active after 60
   seconds, and history then stops treating that command as quick. Never mark anything that
   compiles more than a file or two as quick.
 - **`low_impact`**: only when you are certain the command uses less than an idle desktop app
@@ -98,7 +98,8 @@ of the same command needed, so a command that ran bigger before loses either sta
    now and a narrower one (`-p <crate>`), or to tell the user up front that the machine is
    busy. It changes nothing and holds no place in the queue.
 3. **Acquire**: `acquire_lease` with a profile sized as in "Sizing the lease" (`class`,
-   `preset`, or custom) and `label` set to the exact command, for example `cargo test -p rh-core`. `wait_secs` defaults to 60, at most 120.
+   `preset`, or custom) and `label` set to the exact command, for example
+   `cargo test -p allot-core`. `wait_secs` defaults to 60, at most 120.
    When the command runs somewhere other than the session's directory, pass that directory
    as `cwd`.
 4. **Run** the command only when the result's `state` is `active`. A `queued` result keeps
@@ -111,7 +112,7 @@ of the same command needed, so a command that ran bigger before loses either sta
    and its lease is still held is your cue: release it right then, unless the next heavy
    command of the batch follows at once.
 
-If a lease is never released, rhd ends it by itself once no command runs under it and the
+If a lease is never released, allotd ends it by itself once no command runs under it and the
 session has been idle for a few minutes (3 by default). That is a backstop, not a substitute
 for releasing. A heavy command blocked after that is normal: acquire again as usual, and
 releasing the old lease is harmless.
@@ -123,24 +124,24 @@ released automatically when the session ends; you never send heartbeats.
 
 ### When the hook blocks a command
 
-A deny starting "Blocked by resources-helper" names the class to acquire, or says that your
-queued lease has not started yet. Follow it: acquire (or wait), then retry the same command.
+A deny starting "Blocked by allot" names the class to acquire, or says that your queued lease
+has not started yet. Follow it: acquire (or wait), then retry the same command.
 Never work around the hook by renaming, wrapping, splitting, or moving the command into a
 script; the policy applies to the work, not the wording.
 
 ### When the daemon is unavailable
 
 If the tools return a connection error, the hook lets heavy commands through with a warning
-("runs unchecked"). Tell the user once that coordination is off and suggest `rh daemon start`,
-then continue. If the hook instead blocks because rhd is unavailable (fail-closed config), ask
-the user to run `rh daemon start`. If this session has no `acquire_lease` tool at all, it was
+("runs unchecked"). Tell the user once that coordination is off and suggest `allot daemon start`,
+then continue. If the hook instead blocks because allotd is unavailable (fail-closed config), ask
+the user to run `allot daemon start`. If this session has no `acquire_lease` tool at all, it was
 started before the MCP server was registered: tell the user to restart the session.
 
 ## Waiting on a queued lease
 
 A queued lease always waits. Never ask the user whether to queue or keep waiting, however
 long or unknown the wait; the queue is how the machine is shared, and the user cancels from
-the Resources Helper tray app if they want to.
+the Allot tray app if they want to.
 
 1. Tell the user in one line what is ahead and for how long, from the result's `verdict`:
    its `reasons` and `wait_estimate_secs`. `list_leases` with `all_sessions` shows the leases
@@ -158,17 +159,17 @@ the Resources Helper tray app if they want to.
    session expired): do not run the command, do not acquire it again, and tell the user in
    one line that the queued command was cancelled. Continue with any work that does not need
    it.
-6. If it ends *after* it started (it has a `granted_at_ms`, and the result says rhd ended it
+6. If it ends *after* it started (it has a `granted_at_ms`, and the result says allotd ended it
    because nothing ran under it), it was granted while you were not waiting and sat unused.
    Nothing was cancelled: acquire a new lease for the command as usual and run it.
 
 ## When the user stops a job or removes a request
 
 The user can stop a running job (its whole process tree) or remove a queued request from the
-Resources Helper tray app, or with `rh kill` and `rh remove`. You hear about it once: as a
-note after a Bash or PowerShell call ("The user stopped `cargo build` (lease 42) from
-Resources Helper. ..."), or in a tool result whose `end_cause` is `killed` or `removed`
-(`acquire_lease`, `release_lease`, or `stopped_by_user` in `list_leases`).
+Allot tray app, or with `allot kill` and `allot remove`. You hear about it once: as a note
+after a Bash or PowerShell call ("The user stopped `cargo build` (lease 42) from Allot. ..."),
+or in a tool result whose `end_cause` is `killed` or `removed` (`acquire_lease`,
+`release_lease`, or `stopped_by_user` in `list_leases`).
 
 - **Stopped:** the command failed because the user stopped it, usually with exit code 255.
   It is not a bug in the command or the code, so do not debug it. Say in one line that it
@@ -201,7 +202,7 @@ keyed by the command and its directory, so `label` must be the real command. Whe
 runs of the same command needed more than the declared class, the lease reserves the larger
 values (p90 of past runs, capped at what the machine can free), and the first `reasons` say
 so, for example "cores 11.2 from p90 of 4 past run(s) (declared 8.0)". That is expected, not
-an error. `rh history` shows what each job needed.
+an error. `allot history` shows what each job needed.
 
 ## Benchmarks
 
@@ -250,10 +251,10 @@ Keep it to one line per event, in plain words:
 - Queued: "Waiting for a build slot: 1 lease ahead (`cargo build` in another session),
   about 3 min. I'll start when it's granted."
 - Long or unknown wait: say why (from `reasons`) in the same one line, then keep waiting.
-- Removed from the queue: "The queued `cargo build` was cancelled from Resources Helper, so I
-  didn't run it."
-- Stopped while running: "`cargo build` was stopped from Resources Helper. Should I retry it
-  or skip it?"
+- Removed from the queue: "The queued `cargo build` was cancelled from Allot, so I didn't
+  run it."
+- Stopped while running: "`cargo build` was stopped from Allot. Should I retry it or skip
+  it?"
 - Benchmark: "Waiting for a quiet machine for the benchmark; other sessions' builds are
   held until it finishes." Once it ends, give the noise report with the results.
 - Granted after a wait: "Lease granted after 2 min; running `cargo test`."

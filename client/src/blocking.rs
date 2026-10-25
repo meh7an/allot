@@ -1,6 +1,6 @@
 //! A blocking front end for callers without an async runtime: the CLI and the hook.
 
-use rh_shared::{
+use allot_shared::{
     api::{
         AcquireRequest, AcquireResponse, BindRequest, CanFitRequest, HealthResponse,
         HeartbeatResponse, JobSummary, KillResponse, LeaseQuery, ReleaseResponse, RemoveResponse,

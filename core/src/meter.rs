@@ -1,7 +1,7 @@
 //! What an active lease's session used while it ran, and how much load from outside that
 //! session disturbed it.
 
-use rh_shared::types::{BusyUsage, LeaseId, NoiseReport, ResourceUsage, SessionKey, Snapshot};
+use allot_shared::types::{BusyUsage, LeaseId, NoiseReport, ResourceUsage, SessionKey, Snapshot};
 
 /// Cores at or above which a sample counts as busy. An idle Claude session reads about 0.03
 /// cores, so this leaves out its own polling but keeps a single busy thread.

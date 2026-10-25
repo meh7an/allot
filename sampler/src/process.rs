@@ -2,14 +2,14 @@
 
 use std::{io, os::windows::io::AsRawHandle};
 
-use rh_core::ancestry::{ProcessNode, ancestry};
-use rh_shared::{Error, Result};
+use allot_core::ancestry::{ProcessNode, ancestry};
+use allot_shared::{Error, Result};
 use sysinfo::{Pid, Process, ProcessRefreshKind, ProcessesToUpdate, System, UpdateKind};
 use windows::Win32::Foundation::{HANDLE, HANDLE_FLAG_INHERIT, HANDLE_FLAGS, SetHandleInformation};
 
 /// Stops the processes this one starts from inheriting its standard input, output, and error.
 /// Windows hands a child every inheritable handle, even when the child gets other standard
-/// handles, so a long-lived child such as rhd would keep a log file or pipe this process
+/// handles, so a long-lived child such as allotd would keep a log file or pipe this process
 /// writes to open for as long as it runs. A child is still given the standard handles it is
 /// started with.
 pub fn keep_std_handles_private() {

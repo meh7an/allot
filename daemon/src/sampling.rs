@@ -6,17 +6,17 @@ use std::{
     time::{Duration, Instant},
 };
 
-use anyhow::Context;
-use rh_core::{
+use allot_core::{
     binding::{self, BindOutcome},
     idle::{IdleWatch, QUICK_OVERRUN_MS, quick_overruns},
     ledger::Ledger,
     process::ProcessTable,
     sampler::{RawSample, Sampler, SnapshotBuilder},
 };
-use rh_shared::types::{
+use allot_shared::types::{
     BoundProcess, EndCause, JobRun, LeaseBinding, LeaseId, LeaseState, SessionKey,
 };
+use anyhow::Context;
 use tokio::sync::mpsc;
 
 use crate::{
@@ -30,9 +30,9 @@ const CPU_HISTORY: usize = 24;
 
 /// Creates the sampler on the sampling thread. The Windows sampler holds PDH handles that
 /// cannot move between threads, so it must be built where it is used.
-pub type SamplerFactory = Box<dyn FnOnce() -> rh_shared::Result<Box<dyn Sampler>> + Send>;
+pub type SamplerFactory = Box<dyn FnOnce() -> allot_shared::Result<Box<dyn Sampler>> + Send>;
 
-type SampleResult = rh_shared::Result<RawSample>;
+type SampleResult = allot_shared::Result<RawSample>;
 
 /// Starts the sampling thread. It samples every `interval` until the receiver is dropped.
 ///
@@ -45,7 +45,7 @@ pub fn spawn_sampler(
 ) -> anyhow::Result<mpsc::Receiver<SampleResult>> {
     let (sender, receiver) = mpsc::channel(4);
     thread::Builder::new()
-        .name("rh-sampler".into())
+        .name("allot-sampler".into())
         .spawn(move || {
             let mut sampler = match factory() {
                 Ok(sampler) => sampler,

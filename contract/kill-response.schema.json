@@ -71,7 +71,7 @@
       ]
     },
     "EndCause": {
-      "description": "Why a lease ended.\n\nKept apart from [`LeaseState`], whose values are fixed by the database's CHECK constraints\nand by older `rh-mcp` builds that reject unknown states.",
+      "description": "Why a lease ended.\n\nKept apart from [`LeaseState`], whose values are fixed by the database's CHECK constraints\nand by older `allot-mcp` builds that reject unknown states.",
       "oneOf": [
         {
           "description": "Its holder released it.",

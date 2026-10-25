@@ -1,5 +1,5 @@
 //! A JSON tree that keeps its objects' keys in file order, for editing files Claude Code owns:
-//! what rh does not touch comes back as it was, apart from whitespace.
+//! what allot does not touch comes back as it was, apart from whitespace.
 
 use std::fmt;
 

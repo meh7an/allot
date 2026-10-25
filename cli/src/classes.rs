@@ -1,9 +1,9 @@
-//! `rh classes`: the heavy-command rules and class profiles in effect, as Markdown.
+//! `allot classes`: the heavy-command rules and class profiles in effect, as Markdown.
 
 use std::fmt::Write;
 
-use rh_core::classifier::describe_rule;
-use rh_shared::{
+use allot_core::classifier::describe_rule;
+use allot_shared::{
     config::Config,
     paths::Paths,
     types::{JobClass, JobProfile},
@@ -77,8 +77,8 @@ mod tests {
     use super::*;
 
     const SKILL: &str = include_str!("../../skill/resource-guard/SKILL.md");
-    const BEGIN: &str = "<!-- rh classes: begin -->";
-    const END: &str = "<!-- rh classes: end -->";
+    const BEGIN: &str = "<!-- allot classes: begin -->";
+    const END: &str = "<!-- allot classes: end -->";
 
     #[test]
     fn test_skill_classes_block_matches_default_config() {

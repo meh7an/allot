@@ -1,7 +1,7 @@
-//! `rh history`: what past jobs used, and the estimates the daemon learned from them.
+//! `allot history`: what past jobs used, and the estimates the daemon learned from them.
 
-use rh_client::BlockingClient;
-use rh_shared::{
+use allot_client::BlockingClient;
+use allot_shared::{
     api::JobSummary,
     types::{BusyUsage, JobProfile, JobRun},
 };
@@ -12,7 +12,7 @@ use crate::status::{duration, gb, now_ms};
 ///
 /// # Errors
 ///
-/// Fails when rhd cannot be reached or started.
+/// Fails when allotd cannot be reached or started.
 pub fn history(fingerprint: Option<&str>, limit: Option<u32>) -> anyhow::Result<()> {
     let client = BlockingClient::discover(true)?;
     let now = now_ms();
@@ -114,7 +114,7 @@ fn secs_to_ms(secs: u64) -> i64 {
 
 #[cfg(test)]
 mod tests {
-    use rh_shared::types::{LeaseId, ResourceUsage};
+    use allot_shared::types::{LeaseId, ResourceUsage};
 
     use super::*;
 

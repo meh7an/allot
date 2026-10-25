@@ -1,21 +1,21 @@
-//! `rh daemon start|stop|status`.
+//! `allot daemon start|stop|status`.
 
 use std::{
     thread,
     time::{Duration, Instant},
 };
 
+use allot_client::{BlockingClient, DaemonStart};
 use anyhow::bail;
-use rh_client::{BlockingClient, DaemonStart};
 
 const STOP_WAIT: Duration = Duration::from_secs(10);
 const STOP_POLL: Duration = Duration::from_millis(100);
 
-/// Starts rhd in the background unless it is already running.
+/// Starts allotd in the background unless it is already running.
 ///
 /// # Errors
 ///
-/// Fails when rhd cannot be started or does not become ready.
+/// Fails when allotd cannot be started or does not become ready.
 pub fn start() -> anyhow::Result<()> {
     let client = BlockingClient::discover(true)?;
     let started = client.ensure_running()?;
@@ -24,30 +24,34 @@ pub fn start() -> anyhow::Result<()> {
         DaemonStart::AlreadyRunning => "already running",
         DaemonStart::Started => "started",
     };
-    println!("rhd {verb} at {} (pid {})", client.base_url(), health.pid);
+    println!(
+        "allotd {verb} at {} (pid {})",
+        client.base_url(),
+        health.pid
+    );
     Ok(())
 }
 
-/// Asks rhd to shut down and waits until it stops answering.
+/// Asks allotd to shut down and waits until it stops answering.
 ///
 /// # Errors
 ///
-/// Fails when rhd refuses the request or keeps answering after the wait.
+/// Fails when allotd refuses the request or keeps answering after the wait.
 pub fn stop() -> anyhow::Result<()> {
     let client = BlockingClient::discover(false)?;
     match shutdown(&client)? {
-        Some(_) => println!("rhd stopped"),
-        None => println!("rhd is not running"),
+        Some(_) => println!("allotd stopped"),
+        None => println!("allotd is not running"),
     }
     Ok(())
 }
 
-/// Asks the rhd behind `client` to shut down and waits until it stops answering. Returns its
+/// Asks the allotd behind `client` to shut down and waits until it stops answering. Returns its
 /// pid, or `None` when it was not running.
 ///
 /// # Errors
 ///
-/// Fails when rhd refuses the request or keeps answering after the wait.
+/// Fails when allotd refuses the request or keeps answering after the wait.
 pub fn shutdown(client: &BlockingClient) -> anyhow::Result<Option<u32>> {
     let pid = match client.health() {
         Ok(health) => health.pid,
@@ -59,11 +63,11 @@ pub fn shutdown(client: &BlockingClient) -> anyhow::Result<Option<u32>> {
         other => other?,
     }
     let deadline = Instant::now() + STOP_WAIT;
-    // A session may start a new rhd the moment the old one exits; only the old one counts.
+    // A session may start a new allotd the moment the old one exits; only the old one counts.
     while client.health().is_ok_and(|health| health.pid == pid) {
         if Instant::now() >= deadline {
             bail!(
-                "rhd is still answering {} s after the shutdown request",
+                "allotd is still answering {} s after the shutdown request",
                 STOP_WAIT.as_secs()
             );
         }
@@ -72,7 +76,7 @@ pub fn shutdown(client: &BlockingClient) -> anyhow::Result<Option<u32>> {
     Ok(Some(pid))
 }
 
-/// Reports whether rhd is running, without starting it.
+/// Reports whether allotd is running, without starting it.
 ///
 /// # Errors
 ///
@@ -82,18 +86,18 @@ pub fn status() -> anyhow::Result<()> {
     match client.health() {
         Ok(health) => {
             println!(
-                "rhd {} running at {} (pid {}, up {} s)",
+                "allotd {} running at {} (pid {}, up {} s)",
                 health.version,
                 client.base_url(),
                 health.pid,
                 health.uptime_secs
             );
             if let Some(error) = health.config_error {
-                println!("config rejected, rhd keeps the previous one: {error}");
+                println!("config rejected, allotd keeps the previous one: {error}");
             }
         }
         Err(error) if error.is_unreachable() => {
-            println!("rhd is not running at {}", client.base_url());
+            println!("allotd is not running at {}", client.base_url());
         }
         Err(error) => return Err(error.into()),
     }

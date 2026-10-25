@@ -1,4 +1,4 @@
-//! The resources-helper daemon: system sampling, the lease ledger, their persistence, and the
+//! The allot daemon: system sampling, the lease ledger, their persistence, and the
 //! HTTP API that serves them.
 
 pub mod db;
@@ -13,7 +13,7 @@ mod ui;
 
 use std::{future::Future, sync::Arc, time::Duration};
 
-use rh_shared::{api::LeaseQuery, config::Config, types::LeaseState};
+use allot_shared::{api::LeaseQuery, config::Config, types::LeaseState};
 use tokio::net::TcpListener;
 
 use crate::{

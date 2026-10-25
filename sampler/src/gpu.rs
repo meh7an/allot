@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use rh_core::sampler::EngineLoad;
+use allot_core::sampler::EngineLoad;
 
 /// Engine groups the snapshot reports. Engines of other types are ignored.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

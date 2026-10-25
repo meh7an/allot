@@ -6,9 +6,9 @@
 //! earliest new child may be a hook. It exits within a moment, and the next sample then binds
 //! the next earliest child.
 
-use rh_shared::types::{BoundProcess, Holder, LeaseBinding};
+use allot_shared::types::{BoundProcess, Holder, LeaseBinding};
 
-use crate::{ancestry::ProcessNode, kill::RH_BINARIES, process::ProcessTable};
+use crate::{ancestry::ProcessNode, kill::ALLOT_BINARIES, process::ProcessTable};
 
 /// How long after the report a new child of the holder may still be the command's root.
 /// Later children are other commands the session ran while it held the lease.
@@ -37,7 +37,7 @@ pub enum BindOutcome {
 /// Finds the root of the command `binding` reports, run by `holder`, at `now_ms`.
 ///
 /// The current root is kept while it runs. Otherwise the root is the earliest running direct
-/// child of the holder that is not an `rh` binary or a console host and started within
+/// child of the holder that is not an `allot` binary or a console host and started within
 /// [`REBIND_WINDOW_MS`] of the report, allowing [`START_TOLERANCE_MS`] before it.
 pub fn resolve(
     binding: &LeaseBinding,
@@ -73,7 +73,7 @@ pub fn resolve(
 /// The busiest descendant of `holder` by `load`, for showing what a lease with no bound root
 /// is doing. Never a kill target: nothing ties it to the lease's command.
 ///
-/// `rh` binaries and console hosts are skipped, and processes with no load are never picked.
+/// `allot` binaries and console hosts are skipped, and processes with no load are never picked.
 pub fn busiest_descendant<'a, F>(
     holder: &Holder,
     table: &'a ProcessTable,
@@ -114,7 +114,7 @@ fn is_candidate(node: &ProcessNode, bound_at_ms: i64) -> bool {
 
 fn is_excluded(name: &str) -> bool {
     name.eq_ignore_ascii_case(CONSOLE_HOST)
-        || RH_BINARIES
+        || ALLOT_BINARIES
             .iter()
             .any(|binary| name.eq_ignore_ascii_case(binary))
 }
@@ -127,7 +127,7 @@ fn start_ms(node: &ProcessNode) -> i64 {
 
 #[cfg(test)]
 mod tests {
-    use rh_shared::types::SessionKey;
+    use allot_shared::types::SessionKey;
 
     use super::*;
     use crate::{sampler::RawProcess, test_support::raw_process};
@@ -163,7 +163,7 @@ mod tests {
         let mut processes = vec![
             raw_process(1, None, "explorer.exe", 1),
             raw_process(10, Some(1), "claude.exe", 50),
-            raw_process(11, Some(10), "rh-mcp.exe", 51),
+            raw_process(11, Some(10), "allot-mcp.exe", 51),
         ];
         processes.extend_from_slice(extra);
         ProcessTable::new(&processes)
@@ -193,11 +193,11 @@ mod tests {
     }
 
     #[test]
-    fn test_resolve_skips_rh_binaries_and_console_hosts() {
+    fn test_resolve_skips_allot_binaries_and_console_hosts() {
         let extra = [
-            raw_process(20, Some(10), "RH.EXE", 101),
+            raw_process(20, Some(10), "ALLOT.EXE", 101),
             raw_process(21, Some(10), "conhost.exe", 101),
-            raw_process(22, Some(10), "rhd.exe", 101),
+            raw_process(22, Some(10), "allotd.exe", 101),
             raw_process(23, Some(10), "cmd.exe", 102),
         ];
         assert_eq!(resolve_at(&extra, None, 103_000), bound(23, 102));
@@ -264,7 +264,7 @@ mod tests {
     }
 
     #[test]
-    fn test_busiest_descendant_picks_the_heaviest_non_rh_process() {
+    fn test_busiest_descendant_picks_the_heaviest_non_allot_process() {
         let extra = [
             raw_process(20, Some(10), "bash.exe", 101),
             raw_process(21, Some(20), "cargo.exe", 101),

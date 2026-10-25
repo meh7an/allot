@@ -9,16 +9,16 @@ use std::{
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
-use diesel::sqlite::SqliteConnection;
-use rh_core::{
+use allot_core::{
     classifier::Classifier,
     ledger::{Ledger, LedgerSettings, ProcessLiveness, Transition},
     process::ProcessTable,
 };
-use rh_shared::{
+use allot_shared::{
     config::Config,
     types::{Holder, SessionKey, Snapshot},
 };
+use diesel::sqlite::SqliteConnection;
 use tokio::sync::{Mutex as AsyncMutex, watch};
 
 use crate::db::{DbPool, repo};

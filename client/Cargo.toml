@@ -1,6 +1,6 @@
 [package]
-name = "rh-client"
-description = "HTTP client for the resources-helper daemon"
+name = "allot-client"
+description = "HTTP client for the Allot daemon"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -13,14 +13,14 @@ categories.workspace = true
 publish.workspace = true
 
 [dependencies]
+allot-shared = { version = "0.2.0", path = "../shared" }
 reqwest = { version = "0.13.5", default-features = false, features = ["json"] }
-rh-shared = { version = "0.2.0", path = "../shared" }
 serde = "1.0.229"
 thiserror = "2.0.21"
 tokio = { version = "1.54.1", features = ["rt", "time"] }
 
 [dev-dependencies]
-rh-core = { path = "../core" }
-rhd = { path = "../daemon" }
+allot-core = { path = "../core" }
+allotd = { path = "../daemon" }
 tempfile = "3.27.0"
 tokio = { version = "1.54.1", features = ["macros", "rt-multi-thread"] }

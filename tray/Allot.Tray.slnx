@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Allot.Tray.Core/Allot.Tray.Core.csproj" />
+    <Project Path="src/Allot.Tray/Allot.Tray.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Allot.Tray.Core.Tests/Allot.Tray.Core.Tests.csproj" />
+  </Folder>
+</Solution>

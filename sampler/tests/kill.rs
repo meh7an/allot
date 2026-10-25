@@ -8,21 +8,21 @@ use std::{
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
-use rh_core::{
+use allot_core::{
     kill::{KillPlan, Protected},
     process::ProcessTable,
 };
-use rh_sampler::{kill_tree, process_table};
-use rh_shared::types::{BoundProcess, Holder, LeaseBinding, SessionKey};
+use allot_sampler::{kill_tree, process_table};
+use allot_shared::types::{BoundProcess, Holder, LeaseBinding, SessionKey};
 
 /// Levels left below a helper process; the helper at level 1 starts nothing.
-const DEPTH_VAR: &str = "RH_KILL_TEST_DEPTH";
+const DEPTH_VAR: &str = "ALLOT_KILL_TEST_DEPTH";
 
 /// How long a helper lives when nobody kills it, so a failed test leaves nothing behind.
 const HELPER_LIFETIME: Duration = Duration::from_secs(60);
 
 #[test]
-#[ignore = "helper process for the kill tests; does nothing without RH_KILL_TEST_DEPTH"]
+#[ignore = "helper process for the kill tests; does nothing without ALLOT_KILL_TEST_DEPTH"]
 fn tree_helper() {
     let Ok(depth) = env::var(DEPTH_VAR) else {
         return;

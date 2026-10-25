@@ -1,5 +1,5 @@
+use allot_shared::types::{Holder, JobClass, JobProfile, LeaseKind, SessionKey};
 use diesel::{Connection, sqlite::SqliteConnection};
-use rh_shared::types::{Holder, JobClass, JobProfile, LeaseKind, SessionKey};
 
 use super::{configure, repo::LeaseDraft, run_migrations};
 

@@ -3,6 +3,103 @@
 version = 4
 
 [[package]]
+name = "allot-cli"
+version = "0.2.0"
+dependencies = [
+ "allot-client",
+ "allot-core",
+ "allot-sampler",
+ "allot-shared",
+ "anyhow",
+ "clap",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "allot-client"
+version = "0.2.0"
+dependencies = [
+ "allot-core",
+ "allot-shared",
+ "allotd",
+ "reqwest",
+ "serde",
+ "tempfile",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
+name = "allot-core"
+version = "0.2.0"
+dependencies = [
+ "allot-shared",
+ "thiserror",
+]
+
+[[package]]
+name = "allot-mcp"
+version = "0.2.0"
+dependencies = [
+ "allot-client",
+ "allot-core",
+ "allot-sampler",
+ "allot-shared",
+ "anyhow",
+ "clap",
+ "rmcp",
+ "schemars",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "allot-sampler"
+version = "0.2.0"
+dependencies = [
+ "allot-core",
+ "allot-shared",
+ "sysinfo",
+ "windows",
+]
+
+[[package]]
+name = "allot-shared"
+version = "0.2.0"
+dependencies = [
+ "schemars",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "toml 1.1.8+spec-1.1.0",
+]
+
+[[package]]
+name = "allotd"
+version = "0.2.0"
+dependencies = [
+ "allot-core",
+ "allot-sampler",
+ "allot-shared",
+ "anyhow",
+ "axum",
+ "clap",
+ "diesel",
+ "diesel_migrations",
+ "getrandom",
+ "libsqlite3-sys",
+ "reqwest",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "android_system_properties"
 version = "0.1.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1138,103 +1235,6 @@ dependencies = [
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",
-]
-
-[[package]]
-name = "rh"
-version = "0.2.0"
-dependencies = [
- "anyhow",
- "clap",
- "rh-client",
- "rh-core",
- "rh-sampler",
- "rh-shared",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "rh-client"
-version = "0.2.0"
-dependencies = [
- "reqwest",
- "rh-core",
- "rh-shared",
- "rhd",
- "serde",
- "tempfile",
- "thiserror",
- "tokio",
-]
-
-[[package]]
-name = "rh-core"
-version = "0.2.0"
-dependencies = [
- "rh-shared",
- "thiserror",
-]
-
-[[package]]
-name = "rh-mcp"
-version = "0.2.0"
-dependencies = [
- "anyhow",
- "clap",
- "rh-client",
- "rh-core",
- "rh-sampler",
- "rh-shared",
- "rmcp",
- "schemars",
- "serde",
- "serde_json",
- "tokio",
-]
-
-[[package]]
-name = "rh-sampler"
-version = "0.2.0"
-dependencies = [
- "rh-core",
- "rh-shared",
- "sysinfo",
- "windows",
-]
-
-[[package]]
-name = "rh-shared"
-version = "0.2.0"
-dependencies = [
- "schemars",
- "serde",
- "serde_json",
- "thiserror",
- "toml 1.1.8+spec-1.1.0",
-]
-
-[[package]]
-name = "rhd"
-version = "0.2.0"
-dependencies = [
- "anyhow",
- "axum",
- "clap",
- "diesel",
- "diesel_migrations",
- "getrandom",
- "libsqlite3-sys",
- "reqwest",
- "rh-core",
- "rh-sampler",
- "rh-shared",
- "serde_json",
- "tempfile",
- "thiserror",
- "tokio",
- "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]

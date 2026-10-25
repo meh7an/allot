@@ -6,7 +6,7 @@
 
 use std::collections::VecDeque;
 
-use rh_shared::types::Snapshot;
+use allot_shared::types::Snapshot;
 
 /// When a drained machine counts as quiet, with times in milliseconds.
 #[derive(Debug, Clone, Copy, PartialEq)]

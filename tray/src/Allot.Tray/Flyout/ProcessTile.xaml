@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The 20 x 20 tile at the start of a job row (handoff section 4): the process's initials on a
+  tinted square, the real exe icon at 16 px once it is extracted, or the dashed queue position.
+-->
+<UserControl
+  x:Class="Allot.Tray.Flyout.ProcessTile"
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  Width="{StaticResource AllotTileSize}"
+  Height="{StaticResource AllotTileSize}"
+  IsTabStop="False">
+  <Grid>
+    <Border
+      x:Name="Fill"
+      Background="{ThemeResource AllotTileBackgroundBrush}"
+      CornerRadius="{StaticResource AllotControlCornerRadius}" />
+    <Rectangle
+      x:Name="QueuedEdge"
+      RadiusX="4"
+      RadiusY="4"
+      Stroke="{ThemeResource AllotQueuedTileBorderBrush}"
+      StrokeThickness="1"
+      StrokeDashArray="3,3"
+      Visibility="Collapsed" />
+    <TextBlock
+      x:Name="Initials"
+      HorizontalAlignment="Center"
+      VerticalAlignment="Center"
+      Style="{StaticResource AllotInitialsTextStyle}"
+      Foreground="{ThemeResource AllotTextSecondaryBrush}" />
+    <Image
+      x:Name="Icon"
+      Width="{StaticResource AllotIconSize}"
+      Height="{StaticResource AllotIconSize}"
+      Stretch="Uniform"
+      Visibility="Collapsed" />
+  </Grid>
+</UserControl>

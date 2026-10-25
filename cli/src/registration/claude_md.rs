@@ -1,16 +1,25 @@
-//! The rule for the global CLAUDE.md lives in `~/.claude/resources-helper.md`, which CLAUDE.md
-//! imports with one line, the way it imports other tools' rules. An upgrade rewrites only the
-//! imported file; a copy of the rule pasted by hand before is replaced by the import.
+//! The rule for the global CLAUDE.md lives in `~/.claude/allot.md`, which CLAUDE.md imports
+//! with one line, the way it imports other tools' rules. An upgrade rewrites only the imported
+//! file; a copy of the rule pasted by hand before, or the import of the rule from before the
+//! rename to Allot, is replaced by the import.
+
+use crate::legacy;
 
 /// The section the imported file holds.
 pub(super) const RULE: &str = include_str!("../../../skill/claude-md-rule.md");
 /// The imported file's name, beside CLAUDE.md.
-pub(super) const FILE_NAME: &str = "resources-helper.md";
-const IMPORT: &str = "@resources-helper.md";
+pub(super) const FILE_NAME: &str = "allot.md";
+const IMPORT: &str = "@allot.md";
+/// The words every version of the rule starts with, current and from before the rename.
+const OPENINGS: [&str; 2] = [
+    "coordinated by the Allot daemon",
+    "coordinated by the resources-helper daemon",
+];
 
-/// The rule's text as earlier releases asked to paste it, without its heading. A pasted copy of
-/// any of these, or of the current rule, is replaced by the import.
-const PASTED: [&str; 2] = [
+/// The rule's text as earlier releases asked to paste it, or imported it before the rename,
+/// without its heading. A pasted copy of any of these, or of the current rule, is replaced by
+/// the import.
+const PASTED: [&str; 3] = [
     "This PC is shared by several Claude sessions, coordinated by the resources-helper daemon.
 
 - Before any heavy command (builds, test suites, benchmarks, training, rendering, or anything
@@ -33,6 +42,20 @@ const PASTED: [&str; 2] = [
 - When a lease is queued, tell the user in one line what is ahead and the estimated wait, then
   keep waiting; never ask whether to queue or wait. If it ends without starting (removed from
   the queue), don't run the command; say in one line that it was cancelled.
+- Lease handling never needs the user's approval; it is not a state-changing command.",
+    "This PC is shared by several Claude sessions, coordinated by the resources-helper daemon.
+
+- Before any heavy command (builds, test suites, benchmarks, training, rendering, or anything
+  that keeps several cores or the GPU busy for more than ~30 s), follow the `resource-guard`
+  skill: `acquire_lease`, run only while the lease is active, then `release_lease` right away.
+- A tool call \"Blocked by resources-helper\" means: do what the message says, then retry the
+  same command. Never reword, wrap, or script a command to get past the hook.
+- Timing or performance numbers need a `benchmark_exclusive` lease; tests and builds do not.
+- When a lease is queued, tell the user in one line what is ahead and the estimated wait, then
+  keep waiting; never ask whether to queue or wait. If it ends without starting (removed from
+  the queue), don't run the command; say in one line that it was cancelled.
+- When a note says the user stopped a running job from Resources Helper, say so and ask
+  whether to retry or skip; never retry on your own.
 - Lease handling never needs the user's approval; it is not a state-changing command.",
 ];
 
@@ -57,7 +80,8 @@ pub(super) fn has_pasted_rule(claude_md: &str) -> bool {
 
 /// Whether `claude_md` mentions the rule outside the import, as an edited copy would.
 pub(super) fn has_other_copy(claude_md: &str) -> bool {
-    words(claude_md).contains("coordinated by the resources-helper daemon")
+    let text = words(claude_md);
+    OPENINGS.iter().any(|opening| text.contains(opening))
 }
 
 /// How [`add_import`] added the import.
@@ -65,6 +89,8 @@ pub(super) fn has_other_copy(claude_md: &str) -> bool {
 pub(super) enum Added {
     /// In place of a pasted copy of the rule and its heading.
     ReplacedCopy,
+    /// In place of the import from before the rename.
+    ReplacedOldImport,
     /// At the end.
     Appended,
 }
@@ -75,7 +101,10 @@ pub(super) fn add_import(claude_md: &str) -> Option<(String, Added)> {
         return None;
     }
     let mut lines: Vec<&str> = claude_md.lines().collect();
-    let added = if let Some((start, end)) = find_pasted(&lines) {
+    let added = if let Some(index) = position_of(&lines, &old_import()) {
+        lines[index] = IMPORT;
+        Added::ReplacedOldImport
+    } else if let Some((start, end)) = find_pasted(&lines) {
         lines.splice(start..end, [IMPORT]);
         Added::ReplacedCopy
     } else {
@@ -94,8 +123,25 @@ pub(super) fn add_import(claude_md: &str) -> Option<(String, Added)> {
 /// `claude_md` without the import line (and a blank line it leaves dangling), or `None` when it
 /// has none.
 pub(super) fn remove_import(claude_md: &str) -> Option<String> {
+    remove_line(claude_md, IMPORT)
+}
+
+/// `claude_md` without the import from before the rename, or `None` when it has none.
+pub(super) fn remove_old_import(claude_md: &str) -> Option<String> {
+    remove_line(claude_md, &old_import())
+}
+
+fn old_import() -> String {
+    format!("@{}", legacy::RULE_FILE)
+}
+
+fn position_of(lines: &[&str], import: &str) -> Option<usize> {
+    lines.iter().position(|line| line.trim() == import)
+}
+
+fn remove_line(claude_md: &str, import: &str) -> Option<String> {
     let mut lines: Vec<&str> = claude_md.lines().collect();
-    let index = lines.iter().position(|line| line.trim() == IMPORT)?;
+    let index = position_of(&lines, import)?;
     lines.remove(index);
     let blank = |at: usize| lines.get(at).is_none_or(|line| line.trim().is_empty());
     if index > 0 && blank(index - 1) && blank(index) {
@@ -107,15 +153,14 @@ pub(super) fn remove_import(claude_md: &str) -> Option<String> {
 /// The lines `start..end` of a pasted copy of the rule, with the heading right above it when
 /// that heading names the section.
 fn find_pasted(lines: &[&str]) -> Option<(usize, usize)> {
-    let bodies: Vec<String> = PASTED
+    let bodies: Vec<&str> = PASTED.iter().copied().chain([rule_body()]).collect();
+    let firsts: Vec<String> = bodies
         .iter()
-        .copied()
-        .chain([rule_body()])
-        .map(words)
+        .map(|body| words(body.lines().next().unwrap_or_default()))
         .collect();
-    let first = words(rule_body().lines().next().unwrap_or_default());
+    let bodies: Vec<String> = bodies.into_iter().map(words).collect();
     let longest = bodies.iter().map(String::len).max().unwrap_or_default();
-    for start in (0..lines.len()).filter(|&index| words(lines[index]) == first) {
+    for start in (0..lines.len()).filter(|&index| firsts.contains(&words(lines[index]))) {
         let mut span = String::new();
         for (end, line) in lines.iter().enumerate().skip(start) {
             let line = words(line);
@@ -206,7 +251,7 @@ mod tests {
             assert_eq!(added, Added::ReplacedCopy);
             assert_eq!(
                 updated,
-                format!("{CONTRACT}@resources-helper.md\n\n## 12 — Next\n\nText.\n")
+                format!("{CONTRACT}@allot.md\n\n## 12 — Next\n\nText.\n")
             );
             assert!(!has_other_copy(&updated));
         }
@@ -221,7 +266,7 @@ mod tests {
         let (updated, added) = add_import(&claude_md).unwrap();
 
         assert_eq!(added, Added::ReplacedCopy);
-        assert_eq!(updated, "# Rules\r\n\r\n@resources-helper.md\r\n");
+        assert_eq!(updated, "# Rules\r\n\r\n@allot.md\r\n");
     }
 
     #[test]
@@ -230,12 +275,12 @@ mod tests {
         assert_eq!(added, Added::Appended);
         assert_eq!(
             updated,
-            "# Contract\n\n## 10 — Usage\n\n- Save usage.\n\n@RTK.md\n\n@resources-helper.md\n"
+            "# Contract\n\n## 10 — Usage\n\n- Save usage.\n\n@RTK.md\n\n@allot.md\n"
         );
         assert_eq!(add_import(&updated), None);
 
         let (empty, _) = add_import("").unwrap();
-        assert_eq!(empty, "@resources-helper.md\n");
+        assert_eq!(empty, "@allot.md\n");
     }
 
     #[test]
@@ -257,9 +302,26 @@ mod tests {
             remove_import(&added).unwrap(),
             "# Contract\n\n## 10 — Usage\n\n- Save usage.\n\n@RTK.md\n"
         );
-        let between = "# A\n\n@resources-helper.md\n\n# B\n";
+        let between = "# A\n\n@allot.md\n\n# B\n";
         assert_eq!(remove_import(between).unwrap(), "# A\n\n# B\n");
         assert_eq!(remove_import(CONTRACT), None);
+    }
+
+    #[test]
+    fn test_add_import_replaces_the_old_import_where_it_was() {
+        let claude_md = "# Contract\r\n\r\n@resources-helper.md\r\n\r\n@RTK.md\r\n";
+
+        let (updated, added) = add_import(claude_md).unwrap();
+
+        assert_eq!(added, Added::ReplacedOldImport);
+        assert_eq!(updated, "# Contract\r\n\r\n@allot.md\r\n\r\n@RTK.md\r\n");
+        assert_eq!(remove_old_import(&updated), None);
+    }
+
+    #[test]
+    fn test_remove_old_import_leaves_the_new_one() {
+        let both = "# A\n\n@allot.md\n\n@resources-helper.md\n";
+        assert_eq!(remove_old_import(both).unwrap(), "# A\n\n@allot.md\n");
     }
 
     #[test]

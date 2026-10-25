@@ -6,7 +6,7 @@ use std::{
     time::{Duration, SystemTime},
 };
 
-use rh_shared::config::Config;
+use allot_shared::config::Config;
 use tokio::time::{self, MissedTickBehavior};
 
 use crate::{
@@ -93,7 +93,7 @@ async fn reload(state: &AppState, path: &Path) {
             let (old_port, new_port) = (previous.config.daemon.port, config.daemon.port);
             if new_port != old_port {
                 tracing::warn!(
-                    "daemon.port changed from {old_port} to {new_port}; rhd keeps listening \
+                    "daemon.port changed from {old_port} to {new_port}; allotd keeps listening \
                      on {old_port} until it restarts, while clients already use {new_port}"
                 );
             }

@@ -10,7 +10,7 @@
 
 use std::time::Duration;
 
-use rh_shared::types::{Lease, LeaseId, LeaseKind, LeaseState, ResourceUsage, Snapshot};
+use allot_shared::types::{Lease, LeaseId, LeaseKind, LeaseState, ResourceUsage, Snapshot};
 
 use crate::{
     binding::{self, BindOutcome},
@@ -123,7 +123,7 @@ pub fn quick_overruns(leases: &[Lease], now_ms: i64) -> Vec<LeaseId> {
 
 #[cfg(test)]
 mod tests {
-    use rh_shared::types::{BoundProcess, JobProfile, LeaseBinding, SessionUsage};
+    use allot_shared::types::{BoundProcess, JobProfile, LeaseBinding, SessionUsage};
 
     use super::*;
     use crate::test_support::{active_lease, holder, profile, raw_process, session_usage};

@@ -6,9 +6,9 @@
 
 use std::env;
 
+use allot_core::ancestry::ProcessNode;
+use allot_shared::types::{Holder, SessionKey};
 use anyhow::Context;
-use rh_core::ancestry::ProcessNode;
-use rh_shared::types::{Holder, SessionKey};
 
 const SESSION_ID_VAR: &str = "CLAUDE_CODE_SESSION_ID";
 
@@ -18,10 +18,10 @@ const SESSION_ID_VAR: &str = "CLAUDE_CODE_SESSION_ID";
 ///
 /// Fails when the parent process cannot be found.
 pub fn current_holder() -> anyhow::Result<Holder> {
-    let chain = rh_sampler::current_ancestry()?;
+    let chain = allot_sampler::current_ancestry()?;
     let parent = chain
         .get(1)
-        .context("rh-mcp has no visible parent process")?;
+        .context("allot-mcp has no visible parent process")?;
     Ok(holder_for(parent, env::var(SESSION_ID_VAR).ok()))
 }
 
@@ -30,7 +30,7 @@ fn holder_for(parent: &ProcessNode, session_id: Option<String>) -> Holder {
         .filter(|id| !id.trim().is_empty())
         .unwrap_or_else(|| {
             eprintln!(
-                "rh-mcp: {SESSION_ID_VAR} is not set; using the parent PID as the session key"
+                "allot-mcp: {SESSION_ID_VAR} is not set; using the parent PID as the session key"
             );
             format!("pid-{}", parent.pid)
         });

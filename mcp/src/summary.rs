@@ -1,7 +1,7 @@
 //! The compact machine view `system_snapshot` returns, without per-core or per-process
 //! detail.
 
-use rh_shared::types::{MemStats, ResourceUsage, Rolling, SessionKey, Snapshot};
+use allot_shared::types::{MemStats, ResourceUsage, Rolling, SessionKey, Snapshot};
 use serde::Serialize;
 
 /// Machine load in a form small enough for a tool result.

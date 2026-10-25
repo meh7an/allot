@@ -1,13 +1,13 @@
-//! `rh probe --sample`: live machine samples, for checking the sampler against Task Manager.
+//! `allot probe --sample`: live machine samples, for checking the sampler against Task Manager.
 
 use std::{
     env, process, thread,
     time::{Duration, Instant},
 };
 
-use rh_core::sampler::{Sampler, SnapshotBuilder};
-use rh_sampler::{SystemSampler, current_ancestry};
-use rh_shared::types::{Holder, ResourceUsage, SessionKey, Snapshot};
+use allot_core::sampler::{Sampler, SnapshotBuilder};
+use allot_sampler::{SystemSampler, current_ancestry};
+use allot_shared::types::{Holder, ResourceUsage, SessionKey, Snapshot};
 
 const SESSION_ROOT: &str = "claude.exe";
 

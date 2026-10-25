@@ -1,5 +1,5 @@
-//! `rh install` and `rh uninstall`: the binaries in `%USERPROFILE%\.resources-helper\bin`,
-//! the tray app in `bin\tray`, the skill copy, restarting rhd on the new build, and Claude
+//! `allot install` and `allot uninstall`: the binaries in `%USERPROFILE%\.allot\bin`,
+//! the tray app in `bin\tray`, the skill copy, restarting allotd on the new build, and Claude
 //! Code's registrations.
 
 use std::{
@@ -11,24 +11,24 @@ use std::{
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
+use allot_client::{BlockingClient, ClientOptions, SpawnOptions};
+use allot_shared::{config::Config, paths::Paths};
 use anyhow::{Context, bail};
-use rh_client::{BlockingClient, ClientOptions, SpawnOptions};
-use rh_shared::{config::Config, paths::Paths};
 
-use crate::{daemon, registration, tray};
+use crate::{daemon, legacy, registration, tray};
 
 /// The executables of an install.
-const BINARIES: [&str; 3] = ["rh.exe", "rhd.exe", "rh-mcp.exe"];
+const BINARIES: [&str; 3] = ["allot.exe", "allotd.exe", "allot-mcp.exe"];
 const SKILL: &str = include_str!("../../skill/resource-guard/SKILL.md");
 /// The rule copy older installs left for pasting; the rule is imported into CLAUDE.md now.
 const OLD_RULE_FILE: &str = "claude-md-rule.md";
 const SKILL_FILE: &str = "SKILL.md";
-/// How long to wait for a stopped rhd to exit. Older builds finish open acquire waits first,
+/// How long to wait for a stopped allotd to exit. Older builds finish open acquire waits first,
 /// which can take a minute.
 const EXIT_WAIT: Duration = Duration::from_secs(90);
 const EXIT_POLL: Duration = Duration::from_millis(100);
 
-/// What `rh install` installs and sets up.
+/// What `allot install` installs and sets up.
 #[derive(Debug, Clone, Copy)]
 pub struct Options<'a> {
     /// The build output (default: this executable's directory).
@@ -42,18 +42,20 @@ pub struct Options<'a> {
     pub setup: registration::Setup,
 }
 
-/// Copies the built binaries into the bin directory, copies the skill, restarts rhd on the new
-/// build when it was running, installs and starts the tray app, and registers the rest with
-/// Claude Code and Task Scheduler, as `options` ask. A failed restart or tray start is
-/// reported, not returned: the install itself is complete by then.
+/// Takes over an install from before the rename, copies the built binaries into the bin
+/// directory, copies the skill, restarts allotd on the new build when it was running, installs
+/// and starts the tray app, and registers the rest with Claude Code and Task Scheduler, as
+/// `options` ask. A failed restart or tray start is reported, not returned: the install itself
+/// is complete by then.
 ///
 /// # Errors
 ///
 /// Fails when the source is the bin directory itself or lacks a binary, when the given tray
-/// folder has no tray app, or when a file cannot be written.
+/// folder has no tray app, when the old daemon does not stop, or when a file cannot be
+/// written.
 pub fn install(options: Options) -> anyhow::Result<()> {
-    // rhd and the tray app outlive this run; the setup's log must not stay open in them.
-    rh_sampler::keep_std_handles_private();
+    // allotd and the tray app outlive this run; the setup's log must not stay open in them.
+    allot_sampler::keep_std_handles_private();
     let paths = Paths::from_env()?;
     let source = match options.from {
         Some(dir) => dir.to_owned(),
@@ -62,8 +64,8 @@ pub fn install(options: Options) -> anyhow::Result<()> {
     let bin = paths.bin_dir();
     if same_dir(&source, &bin) {
         bail!(
-            "{} is the install itself; run the rh.exe from the build output instead, such as \
-             target\\release\\rh.exe install",
+            "{} is the install itself; run the allot.exe from the build output instead, such as \
+             target\\release\\allot.exe install",
             bin.display()
         );
     }
@@ -75,15 +77,16 @@ pub fn install(options: Options) -> anyhow::Result<()> {
     }
     let tray_build = tray::find_build(&source, options.tray)?;
     if cfg!(debug_assertions) {
-        println!("note: this rh is a debug build; install from target\\release for speed");
+        println!("note: this allot is a debug build; install from target\\release for speed");
     }
 
+    let taken_over = legacy::take_over(&paths)?;
     let tray_dir = tray::dir(&paths);
-    // Before rhd restarts, so the tray app does not report the service stopping. Asked through
+    // Before allotd restarts, so the tray app does not report the service stopping. Asked through
     // the installed exe: a launch of the same app from another path does not reach the running
     // one.
-    let installed_tray = tray_dir.join("rh-tray.exe");
-    if tray_build.is_some() && installed_tray.is_file() && !tray::quit(&installed_tray, &tray_dir) {
+    let installed_tray = tray::exe(&tray_dir);
+    if tray_build.is_some() && installed_tray.is_file() && !tray::quit(&installed_tray) {
         println!(
             "warning: the tray app did not quit; its files are renamed aside, and it keeps \
              running until you quit it from its tray menu"
@@ -103,17 +106,21 @@ pub fn install(options: Options) -> anyhow::Result<()> {
     }
     remove_if_present(&paths.root().join(OLD_RULE_FILE))?;
 
-    if let Err(error) = restart_daemon(&paths) {
+    let replaces_old_daemon = taken_over.is_some_and(|taken| taken.daemon_stopped);
+    if let Err(error) = restart_daemon(&paths, replaces_old_daemon) {
         println!(
-            "warning: rhd was not restarted ({error:#}); it runs the new build from its next start"
+            "warning: allotd was not restarted ({error:#}); it runs the new build from its next start"
         );
     }
     let mut leftovers = remove_leftovers(&bin);
+    let launch_at_logon = options
+        .launch_at_logon
+        .or(taken_over.and_then(|taken| taken.launch_at_logon));
     match &tray_build {
-        Some(build) => leftovers.extend(install_tray(build, &tray_dir, options.launch_at_logon)?),
+        Some(build) => leftovers.extend(install_tray(build, &tray_dir, launch_at_logon)?),
         None => println!(
             "no tray app in {}; {} (publish it with `dotnet publish -c Release` in \
-             tray\\src\\ResourcesHelper.Tray and pass --tray <publish folder>)",
+             tray\\src\\Allot.Tray and pass --tray <publish folder>)",
             source.join("tray").display(),
             if tray_dir.exists() {
                 "kept the installed one"
@@ -122,9 +129,12 @@ pub fn install(options: Options) -> anyhow::Result<()> {
             }
         ),
     }
-    report_leftovers(&leftovers);
 
     registration::register(&paths, options.setup);
+    // After the new entries are in place, so a session is never left without its hooks.
+    registration::print_manual_steps(&registration::unregister_legacy(&paths));
+    leftovers.extend(legacy::clean_up(&paths));
+    report_leftovers(&leftovers);
     Ok(())
 }
 
@@ -135,12 +145,13 @@ fn install_tray(
     target: &Path,
     launch_at_logon: Option<bool>,
 ) -> anyhow::Result<Vec<PathBuf>> {
-    let first = !target.join("rh-tray.exe").is_file();
+    let exe = tray::exe(target);
+    let first = !exe.is_file();
     let in_use = tray::mirror(build, target)?;
     println!("installed the tray app into {}", target.display());
     if let Some(on) = launch_at_logon.or(first.then_some(true)) {
         let state = if on { "on" } else { "off" };
-        match tray::set_launch_at_logon(target, on) {
+        match tray::set_launch_at_logon(&exe, on) {
             Ok(()) => println!("turned {state} the tray app's Launch at logon"),
             Err(error) => println!("warning: Launch at logon was not turned {state} ({error:#})"),
         }
@@ -152,24 +163,24 @@ fn install_tray(
     Ok(in_use)
 }
 
-/// Quits and removes the tray app and its Launch at logon entry, stops rhd, removes the
+/// Quits and removes the tray app and its Launch at logon entry, stops allotd, removes the
 /// binaries and the skill copy, unregisters what Claude Code has, and prints what is left to
 /// undo by hand. The database, token, config, settings, and logs stay unless `purge`.
 ///
 /// # Errors
 ///
-/// Fails when rhd keeps running or a file that is not in use cannot be removed.
+/// Fails when allotd keeps running or a file that is not in use cannot be removed.
 pub fn uninstall(purge: bool) -> anyhow::Result<()> {
-    rh_sampler::keep_std_handles_private();
+    allot_sampler::keep_std_handles_private();
     let paths = Paths::from_env()?;
     let tray_dir = tray::dir(&paths);
     let mut in_use = Vec::new();
-    let tray_exe = tray_dir.join("rh-tray.exe");
+    let tray_exe = tray::exe(&tray_dir);
     if tray_exe.is_file() {
-        if let Err(error) = tray::set_launch_at_logon(&tray_dir, false) {
+        if let Err(error) = tray::set_launch_at_logon(&tray_exe, false) {
             println!("warning: Launch at logon was not turned off ({error:#})");
         }
-        if !tray::quit(&tray_exe, &tray_dir) {
+        if !tray::quit(&tray_exe) {
             println!("warning: the tray app did not quit; quit it from its tray menu");
         }
     }
@@ -177,16 +188,17 @@ pub fn uninstall(purge: bool) -> anyhow::Result<()> {
         in_use.extend(tray::remove(&tray_dir));
         println!("removed the tray app");
     }
-    // Before the binaries go, so sessions stop calling the hook's rh.exe first.
-    let manual_steps = registration::unregister(&paths);
+    // Before the binaries go, so sessions stop calling the hook's allot.exe first.
+    let mut manual_steps = registration::unregister(&paths);
+    manual_steps.extend(registration::unregister_legacy(&paths));
 
     let client = BlockingClient::new(client_options(&paths))?;
     if let Some(old_pid) = daemon::shutdown(&client)? {
-        // Open sessions can start rhd again from the binaries about to be removed.
-        if let Successor::Running { pid } = wait_for_exit(&paths, &client, old_pid)? {
-            println!("warning: a session started rhd again (pid {pid}); close open sessions");
+        // Open sessions can start allotd again from the binaries about to be removed.
+        if let Successor::Running { pid } = wait_for_exit(&paths.lock_file(), &client, old_pid)? {
+            println!("warning: a session started allotd again (pid {pid}); close open sessions");
         } else {
-            println!("rhd stopped");
+            println!("allotd stopped");
         }
     }
 
@@ -197,15 +209,21 @@ pub fn uninstall(purge: bool) -> anyhow::Result<()> {
     // Only an empty directory is removed: anything else in it is not ours.
     let _ = fs::remove_dir(&skill_dir);
     remove_if_present(&paths.root().join(OLD_RULE_FILE))?;
+    in_use.extend(legacy::clean_up(&paths));
 
     if purge {
         in_use.extend(purge_root(paths.root())?);
         println!("removed {}", paths.root().display());
+        let old = legacy::root(&paths);
+        if old.exists() {
+            in_use.extend(purge_root(&old)?);
+            println!("removed {}", old.display());
+        }
     } else {
         let _ = fs::remove_dir(&bin);
         println!(
             "removed the binaries and the skill copy; kept the database, token, config, and \
-             logs in {} (`rh uninstall --purge` removes them)",
+             logs in {} (`allot uninstall --purge` removes them)",
             paths.root().display()
         );
     }
@@ -255,7 +273,7 @@ fn replace_binary(source: &Path, target: &Path) -> anyhow::Result<()> {
 }
 
 /// `<stem>.old-<unix millis>.exe` beside `target`.
-fn aside_path(target: &Path) -> PathBuf {
+pub(crate) fn aside_path(target: &Path) -> PathBuf {
     let millis = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |since| since.as_millis());
@@ -370,7 +388,7 @@ fn write_file(path: &Path, contents: &str) -> anyhow::Result<()> {
     fs::write(path, contents).with_context(|| format!("writing {}", path.display()))
 }
 
-/// Client options for the install at `paths` that never start rhd. An invalid config falls
+/// Client options for the install at `paths` that never start allotd. An invalid config falls
 /// back to the default port, so a broken config cannot block an install or uninstall.
 fn client_options(paths: &Paths) -> ClientOptions {
     let config = Config::load(&paths.config_file()).unwrap_or_else(|error| {
@@ -380,46 +398,51 @@ fn client_options(paths: &Paths) -> ClientOptions {
     ClientOptions::local(paths, &config, false)
 }
 
-/// What took the place of a stopped rhd.
+/// What took the place of a stopped allotd.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Successor {
-    /// A session's rh-mcp started the installed rhd before the installer could.
+pub(crate) enum Successor {
+    /// A session's allot-mcp started the installed allotd before the installer could.
     Running { pid: u32 },
-    /// No rhd holds the instance lock any more.
+    /// No allotd holds the instance lock any more.
     None,
 }
 
-/// Stops a running rhd and starts the installed one. A stopped rhd stays stopped: the logon
-/// task or the first session that needs it starts it.
-fn restart_daemon(paths: &Paths) -> anyhow::Result<()> {
+/// Stops a running allotd and starts the installed one. A stopped allotd stays stopped (the
+/// logon task or the first session that needs it starts it), unless it `replaces` the daemon of
+/// the install from before the rename, which open sessions still talk to.
+fn restart_daemon(paths: &Paths, replaces: bool) -> anyhow::Result<()> {
     let mut options = client_options(paths);
     let client = BlockingClient::new(options.clone())?;
-    let Some(old_pid) = daemon::shutdown(&client)? else {
-        println!("rhd is not running; the logon task or the first session starts it");
-        return Ok(());
+    let running = match daemon::shutdown(&client)? {
+        Some(old_pid) => wait_for_exit(&paths.lock_file(), &client, old_pid)?,
+        None if replaces => Successor::None,
+        None => {
+            println!("allotd is not running; the logon task or the first session starts it");
+            return Ok(());
+        }
     };
-    let pid = match wait_for_exit(paths, &client, old_pid)? {
+    let pid = match running {
         Successor::Running { pid } => pid,
         Successor::None => {
-            options.spawn = Some(SpawnOptions::at(paths.bin_dir().join("rhd.exe")));
+            options.spawn = Some(SpawnOptions::at(paths.bin_dir().join("allotd.exe")));
             let client = BlockingClient::new(options)?;
             client.ensure_running()?;
             client.health()?.pid
         }
     };
-    println!("restarted rhd on the new build (pid {pid}); its leases were restored");
+    println!("restarted allotd on the new build (pid {pid}); its leases were restored");
     Ok(())
 }
 
-/// Waits until the rhd with `old_pid` has exited: no rhd holds the instance lock, or another
-/// one answers. rhd stops answering before its process exits, and an rhd started in between
-/// would find the lock taken and quit.
+/// Waits until the allotd with `old_pid` has exited: no allotd holds the instance `lock`, or
+/// another one answers. allotd stops answering before its process exits, and an allotd started
+/// in between would find the lock taken and quit.
 ///
 /// # Errors
 ///
-/// Fails when the lock file cannot be opened or the old rhd still runs after [`EXIT_WAIT`].
-fn wait_for_exit(
-    paths: &Paths,
+/// Fails when the lock file cannot be opened or the old allotd still runs after [`EXIT_WAIT`].
+pub(crate) fn wait_for_exit(
+    lock: &Path,
     client: &BlockingClient,
     old_pid: u32,
 ) -> anyhow::Result<Successor> {
@@ -430,12 +453,12 @@ fn wait_for_exit(
         {
             return Ok(Successor::Running { pid: health.pid });
         }
-        if lock_is_free(&paths.lock_file())? {
+        if lock_is_free(lock)? {
             return Ok(Successor::None);
         }
         if Instant::now() >= deadline {
             bail!(
-                "the old rhd (pid {old_pid}) stopped answering but has not exited after {} s",
+                "the old allotd (pid {old_pid}) stopped answering but has not exited after {} s",
                 EXIT_WAIT.as_secs()
             );
         }
@@ -462,7 +485,7 @@ mod tests {
 
     impl TempDir {
         fn new(name: &str) -> Self {
-            let path = env::temp_dir().join(format!("rh-install-{}-{name}", process::id()));
+            let path = env::temp_dir().join(format!("allot-install-{}-{name}", process::id()));
             let _ = fs::remove_dir_all(&path);
             fs::create_dir_all(&path).unwrap();
             Self(path)
@@ -499,7 +522,7 @@ mod tests {
         let bin = dir.path().join("bin");
         fs::create_dir_all(&bin).unwrap();
         let source = dir.path().join("new.exe");
-        let target = bin.join("rh-mcp.exe");
+        let target = bin.join("allot-mcp.exe");
         fs::write(&source, "new").unwrap();
         fs::write(&target, "old").unwrap();
         let held = hold_like_a_running_exe(&target);
@@ -521,7 +544,7 @@ mod tests {
     fn test_replace_binary_into_an_empty_dir_copies() {
         let dir = TempDir::new("empty");
         let source = dir.path().join("src.exe");
-        let target = dir.path().join("rh.exe");
+        let target = dir.path().join("allot.exe");
         fs::write(&source, "build").unwrap();
         replace_binary(&source, &target).unwrap();
         assert_eq!(fs::read_to_string(&target).unwrap(), "build");
@@ -530,22 +553,27 @@ mod tests {
     #[test]
     fn test_remove_leftovers_keeps_installed_binaries_and_other_files() {
         let dir = TempDir::new("leftovers");
-        for name in ["rh.exe", "rh-mcp-old.exe", "rhd.old-1.exe", "notes.txt"] {
+        for name in [
+            "allot.exe",
+            "allot-mcp-old.exe",
+            "allotd.old-1.exe",
+            "notes.txt",
+        ] {
             fs::write(dir.path().join(name), name).unwrap();
         }
         assert!(remove_leftovers(dir.path()).is_empty());
-        assert!(dir.path().join("rh.exe").is_file());
+        assert!(dir.path().join("allot.exe").is_file());
         assert!(dir.path().join("notes.txt").is_file());
-        assert!(!dir.path().join("rh-mcp-old.exe").exists());
-        assert!(!dir.path().join("rhd.old-1.exe").exists());
+        assert!(!dir.path().join("allot-mcp-old.exe").exists());
+        assert!(!dir.path().join("allotd.old-1.exe").exists());
     }
 
     #[test]
     fn test_aside_path_keeps_the_stem_and_exe_extension() {
-        let aside = aside_path(Path::new(r"C:\bin\rh-mcp.exe"));
+        let aside = aside_path(Path::new(r"C:\bin\allot-mcp.exe"));
         let name = aside.file_name().unwrap().to_string_lossy();
         assert!(
-            name.starts_with("rh-mcp.old-") && name.ends_with(".exe"),
+            name.starts_with("allot-mcp.old-") && name.ends_with(".exe"),
             "{name}"
         );
         assert_eq!(aside.parent(), Some(Path::new(r"C:\bin")));
@@ -554,7 +582,7 @@ mod tests {
     #[test]
     fn test_lock_is_free_only_while_no_one_holds_it() {
         let dir = TempDir::new("lock");
-        let lock = dir.path().join("rhd.lock");
+        let lock = dir.path().join("allotd.lock");
         assert!(lock_is_free(&lock).unwrap(), "a missing file is free");
 
         let file = OpenOptions::new()

@@ -1,4 +1,4 @@
-use rh_shared::types::{
+use allot_shared::types::{
     CpuStats, GpuAdapter, GpuEngines, Holder, JobProfile, Lease, LeaseId, LeaseKind, LeaseState,
     MemStats, ResourceUsage, Rolling, SessionKey, SessionUsage, Snapshot,
 };

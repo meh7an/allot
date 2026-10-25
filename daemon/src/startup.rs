@@ -38,7 +38,7 @@ impl InstanceLock {
             Ok(()) => Ok(Self { _file: file }),
             Err(TryLockError::WouldBlock) => {
                 bail!(
-                    "another rhd is already running (it holds {})",
+                    "another allotd is already running (it holds {})",
                     path.display()
                 )
             }
@@ -77,7 +77,7 @@ pub fn load_or_create_token(path: &Path) -> anyhow::Result<String> {
     Ok(token)
 }
 
-/// Sends `tracing` output at INFO and above to `rhd.log` in `log_dir`, which rotates at
+/// Sends `tracing` output at INFO and above to `allotd.log` in `log_dir`, which rotates at
 /// [`MAX_LOG_BYTES`] and keeps [`KEPT_LOG_FILES`] files.
 ///
 /// # Errors
@@ -85,8 +85,8 @@ pub fn load_or_create_token(path: &Path) -> anyhow::Result<String> {
 /// Fails when the log file cannot be opened or a global subscriber is already set.
 pub fn init_logging(log_dir: &Path) -> anyhow::Result<()> {
     fs::create_dir_all(log_dir).with_context(|| format!("creating {}", log_dir.display()))?;
-    let file = RotatingFile::open(log_dir, "rhd", MAX_LOG_BYTES, KEPT_LOG_FILES)
-        .with_context(|| format!("opening rhd.log in {}", log_dir.display()))?;
+    let file = RotatingFile::open(log_dir, "allotd", MAX_LOG_BYTES, KEPT_LOG_FILES)
+        .with_context(|| format!("opening allotd.log in {}", log_dir.display()))?;
     tracing_subscriber::fmt()
         .with_writer(Mutex::new(file))
         .with_ansi(false)
@@ -104,7 +104,7 @@ mod tests {
     #[test]
     fn test_instance_lock_second_acquire_refuses_until_first_is_dropped() {
         let dir = TempDir::new().unwrap();
-        let path = dir.path().join("rhd.lock");
+        let path = dir.path().join("allotd.lock");
         let first = InstanceLock::acquire(&path).unwrap();
 
         let second = InstanceLock::acquire(&path).unwrap_err();

@@ -1,6 +1,6 @@
 [package]
-name = "rh-core"
-description = "Lease ledger, admission control, and heavy-command classifier for resources-helper"
+name = "allot-core"
+description = "Lease ledger, admission control, and heavy-command classifier for Allot"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -13,5 +13,5 @@ categories.workspace = true
 publish.workspace = true
 
 [dependencies]
-rh-shared = { version = "0.2.0", path = "../shared" }
+allot-shared = { version = "0.2.0", path = "../shared" }
 thiserror = "2.0.21"

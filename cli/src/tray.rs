@@ -12,19 +12,19 @@ use std::{
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
+use allot_shared::paths::Paths;
 use anyhow::{Context, bail};
-use rh_shared::paths::Paths;
 
-/// The folder of the tray app, both beside `rh.exe` in a release and under the bin directory.
+/// The folder of the tray app, both beside `allot.exe` in a release and under the bin directory.
 const DIR: &str = "tray";
-const EXE: &str = "rh-tray.exe";
+const EXE: &str = "allot-tray.exe";
 /// How long the running app gets to quit before its files are renamed aside instead.
 const QUIT_WAIT: Duration = Duration::from_secs(10);
 /// A started tray app that exits within this time handed itself to another running copy.
 const START_CHECK: Duration = Duration::from_millis(1500);
 const POLL: Duration = Duration::from_millis(100);
 
-// Win32 process creation flags, as for rhd: no console, and no Ctrl+C from the terminal.
+// Win32 process creation flags, as for allotd: no console, and no Ctrl+C from the terminal.
 const DETACHED_PROCESS: u32 = 0x0000_0008;
 const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
 
@@ -33,12 +33,17 @@ pub fn dir(paths: &Paths) -> PathBuf {
     paths.bin_dir().join(DIR)
 }
 
+/// The tray app's exe in `dir`.
+pub fn exe(dir: &Path) -> PathBuf {
+    dir.join(EXE)
+}
+
 /// The tray build to install: `tray` when given (it must hold the exe), else the `tray`
 /// folder beside the other binaries in `source`, or `None` when that has none.
 ///
 /// # Errors
 ///
-/// Fails when `tray` is given but has no `rh-tray.exe`.
+/// Fails when `tray` is given but has no `allot-tray.exe`.
 pub fn find_build(source: &Path, tray: Option<&Path>) -> anyhow::Result<Option<PathBuf>> {
     if let Some(tray) = tray {
         if !tray.join(EXE).is_file() {
@@ -54,14 +59,13 @@ pub fn find_build(source: &Path, tray: Option<&Path>) -> anyhow::Result<Option<P
 }
 
 /// Asks the running tray app to quit through `exe`, the installed copy (the running app only
-/// hears launches of its own exe path), and waits until the copy in `target` is no longer
-/// running. Returns false when it still runs after [`QUIT_WAIT`].
-pub fn quit(exe: &Path, target: &Path) -> bool {
+/// hears launches of its own exe path), and waits until that copy is no longer running.
+/// Returns false when it still runs after [`QUIT_WAIT`].
+pub fn quit(exe: &Path) -> bool {
     // An app with nothing running exits at once; a failure to run it leaves nothing to wait for.
     let _ = run(exe, &["--quit"]);
-    let installed = target.join(EXE);
     let deadline = Instant::now() + QUIT_WAIT;
-    while is_running(&installed) {
+    while is_running(exe) {
         if Instant::now() >= deadline {
             return false;
         }
@@ -107,16 +111,17 @@ pub fn remove(target: &Path) -> Vec<PathBuf> {
     in_use
 }
 
-/// Turns the tray app's Launch at logon on or off for the exe in `target`.
+/// Turns the Launch at logon of the tray app `exe` on or off.
 ///
 /// # Errors
 ///
 /// Fails when the exe does not run or reports a failure.
-pub fn set_launch_at_logon(target: &Path, on: bool) -> anyhow::Result<()> {
+pub fn set_launch_at_logon(exe: &Path, on: bool) -> anyhow::Result<()> {
     let value = if on { "on" } else { "off" };
-    let status = run(&target.join(EXE), &["--launch-at-logon", value])?;
+    let status = run(exe, &["--launch-at-logon", value])?;
     if !status.success() {
-        bail!("{EXE} --launch-at-logon {value} exited with {status}");
+        let name = exe.file_name().unwrap_or_default().to_string_lossy();
+        bail!("{name} --launch-at-logon {value} exited with {status}");
     }
     Ok(())
 }
@@ -250,7 +255,7 @@ mod tests {
 
     impl TempDir {
         fn new(name: &str) -> Self {
-            let path = env::temp_dir().join(format!("rh-tray-{}-{name}", process::id()));
+            let path = env::temp_dir().join(format!("allot-tray-{}-{name}", process::id()));
             let _ = fs::remove_dir_all(&path);
             fs::create_dir_all(&path).unwrap();
             Self(path)
@@ -299,9 +304,9 @@ mod tests {
         let dir = TempDir::new("mirror");
         let source = dir.path().join("publish");
         let target = dir.path().join("tray");
-        write(&source, "rh-tray.exe", "new exe");
+        write(&source, "allot-tray.exe", "new exe");
         write(&source, "en-US/Microsoft.ui.xaml.dll.mui", "mui");
-        write(&target, "rh-tray.exe", "old exe");
+        write(&target, "allot-tray.exe", "old exe");
         write(&target, "gone.dll", "old");
         write(&target, "fr-FR/gone.mui", "old");
 
@@ -310,10 +315,10 @@ mod tests {
         assert!(in_use.is_empty(), "{in_use:?}");
         assert_eq!(
             sorted_files(&target),
-            ["en-US/Microsoft.ui.xaml.dll.mui", "rh-tray.exe"]
+            ["allot-tray.exe", "en-US/Microsoft.ui.xaml.dll.mui"]
         );
         assert_eq!(
-            fs::read_to_string(target.join("rh-tray.exe")).unwrap(),
+            fs::read_to_string(target.join("allot-tray.exe")).unwrap(),
             "new exe"
         );
         assert!(!target.join("fr-FR").exists());
@@ -343,7 +348,7 @@ mod tests {
     fn test_remove_deletes_the_folder() {
         let dir = TempDir::new("remove");
         let target = dir.path().join("tray");
-        write(&target, "rh-tray.exe", "exe");
+        write(&target, "allot-tray.exe", "exe");
         write(&target, "de-DE/a.mui", "mui");
 
         assert!(remove(&target).is_empty());
@@ -356,7 +361,7 @@ mod tests {
         let source = dir.path().join("release");
         assert_eq!(find_build(&source, None).unwrap(), None);
 
-        write(&source, "tray/rh-tray.exe", "exe");
+        write(&source, "tray/allot-tray.exe", "exe");
         assert_eq!(
             find_build(&source, None).unwrap(),
             Some(source.join("tray"))
@@ -365,15 +370,18 @@ mod tests {
         let publish = dir.path().join("publish");
         fs::create_dir_all(&publish).unwrap();
         let error = find_build(&source, Some(&publish)).unwrap_err();
-        assert!(error.to_string().contains("has no rh-tray.exe"), "{error}");
-        write(&publish, "rh-tray.exe", "exe");
+        assert!(
+            error.to_string().contains("has no allot-tray.exe"),
+            "{error}"
+        );
+        write(&publish, "allot-tray.exe", "exe");
         assert_eq!(find_build(&source, Some(&publish)).unwrap(), Some(publish));
     }
 
     #[test]
     fn test_is_running_only_while_the_exe_is_held() {
         let dir = TempDir::new("running");
-        let exe = dir.path().join("rh-tray.exe");
+        let exe = dir.path().join("allot-tray.exe");
         assert!(!is_running(&exe), "a missing exe is not running");
         fs::write(&exe, "exe").unwrap();
         assert!(!is_running(&exe));

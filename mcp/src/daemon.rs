@@ -2,8 +2,8 @@
 
 use std::future::Future;
 
-use rh_client::{Client, Result};
-use rh_shared::{
+use allot_client::{Client, Result};
+use allot_shared::{
     api::{
         AcquireRequest, AcquireResponse, CanFitRequest, HeartbeatResponse, LeaseQuery,
         ReleaseResponse, Verdict,
@@ -60,7 +60,7 @@ pub trait DaemonApi: Send + Sync + 'static {
 /// so it is logged rather than fatal.
 pub async fn register<C: DaemonApi>(client: &C, holder: &Holder) {
     if let Err(error) = client.register_session(holder).await {
-        eprintln!("rh-mcp: registering the session failed: {error}");
+        eprintln!("allot-mcp: registering the session failed: {error}");
     }
 }
 

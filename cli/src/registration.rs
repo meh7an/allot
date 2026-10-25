@@ -1,6 +1,6 @@
 //! The parts of the setup that live in Claude Code's and Windows' own configuration: the MCP
-//! server, the hooks, the CLAUDE.md rule, and the logon task. `rh install` sets them up and
-//! `rh uninstall` removes them again. A file is only written when something in it changes,
+//! server, the hooks, the CLAUDE.md rule, and the logon task. `allot install` sets them up and
+//! `allot uninstall` removes them again. A file is only written when something in it changes,
 //! after a copy of the old one is kept beside it.
 
 mod claude_json;
@@ -15,18 +15,19 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use allot_shared::paths::Paths;
 use anyhow::Context;
-use rh_shared::paths::Paths;
 use serde_json::Value;
 
 use self::claude_md::Added;
+use crate::legacy;
 
 /// The name the MCP server is registered under.
-const MCP_NAME: &str = "resources-helper";
-/// The name of the scheduled task that starts rhd at logon.
-const TASK_NAME: &str = "resources-helper";
+const MCP_NAME: &str = "allot";
+/// The name of the scheduled task that starts allotd at logon.
+const TASK_NAME: &str = "allot";
 
-/// A hook entry `settings.json` needs: the event and the `rh` arguments it runs.
+/// A hook entry `settings.json` needs: the event and the `allot` arguments it runs.
 type HookSpec = (&'static str, [&'static str; 2]);
 
 /// Every hook entry: the lease check before a call, and the notices after one.
@@ -36,7 +37,7 @@ const HOOKS: [HookSpec; 3] = [
     ("PostToolUseFailure", ["hook", "post-tool"]),
 ];
 
-/// Whether a step is done, as far as rh can tell.
+/// Whether a step is done, as far as allot can tell.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum State {
     Done,
@@ -133,24 +134,24 @@ fn rule_file(paths: &Paths) -> PathBuf {
     claude_dir(paths).join(claude_md::FILE_NAME)
 }
 
-fn rh_exe(paths: &Paths) -> PathBuf {
-    paths.bin_dir().join("rh.exe")
+fn allot_exe(paths: &Paths) -> PathBuf {
+    paths.bin_dir().join("allot.exe")
 }
 
-fn rh_mcp_exe(paths: &Paths) -> PathBuf {
-    paths.bin_dir().join("rh-mcp.exe")
+fn allot_mcp_exe(paths: &Paths) -> PathBuf {
+    paths.bin_dir().join("allot-mcp.exe")
 }
 
-fn rhd_exe(paths: &Paths) -> PathBuf {
-    paths.bin_dir().join("rhd.exe")
+fn allotd_exe(paths: &Paths) -> PathBuf {
+    paths.bin_dir().join("allotd.exe")
 }
 
-/// What `rh install` sets up besides its own files.
+/// What `allot install` sets up besides its own files.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Setup {
     /// The MCP server, the hooks, and the CLAUDE.md rule.
     pub claude: bool,
-    /// The scheduled task that starts rhd at logon.
+    /// The scheduled task that starts allotd at logon.
     pub logon_task: bool,
 }
 
@@ -186,7 +187,7 @@ pub fn register(paths: &Paths, setup: Setup) {
 }
 
 fn register_mcp(paths: &Paths) -> Step {
-    let exe = rh_mcp_exe(paths);
+    let exe = allot_mcp_exe(paths);
     let title = "MCP server, user scope".to_owned();
     let config = read_json(&claude_json(paths));
     if let Some(Some(config)) = &config
@@ -218,7 +219,7 @@ fn register_mcp(paths: &Paths) -> Step {
 /// Without the `claude` command, the entry goes into `~/.claude.json` directly.
 fn write_mcp_entry(paths: &Paths, title: String) -> Step {
     let path = claude_json(paths);
-    let exe = rh_mcp_exe(paths);
+    let exe = allot_mcp_exe(paths);
     let written = read_text(&path).and_then(|text| {
         let new = claude_json::set_server(text.as_deref().unwrap_or_default(), &exe)?;
         rewrite(&path, text.as_deref(), &new)
@@ -254,7 +255,7 @@ fn write_mcp_entry(paths: &Paths, title: String) -> Step {
 fn add_hooks(paths: &Paths) -> Step {
     let path = settings_json(paths);
     let title = format!("Hooks in {}", path.display());
-    let exe = rh_exe(paths);
+    let exe = allot_exe(paths);
     let unreadable = |error: anyhow::Error| {
         Step::manual(
             State::Unknown,
@@ -320,7 +321,7 @@ fn import_rule(paths: &Paths) -> Step {
             title.clone(),
             Some(format!("{error:#}")),
             vec![format!(
-                "Write the resources-helper rule to {} and add the line @{} to {} between \
+                "Write the allot rule to {} and add the line @{} to {} between \
                  sessions.",
                 rule.display(),
                 claude_md::FILE_NAME,
@@ -351,6 +352,10 @@ fn import_rule(paths: &Paths) -> Step {
                     "replaced the pasted rule in CLAUDE.md with an import{}",
                     backup_note(backup)
                 ),
+                Added::ReplacedOldImport => format!(
+                    "replaced the Resources Helper import in CLAUDE.md{}",
+                    backup_note(backup)
+                ),
                 Added::Appended => format!("added the import to CLAUDE.md{}", backup_note(backup)),
             });
             new
@@ -372,20 +377,20 @@ fn import_rule(paths: &Paths) -> Step {
     }
 }
 
-/// Registers the logon task unless it already starts this install's rhd; one of the same name
-/// that starts another rhd, such as a development build, is replaced.
+/// Registers the logon task unless it already starts this install's allotd; one of the same name
+/// that starts another allotd, such as a development build, is replaced.
 fn register_task(paths: &Paths) -> Step {
-    let title = format!("rhd at logon, scheduled task \"{TASK_NAME}\"");
-    let rhd = rhd_exe(paths);
-    let found = task::find();
-    if found.starts(&rhd) {
+    let title = format!("allotd at logon, scheduled task \"{TASK_NAME}\"");
+    let allotd = allotd_exe(paths);
+    let found = task::find(TASK_NAME);
+    if found.starts(&allotd) {
         return Step::done(title);
     }
     let note = match &found {
         task::Found::Runs(other) => format!("registered; it started {other} before"),
         _ => "registered".to_owned(),
     };
-    match task::register(&rhd, paths.root()) {
+    match task::register(&allotd, paths.root()) {
         Ok(()) => Step::changed(title, note),
         Err(error) => {
             let mut manual = vec!["In PowerShell (no admin needed):".to_owned()];
@@ -408,13 +413,13 @@ pub fn unregister(paths: &Paths) -> Vec<String> {
     match read_json(&claude_json(paths)) {
         Some(Some(config)) if config["mcpServers"][MCP_NAME].is_null() => {}
         Some(None) => {}
-        _ => match mcp::remove() {
+        _ => match mcp::remove(MCP_NAME) {
             Ok(true) => done.push("removed the MCP server".to_owned()),
             Ok(false) => {
                 let path = claude_json(paths);
                 let removed = read_text(&path).and_then(|text| {
                     let text = text.unwrap_or_default();
-                    match claude_json::remove_server(&text)? {
+                    match claude_json::remove_server(&text, MCP_NAME)? {
                         Some(new) => rewrite(&path, Some(&text), &new).map(|_| true),
                         None => Ok(false),
                     }
@@ -440,7 +445,7 @@ pub fn unregister(paths: &Paths) -> Vec<String> {
         let Some(text) = text else {
             return Ok(false);
         };
-        let Some(new) = settings::remove_hooks(&text, &rh_exe(paths))? else {
+        let Some(new) = settings::remove_hooks(&text, &allot_exe(paths))? else {
             return Ok(false);
         };
         rewrite(&path, Some(&text), &new).map(|_| true)
@@ -470,7 +475,7 @@ pub fn unregister(paths: &Paths) -> Vec<String> {
             }
             if claude_md::has_pasted_rule(&text) {
                 manual.push(format!(
-                    "Remove the resources-helper rule (the \"Shared Machine Resources\" \
+                    "Remove the allot rule (the \"Shared Machine Resources\" \
                      section) from {}",
                     path.display()
                 ));
@@ -489,21 +494,127 @@ pub fn unregister(paths: &Paths) -> Vec<String> {
         manual.push(format!("Delete {} ({error})", rule.display()));
     }
 
-    // Only the task that starts this install's rhd; one for another rhd is not ours to remove.
-    if task::find().starts(&rhd_exe(paths)) {
-        match task::delete() {
-            Ok(()) => done.push(format!("removed the scheduled task \"{TASK_NAME}\"")),
-            Err(error) => manual.push(format!(
-                "In PowerShell: Unregister-ScheduledTask -TaskName '{TASK_NAME}' -Confirm:$false \
-                 ({error:#})"
-            )),
-        }
+    // Only the task that starts this install's allotd; one for another allotd is not ours to remove.
+    if task::find(TASK_NAME).starts(&allotd_exe(paths)) {
+        delete_task(TASK_NAME, &mut done, &mut manual);
     }
 
     for line in &done {
         println!("{line}");
     }
     manual
+}
+
+/// Removes what Claude Code and Task Scheduler have of the install from before the rename,
+/// where it runs the old binaries: the MCP server, the hooks, the CLAUDE.md import and its
+/// rule file, and the logon task. Prints what it removed and returns what is left to undo by
+/// hand, for [`print_manual_steps`].
+pub fn unregister_legacy(paths: &Paths) -> Vec<String> {
+    let mut done = Vec::new();
+    let mut manual = Vec::new();
+    let bin = legacy::bin_dir(paths);
+
+    let path = claude_json(paths);
+    let old_mcp = bin.join(legacy::MCP_EXE);
+    if let Some(Some(config)) = read_json(&path)
+        && config["mcpServers"][legacy::MCP_NAME]["command"]
+            .as_str()
+            .is_some_and(|command| same_path(command, &old_mcp))
+    {
+        let removed = match mcp::remove(legacy::MCP_NAME) {
+            Ok(true) => Ok(true),
+            Ok(false) => read_text(&path).and_then(|text| {
+                let text = text.unwrap_or_default();
+                match claude_json::remove_server(&text, legacy::MCP_NAME)? {
+                    Some(new) => rewrite(&path, Some(&text), &new).map(|_| true),
+                    None => Ok(false),
+                }
+            }),
+            Err(error) => Err(error),
+        };
+        match removed {
+            Ok(true) => done.push(format!("removed the MCP server \"{}\"", legacy::MCP_NAME)),
+            Ok(false) => {}
+            Err(error) => manual.push(format!(
+                "claude mcp remove --scope user {} ({error:#})",
+                legacy::MCP_NAME
+            )),
+        }
+    }
+
+    let path = settings_json(paths);
+    let old_cli = bin.join(legacy::CLI_EXE);
+    let removed = read_text(&path).and_then(|text| {
+        let Some(text) = text else {
+            return Ok(false);
+        };
+        let Some(new) = settings::remove_hooks(&text, &old_cli)? else {
+            return Ok(false);
+        };
+        rewrite(&path, Some(&text), &new).map(|_| true)
+    });
+    match removed {
+        Ok(true) => done.push(format!(
+            "removed the hooks that ran {} from {}",
+            old_cli.display(),
+            path.display()
+        )),
+        Ok(false) => {}
+        Err(error) => manual.push(format!(
+            "Remove the hook entries that run {} from {} ({error:#})",
+            old_cli.display(),
+            path.display()
+        )),
+    }
+
+    let path = claude_md(paths);
+    let removed = read_text(&path).and_then(|text| {
+        let Some(text) = text else {
+            return Ok(false);
+        };
+        match claude_md::remove_old_import(&text) {
+            Some(new) => rewrite(&path, Some(&text), &new).map(|_| true),
+            None => Ok(false),
+        }
+    });
+    match removed {
+        Ok(true) => done.push(format!(
+            "removed the line @{} from {}",
+            legacy::RULE_FILE,
+            path.display()
+        )),
+        Ok(false) => {}
+        Err(error) => manual.push(format!(
+            "Remove the line @{} from {} ({error:#})",
+            legacy::RULE_FILE,
+            path.display()
+        )),
+    }
+    let rule = claude_dir(paths).join(legacy::RULE_FILE);
+    match fs::remove_file(&rule) {
+        Ok(()) => done.push(format!("removed {}", rule.display())),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+        Err(error) => manual.push(format!("Delete {} ({error})", rule.display())),
+    }
+
+    if task::find(legacy::TASK_NAME).starts(&bin.join(legacy::DAEMON_EXE)) {
+        delete_task(legacy::TASK_NAME, &mut done, &mut manual);
+    }
+
+    for line in &done {
+        println!("{line}");
+    }
+    manual
+}
+
+fn delete_task(name: &str, done: &mut Vec<String>, manual: &mut Vec<String>) {
+    match task::delete(name) {
+        Ok(()) => done.push(format!("removed the scheduled task \"{name}\"")),
+        Err(error) => manual.push(format!(
+            "In PowerShell: Unregister-ScheduledTask -TaskName '{name}' -Confirm:$false \
+             ({error:#})"
+        )),
+    }
 }
 
 /// Prints the steps [`unregister`] left to do by hand, if any.
@@ -553,12 +664,12 @@ fn read_json(path: &Path) -> Option<Option<Value>> {
 }
 
 /// Replaces the file at `path`, whose text was `old` (`None` when it did not exist), with `new`.
-/// The old file is kept as `<name>.rh-backup`, whose path is returned. The new text goes to a
+/// The old file is kept as `<name>.allot-backup`, whose path is returned. The new text goes to a
 /// temporary file first, so a failed write leaves the old file whole.
 fn rewrite(path: &Path, old: Option<&str>, new: &str) -> anyhow::Result<Option<PathBuf>> {
     let backup = match old {
         Some(_) => {
-            let backup = sibling(path, "rh-backup");
+            let backup = sibling(path, "allot-backup");
             fs::copy(path, &backup).with_context(|| format!("backing up {}", path.display()))?;
             Some(backup)
         }
@@ -567,7 +678,7 @@ fn rewrite(path: &Path, old: Option<&str>, new: &str) -> anyhow::Result<Option<P
     if let Some(dir) = path.parent() {
         fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
     }
-    let temporary = sibling(path, "rh-new");
+    let temporary = sibling(path, "allot-new");
     fs::write(&temporary, new).with_context(|| format!("writing {}", temporary.display()))?;
     fs::rename(&temporary, path).with_context(|| format!("replacing {}", path.display()))?;
     Ok(backup)
@@ -613,11 +724,11 @@ fn hook_registered(settings: &Value, event: &str, args: [&str; 2], exe: &Path) -
         .iter()
         .filter_map(|entry| entry["hooks"].as_array())
         .flatten()
-        .any(|hook| is_rh_hook(hook, exe, args))
+        .any(|hook| is_allot_hook(hook, exe, args))
 }
 
 /// Whether one hook of an entry runs `exe` with `args`.
-fn is_rh_hook(hook: &Value, exe: &Path, args: [&str; 2]) -> bool {
+fn is_allot_hook(hook: &Value, exe: &Path, args: [&str; 2]) -> bool {
     hook["command"]
         .as_str()
         .is_some_and(|command| same_path(command, exe))
@@ -634,20 +745,20 @@ fn same_path(text: &str, path: &Path) -> bool {
 
 /// The hook command with forward slashes, the form Claude Code's settings examples use.
 fn hook_command(paths: &Paths) -> String {
-    rh_exe(paths).to_string_lossy().replace('\\', "/")
+    allot_exe(paths).to_string_lossy().replace('\\', "/")
 }
 
 /// PowerShell that registers the logon task for the current user. Task Scheduler's defaults
-/// would stop rhd after 72 hours and refuse to start it on battery.
+/// would stop allotd after 72 hours and refuse to start it on battery.
 fn register_task_script(paths: &Paths) -> String {
-    let exe = rhd_exe(paths).to_string_lossy().replace('\'', "''");
+    let exe = allotd_exe(paths).to_string_lossy().replace('\'', "''");
     format!(
         "$action = New-ScheduledTaskAction -Execute '{exe}'\n\
          $trigger = New-ScheduledTaskTrigger -AtLogOn -User \"$env:USERDOMAIN\\$env:USERNAME\"\n\
          $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) \
          -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -MultipleInstances IgnoreNew\n\
          Register-ScheduledTask -TaskName '{TASK_NAME}' -Action $action -Trigger $trigger \
-         -Settings $settings -Description 'Starts the resources-helper daemon (rhd) at logon'"
+         -Settings $settings -Description 'Starts the allot daemon (allotd) at logon'"
     )
 }
 
@@ -665,34 +776,37 @@ mod tests {
     fn test_mcp_registered_matches_path_without_case_or_separator() {
         let config = json!({
             "mcpServers": {
-                "resources-helper": {
+                "allot": {
                     "type": "stdio",
-                    "command": "c:/users/SOMEONE/.resources-helper/bin/rh-mcp.exe",
+                    "command": "c:/users/SOMEONE/.allot/bin/allot-mcp.exe",
                     "args": [],
                 },
             },
         });
-        assert!(mcp_registered(&config, &rh_mcp_exe(&paths())));
+        assert!(mcp_registered(&config, &allot_mcp_exe(&paths())));
     }
 
     #[test]
     fn test_mcp_registered_other_path_or_project_scope_is_missing() {
         let elsewhere = json!({
-            "mcpServers": { "resources-helper": { "command": "E:/target/debug/rh-mcp.exe" } },
+            "mcpServers": { "allot": { "command": "E:/target/debug/allot-mcp.exe" } },
         });
         let project_only = json!({
             "projects": {
                 "E:/repo": {
                     "mcpServers": {
-                        "resources-helper": {
-                            "command": r"C:\Users\someone\.resources-helper\bin\rh-mcp.exe",
+                        "allot": {
+                            "command": r"C:\Users\someone\.allot\bin\allot-mcp.exe",
                         },
                     },
                 },
             },
         });
         for config in [elsewhere, project_only, json!({})] {
-            assert!(!mcp_registered(&config, &rh_mcp_exe(&paths())), "{config}");
+            assert!(
+                !mcp_registered(&config, &allot_mcp_exe(&paths())),
+                "{config}"
+            );
         }
     }
 
@@ -713,14 +827,14 @@ mod tests {
                 ],
             },
         });
-        let exe = rh_exe(&paths());
+        let exe = allot_exe(&paths());
         assert!(hook_registered(&settings, "PreToolUse", PRE_TOOL, &exe));
         assert!(!hook_registered(&settings, "PostToolUse", POST_TOOL, &exe));
     }
 
     #[test]
     fn test_hook_registered_needs_the_args_under_their_event() {
-        let exe = rh_exe(&paths());
+        let exe = allot_exe(&paths());
         let settings = json!({
             "hooks": {
                 "PreToolUse": [{
@@ -744,10 +858,7 @@ mod tests {
     fn test_hook_entry_uses_forward_slashes_and_exec_form() {
         let entry = entry(POST_TOOL);
         let hook = &entry["hooks"][0];
-        assert_eq!(
-            hook["command"],
-            "C:/Users/someone/.resources-helper/bin/rh.exe"
-        );
+        assert_eq!(hook["command"], "C:/Users/someone/.allot/bin/allot.exe");
         assert_eq!(hook["args"], json!(["hook", "post-tool"]));
         assert_eq!(entry["matcher"], "Bash|PowerShell");
     }
@@ -770,7 +881,7 @@ mod tests {
 
     #[test]
     fn test_missing_hooks_of_a_missing_file_is_every_hook() {
-        let exe = rh_exe(&paths());
+        let exe = allot_exe(&paths());
         assert_eq!(missing_hooks(None, &exe).unwrap(), HOOKS);
         assert_eq!(missing_hooks(Some(""), &exe).unwrap(), HOOKS);
         assert!(missing_hooks(Some("{"), &exe).is_err());
@@ -779,7 +890,7 @@ mod tests {
     #[test]
     fn test_register_task_script_disables_the_time_limit_and_quotes_the_path() {
         let script = register_task_script(&Paths::under(r"C:\Users\o'brien"));
-        assert!(script.contains(r"-Execute 'C:\Users\o''brien\.resources-helper\bin\rhd.exe'"));
+        assert!(script.contains(r"-Execute 'C:\Users\o''brien\.allot\bin\allotd.exe'"));
         assert!(script.contains("-ExecutionTimeLimit ([TimeSpan]::Zero)"));
         assert!(script.contains("-AtLogOn -User \"$env:USERDOMAIN\\$env:USERNAME\""));
         assert_eq!(script.lines().count(), 4);

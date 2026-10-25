@@ -1,6 +1,6 @@
 [package]
-name = "rh-shared"
-description = "Protocol, config, and path types shared by the resources-helper crates"
+name = "allot-shared"
+description = "Protocol, config, and path types shared by the Allot crates"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

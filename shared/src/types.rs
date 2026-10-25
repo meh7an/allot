@@ -339,7 +339,7 @@ impl LeaseState {
 /// Why a lease ended.
 ///
 /// Kept apart from [`LeaseState`], whose values are fixed by the database's CHECK constraints
-/// and by older `rh-mcp` builds that reject unknown states.
+/// and by older `allot-mcp` builds that reject unknown states.
 #[cfg_attr(any(feature = "schema", test), derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -712,8 +712,8 @@ mod tests {
             lease_id: Some(LeaseId(3)),
             session: Some(SessionKey("3f2a9c1e-session".into())),
             end_cause: Some(EndCause::Killed),
-            fingerprint: r"cargo build -p rhd|e:\work\app".into(),
-            command: "cargo build -p rhd 2>&1".into(),
+            fingerprint: r"cargo build -p allotd|e:\work\app".into(),
+            command: "cargo build -p allotd 2>&1".into(),
             cwd: r"E:\work\app".into(),
             declared: profile_with(8.0, 0.0),
             peak: usage,

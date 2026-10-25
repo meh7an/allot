@@ -7,15 +7,15 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+use allot_sampler::current_ancestry;
 use anyhow::Context;
-use rh_sampler::current_ancestry;
 
 use crate::sample;
 
 const ENV_VALUE_PREFIXES: [&str; 3] = ["CLAUDE", "ANTHROPIC", "MCP"];
 const SECRET_MARKERS: [&str; 5] = ["TOKEN", "KEY", "SECRET", "PASSWORD", "AUTH"];
 
-/// Arguments for `rh probe`.
+/// Arguments for `allot probe`.
 #[derive(Debug, clap::Args)]
 pub struct ProbeArgs {
     /// File the report is appended to.
@@ -78,7 +78,7 @@ fn build_report(args: &ProbeArgs) -> anyhow::Result<String> {
         .unwrap_or_default();
 
     let mut report = String::new();
-    writeln!(report, "=== rh probe [{}] unix={unix_secs}", args.label)?;
+    writeln!(report, "=== allot probe [{}] unix={unix_secs}", args.label)?;
     writeln!(report, "cwd: {cwd}")?;
     writeln!(
         report,

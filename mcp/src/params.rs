@@ -1,6 +1,6 @@
 //! Tool parameters as Claude sends them, and their conversion to API types.
 
-use rh_shared::{
+use allot_shared::{
     api::ProfileSpec,
     types::{JobClass, JobProfile, LeaseKind},
 };
@@ -63,7 +63,7 @@ pub struct ProfileParams {
     /// Named class; omit when giving a preset or a custom profile.
     #[serde(default)]
     pub class: Option<ClassParam>,
-    /// Named preset sized between the classes, from `rh classes`: cpu_small, cpu_medium,
+    /// Named preset sized between the classes, from `allot classes`: cpu_small, cpu_medium,
     /// gpu_small, quick (ends within 15 s, may start while a benchmark drains), low_impact
     /// (at most 0.25 cores, runs beside a benchmark).
     #[serde(default)]

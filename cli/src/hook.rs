@@ -1,4 +1,4 @@
-//! `rh hook ...`: the Claude Code hooks for the Bash and PowerShell tools.
+//! `allot hook ...`: the Claude Code hooks for the Bash and PowerShell tools.
 //!
 //! `pre-tool` (PreToolUse) denies heavy commands the session holds no covering active lease
 //! for, and binds the covering lease to the tool call it lets through so a kill can find the
@@ -23,9 +23,9 @@ use std::{
     time::Duration,
 };
 
-use rh_client::{BlockingClient, ClientOptions};
-use rh_core::classifier::{Classification, Classifier, Shell, describe_rule};
-use rh_shared::{
+use allot_client::{BlockingClient, ClientOptions};
+use allot_core::classifier::{Classification, Classifier, Shell, describe_rule};
+use allot_shared::{
     api::{BindRequest, LeaseQuery},
     config::Config,
     paths::Paths,
@@ -38,7 +38,7 @@ pub use post_tool::post_tool;
 
 const CONNECT_TIMEOUT: Duration = Duration::from_millis(300);
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(1);
-const MCP_SERVER: &str = "resources-helper";
+const MCP_SERVER: &str = "allot";
 
 /// The fields of the PreToolUse payload the hook reads; the rest are ignored.
 #[derive(Debug, Deserialize)]
@@ -100,22 +100,22 @@ struct SpecificOutput<'a> {
 /// The daemon calls the hooks make, behind a trait so tests can use a fake.
 trait HookDaemon {
     /// See [`BlockingClient::leases`], for one session.
-    fn leases(&self, session: &SessionKey) -> rh_client::Result<Vec<Lease>>;
+    fn leases(&self, session: &SessionKey) -> allot_client::Result<Vec<Lease>>;
     /// See [`BlockingClient::bind`].
     fn bind(
         &self,
         id: LeaseId,
         session: &SessionKey,
         request: &BindRequest,
-    ) -> rh_client::Result<()>;
+    ) -> allot_client::Result<()>;
     /// See [`BlockingClient::notices`].
-    fn notices(&self, session: &SessionKey) -> rh_client::Result<Vec<Notice>>;
+    fn notices(&self, session: &SessionKey) -> allot_client::Result<Vec<Notice>>;
     /// See [`BlockingClient::mark_delivered`].
-    fn mark_delivered(&self, id: LeaseId, session: &SessionKey) -> rh_client::Result<bool>;
+    fn mark_delivered(&self, id: LeaseId, session: &SessionKey) -> allot_client::Result<bool>;
 }
 
 impl HookDaemon for BlockingClient {
-    fn leases(&self, session: &SessionKey) -> rh_client::Result<Vec<Lease>> {
+    fn leases(&self, session: &SessionKey) -> allot_client::Result<Vec<Lease>> {
         BlockingClient::leases(
             self,
             &LeaseQuery {
@@ -130,25 +130,25 @@ impl HookDaemon for BlockingClient {
         id: LeaseId,
         session: &SessionKey,
         request: &BindRequest,
-    ) -> rh_client::Result<()> {
+    ) -> allot_client::Result<()> {
         BlockingClient::bind(self, id, session, request)
     }
 
-    fn notices(&self, session: &SessionKey) -> rh_client::Result<Vec<Notice>> {
+    fn notices(&self, session: &SessionKey) -> allot_client::Result<Vec<Notice>> {
         BlockingClient::notices(self, session)
     }
 
-    fn mark_delivered(&self, id: LeaseId, session: &SessionKey) -> rh_client::Result<bool> {
+    fn mark_delivered(&self, id: LeaseId, session: &SessionKey) -> allot_client::Result<bool> {
         BlockingClient::mark_delivered(self, id, session)
     }
 }
 
-/// Whether the command line is `rh hook ...`, so argument errors must not exit 2.
+/// Whether the command line is `allot hook ...`, so argument errors must not exit 2.
 pub fn invoked() -> bool {
     std::env::args_os().nth(1).as_deref() == Some(OsStr::new("hook"))
 }
 
-/// Reports an argument error of `rh hook` as a warning and lets the tool call through.
+/// Reports an argument error of `allot hook` as a warning and lets the tool call through.
 pub fn argument_error(error: &clap::Error) -> ExitCode {
     let first_line = error.to_string();
     let first_line = first_line.lines().next().unwrap_or_default();
@@ -180,14 +180,14 @@ fn read_stdin() -> io::Result<String> {
     Ok(stdin)
 }
 
-fn setup() -> rh_shared::Result<(Paths, Config)> {
+fn setup() -> allot_shared::Result<(Paths, Config)> {
     let paths = Paths::from_env()?;
     let config = Config::load(&paths.config_file())?;
     Ok((paths, config))
 }
 
-/// A client with the hooks' short timeouts; it never starts rhd.
-fn connect(paths: &Paths, config: &Config) -> rh_client::Result<BlockingClient> {
+/// A client with the hooks' short timeouts; it never starts allotd.
+fn connect(paths: &Paths, config: &Config) -> allot_client::Result<BlockingClient> {
     BlockingClient::new(ClientOptions {
         connect_timeout: CONNECT_TIMEOUT,
         request_timeout: REQUEST_TIMEOUT,
@@ -208,7 +208,7 @@ fn shell(tool_name: &str) -> Option<Shell> {
 fn evaluate<D: HookDaemon>(
     stdin: &str,
     config: &Config,
-    connect: impl FnOnce() -> rh_client::Result<D>,
+    connect: impl FnOnce() -> allot_client::Result<D>,
 ) -> Outcome {
     let input: HookInput = match serde_json::from_str(stdin) {
         Ok(input) => input,
@@ -237,13 +237,13 @@ fn evaluate<D: HookDaemon>(
         Ok(found) => found,
         Err(error) if config.hook.fail_open => {
             return skipped(format_args!(
-                "rhd is unavailable, `{command}` runs unchecked: {error}"
+                "allotd is unavailable, `{command}` runs unchecked: {error}"
             ));
         }
         Err(error) => {
             return Outcome::Deny(format!(
-                "Blocked by {MCP_SERVER}: `{command}` is {} work, rhd is unavailable ({error}), \
-                 and hook.fail_open is off. Ask the user to start it with `rh daemon start`, \
+                "Blocked by {MCP_SERVER}: `{command}` is {} work, allotd is unavailable ({error}), \
+                 and hook.fail_open is off. Ask the user to start it with `allot daemon start`, \
                  then retry.",
                 class.as_str()
             ));
@@ -369,7 +369,7 @@ fn emit(outcome: &Outcome) -> ExitCode {
 
 #[cfg(test)]
 mod tests {
-    use rh_shared::types::EndCause;
+    use allot_shared::types::EndCause;
     use serde_json::Value;
 
     use super::{test_support::*, *};
@@ -382,7 +382,7 @@ mod tests {
     const READ_TOOL: &str = include_str!("../fixtures/hook/read_tool.json");
     const FIXTURE_TOOL_USE: &str = "toolu_00000000000000000000test";
 
-    fn with(leases: Vec<Lease>) -> impl FnOnce() -> rh_client::Result<FakeDaemon> {
+    fn with(leases: Vec<Lease>) -> impl FnOnce() -> allot_client::Result<FakeDaemon> {
         move || {
             Ok(FakeDaemon {
                 leases,
@@ -612,10 +612,7 @@ mod tests {
         }));
         let (told, blocked) = reason.split_once("\n\n").unwrap();
         assert!(told.contains("removed the queued request"), "{told}");
-        assert!(
-            blocked.starts_with("Blocked by resources-helper"),
-            "{blocked}"
-        );
+        assert!(blocked.starts_with("Blocked by allot"), "{blocked}");
     }
 
     #[test]
@@ -624,7 +621,7 @@ mod tests {
         let Outcome::Warn(message) = outcome else {
             panic!("expected a warning, got {outcome:?}");
         };
-        assert!(message.contains("rhd is unavailable") && message.contains("cargo build"));
+        assert!(message.contains("allotd is unavailable") && message.contains("cargo build"));
     }
 
     #[test]
@@ -632,7 +629,7 @@ mod tests {
         let mut config = Config::default();
         config.hook.fail_open = false;
         let reason = denial(evaluate(BASH_CARGO_BUILD, &config, unreachable));
-        assert!(reason.contains("rh daemon start"), "{reason}");
+        assert!(reason.contains("allot daemon start"), "{reason}");
     }
 
     #[test]
@@ -703,7 +700,7 @@ mod tests {
             READ_TOOL,
         ];
         for (seed, fixture) in (1..).zip(fixtures) {
-            for payload in rh_shared::mutate::mutations(fixture, seed, 500) {
+            for payload in allot_shared::mutate::mutations(fixture, seed, 500) {
                 assert_decides_cleanly(&payload);
             }
         }

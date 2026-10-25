@@ -14,7 +14,7 @@ use anyhow::{Context, bail};
 use super::MCP_NAME;
 
 /// Overrides the `claude` command, for an install that is not on `PATH`.
-pub(super) const CLAUDE_VAR: &str = "RH_CLAUDE";
+pub(super) const CLAUDE_VAR: &str = "ALLOT_CLAUDE";
 
 /// `claude mcp add` at user scope for `exe`; with `replace`, the entry of the same name (which
 /// runs another exe) is removed first. Returns false when `claude` cannot be found.
@@ -23,7 +23,7 @@ pub(super) const CLAUDE_VAR: &str = "RH_CLAUDE";
 ///
 /// Fails when a command fails.
 pub(super) fn add(exe: &Path, replace: bool) -> anyhow::Result<bool> {
-    if replace && !remove()? {
+    if replace && !remove(MCP_NAME)? {
         return Ok(false);
     }
     claude(&[
@@ -37,18 +37,19 @@ pub(super) fn add(exe: &Path, replace: bool) -> anyhow::Result<bool> {
     ])
 }
 
-/// `claude mcp remove` at user scope. Returns false when `claude` cannot be found.
+/// `claude mcp remove` at user scope for the server called `name`. Returns false when `claude`
+/// cannot be found.
 ///
 /// # Errors
 ///
 /// Fails when the command fails.
-pub(super) fn remove() -> anyhow::Result<bool> {
+pub(super) fn remove(name: &str) -> anyhow::Result<bool> {
     claude(&[
         "mcp".as_ref(),
         "remove".as_ref(),
         "--scope".as_ref(),
         "user".as_ref(),
-        MCP_NAME.as_ref(),
+        name.as_ref(),
     ])
 }
 

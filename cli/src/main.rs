@@ -7,6 +7,7 @@ mod daemon;
 mod history;
 mod hook;
 mod install;
+mod legacy;
 mod probe;
 mod registration;
 mod sample;
@@ -24,7 +25,7 @@ struct Args {
 
 #[derive(Debug, Subcommand)]
 enum Command {
-    /// Show machine usage, sessions, and their leases. Starts rhd when it is not running.
+    /// Show machine usage, sessions, and their leases. Starts allotd when it is not running.
     Status,
     /// List active and queued leases.
     Leases {
@@ -35,20 +36,20 @@ enum Command {
     /// Stop an active lease's command and its process tree, whichever session holds it. The
     /// session is told the user stopped it.
     Kill {
-        /// The lease ID, as `rh leases` prints it.
+        /// The lease ID, as `allot leases` prints it.
         id: i64,
     },
     /// Remove a queued lease before it starts, whichever session asked for it. The session
     /// does not run the command.
     Remove {
-        /// The lease ID, as `rh leases` prints it.
+        /// The lease ID, as `allot leases` prints it.
         id: i64,
     },
     /// Print the heavy-command rules and class profiles in effect, as Markdown.
     Classes,
     /// Show past jobs and what they needed, or the runs of one job.
     History {
-        /// A fingerprint as `rh history` prints it (quote it: it contains `|`), to list that
+        /// A fingerprint as `allot history` prints it (quote it: it contains `|`), to list that
         /// job's runs.
         fingerprint: Option<String>,
         /// Most runs to list (default 20).
@@ -63,12 +64,12 @@ enum Command {
     /// Record this process's ancestry, environment, and optionally stdin to a file, or print
     /// live machine samples with `--sample`.
     Probe(probe::ProbeArgs),
-    /// Copy the built binaries into %USERPROFILE%\.resources-helper\bin, restart rhd on them
+    /// Copy the built binaries into %USERPROFILE%\.allot\bin, restart allotd on them
     /// when it runs, install and start the tray app, copy the resource-guard skill, register
     /// the MCP server, hooks, and CLAUDE.md rule with Claude Code, register the logon task,
     /// and print what is left.
     Install {
-        /// Directory holding the built rh.exe, rhd.exe, and rh-mcp.exe (default: this
+        /// Directory holding the built allot.exe, allotd.exe, and allot-mcp.exe (default: this
         /// executable's directory, such as target\release).
         #[arg(long, value_name = "DIR")]
         from: Option<PathBuf>,
@@ -83,11 +84,11 @@ enum Command {
         /// Leave Claude Code alone: no skill, MCP server, hooks, or CLAUDE.md rule.
         #[arg(long)]
         no_claude: bool,
-        /// Do not register the scheduled task that starts rhd at logon.
+        /// Do not register the scheduled task that starts allotd at logon.
         #[arg(long)]
         no_logon_task: bool,
     },
-    /// Quit and remove the tray app, stop rhd, remove the binaries and the skill copy,
+    /// Quit and remove the tray app, stop allotd, remove the binaries and the skill copy,
     /// unregister them from Claude Code, and print what is left. Keeps the database, token,
     /// config, settings, and logs.
     Uninstall {
@@ -120,11 +121,11 @@ enum Switch {
 
 #[derive(Debug, Subcommand)]
 enum DaemonAction {
-    /// Start rhd in the background unless it is already running.
+    /// Start allotd in the background unless it is already running.
     Start,
-    /// Ask rhd to shut down and wait until it has.
+    /// Ask allotd to shut down and wait until it has.
     Stop,
-    /// Report whether rhd is running, without starting it.
+    /// Report whether allotd is running, without starting it.
     Status,
 }
 

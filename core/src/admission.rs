@@ -6,7 +6,7 @@
 
 use std::collections::HashSet;
 
-use rh_shared::types::{GpuAdapter, JobProfile, Lease, ResourceUsage, Snapshot};
+use allot_shared::types::{GpuAdapter, JobProfile, Lease, ResourceUsage, Snapshot};
 
 // Tolerance for float sums of reservations, so 8.0 cores fit in 8.0 cores of room.
 const EPSILON: f64 = 1e-6;

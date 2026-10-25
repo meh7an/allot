@@ -1,14 +1,14 @@
-// No console window when the logon task starts rhd. Output goes to rhd.log, not the console.
+// No console window when the logon task starts allotd. Output goes to allotd.log, not the console.
 #![cfg_attr(windows, windows_subsystem = "windows")]
 
 use std::{fs, net::Ipv4Addr, time::Duration};
 
+use allot_core::sampler::Sampler;
+use allot_sampler::SystemSampler;
+use allot_shared::{config::Config, paths::Paths};
+use allotd::{DaemonOptions, Maintenance, db, startup};
 use anyhow::Context;
 use clap::Parser;
-use rh_core::sampler::Sampler;
-use rh_sampler::SystemSampler;
-use rh_shared::{config::Config, paths::Paths};
-use rhd::{DaemonOptions, Maintenance, db, startup};
 use tokio::net::TcpListener;
 
 /// Resource coordinator daemon: samples system usage and arbitrates heavy-job leases.
@@ -25,7 +25,7 @@ async fn main() -> anyhow::Result<()> {
     let _lock = startup::InstanceLock::acquire(&paths.lock_file())?;
     startup::init_logging(&paths.log_dir())?;
 
-    // A detached rhd has no console, so the log is the only place a failure shows up.
+    // A detached allotd has no console, so the log is the only place a failure shows up.
     let result = run(&paths).await;
     if let Err(error) = &result {
         tracing::error!("daemon failed: {error:#}");
@@ -56,7 +56,7 @@ async fn run(paths: &Paths) -> anyhow::Result<()> {
         sample_interval: Duration::from_secs(1),
         maintenance: Maintenance::standard(config_file),
     };
-    rhd::serve(listener, options, shutdown_signal()).await
+    allotd::serve(listener, options, shutdown_signal()).await
 }
 
 async fn shutdown_signal() {

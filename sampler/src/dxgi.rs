@@ -1,6 +1,6 @@
 //! Adapter names and VRAM sizes, which PDH does not expose.
 
-use rh_shared::{Error, Result};
+use allot_shared::{Error, Result};
 use windows::Win32::Graphics::Dxgi::{
     CreateDXGIFactory1, DXGI_ADAPTER_FLAG_SOFTWARE, DXGI_ERROR_NOT_FOUND, IDXGIFactory1,
 };

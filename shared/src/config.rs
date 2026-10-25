@@ -695,7 +695,8 @@ mod tests {
 
     #[test]
     fn test_config_load_invalid_file_names_the_file_and_the_key() {
-        let path = env::temp_dir().join(format!("rh-shared-test-bad-{}.toml", std::process::id()));
+        let path =
+            env::temp_dir().join(format!("allot-shared-test-bad-{}.toml", std::process::id()));
         fs::write(&path, "[leases]\nheartbeat_ttl_secs = 0\n").unwrap();
         let loaded = Config::load(&path);
         fs::remove_file(&path).unwrap();
@@ -751,14 +752,14 @@ mod tests {
     #[test]
     fn test_config_load_missing_file_yields_defaults() {
         let path = env::temp_dir()
-            .join("rh-shared-test-missing")
+            .join("allot-shared-test-missing")
             .join("config.toml");
         assert_eq!(Config::load(&path).unwrap(), Config::default());
     }
 
     #[test]
     fn test_config_load_existing_file_parses_it() {
-        let path = env::temp_dir().join(format!("rh-shared-test-{}.toml", std::process::id()));
+        let path = env::temp_dir().join(format!("allot-shared-test-{}.toml", std::process::id()));
         fs::write(&path, "[hook]\nfail_open = false\n").unwrap();
         let loaded = Config::load(&path);
         fs::remove_file(&path).unwrap();

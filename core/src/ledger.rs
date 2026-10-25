@@ -13,7 +13,7 @@
 //! never counts toward its drain. A quick one ([`JobProfile::is_quick`]) may start while a
 //! waiting benchmark still drains longer leases, so it ends before the drain does.
 
-use rh_shared::{
+use allot_shared::{
     api::{BenchmarkProgress, Verdict},
     config::Config,
     types::{
@@ -824,7 +824,7 @@ fn is_long(kind: LeaseKind, profile: &JobProfile) -> bool {
 mod tests {
     use std::collections::HashSet;
 
-    use rh_shared::types::{BoundProcess, LeaseBinding};
+    use allot_shared::types::{BoundProcess, LeaseBinding};
 
     use super::*;
     use crate::test_support::{holder, profile, queued_lease, session_usage, snapshot};

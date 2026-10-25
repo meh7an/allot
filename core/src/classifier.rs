@@ -6,7 +6,7 @@
 //! `time`, `env`, `npx`, `uv run`, ...), nested shells (`bash -c`, `cmd /c`, `pwsh -Command`)
 //! are classified recursively, and the result is matched against the configured rules.
 
-use rh_shared::{
+use allot_shared::{
     config::{ClassifierConfig, HeavyRule},
     types::JobClass,
 };
@@ -439,14 +439,14 @@ mod tests {
     const BASH_CASES: &[(&str, Option<JobClass>)] = &[
         ("cargo build", CPU),
         ("cargo build --release", CPU),
-        ("cargo +nightly test -p rh-core", CPU),
+        ("cargo +nightly test -p allot-core", CPU),
         ("cd core && cargo test", CPU),
         ("cargo check", LIGHT),
         ("cargo clippy --all-targets -- -D warnings", LIGHT),
         ("cargo fmt --check", LIGHT),
         ("cargo build --help", LIGHT),
         ("cargo --version", LIGHT),
-        ("RUST_LOG=debug cargo run --bin rhd", CPU),
+        ("RUST_LOG=debug cargo run --bin allotd", CPU),
         ("FOO=1 BAR=2 cargo bench", CPU),
         ("env RUSTFLAGS=-Ctarget-cpu=native cargo build", CPU),
         ("time cargo test 2>&1 | tail -5", CPU),

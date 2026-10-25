@@ -3,7 +3,7 @@
 
 use std::collections::HashMap;
 
-use rh_shared::types::Holder;
+use allot_shared::types::Holder;
 
 use crate::{ancestry::ProcessNode, ledger::ProcessLiveness, sampler::RawProcess};
 
@@ -78,7 +78,7 @@ impl ProcessLiveness for ProcessTable {
 
 #[cfg(test)]
 mod tests {
-    use rh_shared::types::{ResourceUsage, SessionKey};
+    use allot_shared::types::{ResourceUsage, SessionKey};
 
     use super::*;
 

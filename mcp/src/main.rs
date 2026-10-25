@@ -1,4 +1,4 @@
-//! `rh-mcp`: the stdio MCP server one Claude session talks to. It acts for its parent
+//! `allot-mcp`: the stdio MCP server one Claude session talks to. It acts for its parent
 //! `claude.exe`, keeps the leases it acquires alive, and releases them when stdin closes.
 //! Diagnostics go to stderr; stdout carries the protocol.
 
@@ -13,14 +13,14 @@ mod test_support;
 
 use std::{sync::Arc, time::Duration};
 
+use allot_client::Client;
+use allot_shared::{config::Config, paths::Paths};
 use clap::Parser;
-use rh_client::Client;
-use rh_shared::{config::Config, paths::Paths};
 use rmcp::{ServiceExt, transport::stdio};
 
 use crate::{
     held::{HeldLeases, heartbeat_loop, release_all},
-    server::RhServer,
+    server::AllotServer,
 };
 
 /// Stdio MCP server exposing system snapshots and heavy-job leases to one Claude session.
@@ -36,7 +36,7 @@ async fn main() -> anyhow::Result<()> {
     let client = Arc::new(Client::discover(true)?);
     let held = Arc::new(HeldLeases::default());
 
-    // Registration may start rhd, which takes seconds; the session must not wait for it.
+    // Registration may start allotd, which takes seconds; the session must not wait for it.
     let registering = {
         let (client, holder) = (client.clone(), holder.clone());
         tokio::spawn(async move { daemon::register(&*client, &holder).await })
@@ -51,7 +51,7 @@ async fn main() -> anyhow::Result<()> {
     let cwd = std::env::current_dir()
         .map(|dir| dir.display().to_string())
         .unwrap_or_default();
-    let server = RhServer::new(client.clone(), holder.clone(), held.clone(), cwd);
+    let server = AllotServer::new(client.clone(), holder.clone(), held.clone(), cwd);
     let outcome = match server.serve(stdio()).await {
         Ok(service) => service
             .waiting()

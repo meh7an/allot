@@ -1,6 +1,6 @@
 [package]
-name = "rh-sampler"
-description = "Windows CPU, RAM, GPU, and VRAM sampling for resources-helper"
+name = "allot-sampler"
+description = "Windows CPU, RAM, GPU, and VRAM sampling for Allot"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -13,7 +13,7 @@ categories.workspace = true
 publish.workspace = true
 
 [dependencies]
-rh-core = { version = "0.2.0", path = "../core" }
-rh-shared = { version = "0.2.0", path = "../shared" }
+allot-core = { version = "0.2.0", path = "../core" }
+allot-shared = { version = "0.2.0", path = "../shared" }
 sysinfo = { version = "0.39.6", default-features = false, features = ["system"] }
 windows = { version = "0.62.2", features = ["Win32_Foundation", "Win32_System_Performance", "Win32_Graphics_Dxgi", "Win32_Storage_FileSystem", "Win32_System_Threading"] }

@@ -36,11 +36,11 @@ jobs:
         shell: pwsh
         run: |
           $metadata = cargo metadata --no-deps --format-version 1 | ConvertFrom-Json
-          $version = ($metadata.packages | Where-Object name -eq 'rh').version
+          $version = ($metadata.packages | Where-Object name -eq 'allot').version
           if ("v$version" -ne $env:GITHUB_REF_NAME) {
             throw "tag $env:GITHUB_REF_NAME does not match the workspace version $version"
           }
-          $tray = (Select-Xml -Path tray/src/ResourcesHelper.Tray/ResourcesHelper.Tray.csproj `
+          $tray = (Select-Xml -Path tray/src/Allot.Tray/Allot.Tray.csproj `
             -XPath '//Version').Node.InnerText
           if ($tray -ne $version) {
             throw "the tray app's version $tray does not match the workspace version $version"
@@ -57,23 +57,23 @@ jobs:
         working-directory: tray
         run: |
           $env:PATH = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer;$env:PATH"
-          dotnet publish src/ResourcesHelper.Tray/ResourcesHelper.Tray.csproj -c Release `
+          dotnet publish src/Allot.Tray/Allot.Tray.csproj -c Release `
             -o ../tray-publish
         env:
           DOTNET_NOLOGO: "1"
           DOTNET_CLI_TELEMETRY_OPTOUT: "1"
 
-      # `rh.exe install` takes the tray app from the tray folder beside it.
+      # `allot.exe install` takes the tray app from the tray folder beside it.
       - name: Package
         shell: pwsh
         run: |
-          $name = "resources-helper-$env:VERSION-x86_64-pc-windows-msvc"
+          $name = "allot-$env:VERSION-x86_64-pc-windows-msvc"
           New-Item -ItemType Directory $name | Out-Null
-          Copy-Item target/release/rh.exe, target/release/rhd.exe, target/release/rh-mcp.exe,
+          Copy-Item target/release/allot.exe, target/release/allotd.exe, target/release/allot-mcp.exe,
             README.md, CHANGELOG.md, LICENSE-MIT, LICENSE-APACHE -Destination $name
           Copy-Item tray-publish -Destination "$name/tray" -Recurse
           Get-ChildItem "$name/tray" -Recurse -Filter *.pdb | Remove-Item
-          if (-not (Test-Path "$name/tray/rh-tray.exe")) { throw "the package has no tray app" }
+          if (-not (Test-Path "$name/tray/allot-tray.exe")) { throw "the package has no tray app" }
           Compress-Archive -Path $name -DestinationPath "$name.zip"
           $hash = (Get-FileHash "$name.zip" -Algorithm SHA256).Hash.ToLower()
           "$hash  $name.zip" | Set-Content -NoNewline "$name.zip.sha256"
@@ -99,9 +99,9 @@ jobs:
         shell: pwsh
         run: |
           & "$env:LOCALAPPDATA\Programs\Inno Setup 7\ISCC.exe" /Qp "/DAppVersion=$env:VERSION" `
-            "/DPayload=$PWD\$env:ASSET" "/O$PWD" installer\resources-helper.iss
+            "/DPayload=$PWD\$env:ASSET" "/O$PWD" installer\allot.iss
           if ($LASTEXITCODE -ne 0) { throw "ISCC exited with $LASTEXITCODE" }
-          $setup = "resources-helper-$env:VERSION-setup.exe"
+          $setup = "allot-$env:VERSION-setup.exe"
           $hash = (Get-FileHash $setup -Algorithm SHA256).Hash.ToLower()
           "$hash  $setup" | Set-Content -NoNewline "$setup.sha256"
           "SETUP=$setup" >> $env:GITHUB_ENV

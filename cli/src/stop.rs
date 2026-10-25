@@ -1,7 +1,7 @@
-//! `rh kill` and `rh remove`: the flyout's Kill and Remove, from a terminal.
+//! `allot kill` and `allot remove`: the flyout's Kill and Remove, from a terminal.
 
-use rh_client::BlockingClient;
-use rh_shared::{
+use allot_client::BlockingClient;
+use allot_shared::{
     api::{KillResponse, KilledProcess, RemoveResponse, UnkilledProcess},
     types::LeaseId,
 };
@@ -11,7 +11,7 @@ use rh_shared::{
 ///
 /// # Errors
 ///
-/// Fails when rhd cannot be reached, the lease is not active, or the kill is refused.
+/// Fails when allotd cannot be reached, the lease is not active, or the kill is refused.
 pub fn kill(id: i64) -> anyhow::Result<()> {
     let client = BlockingClient::discover(true)?;
     let response = client.kill(LeaseId(id))?;
@@ -24,7 +24,7 @@ pub fn kill(id: i64) -> anyhow::Result<()> {
 ///
 /// # Errors
 ///
-/// Fails when rhd cannot be reached or the lease is not queued.
+/// Fails when allotd cannot be reached or the lease is not queued.
 pub fn remove(id: i64) -> anyhow::Result<()> {
     let client = BlockingClient::discover(true)?;
     let response = client.remove(LeaseId(id))?;
@@ -69,7 +69,7 @@ fn unkilled(process: &UnkilledProcess) -> String {
 
 #[cfg(test)]
 mod tests {
-    use rh_shared::types::{
+    use allot_shared::types::{
         EndCause, Holder, JobProfile, Lease, LeaseKind, LeaseState, SessionKey,
     };
 

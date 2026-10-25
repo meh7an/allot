@@ -6,7 +6,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use rh_shared::{Result, types::DriveUsage};
+use allot_shared::{Result, types::DriveUsage};
 use windows::{
     Win32::Storage::FileSystem::{GetDiskFreeSpaceExW, GetDriveTypeW, GetLogicalDrives},
     core::HSTRING,
@@ -183,7 +183,7 @@ fn usage(
 mod tests {
     use std::{fs, io::Write, process, thread};
 
-    use rh_core::sampler::Sampler;
+    use allot_core::sampler::Sampler;
 
     use super::*;
     use crate::SystemSampler;
@@ -284,7 +284,7 @@ mod tests {
     fn test_system_sampler_reads_write_activity_during_a_file_write() {
         let dir = std::env::temp_dir();
         let drive = drive_name(&dir.display().to_string()[..2]).expect("temp dir on a drive");
-        let path = dir.join(format!("rh-sampler-io-{}.bin", process::id()));
+        let path = dir.join(format!("allot-sampler-io-{}.bin", process::id()));
 
         let mut sampler = SystemSampler::new().unwrap();
         let mut file = fs::File::create(&path).unwrap();
