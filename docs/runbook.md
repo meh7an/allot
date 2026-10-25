@@ -13,17 +13,43 @@ drive. `rh` means `bin\rh.exe`.
 | `Get-ScheduledTask resources-helper` | State `Ready` (rhd already started) or `Running` |
 | `Get-ScheduledTaskInfo resources-helper` | `LastTaskResult` 267009 (still running). 1 means rhd exited at once: usually another rhd was already running, which is not logged (it fails before logging starts, so two daemons never share the log); other startup errors are in `logs\rhd.log`. |
 | `logs\rhd.log` | A startup line, then lease grants and releases |
+| The tray icon | A meter-mark icon in the notification area (it may sit in the overflow); its tooltip summarizes the jobs. While rhd is down it shows the down icon, and the flyout a "Service stopped" banner with Start service. |
+| `Get-ItemProperty HKCU:\Software\Microsoft\Windows\CurrentVersion\Run -Name 'Resources Helper'` | The quoted path of `bin\tray\rh-tray.exe`, while Launch at logon is on |
+| `logs\tray.log` | A `started` line per launch, then the flyout and tray events |
 
 `rhd.exe` is a windowless program: run from a terminal it prints nothing, not even
 `--help`. Use `rh daemon status` for its version and `logs\rhd.log` for its errors.
 
 ## Who starts rhd
 
-- The logon task `resources-helper` starts it when you log on.
+- The logon task `resources-helper`, which the install registers, starts it when you log on.
 - `rh-mcp` (on a tool call or a heartbeat) and `rh status` start it when it is down, using
   the `rhd.exe` beside their own executable.
 - The hook never starts it, so a heavy command never waits on a daemon start.
-- `rh daemon start` starts it by hand; `rh daemon stop` stops it gracefully.
+- `rh daemon start` starts it by hand; `rh daemon stop` stops it gracefully. The tray app's
+  Start service and Stop service do the same.
+
+The tray app itself starts at logon from the Run key value `Resources Helper` (Launch at
+logon in its tray menu, or Startup apps in Task Manager). `rh install` turns it on the first
+time it installs the tray app and leaves it as you set it afterwards. Launching
+`bin\tray\rh-tray.exe` while it runs opens the flyout; `rh-tray.exe --quit` asks the running
+app to quit.
+
+## Stopping a job
+
+Kill (in the flyout, or `rh kill <id>`) works on an active lease, whichever session holds it:
+
+1. rhd looks up the process tree the lease is bound to: the first new child of the session's
+   `claude.exe` after the hook reported the command.
+2. It refuses, and the lease stays, when that root is protected (Claude Code and its
+   ancestors, `rhd`, `rh`, `rh-mcp`) or started before the command was reported.
+3. Otherwise the lease ends as killed, and the tree is ended root first. When nothing is bound
+   or the root has already exited, the lease still ends and nothing is terminated; the
+   response says so.
+
+Remove (`rh remove <id>`) ends a queued lease before it starts. Either way the session gets a
+notice through its next hook call or MCP tool result, and Claude tells you and asks whether to
+retry or skip. The notice is delivered once.
 
 Only one rhd runs per user: a second one finds `rhd.lock` taken and exits. Stopping rhd while
 sessions are open is temporary: a session holding a lease starts it again on its next
@@ -57,6 +83,16 @@ broken `rh.exe` cannot block every shell call.
 | A lease stays queued | `rh leases` shows what is ahead. A `benchmark_exclusive` lease drains the machine and then waits up to `benchmark.max_quiet_wait_secs` for quiet. Leases of sessions that ended expire within a second (holder process gone) or after the heartbeat TTL (60 s). |
 | `rh install` lists files "still in use" | Old binaries that running sessions or rhd still hold. They are harmless and are deleted by the next install once nothing uses them. |
 | Copying a build over `bin\rh-mcp.exe` fails | Running sessions hold it open. Use `rh install`, which renames the old file aside first. |
+| No tray icon after `rh install` | The install prints why. "exited at once" means another copy of the tray app holds its single-instance place, such as a development build: quit it from its tray menu, then start `bin\tray\rh-tray.exe`. Otherwise read `logs\tray.log`. |
+| The flyout says "Service needs an update · run rh install" | rhd is older than the tray app. Run `rh install` from the same release. |
+| The tray app does not start at logon | Launch at logon is off in its tray menu, or disabled in Task Manager's Startup apps. Turning it on in the tray menu clears Task Manager's mark. |
+| Kill shows a red refusal | The bound process is protected or older than the command (see Stopping a job). The lease keeps running; end the process yourself if you must. |
+| The setup says Resources Helper could not be installed | `%LOCALAPPDATA%\Programs\Resources Helper\install.log` holds the output of `rh install`, which names the step and the error. Running the setup again is safe. |
+| The install log says "claude was not found" for the MCP server | It wrote the entry to `~/.claude.json` itself. To have `claude mcp add` do it, set `RH_CLAUDE` to the full path of `claude.exe` (or `claude.cmd`) and run `rh install` again. |
+| `[todo] MCP server` | `claude mcp add` failed, or `~/.claude.json` could not be written; the line says why. Run the printed `claude mcp add` yourself. |
+| `[check] Hooks` | `~/.claude/settings.json` is not valid JSON or has an unexpected shape, so it was left alone. Fix the file and install again, or add the printed entries yourself. |
+| "also has its own copy of the rule" | CLAUDE.md has a copy pasted by hand and edited since, which the install does not touch. Delete that section; the import brings the current rule. Backups of edited files are beside them as `<name>.rh-backup`. |
+| `[todo] rhd at logon` | `schtasks` refused the task; the line says why, and the printed PowerShell registers it by hand. A task named `resources-helper` that starts another `rhd.exe` is replaced by the install, and never removed by the uninstall. |
 | Registering the logon task fails with "Access is denied" | Fall back to the per-user Run key, which also needs no admin: `New-ItemProperty -Path HKCU:\Software\Microsoft\Windows\CurrentVersion\Run -Name resources-helper -Value '"C:\Users\<you>\.resources-helper\bin\rhd.exe"'`. |
 | Terminal sessions see a different daemon, token, or database than desktop sessions | Something wrote under `%LOCALAPPDATA%` from inside the Claude desktop app, which MSIX redirects to `%LOCALAPPDATA%\Packages\Claude_pzs8sxrjxfjjc\LocalCache\Local\`. Only `%USERPROFILE%\.resources-helper\` is shared. Stale copies in the package folder are safe to delete. |
 
@@ -107,4 +143,5 @@ read it on their next request.
 ## Logs
 
 `logs\rhd.log` rotates to `rhd.1.log` ... `rhd.4.log` at 10 MB. `rh-mcp` writes its
-diagnostics to stderr, which Claude Code captures with its other MCP server output.
+diagnostics to stderr, which Claude Code captures with its other MCP server output. The tray
+app writes `logs\tray.log`; More options > Open logs opens the folder.

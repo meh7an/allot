@@ -197,14 +197,17 @@ public sealed class FlyoutModelTests
         var state = Handoff.State(recent: true);
         var model = Applied(state);
         var recent = model.Rows.OfType<RecentRow>().Single();
-        var properties = new List<string?>();
-        recent.PropertyChanged += (_, args) => properties.Add(args.PropertyName);
+        var lines = recent.Lines;
+        var changes = 0;
+        lines.CollectionChanged += (_, _) => changes++;
 
         model.Apply(FlyoutSnapshot.From(ServiceStatus.Running, state));
+        Assert.AreEqual(0, changes);
         var later = Handoff.NowMs + 60_000;
         model.Apply(FlyoutSnapshot.From(ServiceStatus.Running, state, nowMs: later));
 
-        Assert.AreEqual("Lines", properties.Single());
+        Assert.AreNotEqual(0, changes);
+        Assert.AreSame(lines, recent.Lines, "the bound collection itself stays");
         Assert.AreEqual("4:52 · 5 min ago", recent.Lines[0].Meta);
     }
 

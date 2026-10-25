@@ -60,3 +60,38 @@ jobs:
       # After the build, because the format check needs restored projects.
       - name: Format
         run: dotnet format ResourcesHelper.Tray.slnx --verify-no-changes --no-restore
+
+      # The release ships this Native AOT publish; its link finds the MSVC tools through
+      # vswhere, which the targets call by bare name.
+      - name: Publish
+        shell: pwsh
+        run: |
+          $env:PATH = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer;$env:PATH"
+          dotnet publish src/ResourcesHelper.Tray/ResourcesHelper.Tray.csproj -c Release -o publish
+          foreach ($file in 'rh-tray.exe', 'rh-tray.pri', 'Assets/AppIcon.ico',
+                   'Microsoft.WindowsAppRuntime.Insights.Resource.dll') {
+            if (-not (Test-Path "publish/$file")) { throw "the publish has no $file" }
+          }
+
+      # The release builds setup.exe with this script; stand-ins for the Rust binaries are
+      # enough to check that it compiles. Same pinned Inno Setup as the release.
+      - name: Installer script
+        shell: pwsh
+        run: |
+          $installer = "$env:RUNNER_TEMP\innosetup-7.1.0-x64.exe"
+          Invoke-WebRequest -OutFile $installer `
+            https://github.com/jrsoftware/issrc/releases/download/is-7_1_0/innosetup-7.1.0-x64.exe
+          $hash = (Get-FileHash $installer -Algorithm SHA256).Hash.ToLower()
+          if ($hash -ne '0362a383ed217d4c4239b5933866dd96d3eb2102737da92f80f6057a4b40df2f') {
+            throw "the Inno Setup installer has SHA-256 $hash"
+          }
+          $process = Start-Process $installer -Wait -PassThru -ArgumentList `
+            '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/CURRENTUSER', '/SP-'
+          if ($process.ExitCode -ne 0) { throw "the Inno Setup install exited with $($process.ExitCode)" }
+          $payload = "$env:RUNNER_TEMP\payload"
+          New-Item -ItemType Directory $payload | Out-Null
+          foreach ($exe in 'rh.exe', 'rhd.exe', 'rh-mcp.exe') { Set-Content "$payload\$exe" 'stand-in' }
+          Copy-Item publish -Destination "$payload\tray" -Recurse
+          & "$env:LOCALAPPDATA\Programs\Inno Setup 7\ISCC.exe" /Qp /DAppVersion=0.0.0 `
+            "/DPayload=$payload" "/O$env:RUNNER_TEMP" ..\installer\resources-helper.iss
+          if ($LASTEXITCODE -ne 0) { throw "ISCC exited with $LASTEXITCODE" }

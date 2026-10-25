@@ -24,7 +24,16 @@ jobs:
             target
           key: ${{ runner.os }}-release-${{ hashFiles('Cargo.lock') }}
 
-      - name: Check the tag matches the workspace version
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: tray/global.json
+
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('tray/**/*.csproj', 'tray/*.props') }}
+
+      - name: Check the tag matches the workspace and tray versions
         shell: pwsh
         run: |
           $metadata = cargo metadata --no-deps --format-version 1 | ConvertFrom-Json
@@ -32,11 +41,29 @@ jobs:
           if ("v$version" -ne $env:GITHUB_REF_NAME) {
             throw "tag $env:GITHUB_REF_NAME does not match the workspace version $version"
           }
+          $tray = (Select-Xml -Path tray/src/ResourcesHelper.Tray/ResourcesHelper.Tray.csproj `
+            -XPath '//Version').Node.InnerText
+          if ($tray -ne $version) {
+            throw "the tray app's version $tray does not match the workspace version $version"
+          }
           "VERSION=$version" >> $env:GITHUB_ENV
 
       - name: Build
         run: cargo build --release --locked
 
+      # Native AOT; its link finds the MSVC tools through vswhere, which the targets call by
+      # bare name.
+      - name: Publish the tray app
+        shell: pwsh
+        run: |
+          $env:PATH = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer;$env:PATH"
+          dotnet publish tray/src/ResourcesHelper.Tray/ResourcesHelper.Tray.csproj -c Release `
+            -o tray-publish
+        env:
+          DOTNET_NOLOGO: "1"
+          DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+
+      # `rh.exe install` takes the tray app from the tray folder beside it.
       - name: Package
         shell: pwsh
         run: |
@@ -44,10 +71,40 @@ jobs:
           New-Item -ItemType Directory $name | Out-Null
           Copy-Item target/release/rh.exe, target/release/rhd.exe, target/release/rh-mcp.exe,
             README.md, CHANGELOG.md, LICENSE-MIT, LICENSE-APACHE -Destination $name
+          Copy-Item tray-publish -Destination "$name/tray" -Recurse
+          Get-ChildItem "$name/tray" -Recurse -Filter *.pdb | Remove-Item
+          if (-not (Test-Path "$name/tray/rh-tray.exe")) { throw "the package has no tray app" }
           Compress-Archive -Path $name -DestinationPath "$name.zip"
           $hash = (Get-FileHash "$name.zip" -Algorithm SHA256).Hash.ToLower()
           "$hash  $name.zip" | Set-Content -NoNewline "$name.zip.sha256"
           "ASSET=$name" >> $env:GITHUB_ENV
+
+      # Inno Setup 7.1.0, pinned by the SHA-256 GitHub publishes for the release asset; the
+      # image only carries an older 6.x.
+      - name: Install Inno Setup
+        shell: pwsh
+        run: |
+          $installer = "$env:RUNNER_TEMP\innosetup-7.1.0-x64.exe"
+          Invoke-WebRequest -OutFile $installer `
+            https://github.com/jrsoftware/issrc/releases/download/is-7_1_0/innosetup-7.1.0-x64.exe
+          $hash = (Get-FileHash $installer -Algorithm SHA256).Hash.ToLower()
+          if ($hash -ne '0362a383ed217d4c4239b5933866dd96d3eb2102737da92f80f6057a4b40df2f') {
+            throw "the Inno Setup installer has SHA-256 $hash"
+          }
+          $process = Start-Process $installer -Wait -PassThru -ArgumentList `
+            '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/CURRENTUSER', '/SP-'
+          if ($process.ExitCode -ne 0) { throw "the Inno Setup install exited with $($process.ExitCode)" }
+
+      - name: Build the installer
+        shell: pwsh
+        run: |
+          & "$env:LOCALAPPDATA\Programs\Inno Setup 7\ISCC.exe" /Qp "/DAppVersion=$env:VERSION" `
+            "/DPayload=$PWD\$env:ASSET" "/O$PWD" installer\resources-helper.iss
+          if ($LASTEXITCODE -ne 0) { throw "ISCC exited with $LASTEXITCODE" }
+          $setup = "resources-helper-$env:VERSION-setup.exe"
+          $hash = (Get-FileHash $setup -Algorithm SHA256).Hash.ToLower()
+          "$hash  $setup" | Set-Content -NoNewline "$setup.sha256"
+          "SETUP=$setup" >> $env:GITHUB_ENV
 
       - name: Extract release notes
         shell: bash
@@ -64,5 +121,5 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" "$ASSET.zip" "$ASSET.zip.sha256" \
-            --title "$GITHUB_REF_NAME" --notes-file notes.md --verify-tag
+          gh release create "$GITHUB_REF_NAME" "$SETUP" "$SETUP.sha256" \
+            "$ASSET.zip" "$ASSET.zip.sha256" --title "$GITHUB_REF_NAME" --notes-file notes.md --verify-tag

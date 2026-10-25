@@ -602,14 +602,21 @@ public sealed partial class App : Application
     }
 #endif
 
-    // A second launch means the user wants to see the flyout. The event arrives on a background
-    // thread.
+    // A second launch means the user wants to see the flyout, unless rh install or uninstall
+    // asked the app to quit. The event arrives on a background thread.
     private void OnRedirectedActivation(object? sender, AppActivationArguments args)
     {
         var action = Toasts.ActionOf(args);
+        var quit = args.Kind == ExtendedActivationKind.Launch
+            && args.Data is Windows.ApplicationModel.Activation.ILaunchActivatedEventArgs launch
+            && TrayCommand.AsksToQuit(launch.Arguments);
         _ = _dispatcher?.TryEnqueue(() =>
         {
-            if (action is null)
+            if (quit)
+            {
+                Quit();
+            }
+            else if (action is null)
             {
                 OpenFlyout();
             }

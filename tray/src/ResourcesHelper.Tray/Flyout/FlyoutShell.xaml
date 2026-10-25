@@ -570,7 +570,7 @@
             CornerRadius="{StaticResource RhCardCornerRadius}">
             <ItemsControl
               IsTabStop="False"
-              ItemsSource="{x:Bind Lines, Mode=OneWay}"
+              ItemsSource="{x:Bind Lines}"
               ItemTemplate="{StaticResource RecentLineTemplate}" />
           </Border>
         </StackPanel>

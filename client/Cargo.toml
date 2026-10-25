@@ -14,7 +14,7 @@ publish.workspace = true
 
 [dependencies]
 reqwest = { version = "0.13.5", default-features = false, features = ["json"] }
-rh-shared = { version = "0.1.0", path = "../shared" }
+rh-shared = { version = "0.2.0", path = "../shared" }
 serde = "1.0.229"
 thiserror = "2.0.21"
 tokio = { version = "1.54.1", features = ["rt", "time"] }

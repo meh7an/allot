@@ -1,6 +1,6 @@
 use std::{path::PathBuf, process::ExitCode};
 
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 
 mod classes;
 mod daemon;
@@ -12,6 +12,7 @@ mod registration;
 mod sample;
 mod status;
 mod stop;
+mod tray;
 
 /// Inspect machine usage and leases, control the daemon, and run the Claude Code hook.
 #[derive(Debug, Parser)]
@@ -63,15 +64,32 @@ enum Command {
     /// live machine samples with `--sample`.
     Probe(probe::ProbeArgs),
     /// Copy the built binaries into %USERPROFILE%\.resources-helper\bin, restart rhd on them
-    /// when it runs, copy the resource-guard skill, and print the remaining setup steps.
+    /// when it runs, install and start the tray app, copy the resource-guard skill, register
+    /// the MCP server, hooks, and CLAUDE.md rule with Claude Code, register the logon task,
+    /// and print what is left.
     Install {
         /// Directory holding the built rh.exe, rhd.exe, and rh-mcp.exe (default: this
         /// executable's directory, such as target\release).
         #[arg(long, value_name = "DIR")]
         from: Option<PathBuf>,
+        /// The tray app's publish folder (default: the tray folder in the --from directory,
+        /// as in a release).
+        #[arg(long, value_name = "DIR")]
+        tray: Option<PathBuf>,
+        /// Turn the tray app's Launch at logon on or off (default: on the first time the tray
+        /// app is installed, unchanged after that).
+        #[arg(long, value_name = "STATE")]
+        launch_at_logon: Option<Switch>,
+        /// Leave Claude Code alone: no skill, MCP server, hooks, or CLAUDE.md rule.
+        #[arg(long)]
+        no_claude: bool,
+        /// Do not register the scheduled task that starts rhd at logon.
+        #[arg(long)]
+        no_logon_task: bool,
     },
-    /// Stop rhd, remove the binaries and the skill copy, and print the steps that unregister
-    /// the rest. Keeps the database, token, config, and logs.
+    /// Quit and remove the tray app, stop rhd, remove the binaries and the skill copy,
+    /// unregister them from Claude Code, and print what is left. Keeps the database, token,
+    /// config, settings, and logs.
     Uninstall {
         /// Also delete the database, token, config, and logs.
         #[arg(long)]
@@ -92,6 +110,12 @@ enum HookEvent {
     /// PostToolUse and PostToolUseFailure for the Bash and PowerShell tools: tells Claude,
     /// once, when the user stopped one of its jobs or removed a queued request.
     PostTool,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum Switch {
+    On,
+    Off,
 }
 
 #[derive(Debug, Subcommand)]
@@ -125,7 +149,21 @@ fn main() -> ExitCode {
             DaemonAction::Stop => daemon::stop(),
             DaemonAction::Status => daemon::status(),
         },
-        Command::Install { from } => install::install(from.as_deref()),
+        Command::Install {
+            from,
+            tray,
+            launch_at_logon,
+            no_claude,
+            no_logon_task,
+        } => install::install(install::Options {
+            from: from.as_deref(),
+            tray: tray.as_deref(),
+            launch_at_logon: launch_at_logon.map(|state| matches!(state, Switch::On)),
+            setup: registration::Setup {
+                claude: !no_claude,
+                logon_task: !no_logon_task,
+            },
+        }),
         Command::Uninstall { purge } => install::uninstall(purge),
         Command::Probe(args) => probe::run(&args),
         Command::Hook { event } => match event {

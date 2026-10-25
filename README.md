@@ -7,7 +7,8 @@
 
 Coordinates CPU and GPU heavy work between the Claude Code sessions on one Windows PC. Sessions
 ask a per-user daemon for a lease before a build, test suite, benchmark, or training run, and
-wait their turn when the machine is busy, instead of all compiling at once.
+wait their turn when the machine is busy, instead of all compiling at once. A tray app shows
+every session's jobs and lets you stop one; the session is told and asks you what to do next.
 
 ## Why
 
@@ -27,15 +28,17 @@ flowchart LR
     subgraph session["Each Claude Code session"]
         skill["resource-guard skill"]
         mcp["rh-mcp<br/>(MCP server)"]
-        hook["rh hook pre-tool<br/>(PreToolUse hook)"]
+        hook["rh hook pre-tool / post-tool<br/>(hooks)"]
     end
+    tray["rh-tray<br/>(tray app)"]
     rhd["rhd daemon<br/>127.0.0.1 + token"]
     db[("SQLite<br/>leases, history")]
     os["Windows PDH, DXGI,<br/>process table"]
 
     skill -- "acquire_lease / release_lease" --> mcp
     mcp -- "HTTP + heartbeat" --> rhd
-    hook -- "does this session hold a covering lease?" --> rhd
+    hook -- "covering lease? stopped jobs?" --> rhd
+    tray -- "state, kill, remove" --> rhd
     rhd --- db
     os -- "samples every second" --> rhd
 ```
@@ -45,8 +48,10 @@ flowchart LR
 | `rhd` | The daemon: samples the machine every second, keeps the lease ledger in SQLite, and serves an HTTP API on `127.0.0.1` with a bearer token. No window; it logs to a file. |
 | `rh-mcp` | The MCP server each session starts (`resources-helper`): `system_snapshot`, `can_fit`, `acquire_lease`, `release_lease`, `list_leases`. It heartbeats its leases and releases them when the session ends. |
 | `rh hook pre-tool` | A PreToolUse hook for the Bash and PowerShell tools. It denies a heavy command when the session holds no covering lease, and lets it through with a warning when rhd is down. |
+| `rh hook post-tool` | A PostToolUse and PostToolUseFailure hook that tells the session when you stopped its job. |
+| `rh-tray` | The tray app: an icon that shows how busy the machine is, and a flyout with every session's jobs, Kill and Remove, resource meters, and toasts. Only a client of rhd. |
 | `resource-guard` skill | Tells Claude when and how to lease. A CLAUDE.md rule points sessions to it. |
-| `rh` | The CLI: status, leases, history, daemon control, install. |
+| `rh` | The CLI: status, leases, history, kill, remove, daemon control, install. |
 
 What the daemon does with a request:
 
@@ -70,50 +75,68 @@ into a folder that terminal sessions cannot see.
 
 ## Install
 
-Needs Windows 10 or 11 and Claude Code. Building from source also needs Rust (stable, MSVC
-toolchain, 1.99 or newer).
+Needs Windows 10 or 11 (x64) and Claude Code. No admin rights: everything is installed for
+your user only.
 
-1. Get the binaries, either way:
+1. Download `resources-helper-<version>-setup.exe` from the
+   [latest release](https://github.com/meh7an/resources-helper-mcp/releases/latest) and run
+   it. Close the Claude sessions you have open first if you can: the setup edits their
+   settings and CLAUDE.md. The setup is not code-signed, so SmartScreen may ask you to confirm
+   (More info, Run anyway).
+2. Keep both choices on the Select Additional Tasks page, unless you want to set up Claude
+   Code yourself or start the tray app by hand.
+3. Start a new Claude session (sessions load MCP servers and CLAUDE.md only when they start).
 
-   - **Release:** download `resources-helper-<version>-x86_64-pc-windows-msvc.zip` from the
-     [latest release](https://github.com/meh7an/resources-helper-mcp/releases/latest) and
-     extract it.
-   - **Source:** build the release binaries from the workspace root. Inside a Claude session
-     this is a `cpu_heavy` lease like any other build.
+The setup:
 
-     ```powershell
-     cargo build --release
-     ```
+- puts `rh.exe`, `rhd.exe`, and `rh-mcp.exe` in `%USERPROFILE%\.resources-helper\bin`,
+  restarts rhd on them when it is running, and registers the `resources-helper` scheduled task
+  that starts rhd when you sign in (no time limit, also on battery);
+- puts the tray app in `bin\tray`, starts it, sets its Launch at logon, and adds it to the
+  Start menu;
+- copies the `resource-guard` skill to `~/.claude/skills/resource-guard/`;
+- registers the MCP server at user scope, with `claude mcp add` when `claude` is on `PATH` and
+  otherwise in `~/.claude.json` directly;
+- adds the PreToolUse, PostToolUse, and PostToolUseFailure hooks to `~/.claude/settings.json`;
+- writes the rule to `~/.claude/resources-helper.md` and imports it into `~/.claude/CLAUDE.md`
+  with the line `@resources-helper.md`. A copy of the rule pasted by hand before is replaced
+  by that line;
+- adds Resources Helper to Apps & features, for uninstalling.
 
-2. Install them by running `rh.exe install` from the extracted folder or from the build output:
+A file is only rewritten when something in it changes, and the old one is kept beside it as
+`<name>.rh-backup`. What the setup did is in `%LOCALAPPDATA%\Programs\Resources Helper\install.log`.
 
-   ```powershell
-   target\release\rh.exe install
-   ```
+Check it with:
 
-   This copies `rh.exe`, `rhd.exe`, and `rh-mcp.exe` to `%USERPROFILE%\.resources-helper\bin`,
-   restarts rhd on the new build when it is running, copies the `resource-guard` skill to
-   `~/.claude/skills/resource-guard/`, and writes the CLAUDE.md rule to
-   `%USERPROFILE%\.resources-helper\claude-md-rule.md`.
+```powershell
+~\.resources-helper\bin\rh.exe status
+claude mcp get resources-helper
+```
 
-3. Do the steps it prints. Each is marked `[done]` once rh finds it in place:
-   1. Register the MCP server: `claude mcp add --scope user resources-helper -- "<bin>\rh-mcp.exe"`.
-   2. Add the printed PreToolUse entry to `~/.claude/settings.json`. Claude Code refuses this
-      edit from inside a session, so make it yourself.
-   3. Paste the section from `claude-md-rule.md` into `~/.claude/CLAUDE.md` between sessions.
-   4. Run the printed PowerShell lines to register the `resources-helper` logon task. It
-      starts rhd when you log on, needs no admin, and has no time limit.
+To type `rh` anywhere, add `%USERPROFILE%\.resources-helper\bin` to your user `PATH`
+(optional; the examples below assume it).
 
-4. Start a new Claude session (sessions load MCP servers only when they start), then check:
+### Without the setup
 
-   ```powershell
-   ~\.resources-helper\bin\rh.exe status
-   claude mcp get resources-helper
-   ```
+The release also has `resources-helper-<version>-x86_64-pc-windows-msvc.zip`. Extract it and
+run `rh.exe install` from that folder: it does everything the setup does except the Start
+menu and Apps & features entries, and prints `[done]` for each step, or `[todo]` with what to
+do by hand when a step could not be done. `rh install --help` lists its options
+(`--no-claude`, `--no-logon-task`, `--launch-at-logon on|off`).
 
-Running `rh install` again is safe; it only overwrites its own files. To type `rh` anywhere,
-add `%USERPROFILE%\.resources-helper\bin` to your user `PATH` (optional; the examples below
-assume it).
+To build from source you need Rust (stable, MSVC toolchain, 1.99 or newer), and for the tray
+app the .NET 10 SDK and Visual Studio's C++ build tools (the Native AOT linker). Inside a
+Claude session each build is a `cpu_heavy` lease like any other.
+
+```powershell
+cargo build --release
+dotnet publish tray\src\ResourcesHelper.Tray -c Release -o target\release\tray
+target\release\rh.exe install
+```
+
+The publish finds the linker through `vswhere.exe`; if it cannot, add
+`C:\Program Files (x86)\Microsoft Visual Studio\Installer` to `PATH`. The setup itself is
+built from `installer\resources-helper.iss` with Inno Setup 7 (see the script's header).
 
 ## Usage
 
@@ -139,8 +162,34 @@ which commands count as heavy.
 | `rh status` | Machine usage, sessions, and their leases. Starts rhd if it is down. |
 | `rh leases [--all]` | Active and queued leases, or the most recent ones in any state. |
 | `rh history [FINGERPRINT]` | What past jobs needed, or the runs of one job. |
-| `rh classes` | The heavy-command rules and class profiles in effect. |
+| `rh classes` | The heavy-command rules, class profiles, and presets in effect. |
+| `rh kill ID` / `rh remove ID` | Stop a running job, or take a queued one out of the queue, as the tray app does. |
 | `rh daemon start\|stop\|status` | Control rhd. `status` never starts it. |
+
+### The tray app
+
+The icon in the notification area shows whether the machine is idle, busy, or has jobs
+waiting. Click it for the flyout:
+
+- **Jobs.** Each running or queued job with its process, command, class, time, and estimate;
+  a bar fills toward the estimate. Finished and stopped jobs stay for a moment with how they
+  ended.
+- **Kill** (running jobs) and **Remove** (queued ones) ask once more (Kill?) before they act.
+  Kill ends only the process tree the lease's command started: never Claude Code itself,
+  rhd, rh, rh-mcp, or a process older than the command. The lease ends and its session is
+  told that you stopped the job, so Claude says so and asks you whether to retry or skip; it
+  never retries on its own.
+- **Benchmarks** show their phase: draining the machine, waiting for quiet, running alone.
+- **Resources** (More options, Meters) shows CPU, RAM, GPU, VRAM, and drives, with what is
+  used, reserved by leases, and free.
+- **Toasts** for a stopped service, a job running well past its estimate, finished jobs, and
+  jobs stopped from outside the flyout; each can be turned off under More options.
+- **Stay open** and **Pin** keep the flyout up; a pinned flyout can be dragged.
+
+The tray menu starts and stops rhd and turns Launch at logon on or off (it is also listed in
+Task Manager's Startup apps as Resources Helper). Stop service only lasts until a session's
+`rh-mcp` needs rhd again and starts it. The tray app keeps its settings in `tray.json` and
+logs to `logs\tray.log`.
 
 ## Configuration
 
@@ -164,27 +213,29 @@ Every key, the class profiles, and the classifier rules are in the
 
 ## Upgrade
 
-Repeat steps 1 and 2 with the new release or a fresh build. Binaries that running sessions hold
-open cannot be overwritten, so `rh install` renames each old file aside
-(`rh-mcp.old-<millis>.exe`) and copies the new one in. Old copies that are still in use are
-listed and deleted by the next install. rhd restarts on the new build and restores its active
-and queued leases. Open sessions keep their old `rh-mcp` until they restart. The hook picks up
-the new `rh.exe` at once.
+Run the new setup over the old install (or `rh.exe install` from a new zip or build). Binaries
+that running sessions hold open cannot be overwritten, so the old file is renamed aside
+(`rh-mcp.old-<millis>.exe`) and the new one copied in. Old copies that are still in use are
+deleted by the next install. rhd restarts on the new build and restores its active and queued
+leases. Open sessions keep their old `rh-mcp` until they restart. The hook picks up the new
+`rh.exe` at once.
+
+The tray app is asked to quit, replaced, and started again. The setup remembers your choices
+from the last time; `rh install` without `--launch-at-logon` keeps Launch at logon as you set
+it. The rule in `~/.claude/resources-helper.md` is rewritten, and CLAUDE.md keeps its import.
 
 ## Uninstall
 
-1. Remove the PreToolUse entry from `~/.claude/settings.json` first, so sessions stop calling
-   an `rh.exe` that is about to go away.
-2. Run the uninstall from the extracted release or the build output, not from the bin
-   directory (a running exe cannot delete itself):
+Uninstall Resources Helper in Settings > Apps > Installed apps. It asks whether to delete your
+data too, then quits and removes the tray app with its Launch at logon entry and Start menu
+shortcut, removes the MCP server, the hooks, the CLAUDE.md import, and the scheduled task,
+stops rhd, and removes the binaries and the skill copy. A copy of the rule pasted into
+CLAUDE.md by hand is left for you to delete.
 
-   ```powershell
-   target\release\rh.exe uninstall
-   ```
-
-   It stops rhd, removes the binaries, the skill copy, and the rule copy, and prints what is
-   still registered: the MCP server, the hook, the CLAUDE.md section, and the logon task. The
-   database, token, config, and logs stay. `rh uninstall --purge` deletes them too.
+Without the setup, run `rh.exe uninstall` from the extracted release or the build output, not
+from the bin directory (a running exe cannot delete itself). It does the same and prints what
+it could not do. The database, token, config, tray settings, and logs stay unless you choose
+to delete them, or pass `--purge`.
 
 ## Files
 
@@ -193,11 +244,16 @@ All under `%USERPROFILE%\.resources-helper\`:
 | Path | Contents |
 |------|----------|
 | `bin\` | `rh.exe`, `rhd.exe`, `rh-mcp.exe` |
+| `bin\tray\` | The tray app, `rh-tray.exe` and its runtime. |
 | `config.toml` | Optional overrides of the defaults. rhd reloads it within 5 s. |
 | `rh.db` | Leases, their audit trail, and job history (SQLite, WAL). |
 | `token` | The bearer token clients send to rhd. |
+| `tray.json` | The tray app's settings: meters, toasts, first run. |
 | `logs\rhd.log` | The daemon log, rotated at 10 MB, five files kept. |
-| `claude-md-rule.md` | The CLAUDE.md section, written by `rh install`. |
+| `logs\tray.log` | The tray app's log. |
+
+In `~/.claude/`, the install writes `skills/resource-guard/SKILL.md` and `resources-helper.md`
+(the rule CLAUDE.md imports), and adds its entries to `settings.json` and `CLAUDE.md`.
 
 ## Troubleshooting
 
@@ -209,12 +265,15 @@ Health checks, fail-open behavior, crash recovery, and resetting the database ar
   means the session started before the MCP server was registered; start a new one.
 - Every heavy command running with a "runs unchecked" warning means rhd is down; read the end
   of `logs\rhd.log`.
+- No tray icon after an install: `rh install` says why. Another copy of the tray app (such as
+  a development build) may hold its place; quit it from its tray menu and start
+  `bin\tray\rh-tray.exe`.
 
 ## Platform support
 
 Windows 10 and 11 on x86_64 only. The sampler reads Windows performance counters (PDH) and
-DXGI for vendor-neutral GPU and VRAM usage, and the install registers a Windows logon task.
-GPU numbers cover one adapter.
+DXGI for vendor-neutral GPU and VRAM usage, autostart uses a Windows logon task and the Run
+key, and the tray app is a WinUI 3 app. GPU numbers cover one adapter.
 
 ## Contributing
 

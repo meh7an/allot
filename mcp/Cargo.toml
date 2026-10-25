@@ -15,10 +15,10 @@ publish.workspace = true
 [dependencies]
 anyhow = "1.0.104"
 clap = { version = "4.6.7", features = ["derive"] }
-rh-client = { version = "0.1.0", path = "../client" }
-rh-core = { version = "0.1.0", path = "../core" }
-rh-sampler = { version = "0.1.0", path = "../sampler" }
-rh-shared = { version = "0.1.0", path = "../shared" }
+rh-client = { version = "0.2.0", path = "../client" }
+rh-core = { version = "0.2.0", path = "../core" }
+rh-sampler = { version = "0.2.0", path = "../sampler" }
+rh-shared = { version = "0.2.0", path = "../shared" }
 rmcp = { version = "3.6.0", features = ["server", "macros", "transport-io"] }
 schemars = "1.2.3"
 serde = { version = "1.0.229", features = ["derive"] }

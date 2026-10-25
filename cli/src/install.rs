@@ -1,5 +1,6 @@
 //! `rh install` and `rh uninstall`: the binaries in `%USERPROFILE%\.resources-helper\bin`,
-//! the skill copy, and restarting rhd on the new build.
+//! the tray app in `bin\tray`, the skill copy, restarting rhd on the new build, and Claude
+//! Code's registrations.
 
 use std::{
     env,
@@ -14,30 +15,47 @@ use anyhow::{Context, bail};
 use rh_client::{BlockingClient, ClientOptions, SpawnOptions};
 use rh_shared::{config::Config, paths::Paths};
 
-use crate::{daemon, registration};
+use crate::{daemon, registration, tray};
 
 /// The executables of an install.
 const BINARIES: [&str; 3] = ["rh.exe", "rhd.exe", "rh-mcp.exe"];
 const SKILL: &str = include_str!("../../skill/resource-guard/SKILL.md");
-const RULE_FILE: &str = "claude-md-rule.md";
+/// The rule copy older installs left for pasting; the rule is imported into CLAUDE.md now.
+const OLD_RULE_FILE: &str = "claude-md-rule.md";
 const SKILL_FILE: &str = "SKILL.md";
 /// How long to wait for a stopped rhd to exit. Older builds finish open acquire waits first,
 /// which can take a minute.
 const EXIT_WAIT: Duration = Duration::from_secs(90);
 const EXIT_POLL: Duration = Duration::from_millis(100);
 
-/// Copies the built binaries from `from` (default: this executable's directory) into the
-/// bin directory, copies the skill, restarts rhd on the new build when it was running, and
-/// prints the remaining registration steps. A failed restart is reported, not returned: the
-/// install itself is complete by then.
+/// What `rh install` installs and sets up.
+#[derive(Debug, Clone, Copy)]
+pub struct Options<'a> {
+    /// The build output (default: this executable's directory).
+    pub from: Option<&'a Path>,
+    /// The tray app's publish folder (default: the `tray` folder in `from`, when it has one).
+    pub tray: Option<&'a Path>,
+    /// The tray app's Launch at logon; `None` turns it on only when the tray app is installed
+    /// for the first time, so a later install keeps what the user chose.
+    pub launch_at_logon: Option<bool>,
+    /// The Claude Code integration (with the skill) and the logon task.
+    pub setup: registration::Setup,
+}
+
+/// Copies the built binaries into the bin directory, copies the skill, restarts rhd on the new
+/// build when it was running, installs and starts the tray app, and registers the rest with
+/// Claude Code and Task Scheduler, as `options` ask. A failed restart or tray start is
+/// reported, not returned: the install itself is complete by then.
 ///
 /// # Errors
 ///
-/// Fails when `from` is the bin directory itself or lacks a binary, or when a file cannot be
-/// written.
-pub fn install(from: Option<&Path>) -> anyhow::Result<()> {
+/// Fails when the source is the bin directory itself or lacks a binary, when the given tray
+/// folder has no tray app, or when a file cannot be written.
+pub fn install(options: Options) -> anyhow::Result<()> {
+    // rhd and the tray app outlive this run; the setup's log must not stay open in them.
+    rh_sampler::keep_std_handles_private();
     let paths = Paths::from_env()?;
-    let source = match from {
+    let source = match options.from {
         Some(dir) => dir.to_owned(),
         None => current_exe_dir()?,
     };
@@ -55,8 +73,21 @@ pub fn install(from: Option<&Path>) -> anyhow::Result<()> {
             source.display()
         );
     }
+    let tray_build = tray::find_build(&source, options.tray)?;
     if cfg!(debug_assertions) {
         println!("note: this rh is a debug build; install from target\\release for speed");
+    }
+
+    let tray_dir = tray::dir(&paths);
+    // Before rhd restarts, so the tray app does not report the service stopping. Asked through
+    // the installed exe: a launch of the same app from another path does not reach the running
+    // one.
+    let installed_tray = tray_dir.join("rh-tray.exe");
+    if tray_build.is_some() && installed_tray.is_file() && !tray::quit(&installed_tray, &tray_dir) {
+        println!(
+            "warning: the tray app did not quit; its files are renamed aside, and it keeps \
+             running until you quit it from its tray menu"
+        );
     }
 
     fs::create_dir_all(&bin).with_context(|| format!("creating {}", bin.display()))?;
@@ -65,31 +96,90 @@ pub fn install(from: Option<&Path>) -> anyhow::Result<()> {
     }
     println!("installed {} into {}", BINARIES.join(", "), bin.display());
 
-    let skill = registration::skill_dir(&paths).join(SKILL_FILE);
-    write_file(&skill, SKILL)?;
-    println!("copied the resource-guard skill to {}", skill.display());
-    let rule = paths.root().join(RULE_FILE);
-    write_file(&rule, registration::CLAUDE_MD_RULE)?;
+    if options.setup.claude {
+        let skill = registration::skill_dir(&paths).join(SKILL_FILE);
+        write_file(&skill, SKILL)?;
+        println!("copied the resource-guard skill to {}", skill.display());
+    }
+    remove_if_present(&paths.root().join(OLD_RULE_FILE))?;
 
     if let Err(error) = restart_daemon(&paths) {
         println!(
             "warning: rhd was not restarted ({error:#}); it runs the new build from its next start"
         );
     }
-    report_leftovers(&remove_leftovers(&bin));
+    let mut leftovers = remove_leftovers(&bin);
+    match &tray_build {
+        Some(build) => leftovers.extend(install_tray(build, &tray_dir, options.launch_at_logon)?),
+        None => println!(
+            "no tray app in {}; {} (publish it with `dotnet publish -c Release` in \
+             tray\\src\\ResourcesHelper.Tray and pass --tray <publish folder>)",
+            source.join("tray").display(),
+            if tray_dir.exists() {
+                "kept the installed one"
+            } else {
+                "installed without it"
+            }
+        ),
+    }
+    report_leftovers(&leftovers);
 
-    registration::print_install_steps(&paths, &rule);
+    registration::register(&paths, options.setup);
     Ok(())
 }
 
-/// Stops rhd, removes the binaries, the skill copy, and the rule copy, and prints the steps
-/// to unregister the rest. The database, token, config, and logs stay unless `purge`.
+/// Mirrors the tray build into `target`, sets Launch at logon (`None`: on for a first tray
+/// install, untouched otherwise), and starts it. Returns the files still in use.
+fn install_tray(
+    build: &Path,
+    target: &Path,
+    launch_at_logon: Option<bool>,
+) -> anyhow::Result<Vec<PathBuf>> {
+    let first = !target.join("rh-tray.exe").is_file();
+    let in_use = tray::mirror(build, target)?;
+    println!("installed the tray app into {}", target.display());
+    if let Some(on) = launch_at_logon.or(first.then_some(true)) {
+        let state = if on { "on" } else { "off" };
+        match tray::set_launch_at_logon(target, on) {
+            Ok(()) => println!("turned {state} the tray app's Launch at logon"),
+            Err(error) => println!("warning: Launch at logon was not turned {state} ({error:#})"),
+        }
+    }
+    match tray::start(target) {
+        Ok(()) => println!("started the tray app"),
+        Err(error) => println!("warning: {error:#}"),
+    }
+    Ok(in_use)
+}
+
+/// Quits and removes the tray app and its Launch at logon entry, stops rhd, removes the
+/// binaries and the skill copy, unregisters what Claude Code has, and prints what is left to
+/// undo by hand. The database, token, config, settings, and logs stay unless `purge`.
 ///
 /// # Errors
 ///
 /// Fails when rhd keeps running or a file that is not in use cannot be removed.
 pub fn uninstall(purge: bool) -> anyhow::Result<()> {
+    rh_sampler::keep_std_handles_private();
     let paths = Paths::from_env()?;
+    let tray_dir = tray::dir(&paths);
+    let mut in_use = Vec::new();
+    let tray_exe = tray_dir.join("rh-tray.exe");
+    if tray_exe.is_file() {
+        if let Err(error) = tray::set_launch_at_logon(&tray_dir, false) {
+            println!("warning: Launch at logon was not turned off ({error:#})");
+        }
+        if !tray::quit(&tray_exe, &tray_dir) {
+            println!("warning: the tray app did not quit; quit it from its tray menu");
+        }
+    }
+    if tray_dir.exists() {
+        in_use.extend(tray::remove(&tray_dir));
+        println!("removed the tray app");
+    }
+    // Before the binaries go, so sessions stop calling the hook's rh.exe first.
+    let manual_steps = registration::unregister(&paths);
+
     let client = BlockingClient::new(client_options(&paths))?;
     if let Some(old_pid) = daemon::shutdown(&client)? {
         // Open sessions can start rhd again from the binaries about to be removed.
@@ -101,12 +191,12 @@ pub fn uninstall(purge: bool) -> anyhow::Result<()> {
     }
 
     let bin = paths.bin_dir();
-    let mut in_use = remove_binaries(&bin)?;
+    in_use.extend(remove_binaries(&bin)?);
     let skill_dir = registration::skill_dir(&paths);
     remove_if_present(&skill_dir.join(SKILL_FILE))?;
     // Only an empty directory is removed: anything else in it is not ours.
     let _ = fs::remove_dir(&skill_dir);
-    remove_if_present(&paths.root().join(RULE_FILE))?;
+    remove_if_present(&paths.root().join(OLD_RULE_FILE))?;
 
     if purge {
         in_use.extend(purge_root(paths.root())?);
@@ -120,7 +210,7 @@ pub fn uninstall(purge: bool) -> anyhow::Result<()> {
         );
     }
     report_leftovers(&in_use);
-    registration::print_uninstall_steps(&paths);
+    registration::print_manual_steps(&manual_steps);
     Ok(())
 }
 

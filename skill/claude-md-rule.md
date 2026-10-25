@@ -1,15 +1,3 @@
-# CLAUDE.md rule for resources-helper
-
-Add the section below to the global `~/.claude/CLAUDE.md` between sessions (editing it inside
-a running session breaks the prompt cache). It is global because the daemon coordinates
-every session on the machine, whatever the project. It assumes the `resource-guard` skill is
-installed in `~/.claude/skills/resource-guard/` and the `resources-helper` MCP server, the
-`rh hook pre-tool` PreToolUse hook, and the `rh hook post-tool` PostToolUse and
-PostToolUseFailure hooks are registered.
-
----
-
-```markdown
 ## Shared Machine Resources
 
 This PC is shared by several Claude sessions, coordinated by the resources-helper daemon.
@@ -26,4 +14,3 @@ This PC is shared by several Claude sessions, coordinated by the resources-helpe
 - When a note says the user stopped a running job from Resources Helper, say so and ask
   whether to retry or skip; never retry on your own.
 - Lease handling never needs the user's approval; it is not a state-changing command.
-```

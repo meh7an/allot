@@ -13,5 +13,5 @@ categories.workspace = true
 publish.workspace = true
 
 [dependencies]
-rh-shared = { version = "0.1.0", path = "../shared" }
+rh-shared = { version = "0.2.0", path = "../shared" }
 thiserror = "2.0.21"

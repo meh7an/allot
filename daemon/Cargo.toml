@@ -20,9 +20,9 @@ diesel = { version = "2.3.14", features = ["sqlite", "r2d2", "returning_clauses_
 diesel_migrations = { version = "2.3.2", features = ["sqlite"] }
 getrandom = "0.4.3"
 libsqlite3-sys = { version = "0.38.2", features = ["bundled"] }
-rh-core = { version = "0.1.0", path = "../core" }
-rh-sampler = { version = "0.1.0", path = "../sampler" }
-rh-shared = { version = "0.1.0", path = "../shared" }
+rh-core = { version = "0.2.0", path = "../core" }
+rh-sampler = { version = "0.2.0", path = "../sampler" }
+rh-shared = { version = "0.2.0", path = "../shared" }
 thiserror = "2.0.21"
 tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros", "net", "signal", "sync", "time"] }
 tracing = "0.1.44"

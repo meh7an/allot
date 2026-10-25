@@ -1,3 +1,5 @@
+using System.Collections.ObjectModel;
+
 namespace ResourcesHelper.Tray.Core.ViewModels;
 
 /// <summary>
@@ -243,22 +245,27 @@ public sealed class IdleRow(IdleLine line) : FlyoutRow
 /// </summary>
 public sealed class RecentRow(IReadOnlyList<RecentLine> lines) : FlyoutRow
 {
-    private IReadOnlyList<RecentLine> _lines = lines;
-
-    public IReadOnlyList<RecentLine> Lines
-    {
-        get => _lines;
-        private set => Set(ref _lines, value);
-    }
+    /// <summary>
+    /// Changed in place, like the Resources card's lists. Under Native AOT, handing XAML a new
+    /// <c>List</c> through the binding failed with E_INVALIDARG in <c>ItemsSource</c>, which
+    /// ended the app.
+    /// </summary>
+    public ObservableCollection<RecentLine> Lines { get; } = new(lines);
 
     public override string Key => "recent";
 
     public override void Update(FlyoutRow fresh)
     {
         var lines = ((RecentRow)fresh).Lines;
-        if (!lines.SequenceEqual(Lines))
+        if (lines.SequenceEqual(Lines))
         {
-            Lines = lines;
+            return;
+        }
+
+        Lines.Clear();
+        foreach (var line in lines)
+        {
+            Lines.Add(line);
         }
     }
 }

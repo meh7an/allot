@@ -1,5 +1,6 @@
 //! Runs the built `rh install` and `rh uninstall` against a temporary `USERPROFILE`, including
-//! over an `rh.exe` that is running.
+//! over an `rh.exe` that is running. A copy of `rh.exe` stands in for the tray app: it exits
+//! with a usage error on the tray app's switches, which the install reports as warnings.
 
 use std::{
     env, fs,
@@ -9,6 +10,7 @@ use std::{
 };
 
 const SKILL: &str = include_str!("../../skill/resource-guard/SKILL.md");
+const RULE: &str = include_str!("../../skill/claude-md-rule.md");
 const BINARIES: [&str; 3] = ["rh.exe", "rhd.exe", "rh-mcp.exe"];
 
 /// A home directory with a build output to install from and a config that points at a port
@@ -57,18 +59,45 @@ impl Home {
         self.0.join(r".claude\skills\resource-guard\SKILL.md")
     }
 
+    fn claude(&self, name: &str) -> PathBuf {
+        self.0.join(".claude").join(name)
+    }
+
+    fn tray(&self) -> PathBuf {
+        self.bin().join("tray")
+    }
+
+    /// Adds a tray build to the build output, as a release has.
+    fn add_tray_build(&self) {
+        let tray = self.build().join("tray");
+        fs::create_dir_all(tray.join("en-US")).unwrap();
+        fs::copy(env!("CARGO_BIN_EXE_rh"), tray.join("rh-tray.exe")).unwrap();
+        fs::write(tray.join("en-US").join("Microsoft.ui.xaml.dll.mui"), "mui").unwrap();
+        fs::write(tray.join("rh-tray.pri"), "pri").unwrap();
+    }
+
+    /// Runs the built `rh` in this home. `claude` points nowhere, so no test registers the MCP
+    /// server with the real Claude Code.
     fn rh(&self, args: &[&str]) -> Output {
         Command::new(env!("CARGO_BIN_EXE_rh"))
             .args(args)
             .env("USERPROFILE", &self.0)
+            .env("RH_CLAUDE", self.0.join("no-claude.exe"))
             .stdin(Stdio::null())
             .output()
             .unwrap()
     }
 
+    /// Installs from the build output. The logon task is left out: it is one per user, so a
+    /// test would replace the real one.
     fn install(&self) -> String {
         let build = self.build();
-        let output = self.rh(&["install", "--from", build.to_str().unwrap()]);
+        let output = self.rh(&[
+            "install",
+            "--from",
+            build.to_str().unwrap(),
+            "--no-logon-task",
+        ]);
         assert!(output.status.success(), "{output:?}");
         String::from_utf8(output.stdout).unwrap()
     }
@@ -76,7 +105,12 @@ impl Home {
     /// Starts the installed `rh.exe` as a hook that waits for its stdin, so the file stays in
     /// use until [`finish`] closes it.
     fn run_installed_rh(&self) -> Child {
-        Command::new(self.bin().join("rh.exe"))
+        self.run_held(&self.bin().join("rh.exe"))
+    }
+
+    /// Starts `exe`, a copy of `rh.exe`, the same way.
+    fn run_held(&self, exe: &Path) -> Child {
+        Command::new(exe)
             .args(["hook", "pre-tool"])
             .env("USERPROFILE", &self.0)
             .stdin(Stdio::piped())
@@ -109,7 +143,7 @@ fn old_copies(bin: &Path) -> Vec<String> {
 }
 
 #[test]
-fn test_install_copies_binaries_skill_and_rule_and_prints_the_steps() {
+fn test_install_copies_binaries_and_skill_and_registers_hooks_and_rule() {
     let home = Home::new("fresh");
     let stdout = home.install();
 
@@ -122,27 +156,64 @@ fn test_install_copies_binaries_skill_and_rule_and_prints_the_steps() {
         );
     }
     assert_eq!(fs::read_to_string(home.skill()).unwrap(), SKILL);
-    assert!(home.app().join("claude-md-rule.md").is_file());
+    assert!(!home.app().join("claude-md-rule.md").exists());
     assert!(stdout.contains("rhd is not running"), "{stdout}");
-    assert!(stdout.contains("1. [todo] MCP server"), "{stdout}");
+    assert!(stdout.contains("no tray app in"), "{stdout}");
+    assert!(!home.tray().exists());
+
+    // claude is not found, so the entry is written to ~/.claude.json directly.
     assert!(
-        stdout.contains("claude mcp add --scope user resources-helper -- \""),
+        stdout.contains("1. [done] MCP server, user scope (claude was not found, so it was"),
         "{stdout}"
     );
-    assert!(stdout.contains("2. [todo] Hooks in"), "{stdout}");
-    for event in [
-        "\"PreToolUse\":",
-        "\"PostToolUse\":",
-        "\"PostToolUseFailure\":",
+    let config: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(home.0.join(".claude.json")).unwrap()).unwrap();
+    assert_eq!(
+        config["mcpServers"]["resources-helper"]["command"],
+        home.bin().join("rh-mcp.exe").to_str().unwrap()
+    );
+
+    assert!(
+        stdout.contains("2. [done] Hooks in")
+            && stdout.contains("(added PreToolUse, PostToolUse, PostToolUseFailure)"),
+        "{stdout}"
+    );
+    let settings: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(home.claude("settings.json")).unwrap()).unwrap();
+    let hook = home
+        .bin()
+        .join("rh.exe")
+        .to_string_lossy()
+        .replace('\\', "/");
+    for (event, arg) in [
+        ("PreToolUse", "pre-tool"),
+        ("PostToolUse", "post-tool"),
+        ("PostToolUseFailure", "post-tool"),
     ] {
-        assert!(stdout.contains(event), "{event}: {stdout}");
+        let entry = &settings["hooks"][event][0]["hooks"][0];
+        assert_eq!(entry["command"], hook.as_str(), "{event}");
+        assert_eq!(entry["args"], serde_json::json!(["hook", arg]), "{event}");
     }
-    assert!(stdout.contains("\"post-tool\""), "{stdout}");
-    assert!(stdout.contains("3. [todo] CLAUDE.md rule"), "{stdout}");
-    // The machine running the tests may already have the real logon task.
-    let task_step = stdout.contains("Register-ScheduledTask -TaskName 'resources-helper'")
-        || stdout.contains("4. [done] Autostart");
-    assert!(task_step, "{stdout}");
+
+    assert!(
+        stdout.contains("3. [done] CLAUDE.md rule") && stdout.contains("added the import"),
+        "{stdout}"
+    );
+    assert_eq!(
+        fs::read_to_string(home.claude("resources-helper.md")).unwrap(),
+        RULE
+    );
+    assert_eq!(
+        fs::read_to_string(home.claude("CLAUDE.md")).unwrap(),
+        "@resources-helper.md\n"
+    );
+    assert!(!stdout.contains("scheduled task"), "{stdout}");
+    assert!(stdout.contains("restart them"), "{stdout}");
+
+    let stdout = home.install();
+    assert!(stdout.contains("2. [done] Hooks in"), "{stdout}");
+    assert!(!stdout.contains("(added"), "{stdout}");
+    assert!(!stdout.contains("restart them"), "{stdout}");
 }
 
 #[test]
@@ -170,25 +241,114 @@ fn test_install_marks_registered_steps_done() {
             "PostToolUseFailure": entry(["hook", "post-tool"]),
         },
     });
-    fs::write(claude.join("settings.json"), settings.to_string()).unwrap();
-    // The rule's text under a different heading, as in a numbered contract.
-    let rule = include_str!("../../skill/claude-md-rule.md")
-        .split("```")
-        .nth(1)
-        .unwrap()
-        .trim_start_matches("markdown")
-        .replace(
-            "## Shared Machine Resources",
-            "## 11 — Shared Machine Resources",
-        );
-    fs::write(claude.join("CLAUDE.md"), format!("# Rules\n{rule}")).unwrap();
+    let settings = serde_json::to_string_pretty(&settings).unwrap();
+    fs::write(claude.join("settings.json"), &settings).unwrap();
+    // The rule pasted by hand under a numbered heading, as an older install asked.
+    let rule = RULE.replace(
+        "## Shared Machine Resources",
+        "## 11 — Shared Machine Resources",
+    );
+    fs::write(claude.join("CLAUDE.md"), format!("# Rules\n\n{rule}")).unwrap();
 
     let stdout = home.install();
 
-    assert!(stdout.contains("1. [done] MCP server"), "{stdout}");
-    assert!(stdout.contains("2. [done] Hooks in"), "{stdout}");
-    assert!(stdout.contains("3. [done] CLAUDE.md rule"), "{stdout}");
+    assert!(
+        stdout.contains("1. [done] MCP server, user scope\n"),
+        "{stdout}"
+    );
     assert!(!stdout.contains("claude mcp add"), "{stdout}");
+    assert!(stdout.contains("2. [done] Hooks in"), "{stdout}");
+    assert_eq!(
+        fs::read_to_string(claude.join("settings.json")).unwrap(),
+        settings
+    );
+    assert!(
+        stdout.contains("3. [done] CLAUDE.md rule")
+            && stdout.contains("replaced the pasted rule in CLAUDE.md with an import"),
+        "{stdout}"
+    );
+    assert_eq!(
+        fs::read_to_string(claude.join("CLAUDE.md")).unwrap(),
+        "# Rules\n\n@resources-helper.md\n"
+    );
+    assert_eq!(
+        fs::read_to_string(claude.join("CLAUDE.md.rh-backup")).unwrap(),
+        format!("# Rules\n\n{rule}")
+    );
+}
+
+#[test]
+fn test_install_mirrors_the_tray_build_and_reports_the_stand_in_exe() {
+    let home = Home::new("tray");
+    home.add_tray_build();
+    let stray = home.tray().join("fr-FR").join("old.mui");
+    fs::create_dir_all(stray.parent().unwrap()).unwrap();
+    fs::write(&stray, "old").unwrap();
+    fs::write(home.tray().join("rh-tray.exe"), "an older build").unwrap();
+
+    let stdout = home.install();
+
+    assert!(stdout.contains("installed the tray app into"), "{stdout}");
+    assert_eq!(
+        fs::read(home.tray().join("rh-tray.exe")).unwrap(),
+        fs::read(env!("CARGO_BIN_EXE_rh")).unwrap()
+    );
+    assert!(
+        home.tray()
+            .join(r"en-US\Microsoft.ui.xaml.dll.mui")
+            .is_file()
+    );
+    assert!(home.tray().join("rh-tray.pri").is_file());
+    assert!(!home.tray().join("fr-FR").exists());
+    // A tray app was installed before, so Launch at logon is left as the user set it.
+    assert!(!stdout.contains("Launch at logon"), "{stdout}");
+    // The stand-in exits at once, as a tray app does when another copy runs.
+    assert!(stdout.contains("exited at once"), "{stdout}");
+
+    let output = home.rh(&[
+        "install",
+        "--from",
+        home.build().to_str().unwrap(),
+        "--tray",
+        home.build().to_str().unwrap(),
+    ]);
+    assert_eq!(output.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("has no rh-tray.exe"));
+}
+
+#[test]
+fn test_first_tray_install_asks_the_tray_app_to_turn_on_launch_at_logon() {
+    let home = Home::new("tray-first");
+    home.add_tray_build();
+
+    let stdout = home.install();
+
+    // The stand-in does not know the switch, which shows the install asked for it.
+    assert!(
+        stdout.contains("warning: Launch at logon was not turned on")
+            && stdout.contains("--launch-at-logon on exited with"),
+        "{stdout}"
+    );
+}
+
+#[test]
+fn test_reinstall_over_a_tray_app_that_does_not_quit_renames_its_files_aside() {
+    let home = Home::new("tray-running");
+    home.add_tray_build();
+    home.install();
+    let running = home.run_held(&home.tray().join("rh-tray.exe"));
+
+    let stdout = home.install();
+
+    assert!(stdout.contains("the tray app did not quit"), "{stdout}");
+    assert!(stdout.contains("still in use"), "{stdout}");
+    let old = old_copies(&home.tray());
+    assert_eq!(old.len(), 1, "{old:?}");
+    assert!(old[0].starts_with("rh-tray.exe.old-"), "{old:?}");
+
+    finish(running);
+    home.install();
+    assert!(old_copies(&home.tray()).is_empty());
 }
 
 #[test]
@@ -231,16 +391,35 @@ fn test_install_from_the_bin_dir_or_without_a_binary_is_refused() {
 #[test]
 fn test_uninstall_keeps_the_data_and_purge_removes_it() {
     let home = Home::new("uninstall");
+    home.add_tray_build();
+    fs::create_dir_all(home.claude("")).unwrap();
+    fs::write(home.claude("CLAUDE.md"), "# Mine\n").unwrap();
     home.install();
     fs::write(home.app().join("rh.db"), "db").unwrap();
     fs::write(home.app().join("token"), "token").unwrap();
 
     let output = home.rh(&["uninstall"]);
     assert!(output.status.success(), "{output:?}");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("removed the tray app"), "{stdout}");
     assert!(!home.bin().exists());
     assert!(!home.skill().exists());
     assert!(!home.skill().parent().unwrap().exists());
-    assert!(!home.app().join("claude-md-rule.md").exists());
+    assert_eq!(
+        fs::read_to_string(home.claude("settings.json")).unwrap(),
+        "{\n  \"hooks\": {}\n}\n"
+    );
+    assert_eq!(
+        fs::read_to_string(home.claude("CLAUDE.md")).unwrap(),
+        "# Mine\n"
+    );
+    assert!(!home.claude("resources-helper.md").exists());
+    // claude is not found, so the entry is removed from ~/.claude.json directly.
+    assert!(stdout.contains("removed the MCP server from"), "{stdout}");
+    assert_eq!(
+        fs::read_to_string(home.0.join(".claude.json")).unwrap(),
+        "{\n  \"mcpServers\": {}\n}\n"
+    );
     for kept in ["rh.db", "token", "config.toml"] {
         assert!(home.app().join(kept).is_file(), "{kept}");
     }

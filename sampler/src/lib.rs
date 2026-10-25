@@ -14,7 +14,7 @@ mod process;
 
 pub use crate::{
     kill::{kill_tree, process_table},
-    process::current_ancestry,
+    process::{current_ancestry, keep_std_handles_private},
 };
 
 use std::{

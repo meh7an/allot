@@ -1142,7 +1142,7 @@ dependencies = [
 
 [[package]]
 name = "rh"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -1156,7 +1156,7 @@ dependencies = [
 
 [[package]]
 name = "rh-client"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "reqwest",
  "rh-core",
@@ -1170,7 +1170,7 @@ dependencies = [
 
 [[package]]
 name = "rh-core"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "rh-shared",
  "thiserror",
@@ -1178,7 +1178,7 @@ dependencies = [
 
 [[package]]
 name = "rh-mcp"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -1195,7 +1195,7 @@ dependencies = [
 
 [[package]]
 name = "rh-sampler"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "rh-core",
  "rh-shared",
@@ -1205,7 +1205,7 @@ dependencies = [
 
 [[package]]
 name = "rh-shared"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "schemars",
  "serde",
@@ -1216,7 +1216,7 @@ dependencies = [
 
 [[package]]
 name = "rhd"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "axum",
