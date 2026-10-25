@@ -86,12 +86,18 @@
         <Setter Property="Padding" Value="0" />
         <Setter Property="CornerRadius" Value="{StaticResource RhControlCornerRadius}" />
       </Style>
-      <!-- Icons inside buttons take the button's foreground, so they have no Foreground here. -->
+      <!--
+        Icons inside buttons take the button's foreground, so they have no Foreground here. Every
+        icon glyph keeps its size when Windows Text size grows, and is hidden from assistive tech:
+        the word beside it, or its button's name, carries the meaning.
+      -->
       <Style x:Key="RhButtonIconRegularStyle" TargetType="TextBlock">
         <Setter Property="FontFamily" Value="{StaticResource RhIconRegularFontFamily}" />
         <Setter Property="FontSize" Value="{StaticResource RhIconSize}" />
         <Setter Property="HorizontalAlignment" Value="Center" />
         <Setter Property="VerticalAlignment" Value="Center" />
+        <Setter Property="IsTextScaleFactorEnabled" Value="False" />
+        <Setter Property="AutomationProperties.AccessibilityView" Value="Raw" />
       </Style>
       <Style x:Key="RhButtonIconFilledStyle" TargetType="TextBlock" BasedOn="{StaticResource RhButtonIconRegularStyle}">
         <Setter Property="FontFamily" Value="{StaticResource RhIconFilledFontFamily}" />
@@ -99,6 +105,15 @@
       <Style x:Key="RhGroupIconStyle" TargetType="TextBlock">
         <Setter Property="FontSize" Value="{StaticResource RhGroupIconSize}" />
         <Setter Property="VerticalAlignment" Value="Center" />
+        <Setter Property="IsTextScaleFactorEnabled" Value="False" />
+        <Setter Property="AutomationProperties.AccessibilityView" Value="Raw" />
+      </Style>
+      <!-- A 14 px glyph inside a line of text: the chip's timer, the detail line's icons. -->
+      <Style x:Key="RhInlineIconStyle" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{StaticResource RhIconRegularFontFamily}" />
+        <Setter Property="FontSize" Value="14" />
+        <Setter Property="IsTextScaleFactorEnabled" Value="False" />
+        <Setter Property="AutomationProperties.AccessibilityView" Value="Raw" />
       </Style>
 
       <DataTemplate x:Key="BenchmarkHeadingTemplate" x:DataType="vm:GroupHeadingRow">
@@ -181,7 +196,7 @@
             <!-- Job row; the edge bar lies along the card's bottom, under the row's padding. -->
             <Grid>
               <StackPanel Padding="{StaticResource RhRowPadding}">
-                <Grid Height="{StaticResource RhButtonSize}" ColumnSpacing="8">
+                <Grid MinHeight="{StaticResource RhButtonSize}" ColumnSpacing="8">
                   <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="*" />
@@ -210,7 +225,7 @@
                     VerticalAlignment="Center"
                     Opacity="{x:Bind local:FlyoutShell.Ended(IsEnded), Mode=OneWay}">
                     <Border
-                      Height="{StaticResource RhChipHeight}"
+                      MinHeight="{StaticResource RhChipHeight}"
                       Padding="{StaticResource RhChipPadding}"
                       Background="{ThemeResource RhChipBackgroundBrush}"
                       CornerRadius="{StaticResource RhChipCornerRadius}"
@@ -222,7 +237,7 @@
                         Text="{x:Bind Chip, Mode=OneWay}" />
                     </Border>
                     <Border
-                      Height="{StaticResource RhChipHeight}"
+                      MinHeight="{StaticResource RhChipHeight}"
                       Padding="{StaticResource RhBenchmarkChipPadding}"
                       Background="{ThemeResource RhBenchmarkBrush}"
                       CornerRadius="{StaticResource RhChipCornerRadius}"
@@ -231,7 +246,7 @@
                       <StackPanel Orientation="Horizontal" Spacing="3">
                         <TextBlock
                           VerticalAlignment="Center"
-                          FontFamily="{StaticResource RhIconRegularFontFamily}"
+                          Style="{StaticResource RhInlineIconStyle}"
                           FontSize="12"
                           Foreground="{ThemeResource RhBenchmarkForegroundBrush}"
                           Text="{StaticResource RhGlyphTimerRegular}" />
@@ -249,7 +264,7 @@
                       x:Name="KillButton"
                       Style="{StaticResource RhHeaderButtonStyle}"
                       AutomationProperties.Name="{x:Bind ActionName, Mode=OneWay}"
-                      ToolTipService.ToolTip="Kill"
+                      ToolTipService.ToolTip="{x:Bind ActionName, Mode=OneWay}"
                       Click="OnKillClick"
                       Visibility="{x:Bind local:FlyoutShell.ShowsAction(Action, 'Kill'), Mode=OneWay}">
                       <Button.Resources>
@@ -261,12 +276,15 @@
                         Foreground="{ThemeResource RhTextSecondaryBrush}"
                         Text="{StaticResource RhGlyphDismissCircleRegular}" />
                     </Button>
+                    <!-- Narrator reads the red detail line as the confirm's help text. -->
                     <Button
                       x:Name="ConfirmButton"
-                      Height="{StaticResource RhButtonSize}"
+                      MinHeight="{StaticResource RhButtonSize}"
                       Padding="8,0,10,0"
                       CornerRadius="{StaticResource RhControlCornerRadius}"
                       AutomationProperties.Name="{x:Bind ActionName, Mode=OneWay}"
+                      AutomationProperties.HelpText="{x:Bind Detail, Mode=OneWay}"
+                      ToolTipService.ToolTip="{x:Bind ActionName, Mode=OneWay}"
                       Click="OnKillClick"
                       KeyDown="OnConfirmKeyDown"
                       LostFocus="OnConfirmLostFocus"
@@ -285,6 +303,7 @@
                       </Button.Resources>
                       <StackPanel Orientation="Horizontal" Spacing="6">
                         <TextBlock
+                          Style="{StaticResource RhInlineIconStyle}"
                           FontFamily="{StaticResource RhIconFilledFontFamily}"
                           FontSize="16"
                           VerticalAlignment="Center"
@@ -297,7 +316,7 @@
                       </StackPanel>
                     </Button>
                     <Button
-                      Height="{StaticResource RhButtonSize}"
+                      MinHeight="{StaticResource RhButtonSize}"
                       Padding="8,0,8,0"
                       CornerRadius="{StaticResource RhControlCornerRadius}"
                       AutomationProperties.Name="{x:Bind ActionName, Mode=OneWay}"
@@ -332,16 +351,15 @@
                   <TextBlock
                     Margin="0,1,0,0"
                     VerticalAlignment="Top"
-                    FontFamily="{StaticResource RhIconRegularFontFamily}"
-                    FontSize="14"
+                    Style="{StaticResource RhInlineIconStyle}"
                     Foreground="{ThemeResource RhBenchmarkBrush}"
                     Text="{StaticResource RhGlyphTimerRegular}"
                     Visibility="{x:Bind local:FlyoutShell.ShowsIcon(Icon, 'Timer'), Mode=OneWay}" />
                   <TextBlock
                     Margin="0,1,0,0"
                     VerticalAlignment="Top"
+                    Style="{StaticResource RhInlineIconStyle}"
                     FontFamily="{StaticResource RhIconFilledFontFamily}"
-                    FontSize="14"
                     Foreground="{ThemeResource RhRunningBrush}"
                     Text="{StaticResource RhGlyphCheckmarkCircleFilled}"
                     Visibility="{x:Bind local:FlyoutShell.ShowsIcon(Icon, 'Check'), Mode=OneWay}" />
@@ -466,7 +484,7 @@
             </Grid>
             <Button
               HorizontalAlignment="Right"
-              Height="{StaticResource RhButtonSize}"
+              MinHeight="{StaticResource RhButtonSize}"
               Padding="16,0,16,0"
               BorderThickness="1"
               CornerRadius="{StaticResource RhControlCornerRadius}"
@@ -684,17 +702,29 @@
         </Setter>
       </Style>
 
+      <!--
+        Meter and drive rows: label 48, bar, value 108 at 100% text; the code widens the label and
+        value columns with Windows Text size, alike in every row (OnMeterRowLoaded).
+      -->
       <DataTemplate x:Key="MeterRowTemplate" x:DataType="vm:MeterRowModel">
-        <Grid MinHeight="28" Padding="12,0,12,0" ColumnSpacing="8">
+        <Grid
+          MinHeight="28"
+          Padding="12,0,12,0"
+          ColumnSpacing="8"
+          Loaded="OnMeterRowLoaded"
+          Unloaded="OnMeterRowUnloaded"
+          SizeChanged="OnMeterRowSizeChanged">
           <Grid.ColumnDefinitions>
             <ColumnDefinition Width="48" />
             <ColumnDefinition Width="*" />
             <ColumnDefinition Width="108" />
           </Grid.ColumnDefinitions>
+          <!-- Narrator reads the row from its value: "CPU 64%", then the bar's tooltip. -->
           <TextBlock
             VerticalAlignment="Center"
             Style="{StaticResource RhBodyTextStyle}"
             FontWeight="SemiBold"
+            AutomationProperties.AccessibilityView="Raw"
             Text="{x:Bind Label, Mode=OneWay}" />
           <!-- The tooltip covers the row's height, as the 6 px bar alone is hard to hover. -->
           <Grid
@@ -717,13 +747,24 @@
               VerticalAlignment="Center"
               Samples="{x:Bind Spark, Mode=OneWay}"
               Visibility="{x:Bind HasSpark, Mode=OneWay}" />
-            <TextBlock Style="{StaticResource RhBodyTextStyle}" Text="{x:Bind Value, Mode=OneWay}" />
+            <TextBlock
+              Style="{StaticResource RhBodyTextStyle}"
+              TextTrimming="CharacterEllipsis"
+              AutomationProperties.Name="{x:Bind local:FlyoutShell.Spoken(Label, Value), Mode=OneWay}"
+              AutomationProperties.HelpText="{x:Bind Tooltip, Mode=OneWay}"
+              Text="{x:Bind Value, Mode=OneWay}" />
           </StackPanel>
         </Grid>
       </DataTemplate>
 
       <DataTemplate x:Key="DriveRowTemplate" x:DataType="vm:DriveRowModel">
-        <Grid MinHeight="28" Padding="12,0,12,0" ColumnSpacing="8">
+        <Grid
+          MinHeight="28"
+          Padding="12,0,12,0"
+          ColumnSpacing="8"
+          Loaded="OnMeterRowLoaded"
+          Unloaded="OnMeterRowUnloaded"
+          SizeChanged="OnMeterRowSizeChanged">
           <Grid.ColumnDefinitions>
             <ColumnDefinition Width="48" />
             <ColumnDefinition Width="*" />
@@ -762,6 +803,7 @@
             HorizontalAlignment="Right"
             VerticalAlignment="Center"
             Style="{StaticResource RhBodyTextStyle}"
+            TextTrimming="CharacterEllipsis"
             Text="{x:Bind Value, Mode=OneWay}" />
         </Grid>
       </DataTemplate>
@@ -783,10 +825,11 @@
     </ResourceDictionary>
   </UserControl.Resources>
 
-  <Border
-    BorderBrush="{ThemeResource RhSurfaceEdgeBrush}"
-    BorderThickness="1"
-    CornerRadius="{StaticResource RhFlyoutCornerRadius}">
+  <!--
+    DWM draws the flyout's 1 px edge (FlyoutWindow.ApplyBorderColor). Tab order is the tree's
+    (handoff, Keyboard), wrapping from the last control to the first.
+  -->
+  <Border CornerRadius="{StaticResource RhFlyoutCornerRadius}" TabFocusNavigation="Cycle">
     <Grid>
       <Grid.RowDefinitions>
         <RowDefinition Height="Auto" />
@@ -882,7 +925,7 @@
             Background="{ThemeResource RhPressedBrush}"
             CornerRadius="{StaticResource RhControlCornerRadius}"
             Opacity="0" />
-          <Button
+          <local:ExpandButton
             x:Name="MoreButton"
             AutomationProperties.Name="More options"
             ToolTipService.ToolTip="More options"
@@ -935,7 +978,7 @@
                 </MenuFlyoutItem>
               </MenuFlyout>
             </Button.Flyout>
-          </Button>
+          </local:ExpandButton>
         </Grid>
       </Grid>
 
@@ -943,7 +986,11 @@
         Top-aligned, so the panel's height is its content's: stretched, it would fill the
         viewport and report the window's own height back as the height it needs.
       -->
-      <ScrollViewer x:Name="BodyScroller" Grid.Row="1" VerticalScrollBarVisibility="Auto">
+      <ScrollViewer
+        x:Name="BodyScroller"
+        Grid.Row="1"
+        VerticalScrollBarVisibility="Auto"
+        SizeChanged="OnBodyScrollerSizeChanged">
         <StackPanel
           x:Name="BodyPanel"
           VerticalAlignment="Top"
@@ -966,6 +1013,7 @@
               </Grid.ColumnDefinitions>
               <TextBlock
                 VerticalAlignment="Center"
+                Style="{StaticResource RhInlineIconStyle}"
                 FontFamily="{StaticResource RhIconFilledFontFamily}"
                 FontSize="16"
                 Foreground="{ThemeResource RhBannerForegroundBrush}"
@@ -989,7 +1037,7 @@
               <Button
                 Grid.Column="2"
                 VerticalAlignment="Center"
-                Height="{StaticResource RhButtonSize}"
+                MinHeight="{StaticResource RhButtonSize}"
                 Padding="12,0,12,0"
                 CornerRadius="{StaticResource RhControlCornerRadius}"
                 FontSize="12"
@@ -1035,7 +1083,7 @@
         <StackPanel>
           <!-- The whole header toggles the card; the chevron stays as its keyboard target. -->
           <Grid
-            Height="40"
+            MinHeight="40"
             Padding="12,0,4,0"
             Background="Transparent"
             ColumnSpacing="8"
@@ -1056,10 +1104,11 @@
               VerticalAlignment="Center"
               Style="{StaticResource RhDetailTextStyle}"
               Text="{x:Bind Model.Resources.Summary, Mode=OneWay}" />
-            <Button
+            <local:ExpandButton
               x:Name="ResourcesToggle"
               Grid.Column="2"
               Style="{StaticResource RhHeaderButtonStyle}"
+              IsExpanded="{x:Bind Model.Resources.Expanded, Mode=OneWay}"
               AutomationProperties.Name="{x:Bind local:FlyoutShell.ResourcesToggleName(Model.Resources.Expanded), Mode=OneWay}"
               ToolTipService.ToolTip="{x:Bind local:FlyoutShell.ResourcesToggleName(Model.Resources.Expanded), Mode=OneWay}"
               Click="OnResourcesToggleClick">
@@ -1073,7 +1122,7 @@
                   Text="{StaticResource RhGlyphChevronDownRegular}"
                   Visibility="{x:Bind Model.Resources.Expanded, Mode=OneWay}" />
               </Grid>
-            </Button>
+            </local:ExpandButton>
           </Grid>
 
           <!-- Shown, hidden and animated by the code as the card expands and collapses. -->

@@ -88,6 +88,8 @@ public enum CardAction
 /// <param name="Icon">The detail line's leading icon; with one, the line wraps instead of
 /// truncating.</param>
 /// <param name="Steps">A benchmark's Drain / Quiet / Run stepper, or <c>null</c> for none.</param>
+/// <param name="Announcement">What Narrator says when a stop ends or is refused, for example
+/// <c>Stopped cargo.exe · Claude was notified</c>; empty otherwise.</param>
 public sealed record JobCard(
     string Tile,
     bool IsQueued,
@@ -107,7 +109,8 @@ public sealed record JobCard(
     string ActionName,
     bool IsEnded,
     DetailIcon Icon = DetailIcon.None,
-    BenchmarkSteps? Steps = null)
+    BenchmarkSteps? Steps = null,
+    string Announcement = "")
 {
     // A queued job this close to its start reads "starts next".
     private const ulong StartsNextSecs = 60;
@@ -264,6 +267,7 @@ public sealed record JobCard(
                     Detail = $"Not stopped: {stop.Message}",
                     DetailTooltip = $"Not stopped: {stop.Message}",
                     DetailIsDanger = true,
+                    Announcement = $"{name} not stopped: {stop.Message}",
                 };
             default:
                 var ran = Seconds((stop.EndedAtMs ?? nowMs) - started);
@@ -279,6 +283,7 @@ public sealed record JobCard(
                     Action = CardAction.None,
                     ActionName = "",
                     IsEnded = true,
+                    Announcement = $"Stopped {name}{Notified(stop.Message)}",
                 };
         }
     }
@@ -382,6 +387,7 @@ public sealed record JobCard(
                 Detail = $"Not removed: {stop.Message}",
                 DetailTooltip = $"Not removed: {stop.Message}",
                 DetailIsDanger = true,
+                Announcement = $"{lease.Label} not removed: {stop.Message}",
             },
             StopPhase.Ended => card with
             {
@@ -394,6 +400,7 @@ public sealed record JobCard(
                 Action = CardAction.None,
                 ActionName = "",
                 IsEnded = true,
+                Announcement = $"Removed {lease.Label}{Notified(stop.Message)}",
             },
             _ => card,
         };

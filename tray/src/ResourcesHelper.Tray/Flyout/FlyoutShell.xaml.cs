@@ -1,10 +1,12 @@
 using System.Collections.Specialized;
+using System.ComponentModel;
 
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Automation.Peers;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
+using Microsoft.UI.Xaml.Hosting;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Animation;
@@ -15,6 +17,7 @@ using ResourcesHelper.Tray.Core.ViewModels;
 using Windows.Foundation;
 using Windows.System;
 using Windows.UI.Text;
+using Windows.UI.ViewManagement;
 
 namespace ResourcesHelper.Tray.Flyout;
 
@@ -31,14 +34,21 @@ public sealed partial class FlyoutShell : UserControl, IFlyoutContent
     private const double PinWrapperWidth = 36;
     private const double RowGap = 6;
 
-    // The flyout's 1 px edge, top and bottom.
-    private const double EdgeHeight = 2;
+    // Meter and drive rows at 100% text (handoff section 5); the bar keeps at least this much
+    // when large text widens the label and value columns.
+    private const double MeterLabelWidth = 48;
+    private const double MeterValueWidth = 108;
+    private const double MinBarWidth = 48;
 
     private readonly FlyoutWindow _window;
     private readonly Action _openLogs;
     private readonly Dictionary<FlyoutRow, ContentControl> _hosts =
         new(ReferenceEqualityComparer.Instance);
     private readonly DataTemplateSelector _templates;
+    private readonly UISettings _uiSettings = new();
+    private readonly HashSet<Grid> _meterRows = [];
+    private readonly Thickness _bodyPadding;
+    private (double Width, double Top, double Left, double Right, double Reach) _bodyClip;
     private bool _pinShown;
     private double _reportedHeight;
 
@@ -59,6 +69,7 @@ public sealed partial class FlyoutShell : UserControl, IFlyoutContent
         Model = model;
         InitializeComponent();
         _templates = (DataTemplateSelector)Resources["RowTemplates"];
+        _bodyPadding = BodyPanel.Padding;
 
         foreach (var row in model.Rows)
         {
@@ -89,7 +100,15 @@ public sealed partial class FlyoutShell : UserControl, IFlyoutContent
         // A collapsed card raises no SizeChanged, so its visibility reports the height too.
         _ = ResourcesCard.RegisterPropertyChangedCallback(
             VisibilityProperty,
-            (_, _) => DispatcherQueue.TryEnqueue(ReportHeight));
+            (_, _) => DispatcherQueue.TryEnqueue(() =>
+            {
+                UpdateBodyClip();
+                ReportHeight();
+            }));
+
+        model.PropertyChanged += OnModelChanged;
+        model.Announced += Announce;
+        _uiSettings.TextScaleFactorChanged += (_, _) => DispatcherQueue.TryEnqueue(FitMeterRows);
     }
 
     public event Action? DesiredHeightChanged;
@@ -142,7 +161,8 @@ public sealed partial class FlyoutShell : UserControl, IFlyoutContent
     public FlyoutModel Model { get; }
 
     public double DesiredHeight =>
-        EdgeHeight + Header.ActualHeight + BodyPanel.ActualHeight + ResourcesHeight;
+        Header.ActualHeight + BodyPanel.ActualHeight + BodyScroller.Margin.Bottom
+            + ResourcesHeight;
 
     // The docked card with its margin, or nothing while it is hidden.
     private double ResourcesHeight =>
@@ -152,6 +172,11 @@ public sealed partial class FlyoutShell : UserControl, IFlyoutContent
 
     public static string ResourcesToggleName(bool expanded) =>
         expanded ? "Collapse resources" : "Expand resources";
+
+    /// <summary>
+    /// A meter row's accessible name, for example <c>CPU 64%</c>.
+    /// </summary>
+    public static string Spoken(string label, string value) => $"{label} {value}";
 
     /// <summary>
     /// A drive bar's fill as a star column; <see cref="RestShare"/> is the track after it.
@@ -429,13 +454,95 @@ public sealed partial class FlyoutShell : UserControl, IFlyoutContent
     private void OnMenuOpened(object? sender, object e)
     {
         MorePressed.Opacity = 1;
+        MoreButton.IsExpanded = true;
         _window.SetMenuOpen(true);
     }
 
     private void OnMenuClosed(object? sender, object e)
     {
         MorePressed.Opacity = 0;
+        MoreButton.IsExpanded = false;
         _window.SetMenuOpen(false);
+    }
+
+    // The summary is a polite live region (handoff, Keyboard), but Narrator reads a change only
+    // when the element raises one; the binding updates the text first.
+    private void OnModelChanged(object? sender, PropertyChangedEventArgs args)
+    {
+        if (args.PropertyName != nameof(FlyoutModel.Summary))
+        {
+            return;
+        }
+
+        _ = DispatcherQueue.TryEnqueue(() =>
+        {
+            if (_window.Behavior.IsOpen)
+            {
+                FrameworkElementAutomationPeer.CreatePeerForElement(SummaryText)
+                    ?.RaiseAutomationEvent(AutomationEvents.LiveRegionChanged);
+            }
+        });
+    }
+
+    // A stop's outcome appears after focus has moved on from its card, so it is spoken as a
+    // notification instead.
+    private void Announce(string text)
+    {
+        if (_window.Behavior.IsOpen)
+        {
+            FrameworkElementAutomationPeer.CreatePeerForElement(SummaryText)?.RaiseNotificationEvent(
+                AutomationNotificationKind.ActionCompleted,
+                AutomationNotificationProcessing.ImportantAll,
+                text,
+                "stop");
+        }
+    }
+
+    private void OnMeterRowLoaded(object sender, RoutedEventArgs e)
+    {
+        var row = (Grid)sender;
+        _ = _meterRows.Add(row);
+        FitColumns(row);
+    }
+
+    private void OnMeterRowUnloaded(object sender, RoutedEventArgs e) =>
+        _ = _meterRows.Remove((Grid)sender);
+
+    private void OnMeterRowSizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        if (e.NewSize.Width != e.PreviousSize.Width)
+        {
+            FitColumns((Grid)sender);
+        }
+    }
+
+    private void FitMeterRows()
+    {
+        foreach (var row in _meterRows)
+        {
+            FitColumns(row);
+        }
+    }
+
+    /// <summary>
+    /// With Windows Text size above 100% the label and value columns widen with their text, by
+    /// the same amount in every row so the bars stay aligned; the bar keeps what is left, but at
+    /// least <see cref="MinBarWidth"/>, and the value truncates past that.
+    /// </summary>
+    private void FitColumns(Grid row)
+    {
+        var scale = _uiSettings.TextScaleFactor;
+        var label = Math.Ceiling(MeterLabelWidth * scale);
+        var value = Math.Ceiling(MeterValueWidth * scale);
+        var room = row.ActualWidth - row.Padding.Left - row.Padding.Right
+            - (2 * row.ColumnSpacing) - MinBarWidth;
+        if (room > 0 && label + value > room)
+        {
+            value = Math.Max(MeterValueWidth, room - label);
+        }
+
+        row.ColumnDefinitions[0].Width = new GridLength(label);
+        row.ColumnDefinitions[2].Width = new GridLength(value);
     }
 
     private void OnOpenLogsClick(object sender, RoutedEventArgs e) => _openLogs();
@@ -652,7 +759,73 @@ public sealed partial class FlyoutShell : UserControl, IFlyoutContent
 
     private void OnBodySizeChanged(object sender, SizeChangedEventArgs e) => ReportHeight();
 
-    private void OnResourcesSizeChanged(object sender, SizeChangedEventArgs e) => ReportHeight();
+    private void OnResourcesSizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        UpdateBodyClip();
+        ReportHeight();
+    }
+
+    private void OnBodyScrollerSizeChanged(object sender, SizeChangedEventArgs e) =>
+        UpdateBodyClip();
+
+    /// <summary>
+    /// The Resources card's rounded top corners leave a notch on each side; scrolled rows show in
+    /// them instead of ending in a straight cut along the card's top. The body
+    /// reaches one corner radius under the card, its bottom padding grows by as much so the last
+    /// row still stops above the card, and a clip hides what lies under the card itself.
+    /// </summary>
+    private void UpdateBodyClip()
+    {
+        var docked = ResourcesCard.Visibility == Visibility.Visible;
+        var reach = docked ? ResourcesCard.CornerRadius.TopLeft : 0;
+        if (BodyScroller.Margin.Bottom != -reach)
+        {
+            BodyScroller.Margin = new Thickness(0, 0, 0, -reach);
+            BodyPanel.Padding = _bodyPadding with { Bottom = _bodyPadding.Bottom + reach };
+        }
+
+        var visual = ElementCompositionPreview.GetElementVisual(BodyScroller);
+        var width = BodyScroller.ActualWidth;
+        var top = BodyScroller.ActualHeight - reach;
+        if (!docked || width <= 0 || top <= 0)
+        {
+            visual.Clip = null;
+            _bodyClip = default;
+            return;
+        }
+
+        var left = ResourcesCard.TransformToVisual(BodyScroller).TransformPoint(default).X;
+        var right = left + ResourcesCard.ActualWidth;
+        var shape = (width, top, left, right, reach);
+        if (shape == _bodyClip)
+        {
+            return;
+        }
+
+        _bodyClip = shape;
+
+        // Each corner is a quarter circle, drawn as a cubic Bézier.
+        var k = reach * 0.5523;
+        var figure = new PathFigure(default)
+            .LineTo(width, 0)
+            .LineTo(width, top)
+            .LineTo(right, top)
+            .LineTo(right, top + reach)
+            .CurveTo(
+                new Point(right, top + reach - k),
+                new Point(right - reach + k, top),
+                new Point(right - reach, top))
+            .LineTo(left + reach, top)
+            .CurveTo(
+                new Point(left + reach - k, top),
+                new Point(left, top + reach - k),
+                new Point(left, top + reach))
+            .LineTo(left, top)
+            .LineTo(0, top);
+        var compositor = visual.Compositor;
+        visual.Clip = compositor.CreateGeometricClip(
+            compositor.CreatePathGeometry(CompositionPaths.Create(figure)));
+    }
 
     // Pin slides out of a wrapper that clips it, so the summary truncates as the space shrinks.
     private void OnPinWrapperSizeChanged(object sender, SizeChangedEventArgs e) =>

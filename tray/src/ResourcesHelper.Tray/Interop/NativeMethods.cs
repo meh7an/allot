@@ -14,6 +14,8 @@ internal static partial class NativeMethods
     public const int DwmwaBorderColor = 34;
     public const int DwmwcpRound = 2;
     public const int DwmwaColorNone = unchecked((int)0xFFFFFFFE);
+    public const int DwmwaColorDefault = unchecked((int)0xFFFFFFFF);
+    public const int D2D1FactoryTypeMultiThreaded = 1;
 
     public const int MdtEffectiveDpi = 0;
 
@@ -68,6 +70,13 @@ internal static partial class NativeMethods
     public const uint TpmRightAlign = 0x0008;
     public const uint TpmBottomAlign = 0x0020;
     public const uint TpmReturnCmd = 0x0100;
+
+    [LibraryImport("d2d1.dll")]
+    public static partial int D2D1CreateFactory(
+        int factoryType,
+        in Guid iid,
+        nint options,
+        out nint factory);
 
     [LibraryImport("dwmapi.dll")]
     public static partial int DwmSetWindowAttribute(

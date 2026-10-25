@@ -6,6 +6,7 @@ using Microsoft.UI;
 using Microsoft.UI.Composition;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Input;
+using Microsoft.UI.System;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Hosting;
@@ -43,6 +44,10 @@ public sealed unsafe partial class FlyoutWindow : Window
     // A larger gap between the visible frame and the client area is a transient state, not an
     // edge DWM keeps.
     private const int MaxClientShortfall = 8;
+    // The handoff edges over the tints as COLORREFs: rgba(0,0,0,.09) over #F3F3F3, and
+    // rgba(255,255,255,.08) over #242424.
+    private const int LightEdge = 0x00DDDDDD;
+    private const int DarkEdge = 0x00363636;
 
     // The subclass procedure is a static callback, so it finds the window here; there is only one.
     private static FlyoutWindow? s_current;
@@ -51,6 +56,9 @@ public sealed unsafe partial class FlyoutWindow : Window
     private readonly AcrylicBackdrop _backdrop = new();
     private readonly OverlappedPresenter _presenter = OverlappedPresenter.Create();
     private readonly UISettings _uiSettings = new();
+    // Windows.UI.ViewManagement.AccessibilitySettings can't be activated in this unpackaged app
+    // (ClassFactory cannot supply requested class); this is the App SDK's own.
+    private readonly ThemeSettings _themeSettings;
     private readonly DispatcherQueue _dispatcher;
     private readonly nint _hwnd;
     private FrameworkElement? _root;
@@ -88,6 +96,9 @@ public sealed unsafe partial class FlyoutWindow : Window
 
         SystemBackdrop = _backdrop;
         Activated += OnActivated;
+        _themeSettings = ThemeSettings.CreateForWindowId(AppWindow.Id);
+        _themeSettings.Changed += (_, _) => _dispatcher.TryEnqueue(ApplyHighContrast);
+        ApplyHighContrast();
 
         s_current = this;
         if (!NativeMethods.SetWindowSubclass(_hwnd, &SubclassProc, SubclassId, 0))
@@ -120,7 +131,11 @@ public sealed unsafe partial class FlyoutWindow : Window
         _content = content;
         Content = root;
         root.AddHandler(UIElement.KeyDownEvent, new KeyEventHandler(OnKeyDown), true);
-        root.ActualThemeChanged += (sender, _) => _backdrop.SetTheme(sender.ActualTheme);
+        root.ActualThemeChanged += (sender, _) =>
+        {
+            _backdrop.SetTheme(sender.ActualTheme);
+            ApplyBorderColor();
+        };
         root.Loaded += (_, _) => _backdrop.SetTheme(root.ActualTheme);
         root.Loaded += (_, _) => root.XamlRoot.Changed += OnXamlRootChanged;
         content.DesiredHeightChanged += OnDesiredHeightChanged;
@@ -367,9 +382,28 @@ public sealed unsafe partial class FlyoutWindow : Window
             NativeMethods.DwmwaWindowCornerPreference,
             NativeMethods.DwmwcpRound,
             sizeof(int));
-        // The 1 px edge is drawn by the content in the handoff colours, so DWM draws none.
+        ApplyBorderColor();
+    }
+
+    /// <summary>
+    /// DWM draws the flyout's 1 px edge: an edge drawn by the content sat inside DWM's
+    /// rounded clip and its own 1 px frame, which left a light pixel at the top corners and a
+    /// sliver of backdrop at the bottom ones. The border colour takes no alpha, so it is the
+    /// handoff edge blended over the tint; high contrast keeps the system's frame colour.
+    /// </summary>
+    private void ApplyHighContrast()
+    {
+        _backdrop.SetHighContrast(_themeSettings.HighContrast);
+        ApplyBorderColor();
+    }
+
+    private void ApplyBorderColor()
+    {
+        var color = _themeSettings.HighContrast
+            ? NativeMethods.DwmwaColorDefault
+            : _root?.ActualTheme == ElementTheme.Dark ? DarkEdge : LightEdge;
         _ = NativeMethods.DwmSetWindowAttribute(
-            _hwnd, NativeMethods.DwmwaBorderColor, NativeMethods.DwmwaColorNone, sizeof(int));
+            _hwnd, NativeMethods.DwmwaBorderColor, color, sizeof(int));
     }
 
     private void Show()

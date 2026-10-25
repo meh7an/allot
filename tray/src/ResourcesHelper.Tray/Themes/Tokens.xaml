@@ -162,7 +162,8 @@
       <SolidColorBrush x:Key="RhWaitingSoftBrush" Color="{ThemeResource SystemColorGrayTextColor}" />
       <SolidColorBrush x:Key="RhBenchmarkBrush" Color="{ThemeResource SystemColorHighlightColor}" />
       <SolidColorBrush x:Key="RhBenchmarkForegroundBrush" Color="{ThemeResource SystemColorHighlightTextColor}" />
-      <SolidColorBrush x:Key="RhBenchmarkSoftBrush" Color="{ThemeResource SystemColorGrayTextColor}" />
+      <!-- Completed steps in full ink, so they differ from upcoming ones (GrayText). -->
+      <SolidColorBrush x:Key="RhBenchmarkSoftBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
       <SolidColorBrush x:Key="RhStepUpcomingBrush" Color="{ThemeResource SystemColorGrayTextColor}" />
       <SolidColorBrush x:Key="RhDangerTextBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
       <SolidColorBrush x:Key="RhDangerFillBrush" Color="{ThemeResource SystemColorHighlightColor}" />
@@ -329,11 +330,14 @@
     <Setter Property="FontSize" Value="9" />
     <Setter Property="FontWeight" Value="SemiBold" />
     <Setter Property="Foreground" Value="{ThemeResource RhTextBrush}" />
+    <Setter Property="IsTextScaleFactorEnabled" Value="False" />
   </Style>
   <Style x:Key="RhIconRegularTextStyle" TargetType="TextBlock">
     <Setter Property="FontFamily" Value="{StaticResource RhIconRegularFontFamily}" />
     <Setter Property="FontSize" Value="{StaticResource RhIconSize}" />
     <Setter Property="Foreground" Value="{ThemeResource RhTextBrush}" />
+    <Setter Property="IsTextScaleFactorEnabled" Value="False" />
+    <Setter Property="AutomationProperties.AccessibilityView" Value="Raw" />
   </Style>
   <Style x:Key="RhIconFilledTextStyle" TargetType="TextBlock" BasedOn="{StaticResource RhIconRegularTextStyle}">
     <Setter Property="FontFamily" Value="{StaticResource RhIconFilledFontFamily}" />

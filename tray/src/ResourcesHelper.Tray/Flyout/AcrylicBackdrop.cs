@@ -6,13 +6,15 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Media;
 
 using Windows.UI;
+using Windows.UI.ViewManagement;
 
 namespace ResourcesHelper.Tray.Flyout;
 
 /// <summary>
 /// Desktop acrylic with the handoff tints. DesktopAcrylicBackdrop takes no tint, and its
 /// configuration always turns the surface solid while the window is inactive; owning the
-/// controller and the configuration lets a pinned flyout keep the active look.
+/// controller and the configuration lets a pinned flyout keep the active look. In high contrast
+/// the surface is the solid window colour of the contrast theme.
 /// </summary>
 [SuppressMessage(
     "Design",
@@ -24,10 +26,12 @@ public sealed partial class AcrylicBackdrop : SystemBackdrop
     private static readonly Color DarkTint = Color.FromArgb(255, 36, 36, 36);
 
     private readonly SystemBackdropConfiguration _configuration = new() { IsInputActive = true };
+    private readonly UISettings _uiSettings = new();
     private DesktopAcrylicController? _controller;
     private ElementTheme _theme = ElementTheme.Light;
     private bool _windowActive = true;
     private bool _keepActiveLook;
+    private bool _highContrast;
     // Picked by eye over the handoff's CSS .86.
     private float _lightTintOpacity = 0.5f;
     private float _darkTintOpacity = 0.2f;
@@ -86,6 +90,12 @@ public sealed partial class AcrylicBackdrop : SystemBackdrop
         ApplyTint();
     }
 
+    public void SetHighContrast(bool highContrast)
+    {
+        _highContrast = highContrast;
+        ApplyTint();
+    }
+
     public void SetWindowActive(bool active)
     {
         _windowActive = active;
@@ -138,7 +148,9 @@ public sealed partial class AcrylicBackdrop : SystemBackdrop
 
         var tint = _theme == ElementTheme.Dark ? DarkTint : LightTint;
         _controller.TintColor = tint;
-        _controller.FallbackColor = tint;
+        _configuration.IsHighContrast = _highContrast;
+        _controller.FallbackColor =
+            _highContrast ? _uiSettings.UIElementColor(UIElementType.Window) : tint;
         _controller.TintOpacity = TintOpacity;
         _controller.LuminosityOpacity = _luminosityOpacity;
     }

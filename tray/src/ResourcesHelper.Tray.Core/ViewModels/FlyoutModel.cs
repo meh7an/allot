@@ -74,12 +74,29 @@ public sealed class FlyoutModel : Observable
     /// </summary>
     public ResourcesModel Resources { get; } = new();
 
+    /// <summary>
+    /// Raised by <see cref="Apply"/> once for each card whose stop ended or was refused, with
+    /// its <see cref="JobCard.Announcement"/>; focus has moved on, so Narrator is told this way.
+    /// </summary>
+    public event Action<string>? Announced;
+
     public void Apply(FlyoutSnapshot snapshot)
     {
+        var before = Rows.OfType<JobCardRow>()
+            .ToDictionary(row => row.Key, row => row.Card.Announcement, StringComparer.Ordinal);
         Glyph = snapshot.Header.Glyph;
         Summary = snapshot.Header.Summary;
         IsLastKnown = snapshot.IsLastKnown;
         Sync(Rows, RowsOf(snapshot));
+
+        foreach (var row in Rows.OfType<JobCardRow>())
+        {
+            var now = row.Card.Announcement;
+            if (now.Length > 0 && before.GetValueOrDefault(row.Key) != now)
+            {
+                Announced?.Invoke(now);
+            }
+        }
     }
 
     public void ApplyBanner(ServiceBanner? banner) => Banner = banner ?? ServiceBanner.Hidden;

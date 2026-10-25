@@ -209,6 +209,47 @@ public sealed class StopCardTests
         Assert.AreSame(row, model.Rows.OfType<JobCardRow>().Single());
     }
 
+    [TestMethod]
+    [DataRow("c-killed", "cargo", "Stopped cargo.exe · Claude was notified")]
+    [DataRow("c-removed", "npm", "Removed npm run test:e2e · Claude was notified")]
+    [DataRow("c-confirm", "cargo", "")]
+    public void EndedCardsTellNarratorWhatHappened(string scenario, string job, string spoken)
+    {
+        Assert.AreEqual(spoken, CardOf(scenario, job).Announcement);
+    }
+
+    [TestMethod]
+    public void RefusalsTellNarratorWhy()
+    {
+        var kill = CardWith(
+            "cargo",
+            new StopView(StopKind.Kill, StopPhase.Failed, Message: "the job has already ended"));
+        var remove = CardWith(
+            "npm",
+            new StopView(StopKind.Remove, StopPhase.Failed, Message: "the service is not running"));
+
+        Assert.AreEqual("cargo.exe not stopped: the job has already ended", kill.Announcement);
+        Assert.AreEqual(
+            "npm run test:e2e not removed: the service is not running",
+            remove.Announcement);
+    }
+
+    [TestMethod]
+    public void ModelAnnouncesEachStopOnceWhenItEnds()
+    {
+        var state = Handoff.State(run: ["cargo"]);
+        var model = new FlyoutModel();
+        var spoken = new List<string>();
+        model.Announced += spoken.Add;
+        model.Apply(FlyoutSnapshot.From(ServiceStatus.Running, state));
+        model.Apply(FlyoutSnapshot.From(ServiceStatus.Running, state, Handoff.Stops("c-confirm")));
+
+        model.Apply(FlyoutSnapshot.From(ServiceStatus.Running, state, Handoff.Stops("c-killed")));
+        model.Apply(FlyoutSnapshot.From(ServiceStatus.Running, state, Handoff.Stops("c-killed")));
+
+        Assert.AreEqual("Stopped cargo.exe · Claude was notified", string.Join(" | ", spoken));
+    }
+
     private static FlyoutSnapshot Snapshot(string scenario)
     {
         var (status, state) = Handoff.Scenario(scenario);
