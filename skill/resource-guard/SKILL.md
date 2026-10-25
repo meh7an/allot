@@ -74,7 +74,14 @@ Light, never leased: reading and searching files, `git`, `cargo check`, `cargo c
 5. **Release** with `release_lease` as soon as the heavy command (or a tight batch of them,
    such as build then test) finishes, whether it passed, failed, or was cancelled. Do not hold
    a lease while you read output, think, or edit for more than a minute or two; acquire again
-   for the next run.
+   for the next run. A note after a Bash or PowerShell call saying the command has finished
+   and its lease is still held is your cue: release it right then, unless the next heavy
+   command of the batch follows at once.
+
+If a lease is never released, rhd ends it by itself once no command runs under it and the
+session has been idle for a few minutes (3 by default). That is a backstop, not a substitute
+for releasing. A heavy command blocked after that is normal: acquire again as usual, and
+releasing the old lease is harmless.
 
 One active lease covers several commands of its kind: a lease with `cores > 0` covers CPU
 work, one with `gpu_pct > 0` or `vram_mb > 0` covers GPU work, `mixed` needs both, and a
@@ -118,6 +125,9 @@ the Resources Helper tray app if they want to.
    session expired): do not run the command, do not acquire it again, and tell the user in
    one line that the queued command was cancelled. Continue with any work that does not need
    it.
+6. If it ends *after* it started (it has a `granted_at_ms`, and the result says rhd ended it
+   because nothing ran under it), it was granted while you were not waiting and sat unused.
+   Nothing was cancelled: acquire a new lease for the command as usual and run it.
 
 ## When the user stops a job or removes a request
 

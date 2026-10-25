@@ -211,12 +211,16 @@ impl Default for BenchmarkConfig {
 pub struct LeaseConfig {
     /// A lease without a heartbeat for this long expires.
     pub heartbeat_ttl_secs: u64,
+    /// An active lease ends once no command runs under it and its holder's session has been
+    /// idle for this long, for holders that forget `release_lease`; 0 turns this off.
+    pub idle_release_secs: u64,
 }
 
 impl Default for LeaseConfig {
     fn default() -> Self {
         Self {
             heartbeat_ttl_secs: 60,
+            idle_release_secs: 180,
         }
     }
 }
@@ -472,6 +476,10 @@ mod tests {
         .unwrap();
         let defaults = Config::default();
         assert_eq!(config.leases.heartbeat_ttl_secs, 90);
+        assert_eq!(
+            config.leases.idle_release_secs,
+            defaults.leases.idle_release_secs
+        );
         assert_eq!(config.classes.gpu_heavy.vram_mb, 8192);
         assert_eq!(
             config.classes.gpu_heavy.cores,

@@ -3,7 +3,8 @@
 //! `pre-tool` (PreToolUse) denies heavy commands the session holds no covering active lease
 //! for, and binds the covering lease to the tool call it lets through so a kill can find the
 //! command's processes. `post-tool` (PostToolUse and PostToolUseFailure) tells Claude once
-//! when the user stopped one of its jobs or removed a queued request.
+//! when the user stopped one of its jobs or removed a queued request, and after a heavy
+//! command that its lease is still held.
 //!
 //! Exit code 2 from a hook blocks the tool call, and clap uses 2 for argument errors, so the
 //! hooks always exit 0 and deny only through their JSON output. Light commands never touch
@@ -53,6 +54,9 @@ struct HookInput {
 #[derive(Debug, Default, Deserialize)]
 struct ToolInput {
     command: Option<String>,
+    /// Set when the command keeps running after the call returns; `post-tool` reads it.
+    #[serde(default)]
+    run_in_background: Option<bool>,
 }
 
 /// What a hook tells Claude Code.

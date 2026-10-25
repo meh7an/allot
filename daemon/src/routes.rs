@@ -640,7 +640,7 @@ async fn notice_delivered(
 
 /// Stores a finished run. The lease already ended; losing the history row must not fail the
 /// request that ended it, nor hide a benchmark's noise report from its holder.
-async fn store_job_run(state: &AppState, job: JobRun) {
+pub(crate) async fn store_job_run(state: &AppState, job: JobRun) {
     let lease = job.lease_id.map_or(0, |id| id.0);
     if let Err(error) = state
         .with_db(move |conn| repo::insert_job_run(conn, &job))
@@ -677,10 +677,10 @@ async fn ended_lease(state: &AppState, id: LeaseId) -> Result<Lease, AppError> {
         .ok_or_else(|| anyhow!("lease {} vanished from the database", id.0))?)
 }
 
-/// The history row of a lease that ran until its holder released it or the user killed it;
-/// expired and removed leases store none. Noise is kept for benchmarks only; other leases share
-/// the machine on purpose.
-fn job_run(
+/// The history row of a lease that ran until its holder released it, the user killed it, or
+/// the daemon ended it once its holder idled; leases whose holder vanished and removed leases
+/// store none. Noise is kept for benchmarks only; other leases share the machine on purpose.
+pub(crate) fn job_run(
     state: &AppState,
     lease: &Lease,
     run: &MeteredRun,
@@ -746,6 +746,13 @@ async fn lease_verdict(state: &AppState, lease: &Lease) -> Verdict {
             }
             (_, Some(EndCause::Killed)) => {
                 "the user stopped this job in Resources Helper".to_owned()
+            }
+            // Granted while the session was not waiting, then ended unused: the command still
+            // has to run, so it needs a new lease.
+            (LeaseState::Expired, _) if lease.granted_at_ms.is_some() => {
+                "rhd ended this lease after it started, because no command ran under it while \
+                 the session was idle or its heartbeat stopped; the command did not run under it"
+                    .to_owned()
             }
             _ => format!("lease is {}", lease.state.as_str()),
         };

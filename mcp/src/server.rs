@@ -215,6 +215,11 @@ impl<C: DaemonApi> RhServer<C> {
                         "The user stopped this job from Resources Helper. Do not run the \
                          command again on your own; ask the user whether to retry or skip."
                     }
+                    _ if lease.state == LeaseState::Expired && lease.granted_at_ms.is_some() => {
+                        "rhd ended this lease after it started, because nothing ran under it \
+                         while the session was idle. The command still needs to run: acquire a \
+                         new lease for it (without lease_id), then run it."
+                    }
                     _ => "The lease ended before it started; do not run the command.",
                 }
             }
@@ -571,6 +576,30 @@ mod tests {
         let next_step = outcome["next_step"].as_str().unwrap();
         assert!(next_step.contains("retry or skip"), "{next_step}");
         assert_eq!(daemon.delivered(), [LeaseId(1)]);
+    }
+
+    #[tokio::test]
+    async fn test_resume_of_a_lease_ended_after_its_grant_says_to_acquire_again() {
+        let (server, daemon) = server_with(MockDaemon::default());
+        server
+            .acquire_lease(acquire(ClassParam::GpuHeavy))
+            .await
+            .unwrap();
+        daemon.expire_unused(LeaseId(1));
+        let outcome = json(server.acquire_lease(resume(1)).await);
+        assert_eq!(outcome["end_cause"], "expired");
+        let next_step = outcome["next_step"].as_str().unwrap();
+        assert!(next_step.contains("acquire a new lease"), "{next_step}");
+        assert!(server.held.ids().is_empty());
+
+        server
+            .acquire_lease(acquire(ClassParam::GpuHeavy))
+            .await
+            .unwrap();
+        daemon.stop(LeaseId(2), EndCause::Expired);
+        let outcome = json(server.acquire_lease(resume(2)).await);
+        let next_step = outcome["next_step"].as_str().unwrap();
+        assert!(next_step.contains("do not run the command"), "{next_step}");
     }
 
     #[tokio::test]

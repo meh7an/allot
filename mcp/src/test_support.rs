@@ -138,6 +138,17 @@ impl MockDaemon {
         lease.ended_at_ms = Some(5_000);
     }
 
+    /// Ends lease `id` as rhd does once it was granted and then sat unused.
+    pub(crate) fn expire_unused(&self, id: LeaseId) {
+        let mut state = self.lock();
+        let lease = state.leases.iter_mut().find(|lease| lease.id == id);
+        let lease = lease.expect("expire_unused needs a known lease");
+        lease.state = LeaseState::Expired;
+        lease.end_cause = Some(EndCause::Expired);
+        lease.granted_at_ms = Some(1_000);
+        lease.ended_at_ms = Some(5_000);
+    }
+
     /// The notices marked delivered, in order.
     pub(crate) fn delivered(&self) -> Vec<LeaseId> {
         self.lock().delivered.clone()

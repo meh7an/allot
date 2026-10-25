@@ -7,6 +7,7 @@ pub mod benchmark;
 pub mod binding;
 pub mod classifier;
 pub mod history;
+pub mod idle;
 pub mod kill;
 pub mod ledger;
 pub mod meter;

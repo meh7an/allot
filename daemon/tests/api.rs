@@ -428,6 +428,76 @@ async fn test_second_build_queues_and_starts_after_release() {
 }
 
 #[tokio::test]
+async fn test_forgotten_lease_ends_once_its_session_idles_and_the_queue_moves_on() {
+    let mut config = Config::default();
+    config.leases.idle_release_secs = 1;
+    let daemon = Daemon::start_with(config, |_| {}).await;
+    let set_alice_cores = |cores| {
+        daemon.machine.lock().unwrap().processes[0].usage.cores = cores;
+    };
+    // Like lease 254: the build ran, the session went quiet, and nobody released the lease.
+    set_alice_cores(6.0);
+    let first = daemon.acquire_build(alice(), 0).await.lease;
+    let second = daemon.acquire_build(bob(), 0).await.lease;
+    assert_eq!(second.state, LeaseState::Queued);
+    tokio::time::sleep(Duration::from_millis(1_500)).await;
+    assert_eq!(
+        daemon.heartbeat_state(first.id, "alice").await,
+        LeaseState::Active
+    );
+
+    set_alice_cores(0.02);
+    eventually("bob's build to start", || async {
+        daemon.heartbeat_state(second.id, "bob").await == LeaseState::Active
+    })
+    .await;
+    let ended = daemon
+        .leases("?session=alice")
+        .await
+        .into_iter()
+        .find(|lease| lease.id == first.id)
+        .unwrap();
+    assert_eq!(
+        (ended.state, ended.end_cause),
+        (LeaseState::Expired, Some(EndCause::Expired))
+    );
+
+    let path = "/history/runs?fingerprint=cargo%20build%7C&limit=5";
+    let client = &daemon;
+    let run_of = |id: LeaseId| async move {
+        let response: HistoryRunsResponse = client.get(path).await.json().await.unwrap();
+        response
+            .runs
+            .into_iter()
+            .find(|run| run.lease_id == Some(id))
+    };
+    eventually("the run in history", || async {
+        run_of(first.id).await.is_some()
+    })
+    .await;
+    let run = run_of(first.id).await.unwrap();
+    assert_eq!(run.end_cause, Some(EndCause::Expired));
+    // The run ends when the session went idle, not when the daemon ended the lease.
+    let ended_at_ms = ended.ended_at_ms.unwrap();
+    assert!(run.ended_at_ms <= ended_at_ms - 1_000, "{run:?} {ended:?}");
+    assert_eq!(run.busy.map(|busy| busy.cores), Some(6.0), "{run:?}");
+
+    // Bob was not waiting when his lease started and never used it, so it ends too, and his
+    // next wait says the command still has to run.
+    eventually("bob's unused lease to end", || async {
+        daemon.heartbeat_state(second.id, "bob").await == LeaseState::Expired
+    })
+    .await;
+    let response = daemon.wait(second.id, "bob", 0).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let answer: AcquireResponse = response.json().await.unwrap();
+    assert_eq!(answer.lease.end_cause, Some(EndCause::Expired));
+    let reasons = answer.verdict.reasons.join(" | ");
+    assert!(reasons.contains("after it started"), "{reasons}");
+    daemon.stop().await;
+}
+
+#[tokio::test]
 async fn test_acquire_wait_returns_as_soon_as_the_lease_starts() {
     let daemon = Arc::new(Daemon::start().await);
     let first = daemon.acquire_build(alice(), 0).await.lease;
