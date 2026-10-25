@@ -20,12 +20,16 @@
         Background="{ThemeResource RhHatchWeakBrush}">
         <Path x:Name="Stripes" Stroke="{ThemeResource RhHatchStrongBrush}" StrokeThickness="1.5" />
       </Grid>
+      <!-- Full width, slid left by the unused share; the bar's clip hides what is outside. -->
       <Border
         x:Name="Fill"
-        Width="0"
         HorizontalAlignment="Left"
         Background="{ThemeResource RhAccentBrush}"
-        CornerRadius="2" />
+        CornerRadius="2">
+        <Border.RenderTransform>
+          <TranslateTransform x:Name="FillShift" />
+        </Border.RenderTransform>
+      </Border>
     </Grid>
     <Canvas>
       <Border

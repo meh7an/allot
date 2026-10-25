@@ -76,11 +76,12 @@ public sealed partial class EdgeBar : UserControl
         DependencyPropertyChangedEventArgs e) =>
         ((EdgeBar)sender).ShowTone((EdgeBarTone)e.NewValue);
 
-    // The first value and every value without animations jump; later ticks glide from where the
+    // The first value, values set while the window is hidden (a flyout opening shows them at
+    // once) and every value without animations jump; later ticks glide from where the
     // bar is, so a new poll mid-animation continues smoothly.
     private void ScaleTo(double fraction)
     {
-        if (!IsLoaded || !Settings.AnimationsEnabled)
+        if (!IsLoaded || !Settings.AnimationsEnabled || XamlRoot?.IsHostVisible != true)
         {
             _tick.Stop();
             FillScale.ScaleX = fraction;

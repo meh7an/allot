@@ -14,6 +14,7 @@ using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 
 using ResourcesHelper.Tray.Core.Flyout;
+using ResourcesHelper.Tray.Diagnostics;
 using ResourcesHelper.Tray.Interop;
 
 using Windows.Graphics;
@@ -113,6 +114,12 @@ public sealed unsafe partial class FlyoutWindow : Window
     public event Action<bool>? OpenChanged;
 
     /// <summary>
+    /// Raised as the flyout starts to show, before it measures its content: content that is not
+    /// kept current while the flyout is closed brings itself up to date here.
+    /// </summary>
+    public event Action? Opening;
+
+    /// <summary>
     /// Raised when Stay open or Pin changes, including the reset on a tray close.
     /// </summary>
     public event Action? ModesChanged;
@@ -122,6 +129,12 @@ public sealed unsafe partial class FlyoutWindow : Window
     public FlyoutBehavior Behavior => _behavior;
 
     public bool AnimationsEnabled => _uiSettings.AnimationsEnabled;
+
+    /// <summary>
+    /// True while <see cref="Opening"/> runs: what changes then is the flyout's first look, not a
+    /// change to animate.
+    /// </summary>
+    public bool IsOpening { get; private set; }
 
     private static long Now => Environment.TickCount64;
 
@@ -373,6 +386,7 @@ public sealed unsafe partial class FlyoutWindow : Window
         }
 
         Report("prewarmed");
+        Measure.Startup("prewarmed");
     }
 
     private void ApplyDwmFrame()
@@ -408,11 +422,22 @@ public sealed unsafe partial class FlyoutWindow : Window
 
     private void Show()
     {
+        Measure.Showing();
         var generation = ++_generation;
         if (!_framed)
         {
             ApplyDwmFrame();
             _framed = true;
+        }
+
+        IsOpening = true;
+        try
+        {
+            Opening?.Invoke();
+        }
+        finally
+        {
+            IsOpening = false;
         }
 
         // Content may have changed while hidden; measure it before sizing the window.
@@ -483,6 +508,7 @@ public sealed unsafe partial class FlyoutWindow : Window
         fade.InsertKeyFrame(1, 0, compositor.CreateLinearEasingFunction());
         fade.Duration = FadeOutDuration;
 
+        Measure.Animation("close-fade", FadeOutDuration);
         var batch = compositor.CreateScopedBatch(CompositionBatchTypes.Animation);
         visual.StartAnimation("Opacity", fade);
         batch.End();
@@ -536,6 +562,7 @@ public sealed unsafe partial class FlyoutWindow : Window
     {
         StopSlide();
         _slide = slide;
+        Measure.Animation(slide.Closes ? "close-slide" : "open-slide", slide.Duration);
         CompositionTarget.Rendering += OnSlideFrame;
     }
 
@@ -594,6 +621,7 @@ public sealed unsafe partial class FlyoutWindow : Window
         }
 
         var window = _insets.Around(target);
+        CountResize(window);
         AppWindow.MoveAndResize(new RectInt32(window.X, window.Y, window.Width, window.Height));
         var actual = CurrentInsets();
         if (actual != _insets)
@@ -608,6 +636,15 @@ public sealed unsafe partial class FlyoutWindow : Window
         }
 
         CheckClient(target);
+    }
+
+    private void CountResize(PixelRect window)
+    {
+        if (Measure.Enabled && WindowBounds() is var before
+            && (before.Width != window.Width || before.Height != window.Height))
+        {
+            Measure.Resized();
+        }
     }
 
     // DWM keeps a 1 px edge of the visible frame outside the client area (seen: client
@@ -690,6 +727,7 @@ public sealed unsafe partial class FlyoutWindow : Window
         var fade = compositor.CreateScalarKeyFrameAnimation();
         fade.InsertKeyFrame(1, 1, compositor.CreateLinearEasingFunction());
         fade.Duration = FadeInDuration;
+        Measure.Animation("open-fade", FadeInDuration);
         visual.StartAnimation("Opacity", fade);
     }
 

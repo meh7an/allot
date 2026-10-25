@@ -11,6 +11,21 @@ public enum StopKind
     /// Remove a queued request, without a confirm because no work is lost.
     /// </summary>
     Remove,
+
+    /// <summary>
+    /// Not a stop: the job's session released it, and its card holds as Finished.
+    /// </summary>
+    Finished,
+
+    /// <summary>
+    /// Not a stop of this flyout: <c>rh kill</c> or another tray app killed it.
+    /// </summary>
+    KilledOutside,
+
+    /// <summary>
+    /// Not a stop: rhd ended the lease (idle session, quick-lease overrun, holder gone).
+    /// </summary>
+    EndedByRhd,
 }
 
 public enum StopPhase
@@ -26,7 +41,7 @@ public enum StopPhase
     Sending,
 
     /// <summary>
-    /// rhd ended the lease; the card holds Stopped or Removed, then collapses.
+    /// The lease ended; the card holds Stopped, Removed or how it ended, then collapses.
     /// </summary>
     Ended,
 
@@ -40,10 +55,12 @@ public enum StopPhase
 /// What this flyout is doing to one job, as its card shows it (the prototype's per-job
 /// <c>killPhase</c> and <c>removePhase</c>).
 /// </summary>
-/// <param name="Kind">Kill for a running job, Remove for a queued one.</param>
+/// <param name="Kind">Kill for a running job, Remove for a queued one, or how a job ended outside
+/// this flyout.</param>
 /// <param name="Phase">Where the stop stands.</param>
 /// <param name="SecondsLeft">While confirming, the countdown from 4 to 1.</param>
-/// <param name="Message">Ended: a note for the Stopped line, or empty. Failed: why not.</param>
+/// <param name="Message">Ended: a note for the Stopped line, or empty; rhd's reason for
+/// <see cref="StopKind.EndedByRhd"/>. Failed: why not.</param>
 /// <param name="EndedAtMs">Ended: when rhd ended the lease, in the daemon's clock.</param>
 public sealed record StopView(
     StopKind Kind,

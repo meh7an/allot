@@ -32,10 +32,11 @@ public sealed partial class AcrylicBackdrop : SystemBackdrop
     private bool _windowActive = true;
     private bool _keepActiveLook;
     private bool _highContrast;
-    // Picked by eye over the handoff's CSS .86.
+    // Picked by eye over the handoff's CSS .86: tint and luminosity both 0.5 in either theme
+    // (0.2 was too see-through).
     private float _lightTintOpacity = 0.5f;
-    private float _darkTintOpacity = 0.2f;
-    private float _luminosityOpacity = 0.2f;
+    private float _darkTintOpacity = 0.5f;
+    private float _luminosityOpacity = 0.5f;
 
     /// <summary>
     /// Keeps acrylic while the window is inactive instead of the solid fallback.

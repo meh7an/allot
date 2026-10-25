@@ -135,10 +135,11 @@ public sealed partial class BenchmarkStepper : UserControl
         QuietTicks.Data = TicksOf(TickRow.ActualWidth, TickRow.ActualHeight, filled);
     }
 
-    // The first value and every value without animations jump; later ones glide.
+    // The first value, values set while the window is hidden and every value without animations
+    // jump; later ones glide.
     private void ScaleRun(double fraction)
     {
-        if (!IsLoaded || !Settings.AnimationsEnabled)
+        if (!IsLoaded || !Settings.AnimationsEnabled || XamlRoot?.IsHostVisible != true)
         {
             _run.Stop();
             RunScale.ScaleX = fraction;

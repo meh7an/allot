@@ -9,12 +9,17 @@ namespace ResourcesHelper.Tray.Flyout;
 
 /// <summary>
 /// Executable icons for the process tiles. Each one is extracted on a pool thread at the tile's
-/// physical size and cached by path and size for the app's life, so an executable is read once
-/// however often its job polls; a failure is cached too, and the tile keeps its initials. Called
-/// on the UI thread only.
+/// physical size and cached by path and size, so an executable is read once however often its
+/// job polls; a failure is cached too, and the tile keeps its initials. Past
+/// <see cref="Capacity"/> entries the oldest goes, as a scale change (new sizes) or months of
+/// different tools would otherwise grow the cache without end. Called on the UI thread
+/// only.
 /// </summary>
 internal static class ExeIcons
 {
+    private const int Capacity = 64;
+
+    private static readonly Queue<string> Order = new();
     private static readonly Dictionary<string, Task<ImageSource?>> Cache =
         new(StringComparer.OrdinalIgnoreCase);
 
@@ -27,7 +32,13 @@ internal static class ExeIcons
         if (!Cache.TryGetValue(key, out var icon))
         {
             icon = LoadAsync(path, size);
+            if (Cache.Count >= Capacity)
+            {
+                _ = Cache.Remove(Order.Dequeue());
+            }
+
             Cache[key] = icon;
+            Order.Enqueue(key);
         }
 
         return icon;

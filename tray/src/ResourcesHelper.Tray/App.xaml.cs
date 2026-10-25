@@ -14,6 +14,7 @@ using ResourcesHelper.Tray.Core.Settings;
 using ResourcesHelper.Tray.Core.Startup;
 using ResourcesHelper.Tray.Core.TrayIcon;
 using ResourcesHelper.Tray.Core.ViewModels;
+using ResourcesHelper.Tray.Diagnostics;
 using ResourcesHelper.Tray.Flyout;
 using ResourcesHelper.Tray.Notifications;
 using ResourcesHelper.Tray.Startup;
@@ -27,6 +28,8 @@ namespace ResourcesHelper.Tray;
     Justification = "The app lives as long as the process; Quit disposes what it owns.")]
 public sealed partial class App : Application
 {
+    private static readonly TimeSpan TickerFallback = TimeSpan.FromMilliseconds(1250);
+
     private readonly CancellationTokenSource _stopping = new();
     private readonly FlyoutModel _model = new();
     private readonly StateClock _clock = new(TimeProvider.System);
@@ -94,6 +97,8 @@ public sealed partial class App : Application
         UnhandledException += (_, e) => AppLog.Write($"unhandled: {e.Exception}");
         AppLog.Write($"started, data in {_data.Root}");
         AppInstance.GetCurrent().Activated += OnRedirectedActivation;
+        Measure.Startup("launched");
+        Measure.Start(_dispatcher, _model);
 
         if (_toasts)
         {
@@ -114,7 +119,9 @@ public sealed partial class App : Application
         _flyout.Diagnostic += message => AppLog.Write($"flyout: {message}");
         _flyout.OpenChanged += open => _poller.SetFlyoutOpen(open);
         _flyout.OpenChanged += open => _flyoutOpen = open;
+        _flyout.OpenChanged += Measure.FlyoutOpen;
         _flyout.OpenChanged += Tick;
+        _flyout.Opening += OnOpening;
 
         // Kill? goes back to Kill when focus leaves it, and so when the flyout does.
         _flyout.Activated += (_, args) =>
@@ -128,8 +135,7 @@ public sealed partial class App : Application
         var shell = new FlyoutShell(_flyout, _model, OpenLogs);
         _shell = shell;
         shell.ShowToggles(_settings);
-        shell.ResourcesToggled += () => ChangeSettings(settings =>
-            settings.ResourcesExpanded = !settings.ResourcesExpanded);
+        shell.ResourcesToggled += ToggleResources;
         shell.MetersChanged += meters => ChangeSettings(settings => settings.Meters = meters);
         shell.NotificationsChanged += notifications =>
             ChangeSettings(settings => settings.Notifications = notifications);
@@ -154,9 +160,10 @@ public sealed partial class App : Application
         _flyout.SetContent(shell, shell);
         _flyout.Prewarm();
 
-        // Times tick every second while the flyout is open, between polls too.
+        // Times tick with each 1 s poll while the flyout is open; the ticker fills in only when a
+        // poll is late, so a second never costs two updates.
         _ticker = _dispatcher.CreateTimer();
-        _ticker.Interval = TimeSpan.FromSeconds(1);
+        _ticker.Interval = TickerFallback;
         _ticker.Tick += (_, _) => Show();
 
         // Countdowns and holds change cards on their own schedule, open or not.
@@ -173,6 +180,7 @@ public sealed partial class App : Application
             ReadLaunchAtLogon,
             SetLaunchAtLogon,
             _toastRules.ExpectStop);
+        Measure.Startup("tray icon");
 #if DEBUG
         if (DebugScenario.Name is { } scenario)
         {
@@ -184,6 +192,22 @@ public sealed partial class App : Application
 #endif
         _poller.Updated += (_, result) => _dispatcher.TryEnqueue(() => Apply(result));
         _ = PollAsync(_poller);
+        if (Measure.Cycle)
+        {
+            _ = MeasureCycle.RunAsync(_flyout, ToggleResources, Quit, _stopping.Token);
+        }
+        else if (Measure.Stress)
+        {
+            _ = MeasureCycle.StressAsync(_flyout, Quit, _stopping.Token);
+        }
+        else if (Measure.StartupOnly)
+        {
+            _ = MeasureCycle.StartupAsync(Quit, _stopping.Token);
+        }
+        else if (Measure.Soak)
+        {
+            _ = MeasureCycle.SoakAsync(_flyout, Quit, _stopping.Token);
+        }
 
         // A toast clicked while the app was not running starts it with that activation.
         if (Toasts.ActionOf(AppInstance.GetCurrent().GetActivatedEventArgs()) is { } action)
@@ -276,6 +300,7 @@ public sealed partial class App : Application
 
     private FlyoutSnapshot Show()
     {
+        var measured = Measure.Updating();
         _ = _stops.Expire();
         var running = _status == ServiceStatus.Running && _state is not null;
         var state = running ? _stops.Merge(_state!) : _state;
@@ -288,19 +313,29 @@ public sealed partial class App : Application
 #endif
         var firstRun = new FirstRunState(_settings.FirstRunDone, _launchAtLogon);
         var snapshot = FlyoutSnapshot.From(_status, state, stops, _clock.NowMs, firstRun);
-        _model.Apply(snapshot);
-        _model.ApplyBanner(ServiceBanner.From(
-            _status,
-            _state,
-            _poller?.StartProblem,
-            TimeZoneInfo.Local,
-            CultureInfo.CurrentCulture));
-        _model.Resources.Apply(ResourcesView.From(
-            _status,
-            state,
-            _settings.Meters,
-            _settings.ResourcesExpanded));
+
+        // Closed, the snapshot only drives the tray icon and the first-run open, and values
+        // catch up as the flyout opens, so a closed flyout's polls touch no binding. Rows that
+        // come or go are applied at once, so their controls are built before the click.
+        if (_flyoutOpen || _flyout?.IsOpening == true || _model.ChangesRows(snapshot))
+        {
+            _model.Apply(snapshot);
+            _model.ApplyBanner(ServiceBanner.From(
+                _status,
+                _state,
+                _poller?.StartProblem,
+                TimeZoneInfo.Local,
+                CultureInfo.CurrentCulture));
+            _model.Resources.Apply(ResourcesView.From(
+                _status,
+                state,
+                _settings.Meters,
+                _settings.ResourcesExpanded));
+            RestartTicker();
+        }
+
         ScheduleStops();
+        Measure.Updated(measured);
         return snapshot;
     }
 
@@ -356,6 +391,9 @@ public sealed partial class App : Application
 
     private static bool IsRegistryError(Exception error) =>
         error is IOException or UnauthorizedAccessException or SecurityException;
+
+    private void ToggleResources() => ChangeSettings(settings =>
+        settings.ResourcesExpanded = !settings.ResourcesExpanded);
 
     private void ChangeSettings(Action<TraySettings> change)
     {
@@ -465,12 +503,26 @@ public sealed partial class App : Application
         _poller?.PollNow();
     }
 
+    // Before the window measures its content, so it opens at the size it keeps.
+    private void OnOpening()
+    {
+        _ = ReadLaunchAtLogon();
+        _ = Show();
+    }
+
+    private void RestartTicker()
+    {
+        if (_flyoutOpen && _ticker is { } ticker)
+        {
+            ticker.Stop();
+            ticker.Start();
+        }
+    }
+
     private void Tick(bool open)
     {
         if (open)
         {
-            _ = ReadLaunchAtLogon();
-            _ = Show();
             _ticker?.Start();
         }
         else

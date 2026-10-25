@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Design tokens from plan/design handoff/README.md ("Design tokens" plus the values its sections
+  Design tokens from the design handoff ("Design tokens" plus the values its sections
   give), checked against the handoff by TokenResourceTests in the Core tests. Names are
   Rh<Token>Brush. Shadows are not here: DWM draws the flyout's and MenuFlyout its own.
 -->

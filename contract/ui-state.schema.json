@@ -11,6 +11,14 @@
         "$ref": "#/definitions/ActiveJob"
       }
     },
+    "ended": {
+      "description": "Leases that ended in the last minute, however they ended, newest first, so the flyout\ncan hold a card that just went away with how it ended. Older rhd builds send none.",
+      "type": "array",
+      "default": [],
+      "items": {
+        "$ref": "#/definitions/EndedLease"
+      }
+    },
     "first_session_at_ms": {
       "description": "When a Claude session first registered with this install, or `None` when none ever\nhas, which shows the first-run card.",
       "type": [
@@ -346,6 +354,65 @@
           "type": "string",
           "const": "removed"
         }
+      ]
+    },
+    "EndedLease": {
+      "description": "A lease that ended a moment ago: released by its holder, ended by rhd, killed or removed.",
+      "type": "object",
+      "properties": {
+        "cause": {
+          "description": "How it ended.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/EndCause"
+            }
+          ]
+        },
+        "command": {
+          "description": "The lease's label, usually the command.",
+          "type": "string"
+        },
+        "ended_at_ms": {
+          "description": "When it ended, in milliseconds since the Unix epoch.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "granted_at_ms": {
+          "description": "When it was granted, or `None` for a request that never started.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "int64"
+        },
+        "lease_id": {
+          "description": "The lease.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/LeaseId"
+            }
+          ]
+        },
+        "reason": {
+          "description": "rhd's reason for the end, for example \"no command running and the session idle for\n180s\"; empty when none was recorded.",
+          "type": "string"
+        },
+        "session": {
+          "description": "Session that held it.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/SessionKey"
+            }
+          ]
+        }
+      },
+      "required": [
+        "lease_id",
+        "session",
+        "command",
+        "cause",
+        "reason",
+        "ended_at_ms"
       ]
     },
     "GpuMeter": {

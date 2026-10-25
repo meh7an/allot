@@ -37,6 +37,10 @@ pub struct UiState {
     pub recent: Vec<RecentRun>,
     /// Kills and removals, with whether Claude has been told yet.
     pub notices: Vec<Notice>,
+    /// Leases that ended in the last minute, however they ended, newest first, so the flyout
+    /// can hold a card that just went away with how it ended. Older rhd builds send none.
+    #[serde(default)]
+    pub ended: Vec<EndedLease>,
 }
 
 /// One registered Claude session.
@@ -196,6 +200,27 @@ impl From<JobRun> for RecentRun {
     }
 }
 
+/// A lease that ended a moment ago: released by its holder, ended by rhd, killed or removed.
+#[cfg_attr(any(feature = "schema", test), derive(schemars::JsonSchema))]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EndedLease {
+    /// The lease.
+    pub lease_id: LeaseId,
+    /// Session that held it.
+    pub session: SessionKey,
+    /// The lease's label, usually the command.
+    pub command: String,
+    /// How it ended.
+    pub cause: EndCause,
+    /// rhd's reason for the end, for example "no command running and the session idle for
+    /// 180s"; empty when none was recorded.
+    pub reason: String,
+    /// When it was granted, or `None` for a request that never started.
+    pub granted_at_ms: Option<i64>,
+    /// When it ended, in milliseconds since the Unix epoch.
+    pub ended_at_ms: i64,
+}
+
 /// A kill or removal that Claude must hear about once.
 #[cfg_attr(any(feature = "schema", test), derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -240,6 +265,31 @@ mod tests {
         assert_eq!(value["cause"], "removed");
         assert_eq!(value["tool_use_id"], "toolu_01");
         assert!(value["delivered_at_ms"].is_null());
+    }
+
+    #[test]
+    fn test_ended_lease_json_round_trip_writes_cause_and_null_grant() {
+        let ended = EndedLease {
+            lease_id: LeaseId(45),
+            session: SessionKey("3f2a9c1e-session".into()),
+            command: "npm test".into(),
+            cause: EndCause::Expired,
+            reason: "holder process exited".into(),
+            granted_at_ms: None,
+            ended_at_ms: 1_793_000_090_000,
+        };
+        assert_json_round_trip(&ended);
+        let value = serde_json::to_value(&ended).unwrap();
+        assert_eq!(value["cause"], "expired");
+        assert!(value["granted_at_ms"].is_null());
+    }
+
+    #[test]
+    fn test_ui_state_from_an_older_rhd_has_no_ended_leases() {
+        let mut value = serde_json::to_value(crate::contract::busy()).unwrap();
+        value.as_object_mut().unwrap().remove("ended");
+        let state: UiState = serde_json::from_value(value).unwrap();
+        assert!(state.ended.is_empty());
     }
 
     #[test]

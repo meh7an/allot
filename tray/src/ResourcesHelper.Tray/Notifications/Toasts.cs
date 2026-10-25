@@ -52,9 +52,10 @@ internal static class Toasts
         {
             manager.Register("Resources Helper", icon);
         }
-        catch (COMException e)
+        catch (Exception e) when (e is COMException or IOException)
         {
-            // Toasts are optional; the tray must keep working without them.
+            // Toasts are optional; the tray must keep working without them. A missing file
+            // (0x80070002) arrives as FileNotFoundException, not COMException.
             AppLog.Write($"toast register failed: 0x{e.HResult:X8} {e.Message}");
         }
     }

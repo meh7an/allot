@@ -22,6 +22,12 @@ public sealed record UiState
     public required IReadOnlyList<ActiveJob> Active { get; init; }
 
     /// <summary>
+    /// Leases that ended in the last minute, however they ended, newest first, so the flyout
+    /// can hold a card that just went away with how it ended. Older rhd builds send none.
+    /// </summary>
+    public IReadOnlyList<EndedLease> Ended { get; set; } = [];
+
+    /// <summary>
     /// When a Claude session first registered with this install, or <c>null</c> when none ever
     /// has, which shows the first-run card.
     /// </summary>
@@ -314,6 +320,48 @@ public enum EndCause
     /// </summary>
     [JsonStringEnumMemberName("removed")]
     Removed,
+}
+
+/// <summary>
+/// A lease that ended a moment ago: released by its holder, ended by rhd, killed or removed.
+/// </summary>
+public sealed record EndedLease
+{
+    /// <summary>
+    /// How it ended.
+    /// </summary>
+    public required EndCause Cause { get; init; }
+
+    /// <summary>
+    /// The lease's label, usually the command.
+    /// </summary>
+    public required string Command { get; init; }
+
+    /// <summary>
+    /// When it ended, in milliseconds since the Unix epoch.
+    /// </summary>
+    public required long EndedAtMs { get; init; }
+
+    /// <summary>
+    /// When it was granted, or <c>null</c> for a request that never started.
+    /// </summary>
+    public long? GrantedAtMs { get; init; }
+
+    /// <summary>
+    /// The lease.
+    /// </summary>
+    public required long LeaseId { get; init; }
+
+    /// <summary>
+    /// rhd's reason for the end, for example "no command running and the session idle for
+    /// 180s"; empty when none was recorded.
+    /// </summary>
+    public required string Reason { get; init; }
+
+    /// <summary>
+    /// Session that held it.
+    /// </summary>
+    public required string Session { get; init; }
 }
 
 /// <summary>

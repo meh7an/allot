@@ -3,6 +3,7 @@ using Microsoft.UI.Dispatching;
 using ResourcesHelper.Tray.Core.Contract;
 using ResourcesHelper.Tray.Core.Daemon;
 using ResourcesHelper.Tray.Core.TrayIcon;
+using ResourcesHelper.Tray.Diagnostics;
 using ResourcesHelper.Tray.Interop;
 
 namespace ResourcesHelper.Tray.TrayIcon;
@@ -97,8 +98,11 @@ internal sealed class TrayController : IDisposable
     }
 
     // The click arrives inside the icon's window procedure; the flyout work runs after it.
-    private void OnSelected(TrayCallback callback) =>
+    private void OnSelected(TrayCallback callback)
+    {
+        Measure.Clicked();
         _ = _dispatcher.TryEnqueue(() => _toggleFlyout());
+    }
 
     private void OnContextMenuRequested(TrayCallback callback)
     {

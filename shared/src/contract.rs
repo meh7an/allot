@@ -22,8 +22,8 @@ use crate::{
         LeaseId, LeaseKind, LeaseState, NoiseReport, ResourceUsage, SessionKey,
     },
     ui::{
-        ActiveJob, CpuMeter, GpuMeter, JobProcess, Meters, Notice, QueuedJob, RamMeter, RecentRun,
-        UiSession, UiState,
+        ActiveJob, CpuMeter, EndedLease, GpuMeter, JobProcess, Meters, Notice, QueuedJob, RamMeter,
+        RecentRun, UiSession, UiState,
     },
 };
 
@@ -202,7 +202,7 @@ fn rtx(busiest_pct: f32, reserved_pct: f32, reserved_vram_mb: u64) -> GpuMeter {
 
 /// Two running jobs (one bound, one shown by its busiest process), two waiting requests
 /// (estimate known and unknown), an idle session, and a kill Claude has not heard about yet.
-fn busy() -> UiState {
+pub(crate) fn busy() -> UiState {
     let build = active_lease(
         41,
         holder(APP, 18_240),
@@ -310,6 +310,26 @@ fn busy() -> UiState {
             ended_at_ms: NOW_MS - 20_000,
             delivered_at_ms: None,
         }],
+        ended: vec![
+            EndedLease {
+                lease_id: LeaseId(40),
+                session: SessionKey(TRAINER.into()),
+                command: "ruff check .".into(),
+                cause: EndCause::Released,
+                reason: "released by holder".into(),
+                granted_at_ms: Some(NOW_MS - 14_000),
+                ended_at_ms: NOW_MS - 2_000,
+            },
+            EndedLease {
+                lease_id: LeaseId(39),
+                session: SessionKey(APP.into()),
+                command: "cargo clippy --workspace".into(),
+                cause: EndCause::Killed,
+                reason: "the user stopped this job in Resources Helper".into(),
+                granted_at_ms: Some(NOW_MS - 95_000),
+                ended_at_ms: NOW_MS - 20_000,
+            },
+        ],
     }
 }
 
@@ -374,6 +394,7 @@ fn benchmark() -> UiState {
         meters: meters(3.5, 0.0, 0, vec![rtx(1.0, 0.0, 0), integrated]),
         recent: Vec::new(),
         notices: Vec::new(),
+        ended: Vec::new(),
     }
 }
 
@@ -466,6 +487,7 @@ fn idle() -> UiState {
             ended_at_ms: NOW_MS - 9 * MINUTE_MS,
             delivered_at_ms: Some(NOW_MS - 8 * MINUTE_MS),
         }],
+        ended: Vec::new(),
     }
 }
 
@@ -487,6 +509,7 @@ fn first_run() -> UiState {
         meters,
         recent: Vec::new(),
         notices: Vec::new(),
+        ended: Vec::new(),
     }
 }
 

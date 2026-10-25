@@ -97,6 +97,7 @@ public sealed class JobStops(TimeProvider time)
     /// </summary>
     public void Observe(UiState state)
     {
+        var before = _seen;
         _seen = state;
         foreach (var (lease, stop) in _stops.ToList())
         {
@@ -109,6 +110,11 @@ public sealed class JobStops(TimeProvider time)
             {
                 _ = _stops.Remove(lease);
             }
+        }
+
+        if (before is not null)
+        {
+            HoldOutsideEnds(before, state);
         }
     }
 
@@ -268,6 +274,45 @@ public sealed class JobStops(TimeProvider time)
     }
 
     private DateTimeOffset Now => time.GetUtcNow();
+
+    // A running job rhd stopped listing without a stop of this flyout holds its card too, read
+    // from rhd's ended list: released (Finished), killed elsewhere, or ended by rhd. Removals,
+    // queued requests and benchmarks (their Finished card comes from recent runs) are not held,
+    // and neither is anything an older rhd, which sends no ended list, does not explain.
+    private void HoldOutsideEnds(UiState before, UiState state)
+    {
+        for (var i = 0; i < before.Active.Count; i++)
+        {
+            var job = before.Active[i];
+            var lease = job.Lease;
+            if (_stops.ContainsKey(lease.Id)
+                || lease.Kind == LeaseKind.BenchmarkExclusive
+                || Find(state, lease.Id) is not null)
+            {
+                continue;
+            }
+
+            var ended = state.Ended.FirstOrDefault(end => end.LeaseId == lease.Id);
+            StopKind? kind = ended?.Cause switch
+            {
+                EndCause.Released => StopKind.Finished,
+                EndCause.Killed => StopKind.KilledOutside,
+                EndCause.Expired => StopKind.EndedByRhd,
+                _ => null,
+            };
+            if (ended is null || kind is not { } held)
+            {
+                continue;
+            }
+
+            var last = new Held(lease.Id, job, null, i);
+            _stops[lease.Id] = new Stop(held, StopPhase.Ended, Now, last)
+            {
+                Message = held == StopKind.EndedByRhd ? ended.Reason : "",
+                EndedAtMs = ended.EndedAtMs,
+            };
+        }
+    }
 
     private static Held? Find(UiState? state, long lease)
     {

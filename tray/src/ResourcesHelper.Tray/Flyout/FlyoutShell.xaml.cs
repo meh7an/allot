@@ -1,6 +1,8 @@
 using System.Collections.Specialized;
 using System.ComponentModel;
+using System.Numerics;
 
+using Microsoft.UI.Composition;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Automation.Peers;
@@ -45,10 +47,15 @@ public sealed partial class FlyoutShell : UserControl, IFlyoutContent
     private readonly Dictionary<FlyoutRow, ContentControl> _hosts =
         new(ReferenceEqualityComparer.Instance);
     private readonly DataTemplateSelector _templates;
+
+    // Rows still collapsing, and rows waiting at zero height for them to finish.
+    private readonly Dictionary<ContentControl, Task> _leaving =
+        new(ReferenceEqualityComparer.Instance);
+    private readonly HashSet<ContentControl> _waiting = new(ReferenceEqualityComparer.Instance);
     private readonly UISettings _uiSettings = new();
     private readonly HashSet<Grid> _meterRows = [];
     private readonly Thickness _bodyPadding;
-    private (double Width, double Top, double Left, double Right, double Reach) _bodyClip;
+    private (double Width, double Left, double Right, double Reach) _bodyClip;
     private bool _pinShown;
     private double _reportedHeight;
 
@@ -190,8 +197,17 @@ public sealed partial class FlyoutShell : UserControl, IFlyoutContent
     public static Visibility Shows(HeaderGlyph glyph, string name) =>
         glyph.ToString() == name ? Visibility.Visible : Visibility.Collapsed;
 
-    public static Visibility ShowsAction(CardAction action, string name) =>
-        action.ToString() == name ? Visibility.Visible : Visibility.Collapsed;
+    /// <summary>
+    /// For <see cref="ActionMorph.IsShownProperty"/>: the action buttons move instead of switching
+    /// their visibility.
+    /// </summary>
+    public static bool Is(CardAction action, string name) => action.ToString() == name;
+
+    /// <summary>
+    /// The spacer keeps the action's place while a stop is under way, not once the card ended.
+    /// </summary>
+    public static bool KeepsSpace(CardAction action, bool isEnded) =>
+        action == CardAction.None && !isEnded;
 
     public static Visibility ShowsIcon(DetailIcon icon, string name) =>
         icon.ToString() == name ? Visibility.Visible : Visibility.Collapsed;
@@ -249,12 +265,15 @@ public sealed partial class FlyoutShell : UserControl, IFlyoutContent
     public static string OnOff(bool on) => on ? "On" : "Off";
 
     /// <summary>
-    /// Stopped and Removed cards show tile, command and chip at 50%.
+    /// Ended cards (Stopped, Removed, Finished, Ended by rhd) show tile, command and chip at 50%.
     /// </summary>
     public static double Ended(bool isEnded) => isEnded ? 0.5 : 1;
 
-    public static TextDecorations StruckThrough(bool isEnded) =>
-        isEnded ? TextDecorations.Strikethrough : TextDecorations.None;
+    /// <summary>
+    /// Stopped and Removed commands are struck through; a finished one is not.
+    /// </summary>
+    public static TextDecorations StruckThrough(bool isStruck) =>
+        isStruck ? TextDecorations.Strikethrough : TextDecorations.None;
 
     public void FocusFirst()
     {
@@ -375,7 +394,7 @@ public sealed partial class FlyoutShell : UserControl, IFlyoutContent
     // The handoff's standard curve for card height and opacity, cubic-bezier(.4,0,.2,1).
     private static KeySpline RowCurve() => Spline(0.4, 0, 0.2, 1);
 
-    private bool Animate => _window.Behavior.IsOpen && IsLoaded;
+    private bool Animate => _window.Behavior.IsOpen && !_window.IsOpening && IsLoaded;
 
     /// <summary>
     /// Expands or collapses the Resources card's rows over 240 ms, height and opacity together
@@ -442,6 +461,9 @@ public sealed partial class FlyoutShell : UserControl, IFlyoutContent
             ResourcesSummary.Opacity = 1;
         };
         _resourcesStoryboard = storyboard;
+        // Qualified: inside a control, Measure alone is UIElement.Measure.
+        Diagnostics.Measure.Animation(
+            expanded ? "resources-expand" : "resources-collapse", RowDuration);
         storyboard.Begin();
     }
 
@@ -796,35 +818,44 @@ public sealed partial class FlyoutShell : UserControl, IFlyoutContent
 
         var left = ResourcesCard.TransformToVisual(BodyScroller).TransformPoint(default).X;
         var right = left + ResourcesCard.ActualWidth;
-        var shape = (width, top, left, right, reach);
-        if (shape == _bodyClip)
+
+        // The shape is drawn once against the card's top edge, reaching far above it; a height
+        // change, every frame of a row's enter or leave, only moves it.
+        var shape = (width, left, right, reach);
+        if (shape != _bodyClip || visual.Clip is not CompositionGeometricClip clip)
         {
-            return;
+            _bodyClip = shape;
+            clip = visual.Compositor.CreateGeometricClip(
+                visual.Compositor.CreatePathGeometry(CompositionPaths.Create(
+                    NotchedTop(width, left, right, reach))));
+            visual.Clip = clip;
         }
 
-        _bodyClip = shape;
+        clip.Offset = new Vector2(0, (float)top);
+    }
 
-        // Each corner is a quarter circle, drawn as a cubic Bézier.
+    // Everything above y = 0, plus the two notches beside the card's rounded top corners, which
+    // reach down to y = reach. Each corner is a quarter circle, drawn as a cubic Bézier.
+    private static PathFigure NotchedTop(double width, double left, double right, double reach)
+    {
+        const double far = 100_000;
         var k = reach * 0.5523;
-        var figure = new PathFigure(default)
+        return new PathFigure(new Point(0, -far))
+            .LineTo(width, -far)
             .LineTo(width, 0)
-            .LineTo(width, top)
-            .LineTo(right, top)
-            .LineTo(right, top + reach)
+            .LineTo(right, 0)
+            .LineTo(right, reach)
             .CurveTo(
-                new Point(right, top + reach - k),
-                new Point(right - reach + k, top),
-                new Point(right - reach, top))
-            .LineTo(left + reach, top)
+                new Point(right, reach - k),
+                new Point(right - reach + k, 0),
+                new Point(right - reach, 0))
+            .LineTo(left + reach, 0)
             .CurveTo(
-                new Point(left + reach - k, top),
-                new Point(left, top + reach - k),
-                new Point(left, top + reach))
-            .LineTo(left, top)
-            .LineTo(0, top);
-        var compositor = visual.Compositor;
-        visual.Clip = compositor.CreateGeometricClip(
-            compositor.CreatePathGeometry(CompositionPaths.Create(figure)));
+                new Point(left + reach - k, 0),
+                new Point(left, reach - k),
+                new Point(left, reach))
+            .LineTo(left, 0)
+            .LineTo(0, 0);
     }
 
     // Pin slides out of a wrapper that clips it, so the summary truncates as the space shrinks.
@@ -899,6 +930,7 @@ public sealed partial class FlyoutShell : UserControl, IFlyoutContent
         storyboard.Children.Add(SplineTo(
             PinWrapper, nameof(Width), width, PinRevealDuration, Spline(0.1, 0.9, 0.2, 1)));
         storyboard.Children.Add(FadeTo(PinButton, opacity, PinFadeDuration));
+        Diagnostics.Measure.Animation("pin-reveal", PinRevealDuration);
         storyboard.Completed += (_, _) =>
         {
             // Keep the final values as local values, so the next reveal starts from them.
@@ -967,6 +999,34 @@ public sealed partial class FlyoutShell : UserControl, IFlyoutContent
         UpdateGaps();
         foreach (var host in entering)
         {
+            _ = EnterAfterLeavingAsync(host);
+        }
+    }
+
+    /// <summary>
+    /// A row that arrives while others are still collapsing waits for them at zero height, so a
+    /// swap (the last job card giving way to Recently finished) shrinks and then grows instead of
+    /// doing both at once; with reduced motion the height then changes once.
+    /// </summary>
+    private async Task EnterAfterLeavingAsync(ContentControl host)
+    {
+        if (!Animate || _leaving.Count == 0)
+        {
+            Enter(host);
+            return;
+        }
+
+        var leaving = _leaving.Values.ToList();
+        _ = _waiting.Add(host);
+        host.Opacity = 0;
+        host.Height = 0;
+        await Task.WhenAll(leaving).ConfigureAwait(true);
+
+        // A row that left again while it waited is already gone.
+        if (_waiting.Remove(host))
+        {
+            host.ClearValue(HeightProperty);
+            host.Opacity = 1;
             Enter(host);
         }
     }
@@ -1010,6 +1070,7 @@ public sealed partial class FlyoutShell : UserControl, IFlyoutContent
         host.Opacity = 0;
         var storyboard = new Storyboard();
         storyboard.Children.Add(FadeTo(host, 1, RowDuration));
+        Diagnostics.Measure.Animation("card-enter", RowDuration);
         if (_window.AnimationsEnabled)
         {
             host.Measure(new Size(RowsPanel.ActualWidth - RowsPanel.Padding.Left
@@ -1032,15 +1093,18 @@ public sealed partial class FlyoutShell : UserControl, IFlyoutContent
     {
         var host = _hosts[row];
         _ = _hosts.Remove(row);
-        if (!Animate)
+        if (!Animate || _waiting.Remove(host))
         {
             _ = RowsPanel.Children.Remove(host);
             return;
         }
 
+        var left = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _leaving[host] = left.Task;
         host.IsHitTestVisible = false;
         var storyboard = new Storyboard();
         storyboard.Children.Add(FadeTo(host, 0, RowDuration));
+        Diagnostics.Measure.Animation("card-leave", RowDuration);
         if (_window.AnimationsEnabled)
         {
             host.Height = host.ActualHeight;
@@ -1050,7 +1114,9 @@ public sealed partial class FlyoutShell : UserControl, IFlyoutContent
         storyboard.Completed += (_, _) =>
         {
             _ = RowsPanel.Children.Remove(host);
+            _ = _leaving.Remove(host);
             UpdateGaps();
+            left.SetResult();
         };
         storyboard.Begin();
     }

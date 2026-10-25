@@ -28,7 +28,8 @@ public sealed class GroupHeadingRow(JobGroupKind kind, string heading) : FlyoutR
         private set => Set(ref _heading, value);
     }
 
-    public override string Key => $"group:{Kind}";
+    // Built once: Sync reads keys many times on every update.
+    public override string Key { get; } = $"group:{kind}";
 
     public override void Update(FlyoutRow fresh) => Heading = ((GroupHeadingRow)fresh).Heading;
 }
@@ -49,6 +50,7 @@ public sealed class JobCardRow : FlyoutRow
     public JobCardRow(JobItem job)
     {
         LeaseId = job.Id;
+        Key = $"job:{job.Id}";
         _shortId = job.Session.ShortId;
         _project = job.Session.Project;
         _projectPath = job.Session.ProjectPath;
@@ -132,6 +134,8 @@ public sealed class JobCardRow : FlyoutRow
 
     public bool IsEnded => _card.IsEnded;
 
+    public bool IsStruck => _card.IsStruck;
+
     public DetailIcon Icon => _card.Icon;
 
     public bool HasSteps => _card.Steps is not null;
@@ -142,7 +146,7 @@ public sealed class JobCardRow : FlyoutRow
 
     public double RunFraction => _card.Steps?.RunFraction ?? 0;
 
-    public override string Key => $"job:{LeaseId}";
+    public override string Key { get; }
 
     public override void Update(FlyoutRow fresh)
     {
@@ -181,6 +185,7 @@ public sealed class JobCardRow : FlyoutRow
         Changed(old.Action != fresh.Action, nameof(Action));
         Changed(old.ActionName != fresh.ActionName, nameof(ActionName));
         Changed(old.IsEnded != fresh.IsEnded, nameof(IsEnded));
+        Changed(old.IsStruck != fresh.IsStruck, nameof(IsStruck));
         Changed(old.Icon != fresh.Icon, nameof(Icon));
         Changed((old.Steps is null) != (fresh.Steps is null), nameof(HasSteps));
         Changed(old.Steps?.Current != fresh.Steps?.Current, nameof(Step));

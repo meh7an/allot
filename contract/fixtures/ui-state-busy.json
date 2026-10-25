@@ -236,5 +236,25 @@
       "ended_at_ms": 1792824700000,
       "delivered_at_ms": null
     }
+  ],
+  "ended": [
+    {
+      "lease_id": 40,
+      "session": "b81d44f0-5a3e-4d2b-9c61-0e7f2a9d3c15",
+      "command": "ruff check .",
+      "cause": "released",
+      "reason": "released by holder",
+      "granted_at_ms": 1792824706000,
+      "ended_at_ms": 1792824718000
+    },
+    {
+      "lease_id": 39,
+      "session": "3f2a9c1e-77b0-4f6e-a2d8-5c9e1b4f7a02",
+      "command": "cargo clippy --workspace",
+      "cause": "killed",
+      "reason": "the user stopped this job in Resources Helper",
+      "granted_at_ms": 1792824625000,
+      "ended_at_ms": 1792824700000
+    }
   ]
 }

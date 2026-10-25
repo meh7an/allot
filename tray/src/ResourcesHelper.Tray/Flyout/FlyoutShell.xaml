@@ -215,7 +215,7 @@
                     VerticalAlignment="Center"
                     Style="{StaticResource RhCommandTextStyle}"
                     Opacity="{x:Bind local:FlyoutShell.Ended(IsEnded), Mode=OneWay}"
-                    TextDecorations="{x:Bind local:FlyoutShell.StruckThrough(IsEnded), Mode=OneWay}"
+                    TextDecorations="{x:Bind local:FlyoutShell.StruckThrough(IsStruck), Mode=OneWay}"
                     Text="{x:Bind Command, Mode=OneWay}"
                     ToolTipService.ToolTip="{x:Bind Command, Mode=OneWay}" />
 
@@ -266,7 +266,10 @@
                       AutomationProperties.Name="{x:Bind ActionName, Mode=OneWay}"
                       ToolTipService.ToolTip="{x:Bind ActionName, Mode=OneWay}"
                       Click="OnKillClick"
-                      Visibility="{x:Bind local:FlyoutShell.ShowsAction(Action, 'Kill'), Mode=OneWay}">
+                      HorizontalAlignment="Right"
+                      Visibility="Collapsed"
+                      local:ActionMorph.Slides="True"
+                      local:ActionMorph.IsShown="{x:Bind local:FlyoutShell.Is(Action, 'Kill'), Mode=OneWay}">
                       <Button.Resources>
                         <StaticResource x:Key="ButtonBackgroundPointerOver" ResourceKey="RhKillHoverBrush" />
                         <StaticResource x:Key="ButtonBackgroundPressed" ResourceKey="RhKillHoverBrush" />
@@ -289,7 +292,10 @@
                       KeyDown="OnConfirmKeyDown"
                       LostFocus="OnConfirmLostFocus"
                       Loaded="OnConfirmLoaded"
-                      Visibility="{x:Bind local:FlyoutShell.ShowsAction(Action, 'Confirm'), Mode=OneWay}">
+                      HorizontalAlignment="Right"
+                      Visibility="Collapsed"
+                      local:ActionMorph.GrowsFrom="{StaticResource RhButtonSize}"
+                      local:ActionMorph.IsShown="{x:Bind local:FlyoutShell.Is(Action, 'Confirm'), Mode=OneWay}">
                       <Button.Resources>
                         <StaticResource x:Key="ButtonBackground" ResourceKey="RhDangerFillBrush" />
                         <StaticResource x:Key="ButtonBackgroundPointerOver" ResourceKey="RhDangerFillHoverBrush" />
@@ -321,7 +327,10 @@
                       CornerRadius="{StaticResource RhControlCornerRadius}"
                       AutomationProperties.Name="{x:Bind ActionName, Mode=OneWay}"
                       Click="OnRemoveClick"
-                      Visibility="{x:Bind local:FlyoutShell.ShowsAction(Action, 'Remove'), Mode=OneWay}">
+                      HorizontalAlignment="Right"
+                      Visibility="Collapsed"
+                      local:ActionMorph.Slides="True"
+                      local:ActionMorph.IsShown="{x:Bind local:FlyoutShell.Is(Action, 'Remove'), Mode=OneWay}">
                       <Button.Resources>
                         <StaticResource x:Key="ButtonBackgroundPointerOver" ResourceKey="RhMenuHoverBrush" />
                         <StaticResource x:Key="ButtonBackgroundPressed" ResourceKey="RhMenuHoverBrush" />
@@ -331,10 +340,17 @@
                         Foreground="{ThemeResource RhTextSecondaryBrush}"
                         Text="Remove" />
                     </Button>
+                    <!--
+                      Holds the button's place while a stop is under way; an ended card lets it
+                      slide away, and the chip with it. Its 32 px are padding, as the morph owns
+                      its Width.
+                    -->
                     <Border
-                      Width="{StaticResource RhButtonSize}"
                       Height="{StaticResource RhButtonSize}"
-                      Visibility="{x:Bind local:FlyoutShell.ShowsAction(Action, 'None'), Mode=OneWay}" />
+                      Padding="32,0,0,0"
+                      Visibility="Collapsed"
+                      local:ActionMorph.Slides="True"
+                      local:ActionMorph.IsShown="{x:Bind local:FlyoutShell.KeepsSpace(Action, IsEnded), Mode=OneWay}" />
                   </Grid>
                 </Grid>
 
@@ -677,6 +693,11 @@
                     Foreground="{TemplateBinding Foreground}"
                     Text="{TemplateBinding Text}"
                     TextTrimming="{ThemeResource MenuFlyoutItemTextTrimming}" />
+                  <!--
+                    The count. Tag is WinUI's own property, which WinUI resolves itself, so this
+                    runtime binding works in the Native AOT build too (checked by eye); the
+                    XamlCompiler still warns WMC1510 about it in Release.
+                  -->
                   <TextBlock
                     Grid.Column="1"
                     Margin="12,0,0,0"

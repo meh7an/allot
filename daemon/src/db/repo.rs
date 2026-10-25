@@ -4,6 +4,8 @@
 //! that write a lease and its event do so in one transaction, so the audit trail cannot drift
 //! from the lease row.
 
+use std::collections::HashMap;
+
 use anyhow::{Context, bail};
 use diesel::prelude::*;
 use rh_shared::{
@@ -13,7 +15,7 @@ use rh_shared::{
         EndCause, Holder, JobClass, JobProfile, JobRun, Lease, LeaseBinding, LeaseId, LeaseKind,
         LeaseState, SessionKey,
     },
-    ui::{Notice, RecentRun},
+    ui::{EndedLease, Notice, RecentRun},
 };
 
 use super::{
@@ -321,6 +323,55 @@ pub fn recent_notices(conn: &mut SqliteConnection, limit: u32) -> anyhow::Result
         .load(conn)?
         .into_iter()
         .map(notice)
+        .collect()
+}
+
+/// Leases that ended at `since_ms` or later, newest end first, at most `limit`, each with the
+/// reason of its last recorded transition (empty when none was recorded).
+///
+/// # Errors
+///
+/// Returns an error when the database cannot be read or a stored lease is malformed.
+pub fn recently_ended(
+    conn: &mut SqliteConnection,
+    since_ms: i64,
+    limit: u32,
+) -> anyhow::Result<Vec<EndedLease>> {
+    let ended: Vec<Lease> = leases::table
+        .filter(leases::ended_at_ms.ge(since_ms))
+        .filter(leases::end_cause.is_not_null())
+        .order((leases::ended_at_ms.desc(), leases::id.desc()))
+        .limit(i64::from(limit))
+        .select(LeaseRow::as_select())
+        .load(conn)?
+        .into_iter()
+        .map(Lease::try_from)
+        .collect::<anyhow::Result<_>>()?;
+    let ids: Vec<i64> = ended.iter().map(|lease| lease.id.0).collect();
+    // Oldest event first, so the last one written for a lease wins.
+    let mut reasons: HashMap<i64, String> = lease_events::table
+        .filter(lease_events::lease_id.eq_any(&ids))
+        .order(lease_events::id.asc())
+        .select((lease_events::lease_id, lease_events::reason))
+        .load::<(i64, String)>(conn)?
+        .into_iter()
+        .collect();
+    ended
+        .into_iter()
+        .map(|lease| {
+            let (Some(cause), Some(ended_at_ms)) = (lease.end_cause, lease.ended_at_ms) else {
+                bail!("lease {} has an end time but no cause", lease.id.0);
+            };
+            Ok(EndedLease {
+                lease_id: lease.id,
+                session: lease.holder.session,
+                command: lease.label,
+                cause,
+                reason: reasons.remove(&lease.id.0).unwrap_or_default(),
+                granted_at_ms: lease.granted_at_ms,
+                ended_at_ms,
+            })
+        })
         .collect()
 }
 
@@ -1127,6 +1178,49 @@ mod tests {
         assert_eq!(notice_ids(recent.clone()), [other, removed, killed]);
         assert_eq!(recent[2].delivered_at_ms, Some(9_000));
         assert_eq!(notice_ids(recent_notices(&mut conn, 1).unwrap()), [other]);
+    }
+
+    #[test]
+    fn test_recently_ended_lists_ends_since_the_cutoff_with_their_reasons() {
+        let mut conn = memory_conn();
+        let early = active_lease(&mut conn, "s1");
+        transition_lease(&mut conn, early, LeaseState::Released, 4_000, "done").unwrap();
+        let released = active_lease(&mut conn, "s1");
+        transition_lease(
+            &mut conn,
+            released,
+            LeaseState::Released,
+            7_000,
+            "released by holder",
+        )
+        .unwrap();
+        let idle = active_lease(&mut conn, "s2");
+        transition_lease(&mut conn, idle, LeaseState::Expired, 8_000, "session idle").unwrap();
+        let removed = insert_lease(&mut conn, &sample_draft("s2", 1_000))
+            .unwrap()
+            .id;
+        end_lease(&mut conn, removed, EndCause::Removed, 9_000, "removed").unwrap();
+        let _still_active = active_lease(&mut conn, "s3");
+
+        let ended = recently_ended(&mut conn, 5_000, 10).unwrap();
+
+        let ids: Vec<LeaseId> = ended.iter().map(|lease| lease.lease_id).collect();
+        assert_eq!(ids, [removed, idle, released]);
+        assert_eq!(
+            ended[1],
+            EndedLease {
+                lease_id: idle,
+                session: SessionKey("s2".into()),
+                command: "cargo build --release".into(),
+                cause: EndCause::Expired,
+                reason: "session idle".into(),
+                granted_at_ms: Some(2_000),
+                ended_at_ms: 8_000,
+            }
+        );
+        assert_eq!(ended[0].granted_at_ms, None);
+        assert_eq!(ended[2].reason, "released by holder");
+        assert_eq!(recently_ended(&mut conn, 5_000, 1).unwrap().len(), 1);
     }
 
     #[test]

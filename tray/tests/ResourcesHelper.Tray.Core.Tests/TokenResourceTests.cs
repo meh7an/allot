@@ -1,11 +1,13 @@
 using System.Globalization;
 using System.Xml.Linq;
 
+using ResourcesHelper.Tray.Core.Tests.Support;
+
 namespace ResourcesHelper.Tray.Core.Tests;
 
 /// <summary>
-/// Checks the app's <c>Themes/Tokens.xaml</c> against the values written in
-/// <c>plan/design handoff/README.md</c>, in the CSS notation the handoff uses.
+/// Checks the app's <c>Themes/Tokens.xaml</c> against the values written in the design handoff,
+/// in the CSS notation the handoff uses.
 /// </summary>
 [TestClass]
 public sealed class TokenResourceTests
@@ -140,6 +142,32 @@ public sealed class TokenResourceTests
             Assert.AreEqual(1, value.Length, (string?)glyph.Attribute(X + "Key"));
             Assert.IsTrue(value[0] is >= '' and <= '', value);
         }
+    }
+
+    // The committed fonts are subsets holding only these glyphs; a glyph added here
+    // needs the subset cut again: fontTools' pyftsubset with --unicodes set to every RhGlyph
+    // codepoint, run on the full fonts from microsoft/fluentui-system-icons.
+    [TestMethod]
+    [DataRow("FluentSystemIcons-Regular.ttf")]
+    [DataRow("FluentSystemIcons-Filled.ttf")]
+    public void SubsetIconFontsHoldEveryGlyph(string font)
+    {
+        var path = Path.Combine(AppContext.BaseDirectory, "Fonts", font);
+        var glyphs = Root.Value.Elements(X + "String")
+            .Where(element => ((string?)element.Attribute(X + "Key"))?.StartsWith(
+                "RhGlyph",
+                StringComparison.Ordinal) == true)
+            .Select(element => element.Value[0])
+            .Distinct()
+            .ToList();
+
+        foreach (var glyph in glyphs)
+        {
+            Assert.IsTrue(FontCmap.Maps(path, glyph), $"{font} lacks U+{(int)glyph:X4}");
+        }
+
+        // The full fonts are megabytes; the subsets a few kilobytes.
+        Assert.IsLessThan(64 * 1024, new FileInfo(path).Length, $"{font} is not the subset");
     }
 
     private static IEnumerable<string> Keys(string theme) =>

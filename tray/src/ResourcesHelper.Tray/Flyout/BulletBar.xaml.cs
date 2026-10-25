@@ -12,7 +12,7 @@ using Windows.UI.ViewManagement;
 namespace ResourcesHelper.Tray.Flyout;
 
 /// <summary>
-/// A meter's bullet bar. <see cref="Used"/> animates the fill's width over 600 ms, as the
+/// A meter's bullet bar. <see cref="Used"/> slides the fill over 600 ms, as the
 /// prototype's transition does; <see cref="Reserved"/> places the tick and
 /// <see cref="Headroom"/> where the hatching starts, all as fractions of the bar.
 /// </summary>
@@ -53,18 +53,16 @@ public sealed partial class BulletBar : UserControl
     private static readonly double StripePitch = 4 * Math.Sqrt(2);
 
     private readonly Storyboard _fill = new();
-    private readonly DoubleAnimation _width = new()
-    {
-        Duration = FillDuration,
-        EnableDependentAnimation = true,
-    };
+    // A render transform animates on the compositor: no layout pass and no UI-thread frames on
+    // every poll, unlike the width it replaced.
+    private readonly DoubleAnimation _shift = new() { Duration = FillDuration };
 
     public BulletBar()
     {
         InitializeComponent();
-        Storyboard.SetTarget(_width, Fill);
-        Storyboard.SetTargetProperty(_width, nameof(Width));
-        _fill.Children.Add(_width);
+        Storyboard.SetTarget(_shift, FillShift);
+        Storyboard.SetTargetProperty(_shift, nameof(TranslateTransform.X));
+        _fill.Children.Add(_shift);
         Bar.SizeChanged += (_, _) => Layout();
     }
 
@@ -100,23 +98,25 @@ public sealed partial class BulletBar : UserControl
         Hatch.Width = hatch;
         Stripes.Data = StripesFor(new Size(hatch, size.Height));
         Stripes.Clip = new RectangleGeometry { Rect = new Rect(0, 0, hatch, size.Height) };
+        Fill.Width = size.Width;
         FillTo(animate: false);
         PlaceTick();
     }
 
-    // The first value, a resize, and every value without animations jump; later polls glide
-    // from where the fill is.
+    // The first value, a resize, a value set while the window is hidden, and every value without
+    // animations jump; later polls glide from where the fill is.
     private void FillTo(bool animate)
     {
-        var width = Math.Clamp(Used, 0, 1) * Bar.ActualWidth;
-        if (!animate || !IsLoaded || !Settings.AnimationsEnabled)
+        var shift = -(1 - Math.Clamp(Used, 0, 1)) * Bar.ActualWidth;
+        if (!animate || !IsLoaded || !Settings.AnimationsEnabled
+            || XamlRoot?.IsHostVisible != true)
         {
             _fill.Stop();
-            Fill.Width = width;
+            FillShift.X = shift;
             return;
         }
 
-        _width.To = width;
+        _shift.To = shift;
         _fill.Begin();
     }
 

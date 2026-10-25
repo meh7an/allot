@@ -28,6 +28,29 @@ public sealed class FlyoutModelTests
     }
 
     [TestMethod]
+    public void NewValuesInTheSameRowsChangeNoRows()
+    {
+        var state = Handoff.State(run: ["cargo"], wait: ["npm"]);
+        var model = Applied(state);
+
+        var later = FlyoutSnapshot.From(
+            ServiceStatus.Running, state, nowMs: Handoff.NowMs + 5_000);
+
+        Assert.IsFalse(model.ChangesRows(later));
+    }
+
+    [TestMethod]
+    public void AJobThatComesOrGoesChangesRows()
+    {
+        var model = Applied(Handoff.State(run: ["cargo"], wait: ["npm"]));
+
+        Assert.IsTrue(model.ChangesRows(
+            FlyoutSnapshot.From(ServiceStatus.Running, Handoff.State(run: ["cargo"]))));
+        Assert.IsTrue(model.ChangesRows(FlyoutSnapshot.From(
+            ServiceStatus.Running, Handoff.State(run: ["cargo", "py"], wait: ["npm"]))));
+    }
+
+    [TestMethod]
     public void RowsFollowTheGroupsThenTheIdleLine()
     {
         var model = Applied(Handoff.State(run: ["cargo"], wait: ["npm"], idle: true));

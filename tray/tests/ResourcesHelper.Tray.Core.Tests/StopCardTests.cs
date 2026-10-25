@@ -55,6 +55,7 @@ public sealed class StopCardTests
         Assert.AreEqual(186.0 / 300, card.BarFraction, Tolerance);
         Assert.AreEqual(CardAction.None, card.Action);
         Assert.IsTrue(card.IsEnded);
+        Assert.IsTrue(card.IsStruck);
     }
 
     [TestMethod]
@@ -69,6 +70,7 @@ public sealed class StopCardTests
         Assert.AreEqual(EdgeBarTone.None, card.BarTone);
         Assert.AreEqual(CardAction.None, card.Action);
         Assert.IsTrue(card.IsEnded);
+        Assert.IsTrue(card.IsStruck);
     }
 
     [TestMethod]
@@ -204,7 +206,7 @@ public sealed class StopCardTests
         model.Apply(FlyoutSnapshot.From(ServiceStatus.Running, state, Handoff.Stops("c-killed")));
 
         Assert.AreEqual(
-            "Strong Detail DetailTooltip Time BarTone Action ActionName IsEnded Card",
+            "Strong Detail DetailTooltip Time BarTone Action ActionName IsEnded IsStruck Card",
             string.Join(" ", raised));
         Assert.AreSame(row, model.Rows.OfType<JobCardRow>().Single());
     }

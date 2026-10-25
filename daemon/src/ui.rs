@@ -7,8 +7,8 @@ use rh_shared::{
     api::{HealthResponse, Verdict},
     types::{Holder, Lease, LeaseId, LeaseState, SessionKey, Snapshot},
     ui::{
-        ActiveJob, CpuMeter, GpuMeter, JobProcess, Meters, Notice, QueuedJob, RamMeter, RecentRun,
-        UiSession, UiState,
+        ActiveJob, CpuMeter, EndedLease, GpuMeter, JobProcess, Meters, Notice, QueuedJob, RamMeter,
+        RecentRun, UiSession, UiState,
     },
 };
 
@@ -24,12 +24,20 @@ const RECENT_RUNS: u32 = 5;
 /// Kills and removals the flyout keeps, delivered or not.
 const RECENT_NOTICES: u32 = 20;
 
+/// How far back the flyout hears about ended leases: long enough to hold their cards, and to
+/// cover a tray app that polls every 5 s while closed.
+const ENDED_WINDOW_MS: i64 = 60_000;
+
+/// Ended leases the flyout gets at most, so a burst can't make the answer grow without bound.
+const ENDED_LIMIT: u32 = 100;
+
 /// What `GET /ui/state` reads from the database.
 struct Stored {
     first_session_at_ms: Option<i64>,
     cwds: HashMap<SessionKey, String>,
     recent: Vec<RecentRun>,
     notices: Vec<Notice>,
+    ended: Vec<EndedLease>,
 }
 
 /// Builds the flyout's state with `service` describing the daemon.
@@ -79,6 +87,7 @@ pub async fn ui_state(state: &AppState, service: HealthResponse) -> Result<UiSta
                 cwds,
                 recent: repo::recent_runs(conn, RECENT_RUNS)?,
                 notices: repo::recent_notices(conn, RECENT_NOTICES)?,
+                ended: repo::recently_ended(conn, now - ENDED_WINDOW_MS, ENDED_LIMIT)?,
             })
         })
         .await?;
@@ -126,6 +135,7 @@ pub async fn ui_state(state: &AppState, service: HealthResponse) -> Result<UiSta
         meters: meters(&latest, &active, headroom_pct),
         recent: stored.recent,
         notices: stored.notices,
+        ended: stored.ended,
     })
 }
 

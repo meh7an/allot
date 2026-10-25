@@ -225,6 +225,9 @@ fn emit_properties(
                 (false, false, Some(Value::String(text))) if text.is_empty() => {
                     ("get; set;", " = \"\";")
                 }
+                (false, false, Some(Value::Array(items))) if items.is_empty() => {
+                    ("get; set;", " = [];")
+                }
                 _ => panic!("{record}.{json_name}: no C# mapping for its required and default mix"),
             };
         let keyword = if is_required { "required " } else { "" };

@@ -83,8 +83,9 @@ public enum CardAction
 /// <param name="Action">The control at the row's right.</param>
 /// <param name="ActionName">The action's accessible name, for example
 /// <c>Kill cargo.exe</c>.</param>
-/// <param name="IsEnded">Stopped or removed: the command is struck through, and the tile,
+/// <param name="IsEnded">The job has ended (stopped, removed, finished, ended by rhd): the tile,
 /// command and chip show at 50%.</param>
+/// <param name="IsStruck">The command is struck through: stopped or removed, not finished.</param>
 /// <param name="Icon">The detail line's leading icon; with one, the line wraps instead of
 /// truncating.</param>
 /// <param name="Steps">A benchmark's Drain / Quiet / Run stepper, or <c>null</c> for none.</param>
@@ -110,7 +111,8 @@ public sealed record JobCard(
     bool IsEnded,
     DetailIcon Icon = DetailIcon.None,
     BenchmarkSteps? Steps = null,
-    string Announcement = "")
+    string Announcement = "",
+    bool IsStruck = false)
 {
     // A queued job this close to its start reads "starts next".
     private const ulong StartsNextSecs = 60;
@@ -232,6 +234,11 @@ public sealed record JobCard(
             CardAction.Kill,
             $"Kill {name}",
             false);
+        if (EndedOutside(card, stop, started, estimate, nowMs) is { } outside)
+        {
+            return outside;
+        }
+
         if (stop is not { Kind: StopKind.Kill })
         {
             return card;
@@ -283,6 +290,7 @@ public sealed record JobCard(
                     Action = CardAction.None,
                     ActionName = "",
                     IsEnded = true,
+                    IsStruck = true,
                     Announcement = $"Stopped {name}{Notified(stop.Message)}",
                 };
         }
@@ -400,6 +408,7 @@ public sealed record JobCard(
                 Action = CardAction.None,
                 ActionName = "",
                 IsEnded = true,
+                IsStruck = true,
                 Announcement = $"Removed {lease.Label}{Notified(stop.Message)}",
             },
             _ => card,
@@ -445,6 +454,63 @@ public sealed record JobCard(
             TimeIsWarning = false,
             Icon = status.Icon,
             Steps = status.Steps,
+        };
+    }
+
+    /// <summary>
+    /// A job that ended without this flyout stopping it, held like Stopped:
+    /// Finished with the green check and its run time, not struck through; a kill from
+    /// elsewhere reads as a stop; rhd's own end gives its reason.
+    /// </summary>
+    /// <returns>The held card, or <c>null</c> when <paramref name="stop"/> is no such
+    /// end.</returns>
+    private static JobCard? EndedOutside(
+        JobCard card,
+        StopView? stop,
+        long started,
+        long estimate,
+        long nowMs)
+    {
+        if (stop is not { Phase: StopPhase.Ended }
+            || stop.Kind is not (StopKind.Finished or StopKind.KilledOutside
+                or StopKind.EndedByRhd))
+        {
+            return null;
+        }
+
+        var ran = Seconds((stop.EndedAtMs ?? nowMs) - started);
+        var ended = card with
+        {
+            DetailTooltip = "",
+            Time = $"at {Format.Duration(ran)}",
+            TimeIsWarning = false,
+            BarFraction = estimate > 0 ? Fraction(ran, estimate) : 0,
+            BarTone = EdgeBarTone.Frozen,
+            Action = CardAction.None,
+            ActionName = "",
+            IsEnded = true,
+        };
+        return stop.Kind switch
+        {
+            StopKind.Finished => ended with
+            {
+                Strong = "Finished",
+                Detail = $" · {Format.Duration(ran)}",
+                Time = "",
+                Icon = DetailIcon.Check,
+            },
+            StopKind.KilledOutside => ended with
+            {
+                Strong = "Stopped outside the flyout",
+                Detail = Notified(""),
+                IsStruck = true,
+            },
+            _ => ended with
+            {
+                Strong = "Ended by rhd",
+                Detail = stop.Message.Length == 0 ? "" : $" · {stop.Message}",
+                DetailTooltip = stop.Message,
+            },
         };
     }
 

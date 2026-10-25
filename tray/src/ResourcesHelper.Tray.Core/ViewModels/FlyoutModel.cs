@@ -99,6 +99,29 @@ public sealed class FlyoutModel : Observable
         }
     }
 
+    /// <summary>
+    /// True when <paramref name="snapshot"/> has rows that come or go, or move: applying it
+    /// builds or drops controls, which a closed flyout does at once so a click doesn't wait.
+    /// </summary>
+    public bool ChangesRows(FlyoutSnapshot snapshot)
+    {
+        var fresh = RowsOf(snapshot);
+        if (fresh.Count != Rows.Count)
+        {
+            return true;
+        }
+
+        for (var i = 0; i < fresh.Count; i++)
+        {
+            if (!string.Equals(fresh[i].Key, Rows[i].Key, StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     public void ApplyBanner(ServiceBanner? banner) => Banner = banner ?? ServiceBanner.Hidden;
 
     public void ApplyMenu(TraySettings settings)
