@@ -104,6 +104,19 @@ public sealed record IdleLine(string Label, string Ids, string Usage);
 public sealed record RecentLine(string Command, string ShortId, string Meta, bool First);
 
 /// <summary>
+/// The tray app's side of the first-run card.
+/// </summary>
+/// <param name="Done">Done was pressed (<c>tray.json</c>).</param>
+/// <param name="LaunchAtLogon">The autostart entry is on.</param>
+public sealed record FirstRunState(bool Done, bool LaunchAtLogon);
+
+/// <summary>
+/// The first-run card (handoff section 4).
+/// </summary>
+/// <param name="LaunchAtLogon">The state of its Launch at logon switch.</param>
+public sealed record WelcomeCard(bool LaunchAtLogon);
+
+/// <summary>
 /// Everything the flyout header and job list show for one poll, built by a pure function so that
 /// every string is testable. The window layer updates only what changed between snapshots.
 /// </summary>
@@ -114,10 +127,12 @@ public sealed record RecentLine(string Command, string ShortId, string Meta, boo
 /// <param name="Recent">Recently finished runs, newest first; only while no job runs or
 /// waits.</param>
 /// <param name="ShowNothing">The "No jobs running or waiting." line: the service runs, and there
-/// are no jobs and no recent runs.</param>
+/// are no jobs, no recent runs and no first-run card.</param>
 /// <param name="Benchmark">The live benchmark's phase, or <c>null</c> without one.</param>
 /// <param name="IsLastKnown">The jobs come from the last state rhd served before it went away;
 /// they show dimmed and without actions.</param>
+/// <param name="Welcome">The first-run card, shown while no session has ever connected and Done
+/// was not pressed; never for last known state.</param>
 public sealed record FlyoutSnapshot(
     HeaderViewModel Header,
     IReadOnlyList<JobGroup> Groups,
@@ -125,7 +140,8 @@ public sealed record FlyoutSnapshot(
     IReadOnlyList<RecentLine> Recent,
     bool ShowNothing,
     BenchmarkPhase? Benchmark,
-    bool IsLastKnown)
+    bool IsLastKnown,
+    WelcomeCard? Welcome)
 {
     // How long a benchmark that finished on its own keeps its card.
     private const long FinishedHoldMs = 60_000;
@@ -139,11 +155,14 @@ public sealed record FlyoutSnapshot(
     /// or Removed and no longer count. Ignored for last known state.</param>
     /// <param name="nowMs">The moment times are shown for, in the daemon's clock; the state's
     /// own time when <c>null</c>. Last known state always shows its own time.</param>
+    /// <param name="firstRun">Done and the autostart entry, for the first-run card; no card when
+    /// <c>null</c>.</param>
     public static FlyoutSnapshot From(
         ServiceStatus status,
         UiState? state,
         IReadOnlyDictionary<long, StopView>? stops = null,
-        long? nowMs = null)
+        long? nowMs = null,
+        FirstRunState? firstRun = null)
     {
         var lastKnown = status != ServiceStatus.Running;
         stops = lastKnown || stops is null ? NoStops : stops;
@@ -204,8 +223,10 @@ public sealed record FlyoutSnapshot(
         var header = HeaderOf(status, Alive(running), Alive(waiting), phase);
         var idle = IdleOf(state, sessions);
         var recent = groups.Count == 0 ? RecentOf(state, now) : [];
-        var nothing = !lastKnown && groups.Count == 0 && recent.Count == 0;
-        return new FlyoutSnapshot(header, groups, idle, recent, nothing, phase, lastKnown);
+        var welcome = !lastKnown && state is { FirstSessionAtMs: null }
+            && firstRun is { Done: false } ? new WelcomeCard(firstRun.LaunchAtLogon) : null;
+        var nothing = !lastKnown && groups.Count == 0 && recent.Count == 0 && welcome is null;
+        return new FlyoutSnapshot(header, groups, idle, recent, nothing, phase, lastKnown, welcome);
 
         StopView? StopOf(Lease lease) => stops.GetValueOrDefault(lease.Id);
 

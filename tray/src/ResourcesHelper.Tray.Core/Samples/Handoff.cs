@@ -15,6 +15,9 @@ public static class Handoff
 {
     public const long NowMs = 1_792_824_720_000;
 
+    // A week before NowMs; only the first-run scenario has no first session.
+    private const long FirstSessionMs = NowMs - (7 * 86_400_000);
+
     public const string IdleSession = "e09c7b3a-1111-4000-8000-000000000000";
 
     private static readonly Dictionary<string, Job> Jobs = new(StringComparer.Ordinal)
@@ -73,9 +76,9 @@ public static class Handoff
     public static IReadOnlyList<string> ScenarioNames { get; } =
     [
         "empty", "one", "several", "kill-confirm", "killed", "bench-drain", "bench-quiet",
-        "bench-run", "bench-done", "bench-noisy", "bench-forced", "down", "res-collapsed",
-        "res-expanded", "max", "icons", "c-active", "c-over", "c-queued", "c-bench", "c-confirm",
-        "c-killed", "c-removed", "c-refused",
+        "bench-run", "bench-done", "bench-noisy", "bench-forced", "down", "first-run",
+        "res-collapsed", "res-expanded", "max", "icons", "c-active", "c-over", "c-queued",
+        "c-bench", "c-confirm", "c-killed", "c-removed", "c-refused",
     ];
 
     /// <summary>
@@ -163,7 +166,7 @@ public static class Handoff
 
     private static string MeterSetOf(string name) => name switch
     {
-        "empty" or "bench-quiet" or "bench-done" or "bench-noisy" => "idle",
+        "empty" or "first-run" or "bench-quiet" or "bench-done" or "bench-noisy" => "idle",
         "one" or "bench-drain" or "res-expanded" => "one",
         "bench-run" or "bench-forced" => "bench",
         "max" or "icons" => "max",
@@ -229,6 +232,7 @@ public static class Handoff
         "bench-noisy" => (ServiceStatus.Running, State(wait: ["npmB"], bench: "noisy")),
         "bench-forced" => (ServiceStatus.Running, State(wait: ["npmB"], bench: "forced")),
         "down" => (ServiceStatus.Stopped, State(run: ["cargo"])),
+        "first-run" => (ServiceStatus.Running, State() with { FirstSessionAtMs = null }),
         "res-collapsed" => (ServiceStatus.Running, State(run: ["cargo"], wait: ["npm"])),
         "res-expanded" => (ServiceStatus.Running, State(run: ["cargo"])),
         "max" => (ServiceStatus.Running, MaxState(exes: false)),
@@ -368,6 +372,7 @@ public static class Handoff
         new()
         {
             Active = active,
+            FirstSessionAtMs = FirstSessionMs,
             GeneratedAtMs = NowMs,
             Meters = new Meters
             {

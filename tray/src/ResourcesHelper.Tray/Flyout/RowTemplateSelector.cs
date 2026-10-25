@@ -21,6 +21,8 @@ public sealed partial class RowTemplateSelector : DataTemplateSelector
 
     public DataTemplate? IdleLine { get; set; }
 
+    public DataTemplate? Welcome { get; set; }
+
     public DataTemplate? Nothing { get; set; }
 
     public DataTemplate? Recent { get; set; }
@@ -32,6 +34,7 @@ public sealed partial class RowTemplateSelector : DataTemplateSelector
         GroupHeadingRow { Kind: JobGroupKind.Waiting } => WaitingHeading,
         JobCardRow => JobCard,
         IdleRow => IdleLine,
+        WelcomeRow => Welcome,
         NothingRow => Nothing,
         RecentRow => Recent,
         _ => null,

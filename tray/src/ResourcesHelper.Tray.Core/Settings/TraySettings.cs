@@ -26,6 +26,12 @@ public sealed record TraySettings
     /// The first-run card was dismissed with Done.
     /// </summary>
     public bool FirstRunDone { get; set; }
+
+    /// <summary>
+    /// The first-run card has shown once: the flyout opened by itself and Launch at logon was
+    /// turned on, which neither does again.
+    /// </summary>
+    public bool FirstRunShown { get; set; }
 }
 
 /// <summary>

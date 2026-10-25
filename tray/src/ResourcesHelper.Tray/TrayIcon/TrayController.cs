@@ -26,6 +26,8 @@ internal sealed class TrayController : IDisposable
     private readonly Action _toggleFlyout;
     private readonly Action _openFlyout;
     private readonly Action _quit;
+    private readonly Func<bool> _launchAtLogon;
+    private readonly Action<bool> _setLaunchAtLogon;
     private TrayStatus _status = new(TrayIconState.Down, "Starting service…");
     private ServiceStatus _service = ServiceStatus.Starting;
     private UiState? _state;
@@ -35,13 +37,17 @@ internal sealed class TrayController : IDisposable
         string logDirectory,
         Action toggleFlyout,
         Action openFlyout,
-        Action quit)
+        Action quit,
+        Func<bool> launchAtLogon,
+        Action<bool> setLaunchAtLogon)
     {
         _poller = poller;
         _logDirectory = logDirectory;
         _toggleFlyout = toggleFlyout;
         _openFlyout = openFlyout;
         _quit = quit;
+        _launchAtLogon = launchAtLogon;
+        _setLaunchAtLogon = setLaunchAtLogon;
 
         _icon = new NotifyIcon(_status.Icon, _status.Tooltip);
         _icon.Diagnostic += message => AppLog.Write($"tray: {message}");
@@ -95,6 +101,7 @@ internal sealed class TrayController : IDisposable
         }
     }
 
+    // Built at every open, so the check follows a change made in Task Manager.
     private List<NativeMenuItem> BuildMenu()
     {
         var service = ServiceMenu.ItemFor(_service);
@@ -104,7 +111,7 @@ internal sealed class TrayController : IDisposable
             NativeMenuItem.Separator,
             new("Open Resources Helper", OpenId) { IsDefault = true },
             new(service.Text, ServiceId) { Enabled = service.Enabled },
-            new("Launch at logon", LaunchAtLogonId) { Enabled = false },
+            new("Launch at logon", LaunchAtLogonId) { Checked = _launchAtLogon() },
             new("Open logs", OpenLogsId),
             NativeMenuItem.Separator,
             new("Quit", QuitId),
@@ -120,6 +127,9 @@ internal sealed class TrayController : IDisposable
                 break;
             case ServiceId:
                 RunServiceItem();
+                break;
+            case LaunchAtLogonId:
+                _setLaunchAtLogon(!_launchAtLogon());
                 break;
             case OpenLogsId:
                 LogFolder.Open(_logDirectory);

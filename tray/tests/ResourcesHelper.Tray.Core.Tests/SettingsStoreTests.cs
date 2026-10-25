@@ -34,6 +34,7 @@ public sealed class SettingsStoreTests
             settings.Notifications);
         Assert.IsFalse(settings.ResourcesExpanded);
         Assert.IsFalse(settings.FirstRunDone);
+        Assert.IsFalse(settings.FirstRunShown);
     }
 
     [TestMethod]
@@ -57,6 +58,7 @@ public sealed class SettingsStoreTests
             Notifications = new NotificationToggles { RunningLong = false, JobFinished = true },
             ResourcesExpanded = true,
             FirstRunDone = true,
+            FirstRunShown = true,
         };
 
         store.Save(changed);

@@ -19,6 +19,7 @@ public sealed class DaemonPoller(DaemonClient client, IServiceLauncher launcher,
     private readonly PollSchedule _schedule = new();
     private TaskCompletionSource _wake = NewWake();
     private DateTimeOffset? _startingUntil;
+    private volatile string? _startProblem;
     private volatile bool _flyoutOpen;
 
     /// <summary>
@@ -32,6 +33,12 @@ public sealed class DaemonPoller(DaemonClient client, IServiceLauncher launcher,
     /// The newest state rhd served, kept while it is down.
     /// </summary>
     public UiState? LastKnown { get; private set; }
+
+    /// <summary>
+    /// Why the last Start service failed: the launch itself, or rhd not answering within
+    /// <see cref="StartTimeout"/>. Cleared by the next start and once rhd answers.
+    /// </summary>
+    public string? StartProblem => _startProblem;
 
     /// <summary>
     /// Switches between the open and closed cadence; opening also polls at once.
@@ -51,19 +58,20 @@ public sealed class DaemonPoller(DaemonClient client, IServiceLauncher launcher,
     /// <returns><c>null</c> when rhd was launched, else why not.</returns>
     public string? StartService()
     {
-        if (launcher.Start() is { } problem)
+        // A failed launch polls too, so whoever shows the poll shows the problem at once.
+        var problem = launcher.Start();
+        _startProblem = problem;
+        if (problem is null)
         {
-            return problem;
-        }
-
-        lock (_gate)
-        {
-            _startingUntil = time.GetUtcNow() + StartTimeout;
-            _schedule.Reset();
+            lock (_gate)
+            {
+                _startingUntil = time.GetUtcNow() + StartTimeout;
+                _schedule.Reset();
+            }
         }
 
         Wake();
-        return null;
+        return problem;
     }
 
     /// <summary>
@@ -130,14 +138,15 @@ public sealed class DaemonPoller(DaemonClient client, IServiceLauncher launcher,
     // A launched rhd takes a moment to bind its port; until then it looks stopped.
     private PollResult WhileStarting(PollResult result)
     {
-        if (_startingUntil is not { } until)
-        {
-            return result;
-        }
-
         if (result.Status != ServiceStatus.Stopped)
         {
             _startingUntil = null;
+            _startProblem = null;
+            return result;
+        }
+
+        if (_startingUntil is not { } until)
+        {
             return result;
         }
 
@@ -148,7 +157,9 @@ public sealed class DaemonPoller(DaemonClient client, IServiceLauncher launcher,
 
         _startingUntil = null;
         var seconds = StartTimeout.TotalSeconds.ToString(CultureInfo.InvariantCulture);
-        return result with { Detail = $"rhd did not answer within {seconds} s; see logs\\rhd.log" };
+        var detail = $"rhd did not answer within {seconds} s; see logs\\rhd.log";
+        _startProblem = detail;
+        return result with { Detail = detail };
     }
 
     private void Wake() => Volatile.Read(ref _wake).TrySetResult();

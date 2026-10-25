@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  The production flyout (handoff sections 1 to 5): a fixed header with the More options menu, a
-  scrolling body of rows (job cards, the idle line, Recently finished), and the Resources card
-  docked below the body.
+  The production flyout (handoff sections 1 to 6): a fixed header with the More options menu, a
+  scrolling body (the service-down banner and caption, then rows: job cards, the idle line, the
+  first-run card, Recently finished), and the Resources card docked below the body.
 -->
 <UserControl
   x:Class="ResourcesHelper.Tray.Flyout.FlyoutShell"
@@ -414,6 +414,76 @@
         </Grid>
       </DataTemplate>
 
+      <!-- The first-run card (handoff section 4). -->
+      <DataTemplate x:Key="WelcomeTemplate" x:DataType="vm:WelcomeRow">
+        <Border
+          Padding="12"
+          Background="{ThemeResource RhCardBrush}"
+          BorderBrush="{ThemeResource RhCardBorderBrush}"
+          BorderThickness="1"
+          CornerRadius="{StaticResource RhCardCornerRadius}">
+          <StackPanel Spacing="8">
+            <TextBlock
+              Style="{StaticResource RhBodyTextStyle}"
+              FontSize="14"
+              LineHeight="20"
+              FontWeight="SemiBold"
+              Text="Welcome to Resources Helper" />
+            <TextBlock
+              Style="{StaticResource RhBodyTextStyle}"
+              Foreground="{ThemeResource RhTextSecondaryBrush}"
+              TextWrapping="WrapWholeWords"
+              Text="When a Claude Code session runs a build, test suite or training job, it reserves cores, RAM or GPU here first. Jobs that don't fit wait their turn. You'll see each one here and can stop it." />
+            <Grid
+              MinHeight="40"
+              Padding="0,4,0,0"
+              BorderBrush="{ThemeResource RhSeparatorBrush}"
+              BorderThickness="0,1,0,0"
+              ColumnSpacing="10">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+              </Grid.ColumnDefinitions>
+              <TextBlock VerticalAlignment="Center" Style="{StaticResource RhMenuTextStyle}" Text="Launch at logon" />
+              <TextBlock
+                Grid.Column="1"
+                VerticalAlignment="Center"
+                Style="{StaticResource RhBodyTextStyle}"
+                Foreground="{ThemeResource RhTextSecondaryBrush}"
+                Text="{x:Bind local:FlyoutShell.OnOff(LaunchAtLogon), Mode=OneWay}"
+                AutomationProperties.AccessibilityView="Raw" />
+              <!-- The state text sits before the switch, as in the handoff; the switch's own is empty. -->
+              <ToggleSwitch
+                Grid.Column="2"
+                MinWidth="0"
+                VerticalAlignment="Center"
+                OnContent=""
+                OffContent=""
+                AutomationProperties.Name="Launch at logon"
+                IsOn="{x:Bind LaunchAtLogon, Mode=OneWay}"
+                Toggled="OnLaunchAtLogonToggled" />
+            </Grid>
+            <Button
+              HorizontalAlignment="Right"
+              Height="{StaticResource RhButtonSize}"
+              Padding="16,0,16,0"
+              BorderThickness="1"
+              CornerRadius="{StaticResource RhControlCornerRadius}"
+              FontSize="12"
+              Content="Done"
+              Click="OnFirstRunDoneClick">
+              <Button.Resources>
+                <StaticResource x:Key="ButtonBackground" ResourceKey="RhCardBrush" />
+                <StaticResource x:Key="ButtonBorderBrush" ResourceKey="RhCardBorderBrush" />
+                <StaticResource x:Key="ButtonBorderBrushPointerOver" ResourceKey="RhCardBorderBrush" />
+                <StaticResource x:Key="ButtonBorderBrushPressed" ResourceKey="RhCardBorderBrush" />
+              </Button.Resources>
+            </Button>
+          </StackPanel>
+        </Border>
+      </DataTemplate>
+
       <DataTemplate x:Key="NothingTemplate" x:DataType="vm:NothingRow">
         <TextBlock Padding="12,14,12,14" Style="{StaticResource RhMenuTextStyle}" Text="No jobs running or waiting." />
       </DataTemplate>
@@ -707,6 +777,7 @@
         WaitingHeading="{StaticResource WaitingHeadingTemplate}"
         JobCard="{StaticResource JobCardTemplate}"
         IdleLine="{StaticResource IdleLineTemplate}"
+        Welcome="{StaticResource WelcomeTemplate}"
         Nothing="{StaticResource NothingTemplate}"
         Recent="{StaticResource RecentTemplate}" />
     </ResourceDictionary>
@@ -874,11 +945,80 @@
       -->
       <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
         <StackPanel
-          x:Name="RowsPanel"
+          x:Name="BodyPanel"
           VerticalAlignment="Top"
           Padding="{StaticResource RhBodyPadding}"
-          Opacity="{x:Bind local:FlyoutShell.Dimmed(Model.IsLastKnown), Mode=OneWay}"
-          SizeChanged="OnRowsSizeChanged" />
+          Spacing="6"
+          SizeChanged="OnBodySizeChanged">
+          <!-- Service down (handoff section 6): the banner, then the caption over the dimmed rows. -->
+          <Border
+            Padding="{StaticResource RhBannerPadding}"
+            Background="{ThemeResource RhBannerBackgroundBrush}"
+            BorderBrush="{ThemeResource RhBannerBorderBrush}"
+            BorderThickness="1"
+            CornerRadius="{StaticResource RhCardCornerRadius}"
+            Visibility="{x:Bind local:FlyoutShell.ShowsBanner(Model.Banner), Mode=OneWay}">
+            <Grid ColumnSpacing="8">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+              </Grid.ColumnDefinitions>
+              <TextBlock
+                VerticalAlignment="Center"
+                FontFamily="{StaticResource RhIconFilledFontFamily}"
+                FontSize="16"
+                Foreground="{ThemeResource RhBannerForegroundBrush}"
+                Text="{StaticResource RhGlyphErrorCircleFilled}" />
+              <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                <TextBlock
+                  Style="{StaticResource RhBodyTextStyle}"
+                  FontWeight="SemiBold"
+                  Foreground="{ThemeResource RhBannerForegroundBrush}"
+                  TextWrapping="WrapWholeWords"
+                  Text="{x:Bind local:FlyoutShell.BannerText(Model.Banner), Mode=OneWay}" />
+                <!-- Why the last Start service failed. -->
+                <TextBlock
+                  Style="{StaticResource RhBodyTextStyle}"
+                  Foreground="{ThemeResource RhBannerForegroundBrush}"
+                  TextWrapping="Wrap"
+                  Text="{x:Bind local:FlyoutShell.BannerProblem(Model.Banner), Mode=OneWay}"
+                  Visibility="{x:Bind local:FlyoutShell.ShowsProblem(Model.Banner), Mode=OneWay}" />
+              </StackPanel>
+              <!-- Start service; Starting… is the same button, disabled in the muted accent. -->
+              <Button
+                Grid.Column="2"
+                VerticalAlignment="Center"
+                Height="{StaticResource RhButtonSize}"
+                Padding="12,0,12,0"
+                CornerRadius="{StaticResource RhControlCornerRadius}"
+                FontSize="12"
+                FontWeight="SemiBold"
+                Style="{StaticResource AccentButtonStyle}"
+                Content="{x:Bind local:FlyoutShell.StartText(Model.Banner), Mode=OneWay}"
+                IsEnabled="{x:Bind local:FlyoutShell.CanStart(Model.Banner), Mode=OneWay}"
+                Visibility="{x:Bind local:FlyoutShell.ShowsStart(Model.Banner), Mode=OneWay}"
+                Click="OnStartServiceClick">
+                <Button.Resources>
+                  <StaticResource x:Key="AccentButtonBackground" ResourceKey="RhAccentBrush" />
+                  <StaticResource x:Key="AccentButtonForeground" ResourceKey="RhAccentForegroundBrush" />
+                  <StaticResource x:Key="AccentButtonBackgroundDisabled" ResourceKey="RhAccentBusyBrush" />
+                  <StaticResource x:Key="AccentButtonForegroundDisabled" ResourceKey="RhAccentForegroundBrush" />
+                  <SolidColorBrush x:Key="AccentButtonBorderBrushDisabled" Color="Transparent" />
+                </Button.Resources>
+              </Button>
+            </Grid>
+          </Border>
+          <TextBlock
+            Padding="6,4,6,0"
+            Style="{StaticResource RhBodyTextStyle}"
+            Foreground="{ThemeResource RhTextSecondaryBrush}"
+            Text="{x:Bind local:FlyoutShell.Caption(Model.Banner), Mode=OneWay}"
+            Visibility="{x:Bind local:FlyoutShell.ShowsCaption(Model.Banner), Mode=OneWay}" />
+          <StackPanel
+            x:Name="RowsPanel"
+            Opacity="{x:Bind local:FlyoutShell.Dimmed(Model.IsLastKnown), Mode=OneWay}" />
+        </StackPanel>
       </ScrollViewer>
 
       <!-- The Resources card stays docked below the body while the rows scroll. -->

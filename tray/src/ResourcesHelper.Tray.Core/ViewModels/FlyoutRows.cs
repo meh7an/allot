@@ -2,8 +2,9 @@ namespace ResourcesHelper.Tray.Core.ViewModels;
 
 /// <summary>
 /// One entry of the flyout body, in display order: a group heading, a job card, the idle line,
-/// the Recently finished card or the empty line. Rows are matched between polls by
-/// <see cref="Key"/>, so a row that stays keeps its control and only its changed values update.
+/// the first-run card, the empty line or the Recently finished card. Rows are matched between
+/// polls by <see cref="Key"/>, so a row that stays keeps its control and only its changed values
+/// update.
 /// </summary>
 public abstract class FlyoutRow : Observable
 {
@@ -255,6 +256,25 @@ public sealed class RecentRow(IReadOnlyList<RecentLine> lines) : FlyoutRow
             Lines = lines;
         }
     }
+}
+
+/// <summary>
+/// The first-run card with its Launch at logon switch and Done.
+/// </summary>
+public sealed class WelcomeRow(WelcomeCard card) : FlyoutRow
+{
+    private bool _launchAtLogon = card.LaunchAtLogon;
+
+    public bool LaunchAtLogon
+    {
+        get => _launchAtLogon;
+        private set => Set(ref _launchAtLogon, value);
+    }
+
+    public override string Key => "welcome";
+
+    public override void Update(FlyoutRow fresh) =>
+        LaunchAtLogon = ((WelcomeRow)fresh).LaunchAtLogon;
 }
 
 /// <summary>

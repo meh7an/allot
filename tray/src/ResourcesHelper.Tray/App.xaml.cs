@@ -1,4 +1,6 @@
 using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
+using System.Security;
 
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
@@ -8,10 +10,12 @@ using ResourcesHelper.Tray.Core.Contract;
 using ResourcesHelper.Tray.Core.Daemon;
 using ResourcesHelper.Tray.Core.Logging;
 using ResourcesHelper.Tray.Core.Settings;
+using ResourcesHelper.Tray.Core.Startup;
 using ResourcesHelper.Tray.Core.TrayIcon;
 using ResourcesHelper.Tray.Core.ViewModels;
 using ResourcesHelper.Tray.Flyout;
 using ResourcesHelper.Tray.Notifications;
+using ResourcesHelper.Tray.Startup;
 using ResourcesHelper.Tray.TrayIcon;
 
 namespace ResourcesHelper.Tray;
@@ -51,6 +55,8 @@ public sealed partial class App : Application
     private TrayController? _tray;
     private SettingsStore? _settingsStore;
     private TraySettings _settings = new();
+    private Autostart? _autostart;
+    private bool _launchAtLogon;
 
     public App()
     {
@@ -94,6 +100,8 @@ public sealed partial class App : Application
         _settingsStore = new SettingsStore(SettingsFile(_data));
         _settings = _settingsStore.Load();
         _model.ApplyMenu(_settings);
+        _autostart = new Autostart(new RegistryAutostartStore(), Environment.ProcessPath ?? "");
+        _ = ReadLaunchAtLogon();
 
         _client = DaemonClient.ForInstall(_data);
         _stopper = _client;
@@ -130,6 +138,9 @@ public sealed partial class App : Application
                 _ = Show();
             }
         };
+        shell.StartServicePressed += StartService;
+        shell.LaunchAtLogonChanged += SetLaunchAtLogon;
+        shell.FirstRunDonePressed += () => ChangeSettings(settings => settings.FirstRunDone = true);
         _flyout.SetContent(shell, shell);
         _flyout.Prewarm();
 
@@ -144,7 +155,13 @@ public sealed partial class App : Application
         _stopTimer.Tick += (_, _) => Show();
 
         _tray = new TrayController(
-            _poller, _data.LogDirectory, ToggleFlyout, OpenFlyout, Quit);
+            _poller,
+            _data.LogDirectory,
+            ToggleFlyout,
+            OpenFlyout,
+            Quit,
+            ReadLaunchAtLogon,
+            SetLaunchAtLogon);
 #if DEBUG
         if (DebugScenario.Name is { } scenario)
         {
@@ -198,6 +215,15 @@ public sealed partial class App : Application
 
         var snapshot = Show();
         _tray?.Update(status, live, TrayStatus.From(snapshot));
+
+        if (FirstRun.ShowsForTheFirstTime(snapshot, _settings))
+        {
+            AppLog.Write("first run: opening the flyout and turning on launch at logon");
+            _settings.FirstRunShown = true;
+            SaveSettings();
+            SetLaunchAtLogon(true);
+            OpenFlyout();
+        }
     }
 
     private FlyoutSnapshot Show()
@@ -212,8 +238,15 @@ public sealed partial class App : Application
             stops = _scenarioStops;
         }
 #endif
-        var snapshot = FlyoutSnapshot.From(_status, state, stops, _clock.NowMs);
+        var firstRun = new FirstRunState(_settings.FirstRunDone, _launchAtLogon);
+        var snapshot = FlyoutSnapshot.From(_status, state, stops, _clock.NowMs, firstRun);
         _model.Apply(snapshot);
+        _model.ApplyBanner(ServiceBanner.From(
+            _status,
+            _state,
+            _poller?.StartProblem,
+            TimeZoneInfo.Local,
+            CultureInfo.CurrentCulture));
         _model.Resources.Apply(ResourcesView.From(
             _status,
             state,
@@ -222,6 +255,59 @@ public sealed partial class App : Application
         ScheduleStops();
         return snapshot;
     }
+
+    // A failed launch shows in the banner with the next poll, which the poller runs at once.
+    private void StartService()
+    {
+#if DEBUG
+        if (DebugScenario.Name is not null)
+        {
+            StartScenarioService();
+            return;
+        }
+#endif
+        if (_poller?.StartService() is { } problem)
+        {
+            AppLog.Write($"start service failed: {problem}");
+        }
+    }
+
+    /// <summary>
+    /// Reads the autostart entry again, so a change made in Task Manager shows.
+    /// </summary>
+    private bool ReadLaunchAtLogon()
+    {
+        try
+        {
+            _launchAtLogon = _autostart?.IsOn ?? false;
+        }
+        catch (Exception error) when (IsRegistryError(error))
+        {
+            AppLog.Write($"reading launch at logon failed: {error.Message}");
+        }
+
+        return _launchAtLogon;
+    }
+
+    private void SetLaunchAtLogon(bool on)
+    {
+        try
+        {
+            _autostart?.Set(on);
+            AppLog.Write(
+                $"launch at logon {(on ? "on" : "off")} in {RegistryAutostartStore.Location}");
+        }
+        catch (Exception error) when (IsRegistryError(error))
+        {
+            AppLog.Write($"turning launch at logon {(on ? "on" : "off")} failed: {error.Message}");
+        }
+
+        _ = ReadLaunchAtLogon();
+        _ = Show();
+    }
+
+    private static bool IsRegistryError(Exception error) =>
+        error is IOException or UnauthorizedAccessException or SecurityException;
 
     private void ChangeSettings(Action<TraySettings> change)
     {
@@ -334,6 +420,7 @@ public sealed partial class App : Application
     {
         if (open)
         {
+            _ = ReadLaunchAtLogon();
             _ = Show();
             _ticker?.Start();
         }
@@ -350,12 +437,22 @@ public sealed partial class App : Application
 #if DEBUG
     private string _scenario = "";
     private IReadOnlyDictionary<long, StopView> _scenarioStops = new Dictionary<long, StopView>();
+    private DispatcherQueueTimer? _scenarioStart;
 
     private void ShowScenario(string name)
     {
         AppLog.Write($"showing scenario {name}");
         _scenario = name;
         _scenarioStops = Core.Samples.Handoff.Stops(name);
+
+        // The first-run scenario starts from a fresh install every time it is picked.
+        if (name == "first-run")
+        {
+            _settings.FirstRunDone = false;
+            _settings.FirstRunShown = false;
+            SaveSettings();
+        }
+
         if (Core.Samples.Handoff.Preset(name) is { } preset)
         {
             _settings.ResourcesExpanded = preset.Expanded;
@@ -367,6 +464,19 @@ public sealed partial class App : Application
 
         var (status, state) = Core.Samples.Handoff.Scenario(name);
         Apply(status, status == ServiceStatus.Running ? state : null, state);
+    }
+
+    // As in the prototype: Starting… for 1.4 s, then live data (the one scenario). The scenario
+    // instance never launches the real rhd.
+    private void StartScenarioService()
+    {
+        Apply(ServiceStatus.Starting, null, _state);
+        _scenarioStart?.Stop();
+        _scenarioStart = _dispatcher!.CreateTimer();
+        _scenarioStart.Interval = TimeSpan.FromMilliseconds(1400);
+        _scenarioStart.IsRepeating = false;
+        _scenarioStart.Tick += (_, _) => ShowScenario("one");
+        _scenarioStart.Start();
     }
 
     // A press in a scenario that starts in a Kill or Remove state hands the cards to the live
@@ -417,11 +527,7 @@ public sealed partial class App : Application
                 OpenLogs();
                 break;
             case Toasts.StartService:
-                if (_poller?.StartService() is { } problem)
-                {
-                    AppLog.Write($"start service failed: {problem}");
-                }
-
+                StartService();
                 break;
             default:
                 OpenFlyout();

@@ -145,6 +145,89 @@ public sealed class DaemonPollerTests
     }
 
     [TestMethod]
+    public void FailedLaunchIsTheStartProblem()
+    {
+        using var directory = new TempDirectory();
+        var launcher = new FakeLauncher { Problem = "run rh install" };
+        var handler = new FakeHttpHandler(_ => throw FakeHttpHandler.Refused());
+        var poller = Poller(directory, handler, launcher);
+
+        _ = poller.StartService();
+
+        Assert.AreEqual("run rh install", poller.StartProblem);
+    }
+
+    [TestMethod]
+    public async Task StartTimeoutIsTheStartProblemUntilTheNextStart()
+    {
+        using var directory = new TempDirectory();
+        var time = new ManualTimeProvider();
+        var poller = Poller(
+            directory,
+            new FakeHttpHandler(_ => throw FakeHttpHandler.Refused()),
+            time: time);
+        _ = poller.StartService();
+        _ = await PollTimes(poller, 1);
+        var whileStarting = poller.StartProblem;
+        time.Now += DaemonPoller.StartTimeout;
+        _ = await PollTimes(poller, 2);
+        var afterTimeout = poller.StartProblem;
+
+        _ = poller.StartService();
+
+        Assert.IsNull(whileStarting);
+        Assert.AreEqual("rhd did not answer within 10 s; see logs\\rhd.log", afterTimeout);
+        Assert.IsNull(poller.StartProblem);
+    }
+
+    [TestMethod]
+    public async Task AnsweringDaemonClearsTheStartProblem()
+    {
+        using var directory = new TempDirectory();
+        var up = false;
+        var handler = new FakeHttpHandler(_ => up
+            ? FakeHttpHandler.Json(Fixtures.Read("ui-state-idle.json"))
+            : throw FakeHttpHandler.Refused());
+        var launcher = new FakeLauncher { Problem = "rhd.exe is missing" };
+        var poller = Poller(directory, handler, launcher);
+        _ = poller.StartService();
+        _ = await PollTimes(poller, 1);
+        var whileDown = poller.StartProblem;
+        up = true;
+
+        _ = await PollTimes(poller, 1);
+
+        Assert.AreEqual("rhd.exe is missing", whileDown);
+        Assert.IsNull(poller.StartProblem);
+    }
+
+    [TestMethod]
+    public async Task LastKnownStateIsReplacedOnlyByANewerServedOne()
+    {
+        using var directory = new TempDirectory();
+        var answer = "busy";
+        var handler = new FakeHttpHandler(_ => answer switch
+        {
+            "busy" => FakeHttpHandler.Json(Fixtures.Read("ui-state-busy.json")),
+            "idle" => FakeHttpHandler.Json(Fixtures.Read("ui-state-idle.json")),
+            _ => throw FakeHttpHandler.Refused(),
+        });
+        var poller = Poller(directory, handler);
+        _ = await PollTimes(poller, 1);
+        var busy = poller.LastKnown;
+        answer = "down";
+        _ = await PollTimes(poller, 2);
+        var whileDown = poller.LastKnown;
+        answer = "idle";
+
+        _ = await PollTimes(poller, 1);
+
+        Assert.AreSame(busy, whileDown);
+        Assert.AreNotSame(busy, poller.LastKnown);
+        Assert.AreSame(poller.Latest?.State, poller.LastKnown);
+    }
+
+    [TestMethod]
     public async Task UpdatedIsRaisedForEveryPoll()
     {
         using var directory = new TempDirectory();

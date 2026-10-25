@@ -124,10 +124,25 @@ public sealed partial class FlyoutShell : UserControl, IFlyoutContent
     /// </summary>
     public event Action<NotificationToggles>? NotificationsChanged;
 
+    /// <summary>
+    /// A press of the service-down banner's Start service.
+    /// </summary>
+    public event Action? StartServicePressed;
+
+    /// <summary>
+    /// The first-run card's Launch at logon switch was flipped, with its new state.
+    /// </summary>
+    public event Action<bool>? LaunchAtLogonChanged;
+
+    /// <summary>
+    /// A press of the first-run card's Done.
+    /// </summary>
+    public event Action? FirstRunDonePressed;
+
     public FlyoutModel Model { get; }
 
     public double DesiredHeight =>
-        EdgeHeight + Header.ActualHeight + RowsPanel.ActualHeight + ResourcesHeight;
+        EdgeHeight + Header.ActualHeight + BodyPanel.ActualHeight + ResourcesHeight;
 
     // The docked card with its margin, or nothing while it is hidden.
     private double ResourcesHeight =>
@@ -179,6 +194,34 @@ public sealed partial class FlyoutShell : UserControl, IFlyoutContent
     /// Last known rows show at 55% while the service is down (handoff section 6).
     /// </summary>
     public static double Dimmed(bool isLastKnown) => isLastKnown ? 0.55 : 1;
+
+    public static Visibility ShowsBanner(ServiceBanner? banner) => Hides(banner is null);
+
+    public static string BannerText(ServiceBanner? banner) => banner?.Text ?? "";
+
+    public static string BannerProblem(ServiceBanner? banner) => banner?.Problem ?? "";
+
+    public static Visibility ShowsProblem(ServiceBanner? banner) =>
+        Hides(string.IsNullOrEmpty(banner?.Problem));
+
+    public static Visibility ShowsStart(ServiceBanner? banner) =>
+        Hides(banner is null or { Button: BannerButton.None });
+
+    /// <summary>
+    /// Starting… is the same button, muted and disabled.
+    /// </summary>
+    public static bool CanStart(ServiceBanner? banner) =>
+        banner is { Button: BannerButton.Start };
+
+    public static string StartText(ServiceBanner? banner) =>
+        banner is { Button: BannerButton.Starting } ? "Starting…" : "Start service";
+
+    public static string Caption(ServiceBanner? banner) => banner?.Caption ?? "";
+
+    public static Visibility ShowsCaption(ServiceBanner? banner) =>
+        Hides(string.IsNullOrEmpty(banner?.Caption));
+
+    public static string OnOff(bool on) => on ? "On" : "Off";
 
     /// <summary>
     /// Stopped and Removed cards show tile, command and chip at 50%.
@@ -479,6 +522,35 @@ public sealed partial class FlyoutShell : UserControl, IFlyoutContent
         }
     }
 
+    private void OnStartServiceClick(object sender, RoutedEventArgs e) =>
+        StartServicePressed?.Invoke();
+
+    // Toggled also fires when the binding sets the switch from the model; only a flip by the
+    // user differs from the row.
+    private void OnLaunchAtLogonToggled(object sender, RoutedEventArgs e)
+    {
+        if (sender is not ToggleSwitch { DataContext: WelcomeRow row } toggle
+            || toggle.IsOn == row.LaunchAtLogon)
+        {
+            return;
+        }
+
+        LaunchAtLogonChanged?.Invoke(toggle.IsOn);
+
+        // A failed write leaves the entry as it was, and the switch shows that.
+        if (toggle.IsOn != row.LaunchAtLogon)
+        {
+            toggle.IsOn = row.LaunchAtLogon;
+        }
+    }
+
+    // The card leaves with Done, so focus goes back to the header.
+    private void OnFirstRunDoneClick(object sender, RoutedEventArgs e)
+    {
+        FirstRunDonePressed?.Invoke();
+        _ = DispatcherQueue.TryEnqueue(FocusFirst);
+    }
+
     private void OnRemoveClick(object sender, RoutedEventArgs e)
     {
         if (RowOf(sender) is { } row)
@@ -540,7 +612,7 @@ public sealed partial class FlyoutShell : UserControl, IFlyoutContent
         ReportHeight();
     }
 
-    private void OnRowsSizeChanged(object sender, SizeChangedEventArgs e) => ReportHeight();
+    private void OnBodySizeChanged(object sender, SizeChangedEventArgs e) => ReportHeight();
 
     private void OnResourcesSizeChanged(object sender, SizeChangedEventArgs e) => ReportHeight();
 
