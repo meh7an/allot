@@ -42,9 +42,8 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
-        with:
-          global-json-file: tray/global.json
+      # The image's preinstalled .NET SDK 10.0.402 is the one tray/global.json asks for.
+      # setup-dotnet is not used: its aka.ms links lead to storage that refuses public reads.
 
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:

@@ -24,9 +24,8 @@ jobs:
             target
           key: ${{ runner.os }}-release-${{ hashFiles('Cargo.lock') }}
 
-      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
-        with:
-          global-json-file: tray/global.json
+      # The image's preinstalled .NET SDK 10.0.402 is the one tray/global.json asks for.
+      # setup-dotnet is not used: its aka.ms links lead to storage that refuses public reads.
 
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -52,13 +51,14 @@ jobs:
         run: cargo build --release --locked
 
       # Native AOT; its link finds the MSVC tools through vswhere, which the targets call by
-      # bare name.
+      # bare name. Run in tray, so its global.json picks the SDK.
       - name: Publish the tray app
         shell: pwsh
+        working-directory: tray
         run: |
           $env:PATH = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer;$env:PATH"
-          dotnet publish tray/src/ResourcesHelper.Tray/ResourcesHelper.Tray.csproj -c Release `
-            -o tray-publish
+          dotnet publish src/ResourcesHelper.Tray/ResourcesHelper.Tray.csproj -c Release `
+            -o ../tray-publish
         env:
           DOTNET_NOLOGO: "1"
           DOTNET_CLI_TELEMETRY_OPTOUT: "1"
