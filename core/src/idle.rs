@@ -4,10 +4,13 @@
 //! A forgotten lease never expires on its own, because the MCP server keeps sending its
 //! heartbeat while the session lives. Its reservation blocks every other session until the
 //! session ends, so the daemon ends it instead.
+//!
+//! Quick leases get the same treatment once they run far past what made them quick: they may
+//! start beside a waiting benchmark only because they end soon.
 
 use std::time::Duration;
 
-use rh_shared::types::{Lease, LeaseId, LeaseState, ResourceUsage, Snapshot};
+use rh_shared::types::{Lease, LeaseId, LeaseKind, LeaseState, ResourceUsage, Snapshot};
 
 use crate::{
     binding::{self, BindOutcome},
@@ -96,9 +99,31 @@ fn is_idle(usage: &ResourceUsage) -> bool {
     usage.cores < IDLE_CORES && usage.gpu_pct < IDLE_GPU_PCT
 }
 
+/// How long a quick lease may stay active before the daemon ends it. The run it records then
+/// lasts this long, so history no longer estimates the command as quick.
+pub const QUICK_OVERRUN_MS: i64 = 60_000;
+
+/// The active quick leases granted at least [`QUICK_OVERRUN_MS`] before `now_ms`. Low-impact
+/// leases are never cut short: they hold nothing back.
+pub fn quick_overruns(leases: &[Lease], now_ms: i64) -> Vec<LeaseId> {
+    leases
+        .iter()
+        .filter(|lease| {
+            lease.state == LeaseState::Active
+                && lease.kind == LeaseKind::Normal
+                && lease.profile.is_quick()
+                && !lease.profile.is_low_impact()
+                && lease
+                    .granted_at_ms
+                    .is_some_and(|granted| now_ms.saturating_sub(granted) >= QUICK_OVERRUN_MS)
+        })
+        .map(|lease| lease.id)
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
-    use rh_shared::types::{BoundProcess, LeaseBinding, SessionUsage};
+    use rh_shared::types::{BoundProcess, JobProfile, LeaseBinding, SessionUsage};
 
     use super::*;
     use crate::test_support::{active_lease, holder, profile, raw_process, session_usage};
@@ -289,5 +314,29 @@ mod tests {
             ..lease(None)
         }];
         assert!(run(&mut watch, &leases, &table(false), 0, 400_000, 0.0).is_empty());
+    }
+
+    #[test]
+    fn test_quick_overruns_ends_quick_leases_after_a_minute_only() {
+        let with = |id, cores, ram_mb, est_secs, kind| Lease {
+            kind,
+            granted_at_ms: Some(1_000),
+            ..active_lease(
+                id,
+                SESSION,
+                JobProfile {
+                    est_secs,
+                    ..profile(cores, ram_mb)
+                },
+            )
+        };
+        let leases = [
+            with(1, 4.0, 2_048, 10, LeaseKind::Normal),
+            with(2, 4.0, 2_048, 300, LeaseKind::Normal),
+            with(3, 0.25, 200, 10, LeaseKind::Normal),
+            with(4, 1.0, 1_000, 10, LeaseKind::BenchmarkExclusive),
+        ];
+        assert!(quick_overruns(&leases, 60_999).is_empty());
+        assert_eq!(quick_overruns(&leases, 61_000), [LeaseId(1)]);
     }
 }

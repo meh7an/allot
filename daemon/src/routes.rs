@@ -705,13 +705,23 @@ pub(crate) fn job_run(
     }
 }
 
-/// Resolves a class through the config and checks the values.
+/// Resolves a class or preset through the config and checks the values.
 fn resolve_profile(
     config: &Config,
     spec: &ProfileSpec,
 ) -> Result<(JobProfile, Option<JobClass>), AppError> {
     let (profile, class) = match spec {
         ProfileSpec::Class(class) => (*config.classes.get(*class), Some(*class)),
+        ProfileSpec::Preset(name) => {
+            let Some(profile) = config.presets.get(name) else {
+                let known: Vec<&str> = config.presets.names().collect();
+                return Err(AppError::Validation(format!(
+                    "unknown preset `{name}`; presets: {}",
+                    known.join(", ")
+                )));
+            };
+            (*profile, None)
+        }
         ProfileSpec::Custom(profile) => (*profile, None),
         _ => return Err(AppError::Validation("unsupported profile form".to_owned())),
     };

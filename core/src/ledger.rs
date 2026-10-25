@@ -7,6 +7,11 @@
 //! head) does not fit, the ledger works out when it will, from the expected ends of the
 //! running leases. A later request may start before it only if it fits now and either ends
 //! by then or leaves the head enough room at that time.
+//!
+//! A benchmark drains the machine and then runs alone, with two exceptions for normal leases.
+//! A low-impact one ([`JobProfile::is_low_impact`]) runs beside a benchmark at any stage and
+//! never counts toward its drain. A quick one ([`JobProfile::is_quick`]) may start while a
+//! waiting benchmark still drains longer leases, so it ends before the drain does.
 
 use rh_shared::{
     api::{BenchmarkProgress, Verdict},
@@ -151,7 +156,11 @@ enum Hold {
 struct Pass {
     room: Room,
     running: Vec<Running>,
-    active_count: usize,
+    /// Active leases a benchmark waits for: all but the low-impact ones.
+    draining: usize,
+    /// Active leases that are neither low-impact nor quick; a quick lease starts beside a
+    /// waiting benchmark only while one of these keeps it waiting anyway.
+    long: usize,
     exclusive: Option<String>,
     hold: Hold,
 }
@@ -313,7 +322,10 @@ impl Ledger {
         liveness: &dyn ProcessLiveness,
     ) -> Vec<Transition> {
         let mut transitions = self.reap(now_ms, liveness);
-        let drained = self.active().is_empty();
+        let drained = self
+            .active()
+            .iter()
+            .all(|lease| is_low_impact(lease.kind, &lease.profile));
         self.quiet
             .observe(now_ms, snapshot, drained, self.settings.quiet.window_ms);
         for meter in &mut self.meters {
@@ -561,7 +573,14 @@ impl Ledger {
         let mut pass = Pass {
             room: Room::measure(snapshot, &active, self.settings.headroom_pct),
             running: active.iter().map(|lease| Running::of(lease)).collect(),
-            active_count: active.len(),
+            draining: active
+                .iter()
+                .filter(|lease| !is_low_impact(lease.kind, &lease.profile))
+                .count(),
+            long: active
+                .iter()
+                .filter(|lease| is_long(lease.kind, &lease.profile))
+                .count(),
             exclusive: active
                 .iter()
                 .find(|lease| lease.kind == LeaseKind::BenchmarkExclusive)
@@ -579,12 +598,16 @@ impl Ledger {
             reasons,
             ..Decision::default()
         };
-        if let Some(holder) = &pass.exclusive {
+        let is_benchmark = candidate.kind == LeaseKind::BenchmarkExclusive;
+        let low_impact = is_low_impact(candidate.kind, candidate.profile);
+        let quick = !low_impact && !is_long(candidate.kind, candidate.profile);
+        if let Some(holder) = &pass.exclusive
+            && !low_impact
+        {
             return blocked(vec![format!("benchmark {holder} holds the machine")]);
         }
-        let is_benchmark = candidate.kind == LeaseKind::BenchmarkExclusive;
         match &pass.hold {
-            Hold::Exclusive(label) => {
+            Hold::Exclusive(label) if !low_impact && !(quick && pass.long > 0) => {
                 return blocked(vec![format!(
                     "benchmark {label} is waiting for the machine to drain"
                 )]);
@@ -599,10 +622,10 @@ impl Ledger {
         let mut progress = None;
         let mut quiet = None;
         if is_benchmark {
-            if pass.active_count > 0 {
-                reasons.push(format!("{} other lease(s) still active", pass.active_count));
+            if pass.draining > 0 {
+                reasons.push(format!("{} other lease(s) still active", pass.draining));
                 progress = Some(BenchmarkProgress::Draining {
-                    active_leases: u32::try_from(pass.active_count).unwrap_or(u32::MAX),
+                    active_leases: u32::try_from(pass.draining).unwrap_or(u32::MAX),
                 });
             } else {
                 let status =
@@ -637,7 +660,12 @@ impl Ledger {
             pass.room.reserve(candidate.profile);
             pass.running
                 .push(Running::starting(now_ms, candidate.profile));
-            pass.active_count += 1;
+            if !low_impact {
+                pass.draining += 1;
+            }
+            if !low_impact && !quick {
+                pass.long += 1;
+            }
             if is_benchmark {
                 pass.exclusive = Some(candidate.label.clone());
             }
@@ -779,6 +807,17 @@ fn grant_reason(limits: &QuietLimits, quiet: Option<Quiet>) -> String {
         ),
         _ => "granted".to_owned(),
     }
+}
+
+/// Whether a lease of `kind` and `profile` runs beside a benchmark.
+fn is_low_impact(kind: LeaseKind, profile: &JobProfile) -> bool {
+    kind == LeaseKind::Normal && profile.is_low_impact()
+}
+
+/// Whether a lease of `kind` and `profile` keeps a waiting benchmark draining for longer than
+/// a quick job takes: a benchmark, or a normal lease that is neither low-impact nor quick.
+fn is_long(kind: LeaseKind, profile: &JobProfile) -> bool {
+    kind != LeaseKind::Normal || !(profile.is_low_impact() || profile.is_quick())
 }
 
 #[cfg(test)]
@@ -1248,7 +1287,7 @@ mod tests {
         enqueue(&mut ledger, 1, 4.0, 300, 0);
         ledger.tick(0, &idle(), &alive());
         enqueue_benchmark(&mut ledger, 2, 0);
-        enqueue(&mut ledger, 3, 1.0, 10, 0);
+        enqueue(&mut ledger, 3, 1.0, 30, 0);
 
         assert!(granted(&ledger.tick(20_000, &idle(), &alive())).is_empty());
         let waiting = ledger.can_fit(&profile(1.0, 1_000), LeaseKind::Normal, &idle(), 20_000);
@@ -1274,6 +1313,72 @@ mod tests {
             "{held:?}"
         );
         assert_eq!(states(&ledger)[1], (3, LeaseState::Queued));
+    }
+
+    fn enqueue_low_impact(ledger: &mut Ledger, id: i64, now_ms: i64) {
+        let tiny = JobProfile {
+            est_secs: 60,
+            ..profile(0.25, 200)
+        };
+        let lease = queued_lease(id, "tiny", tiny, LeaseKind::Normal, now_ms);
+        ledger.enqueue(lease).unwrap();
+    }
+
+    #[test]
+    fn test_quick_lease_starts_while_a_benchmark_drains_a_long_one() {
+        let mut ledger = Ledger::new(settings());
+        enqueue(&mut ledger, 1, 4.0, 300, 0);
+        ledger.tick(0, &idle(), &alive());
+        enqueue_benchmark(&mut ledger, 2, 0);
+        enqueue(&mut ledger, 3, 2.0, 10, 0);
+        assert_eq!(granted(&ledger.tick(1_000, &idle(), &alive())), [3]);
+        let draining = ledger.verdict_for(LeaseId(2), &idle(), 1_000).unwrap();
+        assert_eq!(
+            draining.benchmark,
+            Some(BenchmarkProgress::Draining { active_leases: 2 })
+        );
+
+        // Once only quick leases keep the benchmark waiting, no further quick one starts.
+        ledger.release(LeaseId(1), &session("s"), 2_000).unwrap();
+        enqueue(&mut ledger, 4, 2.0, 10, 2_000);
+        assert!(granted(&ledger.tick(3_000, &idle(), &alive())).is_empty());
+        let held = ledger.verdict_for(LeaseId(4), &idle(), 3_000).unwrap();
+        assert!(
+            has_reason(&held, "waiting for the machine to drain"),
+            "{held:?}"
+        );
+    }
+
+    #[test]
+    fn test_quick_lease_waits_while_a_benchmark_measures_or_runs() {
+        let mut ledger = Ledger::new(settings());
+        enqueue_benchmark(&mut ledger, 1, 0);
+        enqueue(&mut ledger, 2, 2.0, 10, 0);
+        // Measuring quiet: nothing else is active, so the quick lease would disturb it.
+        assert!(tick_seconds(&mut ledger, 0, 5, 1.0).is_empty());
+        assert_eq!(tick_seconds(&mut ledger, 6, 12, 1.0), [1]);
+        let held = ledger.verdict_for(LeaseId(2), &idle(), 13_000).unwrap();
+        assert!(has_reason(&held, "holds the machine"), "{held:?}");
+    }
+
+    #[test]
+    fn test_low_impact_lease_runs_beside_a_benchmark_and_never_holds_its_drain() {
+        let mut ledger = Ledger::new(settings());
+        enqueue_low_impact(&mut ledger, 1, 0);
+        assert_eq!(granted(&ledger.tick(0, &idle(), &alive())), [1]);
+        enqueue_benchmark(&mut ledger, 2, 0);
+        let verdict = ledger.verdict_for(LeaseId(2), &idle(), 0).unwrap();
+        assert!(
+            !matches!(verdict.benchmark, Some(BenchmarkProgress::Draining { .. })),
+            "{verdict:?}"
+        );
+        // The quiet window runs with the low-impact lease still active.
+        assert_eq!(tick_seconds(&mut ledger, 1, 12, 1.0), [2]);
+
+        enqueue_low_impact(&mut ledger, 3, 13_000);
+        enqueue(&mut ledger, 4, 1.0, 300, 13_000);
+        assert_eq!(tick_seconds(&mut ledger, 13, 13, 1.0), [3]);
+        assert_eq!(states(&ledger)[3], (4, LeaseState::Queued));
     }
 
     #[test]

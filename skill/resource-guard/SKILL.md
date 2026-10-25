@@ -42,6 +42,14 @@ A command with any of `--help` `-h` `--version` `-V` `/?` is light whatever it r
 | cpu_heavy | 8 | 4096 | 0 | 0 | 300 |
 | gpu_heavy | 2 | 4096 | 80 | 4096 | 600 |
 | mixed | 6 | 8192 | 50 | 2048 | 600 |
+
+| Preset | Cores | RAM MB | GPU % | VRAM MB | Est. secs |
+|--------|------:|-------:|------:|--------:|----------:|
+| cpu_medium | 4 | 2048 | 0 | 0 | 180 |
+| cpu_small | 2 | 1024 | 0 | 0 | 60 |
+| gpu_small | 1 | 2048 | 30 | 2048 | 300 |
+| low_impact | 0.25 | 256 | 0 | 0 | 60 |
+| quick | 4 | 2048 | 0 | 0 | 10 |
 <!-- rh classes: end -->
 
 Matching is case-insensitive and `*` is a wildcard. An argument pattern starting with `-`
@@ -51,21 +59,46 @@ matches that flag anywhere; any other pattern matches the first positional argum
 Heavy work the rules miss still needs a lease. Use your judgment for anything that keeps
 several cores or the GPU busy for more than about 30 seconds: `ninja`, `make -j`, `go build`
 of a large module, `docker build`, `ffmpeg` encodes, Blender or other renders, ML inference
-servers, game or app executables, large `pytest` runs. Pick the closest class, or give a
-custom profile (`cores` and `ram_mb`, plus `gpu_pct`, `vram_mb`, `est_secs` when they apply).
+servers, game or app executables, large `pytest` runs. Size them like any other job (below).
 
 Light, never leased: reading and searching files, `git`, `cargo check`, `cargo clippy`,
 `cargo fmt`, single quick scripts, `rh` itself, and anything with a light flag above.
 
+## Sizing the lease
+
+The class a rule names is the most a command of that kind may need, not what to ask for. An
+oversized lease makes every other session's job queue behind yours, so ask for what this run
+needs: a `class`, a `preset` (table above), or a custom profile (`cores` and `ram_mb`, plus
+`gpu_pct`, `vram_mb`, `est_secs` when they apply).
+
+- **Classes** (`cpu_heavy`, `gpu_heavy`, `mixed`): cold or release builds, whole test suites
+  that compile most of a workspace, training, renders.
+- **`cpu_medium`**: an incremental build or test run where a few crates or modules changed.
+- **`cpu_small`**: one small crate or package, a single test file, a short script.
+- **`gpu_small`**: short GPU checks, previews, inference smoke runs.
+- **`quick`**: only when you are certain the command ends within about 10 seconds, such as
+  rerunning tests whose binaries are already built. A quick lease may start while a
+  benchmark waits for longer jobs to drain. rhd ends one that is still active after 60
+  seconds, and history then stops treating that command as quick. Never mark anything that
+  compiles more than a file or two as quick.
+- **`low_impact`**: only when you are certain the command uses less than an idle desktop app
+  (at most 0.25 cores and 256 MB, no GPU), such as a tiny already-built tool that prints and
+  exits. It runs even beside a running benchmark, so anything that compiles or does real work
+  is not low impact.
+
+A custom profile counts as quick when `est_secs` is 15 or less, and as low impact when it has
+at most 0.25 cores and 256 MB and no GPU or VRAM. History raises a lease to what earlier runs
+of the same command needed, so a command that ran bigger before loses either status by itself.
+
 ## The loop: check, lease, run, release
 
 1. **Classify** the command (above). Light: just run it.
-2. **Optionally check** with `can_fit` (same `class` or profile, `kind`, and the command as
+2. **Optionally check** with `can_fit` (same profile, `kind`, and the command as
    `label`) when the answer changes what you do, for example to choose between a full build
    now and a narrower one (`-p <crate>`), or to tell the user up front that the machine is
    busy. It changes nothing and holds no place in the queue.
-3. **Acquire**: `acquire_lease` with `class` (or a custom profile) and `label` set to the
-   exact command, for example `cargo test --workspace`. `wait_secs` defaults to 60, at most 120.
+3. **Acquire**: `acquire_lease` with a profile sized as in "Sizing the lease" (`class`,
+   `preset`, or custom) and `label` set to the exact command, for example `cargo test -p rh-core`. `wait_secs` defaults to 60, at most 120.
    When the command runs somewhere other than the session's directory, pass that directory
    as `cwd`.
 4. **Run** the command only when the result's `state` is `active`. A `queued` result keeps
@@ -185,7 +218,10 @@ window. A single busy second does not restart the wait. If the average stays abo
 the lease is granted anyway 60 seconds after the drain, marked as not quiet. (Defaults from
 `[benchmark]` in the config: `quiet_cpu_pct`, `quiet_gpu_pct`, `quiet_secs`,
 `max_quiet_wait_secs`.) While it waits it blocks every later request so the machine drains,
-and while it is active nothing else is granted. That costs every other session, so:
+and while it is active nothing else is granted. Two exceptions (see "Sizing the lease"): a
+quick lease may start while the benchmark still waits for longer leases to end, and a
+low-impact lease runs beside it at any stage and never delays its drain. That costs every
+other session, so:
 
 - Tell the user before acquiring that other sessions will be held back.
 - Build first under a normal lease (`cargo bench --no-run`), release it, then acquire the

@@ -3,9 +3,14 @@
 use std::fmt::Write;
 
 use rh_core::classifier::describe_rule;
-use rh_shared::{config::Config, paths::Paths, types::JobClass};
+use rh_shared::{
+    config::Config,
+    paths::Paths,
+    types::{JobClass, JobProfile},
+};
 
-/// Prints the rules and class profiles from the user's config, or the defaults without one.
+/// Prints the rules, class profiles, and presets from the user's config, or the defaults
+/// without one.
 ///
 /// # Errors
 ///
@@ -17,7 +22,7 @@ pub fn classes() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Renders `config`'s classifier rules, light flags, and class profiles.
+/// Renders `config`'s classifier rules, light flags, class profiles, and presets.
 ///
 /// The `resource-guard` skill embeds this output for the default config; a test keeps the
 /// two identical.
@@ -46,19 +51,25 @@ fn format_classes(config: &Config) -> String {
          |-------|------:|-------:|------:|--------:|----------:|\n",
     );
     for class in JobClass::ALL {
-        let profile = config.classes.get(class);
-        let _ = writeln!(
-            out,
-            "| {} | {} | {} | {} | {} | {} |",
-            class.as_str(),
-            profile.cores,
-            profile.ram_mb,
-            profile.gpu_pct,
-            profile.vram_mb,
-            profile.est_secs
-        );
+        push_row(&mut out, class.as_str(), config.classes.get(class));
+    }
+    out.push_str(
+        "\n| Preset | Cores | RAM MB | GPU % | VRAM MB | Est. secs |\n\
+         |--------|------:|-------:|------:|--------:|----------:|\n",
+    );
+    for (name, profile) in &config.presets.0 {
+        push_row(&mut out, name, profile);
     }
     out
+}
+
+fn push_row(out: &mut String, name: &str, profile: &JobProfile) {
+    // Writing to a String cannot fail.
+    let _ = writeln!(
+        out,
+        "| {name} | {} | {} | {} | {} | {} |",
+        profile.cores, profile.ram_mb, profile.gpu_pct, profile.vram_mb, profile.est_secs
+    );
 }
 
 #[cfg(test)]

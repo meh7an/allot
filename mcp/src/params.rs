@@ -56,13 +56,18 @@ impl From<KindParam> for LeaseKind {
     }
 }
 
-/// The resources a job needs: either `class`, or a custom profile with at least `cores` and
+/// The resources a job needs: `class`, `preset`, or a custom profile with at least `cores` and
 /// `ram_mb`.
 #[derive(Debug, Clone, Default, PartialEq, Deserialize, JsonSchema)]
 pub struct ProfileParams {
-    /// Named class; omit when giving a custom profile.
+    /// Named class; omit when giving a preset or a custom profile.
     #[serde(default)]
     pub class: Option<ClassParam>,
+    /// Named preset sized between the classes, from `rh classes`: cpu_small, cpu_medium,
+    /// gpu_small, quick (ends within 15 s, may start while a benchmark drains), low_impact
+    /// (at most 0.25 cores, runs beside a benchmark).
+    #[serde(default)]
+    pub preset: Option<String>,
     /// Custom profile: logical cores the job keeps busy.
     #[serde(default)]
     pub cores: Option<f32>,
@@ -85,17 +90,27 @@ impl ProfileParams {
     ///
     /// # Errors
     ///
-    /// A message for Claude when both or neither form is given, or a custom profile lacks
-    /// `cores` or `ram_mb`.
+    /// A message for Claude when more than one form or none is given, or a custom profile
+    /// lacks `cores` or `ram_mb`.
     pub fn to_spec(&self) -> Result<ProfileSpec, String> {
         let custom = self.cores.is_some()
             || self.ram_mb.is_some()
             || self.gpu_pct.is_some()
             || self.vram_mb.is_some()
             || self.est_secs.is_some();
+        let preset = self.preset.as_deref().map(str::trim);
+        let forms =
+            usize::from(self.class.is_some()) + usize::from(preset.is_some()) + usize::from(custom);
+        if forms > 1 {
+            return Err(
+                "give only one of `class`, `preset`, or a custom profile, not several".to_owned(),
+            );
+        }
+        if let Some(name) = preset {
+            return Ok(ProfileSpec::Preset(name.to_owned()));
+        }
         match (self.class, custom) {
-            (Some(_), true) => Err("give either `class` or a custom profile, not both".to_owned()),
-            (Some(class), false) => Ok(ProfileSpec::Class(class.into())),
+            (Some(class), _) => Ok(ProfileSpec::Class(class.into())),
             (None, true) => {
                 let (Some(cores), Some(ram_mb)) = (self.cores, self.ram_mb) else {
                     return Err("a custom profile needs both `cores` and `ram_mb`".to_owned());
@@ -108,9 +123,11 @@ impl ProfileParams {
                     est_secs: self.est_secs.unwrap_or(DEFAULT_EST_SECS),
                 }))
             }
-            (None, false) => {
-                Err("give `class` (for example cpu_heavy) or a custom profile".to_owned())
-            }
+            (None, false) => Err(
+                "give `class` (for example cpu_heavy), `preset` (for example cpu_small), or a \
+                 custom profile"
+                    .to_owned(),
+            ),
         }
     }
 }
@@ -227,7 +244,30 @@ mod tests {
             class: Some(ClassParam::CpuHeavy),
             ..custom(Some(4.0), Some(1))
         };
-        assert!(both.to_spec().unwrap_err().contains("not both"));
+        assert!(both.to_spec().unwrap_err().contains("not several"));
+        let class_and_preset = ProfileParams {
+            class: Some(ClassParam::CpuHeavy),
+            preset: Some("quick".into()),
+            ..ProfileParams::default()
+        };
+        assert!(
+            class_and_preset
+                .to_spec()
+                .unwrap_err()
+                .contains("not several")
+        );
+    }
+
+    #[test]
+    fn test_to_spec_preset_by_name() {
+        let params = ProfileParams {
+            preset: Some(" cpu_small ".into()),
+            ..ProfileParams::default()
+        };
+        assert_eq!(
+            params.to_spec(),
+            Ok(ProfileSpec::Preset("cpu_small".into()))
+        );
     }
 
     #[test]

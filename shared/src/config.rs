@@ -1,6 +1,6 @@
-use std::{fs, io, path::Path};
+use std::{collections::BTreeMap, fs, io, path::Path};
 
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, de};
 
 use crate::{
     Error, Result,
@@ -29,6 +29,8 @@ pub struct Config {
     pub hook: HookConfig,
     /// The profile behind each [`JobClass`].
     pub classes: ClassProfiles,
+    /// Named profiles sized between the classes, chosen by name like a class.
+    pub presets: Presets,
     /// Which shell commands count as heavy.
     pub classifier: ClassifierConfig,
 }
@@ -118,6 +120,23 @@ impl Config {
                     "classes.{}: {reason}",
                     class.as_str()
                 )));
+            }
+        }
+        for (name, profile) in &self.presets.0 {
+            let well_formed = !name.is_empty()
+                && name
+                    .bytes()
+                    .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_');
+            ensure(
+                well_formed,
+                format!("presets.{name}: names use only a-z, 0-9 and _"),
+            )?;
+            ensure(
+                JobClass::ALL.iter().all(|class| class.as_str() != name),
+                format!("presets.{name}: a class already has this name"),
+            )?;
+            if let Some(reason) = profile.invalid_reason() {
+                return Err(Error::Config(format!("presets.{name}: {reason}")));
             }
         }
         for (index, rule) in self.classifier.rules.iter().enumerate() {
@@ -378,6 +397,80 @@ impl ProfileOverride {
     }
 }
 
+/// Named profiles between the classes, by name.
+///
+/// A `[presets.<name>]` table changes that preset field by field, like a class, or adds a new
+/// one, which needs at least `cores` and `ram_mb` (GPU and VRAM default to 0, the run time
+/// to 300 s). The default presets stay unless overridden.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(transparent)]
+pub struct Presets(pub BTreeMap<String, JobProfile>);
+
+/// Run time of a new preset that gives none.
+const PRESET_EST_SECS: u64 = 300;
+
+impl Presets {
+    /// The profile of preset `name`.
+    pub fn get(&self, name: &str) -> Option<&JobProfile> {
+        self.0.get(name)
+    }
+
+    /// The preset names, sorted.
+    pub fn names(&self) -> impl Iterator<Item = &str> {
+        self.0.keys().map(String::as_str)
+    }
+}
+
+impl Default for Presets {
+    fn default() -> Self {
+        let preset = |cores, ram_mb, gpu_pct, vram_mb, est_secs| JobProfile {
+            cores,
+            ram_mb,
+            gpu_pct,
+            vram_mb,
+            est_secs,
+        };
+        Self(BTreeMap::from([
+            ("cpu_small".to_owned(), preset(2.0, 1024, 0.0, 0, 60)),
+            ("cpu_medium".to_owned(), preset(4.0, 2048, 0.0, 0, 180)),
+            ("gpu_small".to_owned(), preset(1.0, 2048, 30.0, 2048, 300)),
+            ("quick".to_owned(), preset(4.0, 2048, 0.0, 0, 10)),
+            ("low_impact".to_owned(), preset(0.25, 256, 0.0, 0, 60)),
+        ]))
+    }
+}
+
+impl<'de> Deserialize<'de> for Presets {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let overrides = BTreeMap::<String, ProfileOverride>::deserialize(deserializer)?;
+        let mut presets = Self::default();
+        for (name, value) in overrides {
+            let profile = match presets.0.get(&name) {
+                Some(&base) => value.apply(base),
+                None => {
+                    let (Some(cores), Some(ram_mb)) = (value.cores, value.ram_mb) else {
+                        return Err(de::Error::custom(format!(
+                            "new preset `{name}` needs both cores and ram_mb"
+                        )));
+                    };
+                    value.apply(JobProfile {
+                        cores,
+                        ram_mb,
+                        gpu_pct: 0.0,
+                        vram_mb: 0,
+                        est_secs: PRESET_EST_SECS,
+                    })
+                }
+            };
+            presets.0.insert(name, profile);
+        }
+        Ok(presets)
+    }
+}
+
 /// Which shell commands count as heavy.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
@@ -466,6 +559,41 @@ mod tests {
     fn test_config_default_toml_round_trip_preserves_every_value() {
         let text = toml::to_string(&Config::default()).unwrap();
         assert_eq!(Config::from_toml(&text).unwrap(), Config::default());
+    }
+
+    #[test]
+    fn test_config_presets_merge_over_defaults_and_add_new_ones() {
+        let config = Config::from_toml(
+            "[presets.cpu_small]\ncores = 3.0\n\n[presets.render_preview]\ncores = 2.0\n\
+             ram_mb = 3000\ngpu_pct = 40.0\n",
+        )
+        .unwrap();
+        let defaults = Presets::default();
+        let small = config.presets.get("cpu_small").unwrap();
+        assert_eq!(small.cores, 3.0);
+        assert_eq!(small.est_secs, defaults.get("cpu_small").unwrap().est_secs);
+        let preview = config.presets.get("render_preview").unwrap();
+        assert_eq!((preview.gpu_pct, preview.vram_mb), (40.0, 0));
+        assert_eq!(preview.est_secs, PRESET_EST_SECS);
+        assert_eq!(config.presets.get("quick"), defaults.get("quick"));
+    }
+
+    #[test]
+    fn test_config_presets_reject_bad_names_and_incomplete_new_ones() {
+        assert!(config_error("[presets.cpu_heavy]\ncores = 1.0\nram_mb = 1\n").contains("class"));
+        assert!(config_error("[presets.Big]\ncores = 1.0\nram_mb = 1\n").contains("a-z"));
+        assert!(config_error("[presets.quick]\ngpu_pct = 140.0\n").contains("presets.quick"));
+        let incomplete = Config::from_toml("[presets.huge]\ncores = 12.0\n").unwrap_err();
+        assert!(incomplete.to_string().contains("ram_mb"), "{incomplete}");
+    }
+
+    #[test]
+    fn test_default_presets_are_quick_and_low_impact_where_named() {
+        let presets = Presets::default();
+        assert!(presets.get("quick").unwrap().is_quick());
+        assert!(presets.get("low_impact").unwrap().is_low_impact());
+        assert!(!presets.get("cpu_small").unwrap().is_quick());
+        assert!(!presets.get("cpu_small").unwrap().is_low_impact());
     }
 
     #[test]

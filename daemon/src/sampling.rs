@@ -9,7 +9,7 @@ use std::{
 use anyhow::Context;
 use rh_core::{
     binding::{self, BindOutcome},
-    idle::IdleWatch,
+    idle::{IdleWatch, QUICK_OVERRUN_MS, quick_overruns},
     ledger::Ledger,
     process::ProcessTable,
     sampler::{RawSample, Sampler, SnapshotBuilder},
@@ -122,9 +122,11 @@ async fn ingest(
     }
 }
 
-/// Ends the active leases whose command has ended and whose holder's session stayed idle for
-/// `leases.idle_release_secs`, as expired, and returns their history rows to store. A row ends
-/// when the session went idle, so the forgotten minutes do not count as run time.
+/// Ends, as expired, the active leases whose command has ended and whose holder's session
+/// stayed idle for `leases.idle_release_secs`, and the quick leases still active after
+/// [`QUICK_OVERRUN_MS`], and returns their history rows to store. An idle lease's row ends
+/// when the session went idle, so the forgotten minutes do not count as run time; an overrun
+/// quick lease's row ends now, so history learns the command is not quick.
 async fn release_idle(
     state: &AppState,
     ledger: &mut Ledger,
@@ -134,20 +136,33 @@ async fn release_idle(
         return Ok(Vec::new());
     };
     let after_secs = state.settings().config.leases.idle_release_secs;
-    let due = idle.observe(
-        ledger.leases(),
-        &latest.snapshot,
-        &latest.processes,
-        Duration::from_secs(after_secs),
-    );
+    let now = now_ms();
+    let mut due: Vec<(LeaseId, i64, String)> = idle
+        .observe(
+            ledger.leases(),
+            &latest.snapshot,
+            &latest.processes,
+            Duration::from_secs(after_secs),
+        )
+        .into_iter()
+        .map(|(id, since_ms)| {
+            let reason = format!("no command running and the session idle for {after_secs}s");
+            (id, since_ms, reason)
+        })
+        .collect();
+    let overrun_secs = QUICK_OVERRUN_MS / 1_000;
+    for id in quick_overruns(ledger.leases(), now) {
+        if due.iter().all(|(ended, ..)| *ended != id) {
+            let reason = format!("quick lease still active after {overrun_secs}s");
+            due.push((id, now, reason));
+        }
+    }
     if due.is_empty() {
         return Ok(Vec::new());
     }
-    let now = now_ms();
     let mut runs = Vec::new();
-    for (id, idle_since_ms) in due {
+    for (id, run_ended_ms, reason) in due {
         let released = ledger.end(id, EndCause::Expired, now)?;
-        let reason = format!("no command running and the session idle for {after_secs}s");
         tracing::info!(lease = id.0, %reason, "lease ended for its holder");
         state
             .with_db(move |conn| repo::end_lease(conn, id, EndCause::Expired, now, &reason))
@@ -158,7 +173,7 @@ async fn release_idle(
                 &released.lease,
                 run,
                 EndCause::Expired,
-                idle_since_ms,
+                run_ended_ms,
             ));
         }
     }

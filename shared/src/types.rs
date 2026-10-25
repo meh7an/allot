@@ -223,7 +223,31 @@ impl JobProfile {
             None
         }
     }
+
+    /// Whether a job of this profile ends within [`QUICK_MAX_SECS`]: a normal lease for it may
+    /// start while a benchmark still waits for other leases to end.
+    pub fn is_quick(&self) -> bool {
+        self.est_secs <= QUICK_MAX_SECS
+    }
+
+    /// Whether a job of this profile loads the machine less than an idle desktop app: a
+    /// normal lease for it may run beside a benchmark.
+    pub fn is_low_impact(&self) -> bool {
+        self.cores <= LOW_IMPACT_MAX_CORES
+            && self.ram_mb <= LOW_IMPACT_MAX_RAM_MB
+            && self.gpu_pct == 0.0
+            && self.vram_mb == 0
+    }
 }
+
+/// The longest expected run time of a quick job.
+pub const QUICK_MAX_SECS: u64 = 15;
+
+/// The most cores a low-impact job may use.
+pub const LOW_IMPACT_MAX_CORES: f32 = 0.25;
+
+/// The most memory a low-impact job may use.
+pub const LOW_IMPACT_MAX_RAM_MB: u64 = 256;
 
 /// Named job profiles. Their values come from the `[classes]` section of the config.
 #[cfg_attr(any(feature = "schema", test), derive(schemars::JsonSchema))]

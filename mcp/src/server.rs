@@ -696,7 +696,7 @@ mod tests {
         let mut params = acquire(ClassParam::CpuHeavy);
         params.0.profile.cores = Some(4.0);
         let error = server.acquire_lease(params).await.unwrap_err();
-        assert!(error.contains("not both"), "{error}");
+        assert!(error.contains("not several"), "{error}");
         assert!(daemon.heartbeats().is_empty() && server.held.ids().is_empty());
     }
 

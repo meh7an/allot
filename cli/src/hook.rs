@@ -293,7 +293,8 @@ fn judge(class: JobClass, rule: &str, command: &str, leases: &[Lease]) -> Result
     let mut reason = format!(
         "Blocked by {MCP_SERVER}: `{command}` is {name} work (rule `{rule}`) and this session \
          holds no active lease that covers it. Call acquire_lease from the {MCP_SERVER} MCP \
-         server with class \"{name}\" and the command as label, run the command once the lease \
+         server with a profile sized to this run (class \"{name}\" at most; a preset or custom \
+         profile when it needs less) and the command as label, run the command once the lease \
          is active, then call release_lease."
     );
     for lease in in_state(LeaseState::Active) {

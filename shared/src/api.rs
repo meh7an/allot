@@ -25,12 +25,15 @@ pub struct HealthResponse {
 }
 
 /// How a request states the resources a job needs.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 #[non_exhaustive]
 pub enum ProfileSpec {
     /// A named class, resolved through the daemon's config.
     Class(JobClass),
+    /// A named preset from the daemon's config, for example `cpu_small`. The lease records it
+    /// as a custom profile with no class.
+    Preset(String),
     /// Explicit values.
     Custom(JobProfile),
 }

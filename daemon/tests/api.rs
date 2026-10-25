@@ -616,6 +616,48 @@ async fn test_invalid_profile_is_unprocessable() {
 }
 
 #[tokio::test]
+async fn test_preset_resolves_to_its_profile_and_unknown_ones_are_listed() {
+    let daemon = Daemon::start().await;
+    let preset = |name: &str| ProfileSpec::Preset(name.into());
+    let response = daemon.acquire(alice(), preset("cpu_small"), 0).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let acquired: AcquireResponse = response.json().await.unwrap();
+    assert_eq!(acquired.lease.class, None);
+    assert_eq!(
+        Some(&acquired.lease.profile),
+        Config::default().presets.get("cpu_small")
+    );
+
+    let response = daemon.acquire(bob(), preset("huge"), 0).await;
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    let text = response.text().await.unwrap();
+    assert!(
+        text.contains("unknown preset `huge`") && text.contains("cpu_small"),
+        "{text}"
+    );
+    daemon.stop().await;
+}
+
+#[tokio::test]
+async fn test_low_impact_job_runs_beside_an_active_benchmark() {
+    let daemon = Daemon::start_with(quick_benchmark_config(5), |_| {}).await;
+    let benchmark = daemon.acquire_benchmark(alice(), 5).await.lease;
+    assert_eq!(benchmark.state, LeaseState::Active);
+
+    let low = daemon
+        .acquire(bob(), ProfileSpec::Preset("low_impact".into()), 0)
+        .await;
+    let low: AcquireResponse = low.json().await.unwrap();
+    assert_eq!(low.lease.state, LeaseState::Active, "{:?}", low.verdict);
+    let small = daemon
+        .acquire(bob(), ProfileSpec::Preset("cpu_small".into()), 0)
+        .await;
+    let small: AcquireResponse = small.json().await.unwrap();
+    assert_eq!(small.lease.state, LeaseState::Queued);
+    daemon.stop().await;
+}
+
+#[tokio::test]
 async fn test_can_fit_reports_the_shortfall() {
     let daemon = Daemon::start().await;
     let request = CanFitRequest {
@@ -646,7 +688,7 @@ fn stored_active_lease(conn: &mut SqliteConnection, holder: Holder, at_ms: i64) 
             ram_mb: 100,
             gpu_pct: 0.0,
             vram_mb: 0,
-            est_secs: 10,
+            est_secs: 300,
         },
         label: "old build".into(),
         cwd: String::new(),
