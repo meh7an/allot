@@ -5,7 +5,7 @@ use windows::Win32::Graphics::Dxgi::{
     CreateDXGIFactory1, DXGI_ADAPTER_FLAG_SOFTWARE, DXGI_ERROR_NOT_FOUND, IDXGIFactory1,
 };
 
-use crate::gpu::format_luid;
+use super::gpu::format_luid;
 
 const BYTES_PER_MB: u64 = 1024 * 1024;
 

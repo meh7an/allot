@@ -12,7 +12,7 @@ use windows::{
     core::HSTRING,
 };
 
-use crate::{BYTES_PER_MB, pdh};
+use super::{BYTES_PER_MB, pdh};
 
 /// How often the drive list and free space are read again. Space changes slowly, and the
 /// volume calls can block for a moment on a spun-down disk.

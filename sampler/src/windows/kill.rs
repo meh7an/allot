@@ -161,7 +161,7 @@ fn has_exited(handle: HANDLE, wait_ms: u32) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tests::busy_child;
+    use crate::windows::tests::busy_child;
 
     #[test]
     fn test_process_table_lists_own_process_with_its_start_time() {
