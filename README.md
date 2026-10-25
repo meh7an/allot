@@ -1,4 +1,10 @@
-# Allot
+<h1>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/brand/png/allot-mark-color-dark-2x.png">
+    <img src="assets/brand/png/allot-mark-color-light-2x.png" alt="" width="40" height="40" align="absmiddle">
+  </picture>
+  Allot
+</h1>
 
 [![CI](https://github.com/meh7an/allot/actions/workflows/ci.yml/badge.svg)](https://github.com/meh7an/allot/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/meh7an/allot)](https://github.com/meh7an/allot/releases/latest)

@@ -13,7 +13,7 @@ Paths below are relative to `%USERPROFILE%\.allot\` unless they start with `~` o
 | `Get-ScheduledTask allot` | State `Ready` (allotd already started) or `Running` |
 | `Get-ScheduledTaskInfo allot` | `LastTaskResult` 267009 (still running). 1 means allotd exited at once: usually another allotd was already running, which is not logged (it fails before logging starts, so two daemons never share the log); other startup errors are in `logs\allotd.log`. |
 | `logs\allotd.log` | A startup line, then lease grants and releases |
-| The tray icon | A meter-mark icon in the notification area (it may sit in the overflow); its tooltip summarizes the jobs. While allotd is down it shows the down icon, and the flyout a "Service stopped" banner with Start service. |
+| The tray icon | The Allot mark in the notification area (it may sit in the overflow); its tooltip summarizes the jobs. While allotd is down it shows the down icon, and the flyout a "Service stopped" banner with Start service. |
 | `Get-ItemProperty HKCU:\Software\Microsoft\Windows\CurrentVersion\Run -Name 'Allot'` | The quoted path of `bin\tray\allot-tray.exe`, while Launch at logon is on |
 | `logs\tray.log` | A `started` line per launch, then the flyout and tray events |
 

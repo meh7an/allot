@@ -3,7 +3,7 @@ using Allot.Tray.Core.ViewModels;
 namespace Allot.Tray.Core.TrayIcon;
 
 /// <summary>
-/// What the tray icon shows for one snapshot: the meter-mark state and the summary that the
+/// What the tray icon shows for one snapshot: the mark's state and the summary that the
 /// tooltip and the menu's status line repeat.
 /// </summary>
 /// <param name="Icon">The icon state.</param>

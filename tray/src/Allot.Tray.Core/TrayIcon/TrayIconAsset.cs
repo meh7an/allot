@@ -3,7 +3,8 @@ using System.Globalization;
 namespace Allot.Tray.Core.TrayIcon;
 
 /// <summary>
-/// The four meter-mark states from the handoff (section 7).
+/// The four states of the Allot mark in the tray: dimmed while idle, solid while busy, an amber
+/// badge while queued, and dimmed with a red badge while the service is down.
 /// </summary>
 public enum TrayIconState
 {
@@ -23,7 +24,7 @@ public enum TaskbarTheme
 }
 
 /// <summary>
-/// Which handoff ICO file and tooltip the tray icon shows.
+/// Which ICO file and tooltip the tray icon shows. assets/brand/build.py generates the files.
 /// </summary>
 public static class TrayIconAsset
 {

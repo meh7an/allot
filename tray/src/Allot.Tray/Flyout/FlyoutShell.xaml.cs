@@ -197,6 +197,14 @@ public sealed partial class FlyoutShell : UserControl, IFlyoutContent
     public static Visibility Shows(HeaderGlyph glyph, string name) =>
         glyph.ToString() == name ? Visibility.Visible : Visibility.Collapsed;
 
+    public static Visibility ShowsMark(HeaderGlyph glyph) =>
+        glyph == HeaderGlyph.Error ? Visibility.Collapsed : Visibility.Visible;
+
+    /// <summary>
+    /// The idle mark is dimmed, like the idle tray icon.
+    /// </summary>
+    public static double MarkOpacity(HeaderGlyph glyph) => glyph == HeaderGlyph.Idle ? 0.5 : 1;
+
     /// <summary>
     /// For <see cref="ActionMorph.IsShownProperty"/>: the action buttons move instead of switching
     /// their visibility.

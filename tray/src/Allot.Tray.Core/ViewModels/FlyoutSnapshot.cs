@@ -6,12 +6,12 @@ namespace Allot.Tray.Core.ViewModels;
 public enum HeaderGlyph
 {
     /// <summary>
-    /// Hollow meter mark.
+    /// The dimmed mark.
     /// </summary>
     Idle,
 
     /// <summary>
-    /// Filled bars: a job runs, or a benchmark runs alone.
+    /// The solid mark: a job runs, or a benchmark runs alone.
     /// </summary>
     Busy,
 
