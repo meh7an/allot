@@ -14,7 +14,7 @@ public sealed class FlyoutModel : Observable
     private HeaderGlyph _glyph = HeaderGlyph.Error;
     private string _summary = "Starting service…";
     private bool _isLastKnown = true;
-    private ServiceBanner? _banner;
+    private ServiceBanner _banner = ServiceBanner.Hidden;
     private string _metersCount = MenuCounts.Meters(new MeterToggles());
     private string _notificationsCount = MenuCounts.Notifications(new NotificationToggles());
 
@@ -40,9 +40,10 @@ public sealed class FlyoutModel : Observable
     }
 
     /// <summary>
-    /// The service-down banner and last known caption, or <c>null</c> while the service runs.
+    /// The service-down banner and last known caption, or <see cref="ServiceBanner.Hidden"/>
+    /// while the service runs.
     /// </summary>
-    public ServiceBanner? Banner
+    public ServiceBanner Banner
     {
         get => _banner;
         private set => Set(ref _banner, value);
@@ -81,7 +82,7 @@ public sealed class FlyoutModel : Observable
         Sync(Rows, RowsOf(snapshot));
     }
 
-    public void ApplyBanner(ServiceBanner? banner) => Banner = banner;
+    public void ApplyBanner(ServiceBanner? banner) => Banner = banner ?? ServiceBanner.Hidden;
 
     public void ApplyMenu(TraySettings settings)
     {

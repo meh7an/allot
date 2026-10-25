@@ -38,6 +38,13 @@ public sealed record ServiceBanner(string Text, string Problem, BannerButton But
 
     public const string IncompatibleText = "Service needs an update · run rh install";
 
+    /// <summary>
+    /// No banner, while the service runs. The flyout model holds this instead of <c>null</c>:
+    /// x:Bind skips a function binding whose argument path ends in <c>null</c>, so a banner set
+    /// to <c>null</c> would stay on screen.
+    /// </summary>
+    public static ServiceBanner Hidden { get; } = new("", "", BannerButton.None, "");
+
     /// <param name="status">The service status of the latest poll.</param>
     /// <param name="lastKnown">The last state rhd served, if any.</param>
     /// <param name="startProblem">Why the last Start service failed, if it did.</param>

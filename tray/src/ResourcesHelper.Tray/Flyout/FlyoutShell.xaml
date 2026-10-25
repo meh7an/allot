@@ -943,7 +943,7 @@
         Top-aligned, so the panel's height is its content's: stretched, it would fill the
         viewport and report the window's own height back as the height it needs.
       -->
-      <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+      <ScrollViewer x:Name="BodyScroller" Grid.Row="1" VerticalScrollBarVisibility="Auto">
         <StackPanel
           x:Name="BodyPanel"
           VerticalAlignment="Top"

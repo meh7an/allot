@@ -24,6 +24,8 @@
     <Content Include="Assets\AppIcon.ico" />
     <!-- Handoff tray icons; LoadImage picks the frame for the DPI straight from these files. -->
     <Content Include="Assets\Tray\*.ico" CopyToOutputDirectory="PreserveNewest" />
+    <!-- Their 256 px PNGs, the toast logos (toast images cannot be ICO files). -->
+    <Content Include="Assets\Tray\*.png" CopyToOutputDirectory="PreserveNewest" />
     <!-- Fluent System Icons (MIT), microsoft/fluentui-system-icons at commit 463d58b. -->
     <Content Include="Assets\Fonts\*.ttf" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>

@@ -15,6 +15,13 @@ public sealed class TrayIconAssetTests
         Assert.AreEqual(expected, TrayIconAsset.FileName(state, theme));
 
     [TestMethod]
+    [DataRow(TrayIconState.Queued, TaskbarTheme.Dark, "rh-queued-on-dark-taskbar-256.png")]
+    [DataRow(TrayIconState.Down, TaskbarTheme.Light, "rh-down-on-light-taskbar-256.png")]
+    public void LogoFileNameMatchesTheHandoffPngs(
+        TrayIconState state, TaskbarTheme theme, string expected) =>
+        Assert.AreEqual(expected, TrayIconAsset.LogoFileName(state, theme));
+
+    [TestMethod]
     [DataRow(1, TaskbarTheme.Light)]
     [DataRow(0, TaskbarTheme.Dark)]
     [DataRow(null, TaskbarTheme.Dark)]

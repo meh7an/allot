@@ -153,9 +153,23 @@ public sealed class ServiceDownTests
 
         model.ApplyBanner(Banner(ServiceStatus.Running, lastKnown: true));
 
-        Assert.IsNotNull(down);
-        Assert.IsNull(model.Banner);
+        Assert.AreNotEqual(ServiceBanner.Hidden, down);
+        Assert.AreSame(ServiceBanner.Hidden, model.Banner);
         Assert.AreEqual(2, changes.Count(name => name == nameof(FlyoutModel.Banner)));
+    }
+
+    // x:Bind skips function bindings whose argument is null, which left the banner on screen
+    // after the service came back.
+    [TestMethod]
+    public void ModelNeverHoldsANullBanner()
+    {
+        var model = new FlyoutModel();
+        var initial = model.Banner;
+
+        model.ApplyBanner(null);
+
+        Assert.AreSame(ServiceBanner.Hidden, initial);
+        Assert.AreSame(ServiceBanner.Hidden, model.Banner);
     }
 
     private static ServiceBanner? Banner(

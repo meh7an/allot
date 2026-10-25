@@ -28,6 +28,7 @@ internal sealed class TrayController : IDisposable
     private readonly Action _quit;
     private readonly Func<bool> _launchAtLogon;
     private readonly Action<bool> _setLaunchAtLogon;
+    private readonly Action _stopping;
     private TrayStatus _status = new(TrayIconState.Down, "Starting service…");
     private ServiceStatus _service = ServiceStatus.Starting;
     private UiState? _state;
@@ -39,7 +40,8 @@ internal sealed class TrayController : IDisposable
         Action openFlyout,
         Action quit,
         Func<bool> launchAtLogon,
-        Action<bool> setLaunchAtLogon)
+        Action<bool> setLaunchAtLogon,
+        Action stopping)
     {
         _poller = poller;
         _logDirectory = logDirectory;
@@ -48,6 +50,7 @@ internal sealed class TrayController : IDisposable
         _quit = quit;
         _launchAtLogon = launchAtLogon;
         _setLaunchAtLogon = setLaunchAtLogon;
+        _stopping = stopping;
 
         _icon = new NotifyIcon(_status.Icon, _status.Tooltip);
         _icon.Diagnostic += message => AppLog.Write($"tray: {message}");
@@ -59,6 +62,11 @@ internal sealed class TrayController : IDisposable
     }
 
     public void Dispose() => _icon.Dispose();
+
+    /// <summary>
+    /// The icon file the tray shows now, as a 256 px PNG for a toast logo.
+    /// </summary>
+    public string LogoFileName => TrayIconAsset.LogoFileName(_status.Icon, _icon.Theme);
 
     /// <summary>
     /// Takes the latest poll; called on the UI thread.
@@ -184,6 +192,7 @@ internal sealed class TrayController : IDisposable
     private async Task StopAsync()
     {
         AppLog.Write("stop service chosen");
+        _stopping();
         if (await _poller.StopServiceAsync(CancellationToken.None) is { } problem)
         {
             AppLog.Write($"stop service failed: {problem}");

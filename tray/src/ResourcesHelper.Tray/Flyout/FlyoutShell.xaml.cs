@@ -195,31 +195,31 @@ public sealed partial class FlyoutShell : UserControl, IFlyoutContent
     /// </summary>
     public static double Dimmed(bool isLastKnown) => isLastKnown ? 0.55 : 1;
 
-    public static Visibility ShowsBanner(ServiceBanner? banner) => Hides(banner is null);
+    public static Visibility ShowsBanner(ServiceBanner banner) =>
+        Hides(banner == ServiceBanner.Hidden);
 
-    public static string BannerText(ServiceBanner? banner) => banner?.Text ?? "";
+    public static string BannerText(ServiceBanner banner) => banner.Text;
 
-    public static string BannerProblem(ServiceBanner? banner) => banner?.Problem ?? "";
+    public static string BannerProblem(ServiceBanner banner) => banner.Problem;
 
-    public static Visibility ShowsProblem(ServiceBanner? banner) =>
-        Hides(string.IsNullOrEmpty(banner?.Problem));
+    public static Visibility ShowsProblem(ServiceBanner banner) =>
+        Hides(banner.Problem.Length == 0);
 
-    public static Visibility ShowsStart(ServiceBanner? banner) =>
-        Hides(banner is null or { Button: BannerButton.None });
+    public static Visibility ShowsStart(ServiceBanner banner) =>
+        Hides(banner.Button == BannerButton.None);
 
     /// <summary>
     /// Starting… is the same button, muted and disabled.
     /// </summary>
-    public static bool CanStart(ServiceBanner? banner) =>
-        banner is { Button: BannerButton.Start };
+    public static bool CanStart(ServiceBanner banner) => banner.Button == BannerButton.Start;
 
-    public static string StartText(ServiceBanner? banner) =>
-        banner is { Button: BannerButton.Starting } ? "Starting…" : "Start service";
+    public static string StartText(ServiceBanner banner) =>
+        banner.Button == BannerButton.Starting ? "Starting…" : "Start service";
 
-    public static string Caption(ServiceBanner? banner) => banner?.Caption ?? "";
+    public static string Caption(ServiceBanner banner) => banner.Caption;
 
-    public static Visibility ShowsCaption(ServiceBanner? banner) =>
-        Hides(string.IsNullOrEmpty(banner?.Caption));
+    public static Visibility ShowsCaption(ServiceBanner banner) =>
+        Hides(banner.Caption.Length == 0);
 
     public static string OnOff(bool on) => on ? "On" : "Off";
 
@@ -277,7 +277,45 @@ public sealed partial class FlyoutShell : UserControl, IFlyoutContent
 
         MoreMenu.Items.Insert(0, scenarios);
     }
+
+    /// <summary>
+    /// Lists one of each toast under More options, to check their look and buttons without the
+    /// events that fire them.
+    /// </summary>
+    public void AddTestToasts(
+        IReadOnlyList<Core.Notifications.ToastMessage> toasts,
+        Action<Core.Notifications.ToastMessage> show)
+    {
+        var tests = new MenuFlyoutSubItem { Text = "Test toasts" };
+        foreach (var toast in toasts)
+        {
+            var item = new MenuFlyoutItem { Text = toast.Title };
+            item.Click += (_, _) => show(toast);
+            tests.Items.Add(item);
+        }
+
+        MoreMenu.Items.Insert(0, tests);
+    }
 #endif
+
+    /// <summary>
+    /// Scrolls the body so the row with this key is at its top (the toast's Show), or to the
+    /// top when no such row shows.
+    /// </summary>
+    /// <param name="key">A <see cref="FlyoutRow.Key"/>, or <c>null</c>.</param>
+    public void ScrollTo(string? key) =>
+        // Low priority: a row the latest poll added gets its layout first.
+        _ = DispatcherQueue.TryEnqueue(
+            Microsoft.UI.Dispatching.DispatcherQueuePriority.Low,
+            () =>
+            {
+                var host = _hosts.FirstOrDefault(pair => pair.Key.Key == key).Value;
+                var offset = host is null
+                    ? 0
+                    : host.TransformToVisual(BodyPanel).TransformPoint(default).Y
+                        - BodyPanel.Padding.Top;
+                _ = BodyScroller.ChangeView(null, Math.Max(0, offset), null, true);
+            });
 
     private static KeySpline Spline(double x1, double y1, double x2, double y2) =>
         new() { ControlPoint1 = new Point(x1, y1), ControlPoint2 = new Point(x2, y2) };

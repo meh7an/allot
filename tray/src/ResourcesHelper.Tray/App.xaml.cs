@@ -9,6 +9,7 @@ using Microsoft.Windows.AppLifecycle;
 using ResourcesHelper.Tray.Core.Contract;
 using ResourcesHelper.Tray.Core.Daemon;
 using ResourcesHelper.Tray.Core.Logging;
+using ResourcesHelper.Tray.Core.Notifications;
 using ResourcesHelper.Tray.Core.Settings;
 using ResourcesHelper.Tray.Core.Startup;
 using ResourcesHelper.Tray.Core.TrayIcon;
@@ -30,6 +31,7 @@ public sealed partial class App : Application
     private readonly FlyoutModel _model = new();
     private readonly StateClock _clock = new(TimeProvider.System);
     private readonly JobStops _stops = new(TimeProvider.System);
+    private readonly ToastRules _toastRules = new(TimeProvider.System);
     private DispatcherQueue? _dispatcher;
     private DispatcherQueueTimer? _ticker;
     private DispatcherQueueTimer? _stopTimer;
@@ -57,6 +59,7 @@ public sealed partial class App : Application
     private TraySettings _settings = new();
     private Autostart? _autostart;
     private bool _launchAtLogon;
+    private bool _flyoutOpen;
 
     public App()
     {
@@ -110,6 +113,7 @@ public sealed partial class App : Application
         _flyout = new FlyoutWindow();
         _flyout.Diagnostic += message => AppLog.Write($"flyout: {message}");
         _flyout.OpenChanged += open => _poller.SetFlyoutOpen(open);
+        _flyout.OpenChanged += open => _flyoutOpen = open;
         _flyout.OpenChanged += Tick;
 
         // Kill? goes back to Kill when focus leaves it, and so when the flyout does.
@@ -141,6 +145,12 @@ public sealed partial class App : Application
         shell.StartServicePressed += StartService;
         shell.LaunchAtLogonChanged += SetLaunchAtLogon;
         shell.FirstRunDonePressed += () => ChangeSettings(settings => settings.FirstRunDone = true);
+#if DEBUG
+        if (_toasts)
+        {
+            shell.AddTestToasts(Core.Samples.Handoff.Toasts(), DisplayToast);
+        }
+#endif
         _flyout.SetContent(shell, shell);
         _flyout.Prewarm();
 
@@ -161,7 +171,8 @@ public sealed partial class App : Application
             OpenFlyout,
             Quit,
             ReadLaunchAtLogon,
-            SetLaunchAtLogon);
+            SetLaunchAtLogon,
+            _toastRules.ExpectStop);
 #if DEBUG
         if (DebugScenario.Name is { } scenario)
         {
@@ -193,8 +204,45 @@ public sealed partial class App : Application
         }
     }
 
-    private void Apply(PollResult result) =>
+    private void Apply(PollResult result)
+    {
         Apply(result.Status, result.State, result.State ?? _poller?.LastKnown);
+        ShowToasts(result);
+    }
+
+    // After the tray icon took the poll, so a toast's logo is the state it reports.
+    private void ShowToasts(PollResult result)
+    {
+        if (!_toasts)
+        {
+            return;
+        }
+
+        var update = _toastRules.Observe(
+            result.Status,
+            result.State,
+            _poller?.LastKnown,
+            _settings.Notifications,
+            _flyoutOpen);
+        foreach (var tag in update.Withdraw)
+        {
+            _ = Toasts.WithdrawAsync(tag);
+        }
+
+        foreach (var toast in update.Show)
+        {
+            DisplayToast(toast);
+        }
+    }
+
+    private void DisplayToast(ToastMessage toast)
+    {
+        if (_tray is not null)
+        {
+            var logo = Path.Combine(AppContext.BaseDirectory, "Assets", "Tray", _tray.LogoFileName);
+            Toasts.Display(toast, logo);
+        }
+    }
 
     /// <param name="status">The service status of the poll.</param>
     /// <param name="live">The state rhd served, or <c>null</c> while it is not running.</param>
@@ -367,6 +415,7 @@ public sealed partial class App : Application
 #endif
         if (_stops.PressKill(lease) == StopPress.Send)
         {
+            _toastRules.NoteLocalKill(lease);
             _ = StopAsync(lease, StopKind.Kill);
         }
 
@@ -519,9 +568,10 @@ public sealed partial class App : Application
         });
     }
 
-    private void OnToastAction(string action)
+    // Show and a click on the toast body both open the flyout at the toast's job.
+    private void OnToastAction(ToastAction action)
     {
-        switch (action)
+        switch (action.Action)
         {
             case Toasts.OpenLogs:
                 OpenLogs();
@@ -531,6 +581,7 @@ public sealed partial class App : Application
                 break;
             default:
                 OpenFlyout();
+                _shell?.ScrollTo(action.Target);
                 break;
         }
     }

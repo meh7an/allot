@@ -40,6 +40,15 @@ public static class TrayIconAsset
             $"rh-{StateName(state)}-on-{ThemeName(theme)}-taskbar.ico");
 
     /// <summary>
+    /// The 256 px PNG of the same icon, a toast's logo: toast images cannot be ICO files. Toasts
+    /// follow the Windows mode, which is the taskbar theme.
+    /// </summary>
+    public static string LogoFileName(TrayIconState state, TaskbarTheme theme) =>
+        string.Create(
+            CultureInfo.InvariantCulture,
+            $"rh-{StateName(state)}-on-{ThemeName(theme)}-taskbar-256.png");
+
+    /// <summary>
     /// Reads HKCU\...\Themes\Personalize\SystemUsesLightTheme. The value is missing only on
     /// Windows builds whose taskbar is always dark.
     /// </summary>

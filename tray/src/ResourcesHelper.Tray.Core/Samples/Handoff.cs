@@ -1,5 +1,6 @@
 using ResourcesHelper.Tray.Core.Contract;
 using ResourcesHelper.Tray.Core.Daemon;
+using ResourcesHelper.Tray.Core.Notifications;
 using ResourcesHelper.Tray.Core.Settings;
 using ResourcesHelper.Tray.Core.ViewModels;
 
@@ -363,6 +364,36 @@ public static class Handoff
             Session = FullSession(job.Session),
             StartedAtMs = endedAtMs - 124_000,
         };
+    }
+
+    /// <summary>
+    /// One of each toast with the handoff's sample text, for the Debug build's Test toasts menu.
+    /// Both Job finished toasts share a tag, so the merged one replaces the single one.
+    /// </summary>
+    public static IReadOnlyList<ToastMessage> Toasts()
+    {
+        const string finishedTag = "done-test";
+        var py = Active("py", exes: false);
+        var cargo = Run("cargo", endedAgoSecs: 0, ranSecs: 292);
+        var vite = Run("vite", endedAgoSecs: 0, ranSecs: 61);
+        var go = Run("go", endedAgoSecs: 0, ranSecs: 20);
+        var bench = FinishedBenchmark();
+        return
+        [
+            ToastText.ServiceStopped(3),
+            ToastText.RunningLong(py, null, py.Lease.GrantedAtMs!.Value + 900_000),
+            ToastText.BenchmarkFinished(bench, bench.Noise!),
+            ToastText.JobFinished(cargo, null, finishedTag),
+            ToastText.JobsFinished([cargo, vite, go], finishedTag),
+            ToastText.KilledOutsideFlyout(new Notice
+            {
+                Cause = EndCause.Killed,
+                Command = Jobs["cargo"].Command,
+                EndedAtMs = NowMs,
+                LeaseId = LeaseId("cargo"),
+                Session = SessionOf("cargo"),
+            }),
+        ];
     }
 
     public static UiState Build(
