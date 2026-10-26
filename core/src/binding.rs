@@ -6,9 +6,12 @@
 //! earliest new child may be a hook. It exits within a moment, and the next sample then binds
 //! the next earliest child.
 
-use allot_shared::types::{BoundProcess, Holder, LeaseBinding};
+use allot_shared::{
+    platform::{ALLOT_BINARIES, CONSOLE_HOSTS},
+    types::{BoundProcess, Holder, LeaseBinding},
+};
 
-use crate::{ancestry::ProcessNode, kill::ALLOT_BINARIES, process::ProcessTable};
+use crate::{ancestry::ProcessNode, process::ProcessTable};
 
 /// How long after the report a new child of the holder may still be the command's root.
 /// Later children are other commands the session ran while it held the lease.
@@ -17,9 +20,6 @@ pub const REBIND_WINDOW_MS: i64 = 10_000;
 /// How much earlier than the report a child may appear to start: start times are whole
 /// seconds, rounded down.
 pub const START_TOLERANCE_MS: i64 = 1_000;
-
-/// Console hosts Windows starts for console children; never the command itself.
-const CONSOLE_HOST: &str = "conhost.exe";
 
 /// Where a lease's command stands after looking at one process table.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -113,10 +113,10 @@ fn is_candidate(node: &ProcessNode, bound_at_ms: i64) -> bool {
 }
 
 fn is_excluded(name: &str) -> bool {
-    name.eq_ignore_ascii_case(CONSOLE_HOST)
-        || ALLOT_BINARIES
-            .iter()
-            .any(|binary| name.eq_ignore_ascii_case(binary))
+    CONSOLE_HOSTS
+        .iter()
+        .chain(&ALLOT_BINARIES)
+        .any(|excluded| name.eq_ignore_ascii_case(excluded))
 }
 
 fn start_ms(node: &ProcessNode) -> i64 {
@@ -127,7 +127,10 @@ fn start_ms(node: &ProcessNode) -> i64 {
 
 #[cfg(test)]
 mod tests {
-    use allot_shared::types::SessionKey;
+    use allot_shared::{
+        platform::{CLI_EXE, DAEMON_EXE},
+        types::SessionKey,
+    };
 
     use super::*;
     use crate::{sampler::RawProcess, test_support::raw_process};
@@ -194,12 +197,17 @@ mod tests {
 
     #[test]
     fn test_resolve_skips_allot_binaries_and_console_hosts() {
-        let extra = [
-            raw_process(20, Some(10), "ALLOT.EXE", 101),
-            raw_process(21, Some(10), "conhost.exe", 101),
-            raw_process(22, Some(10), "allotd.exe", 101),
-            raw_process(23, Some(10), "cmd.exe", 102),
-        ];
+        let extra: Vec<RawProcess> = [
+            Some(raw_process(20, Some(10), &CLI_EXE.to_uppercase(), 101)),
+            CONSOLE_HOSTS
+                .first()
+                .map(|host| raw_process(21, Some(10), host, 101)),
+            Some(raw_process(22, Some(10), DAEMON_EXE, 101)),
+            Some(raw_process(23, Some(10), "cmd.exe", 102)),
+        ]
+        .into_iter()
+        .flatten()
+        .collect();
         assert_eq!(resolve_at(&extra, None, 103_000), bound(23, 102));
     }
 

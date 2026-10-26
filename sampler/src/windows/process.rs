@@ -1,10 +1,7 @@
-//! The current process: its ancestors, read with sysinfo, and its standard handles.
+//! The current process's standard handles.
 
 use std::{io, os::windows::io::AsRawHandle};
 
-use allot_core::ancestry::{ProcessNode, ancestry};
-use allot_shared::{Error, Result};
-use sysinfo::{Pid, Process, ProcessRefreshKind, ProcessesToUpdate, System, UpdateKind};
 use windows::Win32::Foundation::{HANDLE, HANDLE_FLAG_INHERIT, HANDLE_FLAGS, SetHandleInformation};
 
 /// Stops the processes this one starts from inheriting its standard input, output, and error.
@@ -26,48 +23,9 @@ pub fn keep_std_handles_private() {
     }
 }
 
-/// This process followed by its ancestors, nearest first. Under Claude Code the parent is
-/// the session's `claude.exe`.
-///
-/// # Errors
-///
-/// Returns [`Error::Sampler`] when the OS does not report this process's PID.
-pub fn current_ancestry() -> Result<Vec<ProcessNode>> {
-    let mut system = System::new();
-    system.refresh_processes_specifics(
-        ProcessesToUpdate::All,
-        true,
-        ProcessRefreshKind::nothing().with_exe(UpdateKind::OnlyIfNotSet),
-    );
-    let own_pid = sysinfo::get_current_pid().map_err(|error| Error::Sampler(error.into()))?;
-    Ok(ancestry(own_pid.as_u32(), |pid| {
-        system.process(Pid::from_u32(pid)).map(to_node)
-    }))
-}
-
-fn to_node(process: &Process) -> ProcessNode {
-    ProcessNode {
-        pid: process.pid().as_u32(),
-        parent_pid: process.parent().map(Pid::as_u32),
-        name: process.name().to_string_lossy().into_owned(),
-        exe: process.exe().map(|path| path.display().to_string()),
-        start_time: process.start_time(),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_current_ancestry_starts_at_own_process() {
-        let chain = current_ancestry().unwrap();
-        assert_eq!(chain[0].pid, std::process::id());
-        assert!(
-            chain.len() >= 2,
-            "test runner should have a parent: {chain:?}"
-        );
-    }
 
     #[test]
     fn test_keep_std_handles_private_clears_the_inherit_flag() {

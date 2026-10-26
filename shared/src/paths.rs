@@ -4,12 +4,11 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use crate::{Error, Result};
+use crate::{Error, Result, platform::HOME_VAR};
 
 const APP_DIR: &str = ".allot";
-const HOME_VAR: &str = "USERPROFILE";
 
-/// Locations of the per-user files under `%USERPROFILE%\.allot\`.
+/// Locations of the per-user files under `~/.allot` (`%USERPROFILE%\.allot\` on Windows).
 ///
 /// Not under `AppData`: Windows redirects writes there from MSIX-packaged apps, such as the
 /// Claude desktop app and every process it starts, into a per-package folder that processes
@@ -24,11 +23,12 @@ pub struct Paths {
 }
 
 impl Paths {
-    /// Resolves the paths from the `USERPROFILE` environment variable.
+    /// Resolves the paths from the home directory in [`HOME_VAR`]: `USERPROFILE` on Windows,
+    /// `HOME` elsewhere.
     ///
     /// # Errors
     ///
-    /// Returns [`Error::Config`] when `USERPROFILE` is unset or empty.
+    /// Returns [`Error::Config`] when that variable is unset or empty.
     pub fn from_env() -> Result<Self> {
         Self::from_home(env::var_os(HOME_VAR))
     }

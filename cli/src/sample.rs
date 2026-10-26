@@ -7,9 +7,10 @@ use std::{
 
 use allot_core::sampler::{Sampler, SnapshotBuilder};
 use allot_sampler::{SystemSampler, current_ancestry};
-use allot_shared::types::{Holder, ResourceUsage, SessionKey, Snapshot};
-
-const SESSION_ROOT: &str = "claude.exe";
+use allot_shared::{
+    platform::SESSION_ROOTS,
+    types::{Holder, ResourceUsage, SessionKey, Snapshot},
+};
 
 /// Prints one sample per second for `secs` seconds, then the sampler's own CPU cost.
 ///
@@ -20,9 +21,10 @@ const SESSION_ROOT: &str = "claude.exe";
 /// Fails when the process table or the system counters cannot be read.
 pub fn run(secs: u64) -> anyhow::Result<()> {
     let sessions: Vec<Holder> = current_session()?.into_iter().collect();
+    let roots = SESSION_ROOTS.join(" or ");
     match sessions.first() {
-        Some(holder) => println!("session root: {SESSION_ROOT} pid {}", holder.pid),
-        None => println!("no {SESSION_ROOT} ancestor; session usage not shown"),
+        Some(holder) => println!("session root: {roots} pid {}", holder.pid),
+        None => println!("no {roots} ancestor; session usage not shown"),
     }
 
     let mut sampler = SystemSampler::new()?;
@@ -60,9 +62,11 @@ pub fn run(secs: u64) -> anyhow::Result<()> {
 
 /// The nearest `claude.exe` ancestor, keyed by this session's ID when Claude set one.
 fn current_session() -> anyhow::Result<Option<Holder>> {
-    let root = current_ancestry()?
-        .into_iter()
-        .find(|node| node.name.eq_ignore_ascii_case(SESSION_ROOT));
+    let root = current_ancestry()?.into_iter().find(|node| {
+        SESSION_ROOTS
+            .iter()
+            .any(|root| node.name.eq_ignore_ascii_case(root))
+    });
     Ok(root.map(|node| Holder {
         session: SessionKey(env::var("CLAUDE_CODE_SESSION_ID").unwrap_or_default()),
         pid: node.pid,

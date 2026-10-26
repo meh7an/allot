@@ -6,13 +6,17 @@ mod classes;
 mod daemon;
 mod history;
 mod hook;
+#[cfg(windows)]
 mod install;
+#[cfg(windows)]
 mod legacy;
 mod probe;
+#[cfg(windows)]
 mod registration;
 mod sample;
 mod status;
 mod stop;
+#[cfg(windows)]
 mod tray;
 
 /// Inspect machine usage and leases, control the daemon, and run the Claude Code hook.
@@ -68,6 +72,10 @@ enum Command {
     /// when it runs, install and start the tray app, copy the resource-guard skill, register
     /// the MCP server, hooks, and CLAUDE.md rule with Claude Code, register the logon task,
     /// and print what is left.
+    #[cfg_attr(
+        not(windows),
+        allow(dead_code, reason = "installing is Windows-only for now")
+    )]
     Install {
         /// Directory holding the built allot.exe, allotd.exe, and allot-mcp.exe (default: this
         /// executable's directory, such as target\release).
@@ -91,6 +99,10 @@ enum Command {
     /// Quit and remove the tray app, stop allotd, remove the binaries and the skill copy,
     /// unregister them from Claude Code, and print what is left. Keeps the database, token,
     /// config, settings, and logs.
+    #[cfg_attr(
+        not(windows),
+        allow(dead_code, reason = "installing is Windows-only for now")
+    )]
     Uninstall {
         /// Also delete the database, token, config, and logs.
         #[arg(long)]
@@ -150,6 +162,7 @@ fn main() -> ExitCode {
             DaemonAction::Stop => daemon::stop(),
             DaemonAction::Status => daemon::status(),
         },
+        #[cfg(windows)]
         Command::Install {
             from,
             tray,
@@ -165,7 +178,12 @@ fn main() -> ExitCode {
                 logon_task: !no_logon_task,
             },
         }),
+        #[cfg(windows)]
         Command::Uninstall { purge } => install::uninstall(purge),
+        #[cfg(not(windows))]
+        Command::Install { .. } | Command::Uninstall { .. } => Err(anyhow::anyhow!(
+            "installing is not supported on this OS yet"
+        )),
         Command::Probe(args) => probe::run(&args),
         Command::Hook { event } => match event {
             HookEvent::PreTool => return hook::pre_tool(),

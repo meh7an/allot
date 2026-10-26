@@ -9,6 +9,7 @@ use std::{
     process::{self, Command, Output, Stdio},
 };
 
+use allot_shared::platform::HOME_VAR;
 use serde_json::Value;
 
 const BASH_CARGO_BUILD: &str = include_str!("../fixtures/hook/bash_cargo_build.json");
@@ -48,7 +49,7 @@ fn run(home: &Home, args: &[&str], stdin: &str) -> Output {
 fn run_bytes(home: &Home, args: &[&str], stdin: &[u8]) -> Output {
     let mut child = Command::new(env!("CARGO_BIN_EXE_allot"))
         .args(args)
-        .env("USERPROFILE", &home.0)
+        .env(HOME_VAR, &home.0)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

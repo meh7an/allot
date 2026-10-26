@@ -1,7 +1,6 @@
 //! Windows implementation of [`allot_core::sampler::Sampler`]: sysinfo for CPU, memory, and
 //! processes; PDH for commit charge, GPU load, and drive activity; DXGI for adapter names and
-//! VRAM sizes; the volume APIs for drive space. Also reads the current process's ancestry,
-//! which the CLI and MCP server use to find their Claude session.
+//! VRAM sizes; the volume APIs for drive space.
 
 mod drives;
 mod dxgi;
@@ -11,10 +10,7 @@ mod kill;
 mod pdh;
 mod process;
 
-pub use crate::windows::{
-    kill::{kill_tree, process_table},
-    process::{current_ancestry, keep_std_handles_private},
-};
+pub use crate::windows::{kill::kill_tree, process::keep_std_handles_private};
 
 use std::{
     collections::HashMap,

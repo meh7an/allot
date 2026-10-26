@@ -2,6 +2,9 @@
 //! over an `allot.exe` that is running. A copy of `allot.exe` stands in for the tray app: it exits
 //! with a usage error on the tray app's switches, which the install reports as warnings.
 
+// Installing is Windows-only for now.
+#![cfg(windows)]
+
 use std::{
     env, fs,
     net::{Ipv4Addr, TcpListener},

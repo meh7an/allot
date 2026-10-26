@@ -15,7 +15,10 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use allot_shared::paths::Paths;
+use allot_shared::{
+    paths::Paths,
+    platform::{CLI_EXE, DAEMON_EXE, MCP_EXE},
+};
 use anyhow::Context;
 use serde_json::Value;
 
@@ -135,15 +138,15 @@ fn rule_file(paths: &Paths) -> PathBuf {
 }
 
 fn allot_exe(paths: &Paths) -> PathBuf {
-    paths.bin_dir().join("allot.exe")
+    paths.bin_dir().join(CLI_EXE)
 }
 
 fn allot_mcp_exe(paths: &Paths) -> PathBuf {
-    paths.bin_dir().join("allot-mcp.exe")
+    paths.bin_dir().join(MCP_EXE)
 }
 
 fn allotd_exe(paths: &Paths) -> PathBuf {
-    paths.bin_dir().join("allotd.exe")
+    paths.bin_dir().join(DAEMON_EXE)
 }
 
 /// What `allot install` sets up besides its own files.

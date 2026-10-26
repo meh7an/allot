@@ -7,16 +7,16 @@
 
 use std::collections::HashSet;
 
-use allot_shared::types::{Holder, LeaseBinding};
+use allot_shared::{
+    platform::ALLOT_BINARIES,
+    types::{Holder, LeaseBinding},
+};
 
 use crate::{
     ancestry::{ProcessNode, ancestry},
     binding::started_before,
     process::ProcessTable,
 };
-
-/// The coordinator's own executables, which a kill never touches.
-pub const ALLOT_BINARIES: [&str; 3] = ["allot.exe", "allotd.exe", "allot-mcp.exe"];
 
 /// A process identified across PID reuse.
 type ProcessKey = (u32, u64);
@@ -287,7 +287,10 @@ fn target(node: &ProcessNode, depth: u32) -> KillTarget {
 
 #[cfg(test)]
 mod tests {
-    use allot_shared::types::{BoundProcess, SessionKey};
+    use allot_shared::{
+        platform::CLI_EXE,
+        types::{BoundProcess, SessionKey},
+    };
 
     use super::*;
     use crate::{sampler::RawProcess, test_support::raw_process};
@@ -451,8 +454,8 @@ mod tests {
         let mut extra = bash_command();
         extra.push(raw_process(40, Some(22), "claude.exe", 104));
         extra.push(raw_process(41, Some(40), "bash.exe", 105));
-        extra.push(raw_process(42, Some(40), "allot.exe", 105));
-        extra.push(raw_process(43, Some(22), "ALLOT.EXE", 104));
+        extra.push(raw_process(42, Some(40), CLI_EXE, 105));
+        extra.push(raw_process(43, Some(22), &CLI_EXE.to_uppercase(), 104));
         let table = with(&extra);
         let others = [holder(40, 104)];
         let plan = KillPlan::new(&binding(20, 101), &table, protected(&table, &others)).unwrap();

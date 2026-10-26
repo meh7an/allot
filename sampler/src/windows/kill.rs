@@ -3,13 +3,7 @@
 
 use std::{collections::HashMap, thread, time::Duration};
 
-use allot_core::{
-    kill::{KillFailure, KillPlan, KillReport, KillTarget},
-    process::ProcessTable,
-    sampler::RawProcess,
-};
-use allot_shared::types::ResourceUsage;
-use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System};
+use allot_core::kill::{KillFailure, KillPlan, KillReport, KillTarget};
 use windows::Win32::{
     Foundation::{CloseHandle, ERROR_INVALID_PARAMETER, FILETIME, HANDLE, WAIT_OBJECT_0},
     System::Threading::{
@@ -17,6 +11,8 @@ use windows::Win32::{
         PROCESS_TERMINATE, TerminateProcess, WaitForSingleObject,
     },
 };
+
+use crate::table::process_table;
 
 /// Sweeps at most; each takes a fresh process list and catches what the previous one missed.
 const SWEEPS: u32 = 3;
@@ -86,25 +82,6 @@ pub fn kill_tree(plan: &mut KillPlan) -> KillReport {
     report
 }
 
-/// Every running process with its parent, name, and start time; no usage or exe paths.
-pub fn process_table() -> ProcessTable {
-    let mut system = System::new();
-    system.refresh_processes_specifics(ProcessesToUpdate::All, true, ProcessRefreshKind::nothing());
-    let processes: Vec<RawProcess> = system
-        .processes()
-        .values()
-        .map(|process| RawProcess {
-            pid: process.pid().as_u32(),
-            parent_pid: process.parent().map(Pid::as_u32),
-            name: process.name().to_string_lossy().into_owned(),
-            exe: None,
-            start_time: process.start_time(),
-            usage: ResourceUsage::default(),
-        })
-        .collect();
-    ProcessTable::new(&processes)
-}
-
 fn terminate(target: &KillTarget) -> Outcome {
     let access = PROCESS_TERMINATE | PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_SYNCHRONIZE;
     // SAFETY: plain FFI call; the returned handle is closed below.
@@ -162,14 +139,6 @@ fn has_exited(handle: HANDLE, wait_ms: u32) -> bool {
 mod tests {
     use super::*;
     use crate::windows::tests::busy_child;
-
-    #[test]
-    fn test_process_table_lists_own_process_with_its_start_time() {
-        let table = process_table();
-        let own = table.get(std::process::id()).unwrap();
-        assert!(own.start_time > 0);
-        assert!(own.parent_pid.is_some());
-    }
 
     #[test]
     fn test_start_time_of_own_process_matches_the_process_table() {

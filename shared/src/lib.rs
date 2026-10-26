@@ -7,6 +7,7 @@ mod contract;
 mod error;
 pub mod mutate;
 pub mod paths;
+pub mod platform;
 #[cfg(test)]
 mod test_support;
 pub mod types;

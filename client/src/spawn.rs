@@ -7,7 +7,8 @@ use std::{
     time::Duration,
 };
 
-const DAEMON_EXE: &str = "allotd.exe";
+use allot_shared::platform::DAEMON_EXE;
+
 const DEFAULT_READY_TIMEOUT: Duration = Duration::from_secs(5);
 
 // Win32 process creation flags. DETACHED_PROCESS gives allotd no console, so closing the

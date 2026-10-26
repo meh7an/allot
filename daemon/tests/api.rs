@@ -1,13 +1,18 @@
 //! End-to-end tests: the real router and ledger over a temp database, with a fake sampler
 //! whose machine state each test controls.
 
+#[cfg(windows)]
 use std::{
-    env, fs,
+    env,
+    process::{Child, Command, Stdio},
+    thread,
+};
+use std::{
+    fs,
     future::Future,
     path::PathBuf,
-    process::{self, Child, Command, Stdio},
+    process,
     sync::{Arc, Mutex},
-    thread,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
@@ -1103,11 +1108,14 @@ async fn test_shutdown_route_stops_the_server() {
 }
 
 /// Makes the test binary, run as `sleep_helper`, sleep instead of returning at once.
+#[cfg(windows)]
 const HELPER_VAR: &str = "ALLOT_DAEMON_TEST_HELPER";
 
 /// How long a helper lives when nobody kills it, so a failed test leaves nothing behind.
+#[cfg(windows)]
 const HELPER_LIFETIME: Duration = Duration::from_secs(60);
 
+#[cfg(windows)]
 #[test]
 #[ignore = "helper process for the kill test; does nothing without ALLOT_DAEMON_TEST_HELPER"]
 fn sleep_helper() {
@@ -1118,11 +1126,13 @@ fn sleep_helper() {
 
 /// A sleeping copy of this test binary, the only kind of process these tests kill. Dropping it
 /// terminates it if it still runs.
+#[cfg(windows)]
 struct Helper {
     child: Child,
     start_time: u64,
 }
 
+#[cfg(windows)]
 impl Helper {
     fn spawn() -> Self {
         let child = Command::new(env::current_exe().unwrap())
@@ -1164,6 +1174,7 @@ impl Helper {
     }
 }
 
+#[cfg(windows)]
 impl Drop for Helper {
     fn drop(&mut self) {
         let _ = self.child.kill();
@@ -1171,6 +1182,7 @@ impl Drop for Helper {
     }
 }
 
+#[cfg(windows)]
 fn helper_name() -> String {
     env::current_exe()
         .unwrap()
@@ -1219,6 +1231,8 @@ impl Daemon {
     }
 }
 
+// Unix has no tree kill yet.
+#[cfg(windows)]
 #[tokio::test]
 async fn test_kill_terminates_only_the_bound_tree_and_leaves_a_notice() {
     let daemon = Daemon::start().await;

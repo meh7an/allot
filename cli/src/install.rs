@@ -12,13 +12,17 @@ use std::{
 };
 
 use allot_client::{BlockingClient, ClientOptions, SpawnOptions};
-use allot_shared::{config::Config, paths::Paths};
+use allot_shared::{
+    config::Config,
+    paths::Paths,
+    platform::{ALLOT_BINARIES, DAEMON_EXE},
+};
 use anyhow::{Context, bail};
 
 use crate::{daemon, legacy, registration, tray};
 
 /// The executables of an install.
-const BINARIES: [&str; 3] = ["allot.exe", "allotd.exe", "allot-mcp.exe"];
+const BINARIES: [&str; 3] = ALLOT_BINARIES;
 const SKILL: &str = include_str!("../../skill/resource-guard/SKILL.md");
 /// The rule copy older installs left for pasting; the rule is imported into CLAUDE.md now.
 const OLD_RULE_FILE: &str = "claude-md-rule.md";
@@ -424,7 +428,7 @@ fn restart_daemon(paths: &Paths, replaces: bool) -> anyhow::Result<()> {
     let pid = match running {
         Successor::Running { pid } => pid,
         Successor::None => {
-            options.spawn = Some(SpawnOptions::at(paths.bin_dir().join("allotd.exe")));
+            options.spawn = Some(SpawnOptions::at(paths.bin_dir().join(DAEMON_EXE)));
             let client = BlockingClient::new(options)?;
             client.ensure_running()?;
             client.health()?.pid

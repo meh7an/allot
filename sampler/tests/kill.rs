@@ -1,5 +1,8 @@
 //! Kills a real process tree that this test spawns, and nothing else.
 
+// Unix has no tree kill yet.
+#![cfg(windows)]
+
 use std::{
     env,
     path::Path,
