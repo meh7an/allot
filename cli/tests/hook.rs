@@ -3,7 +3,7 @@
 
 use std::{
     env, fs,
-    io::Write,
+    io::{self, Write},
     net::{Ipv4Addr, TcpListener},
     path::PathBuf,
     process::{self, Command, Output, Stdio},
@@ -55,7 +55,10 @@ fn run_bytes(home: &Home, args: &[&str], stdin: &[u8]) -> Output {
         .stderr(Stdio::piped())
         .spawn()
         .unwrap();
-    child.stdin.take().unwrap().write_all(stdin).unwrap();
+    // A hook that rejects its arguments exits without reading stdin.
+    if let Err(error) = child.stdin.take().unwrap().write_all(stdin) {
+        assert_eq!(error.kind(), io::ErrorKind::BrokenPipe, "{error}");
+    }
     let output = child.wait_with_output().unwrap();
     assert_eq!(output.status.code(), Some(0), "{output:?}");
     output

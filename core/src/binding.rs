@@ -128,7 +128,7 @@ fn start_ms(node: &ProcessNode) -> i64 {
 #[cfg(test)]
 mod tests {
     use allot_shared::{
-        platform::{CLI_EXE, DAEMON_EXE},
+        platform::{CLI_EXE, DAEMON_EXE, MCP_EXE},
         types::SessionKey,
     };
 
@@ -166,7 +166,7 @@ mod tests {
         let mut processes = vec![
             raw_process(1, None, "explorer.exe", 1),
             raw_process(10, Some(1), "claude.exe", 50),
-            raw_process(11, Some(10), "allot-mcp.exe", 51),
+            raw_process(11, Some(10), MCP_EXE, 51),
         ];
         processes.extend_from_slice(extra);
         ProcessTable::new(&processes)
