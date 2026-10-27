@@ -114,6 +114,31 @@ public sealed record RemoveResponse
 }
 
 /// <summary>
+/// How well a GPU source measures something per process.
+/// </summary>
+[JsonConverter(typeof(StrictEnumConverter<Accuracy>))]
+public enum Accuracy
+{
+    /// <summary>
+    /// Measured per process.
+    /// </summary>
+    [JsonStringEnumMemberName("exact")]
+    Exact,
+
+    /// <summary>
+    /// Measured, but only roughly; the machine total is the reliable figure.
+    /// </summary>
+    [JsonStringEnumMemberName("estimated")]
+    Estimated,
+
+    /// <summary>
+    /// Not measured: per-process values read 0.
+    /// </summary>
+    [JsonStringEnumMemberName("unavailable")]
+    Unavailable,
+}
+
+/// <summary>
 /// An active lease and the process its command runs as.
 /// </summary>
 public sealed record ActiveJob
@@ -263,7 +288,8 @@ public sealed record CpuMeter
 public sealed record DriveUsage
 {
     /// <summary>
-    /// Drive letter with its colon, for example <c>C:</c>.
+    /// Drive letter with its colon on Windows, for example <c>C:</c>; mount point elsewhere, for
+    /// example <c>/home</c>.
     /// </summary>
     public required string Name { get; init; }
 
@@ -365,6 +391,27 @@ public sealed record EndedLease
 }
 
 /// <summary>
+/// Caps the OS enforces on a lease's cgroup; each is <c>null</c> when not enforced.
+/// </summary>
+public sealed record EnforcedLimits
+{
+    /// <summary>
+    /// CPU time limit in logical cores.
+    /// </summary>
+    public float? CpuCores { get; init; }
+
+    /// <summary>
+    /// Memory above which the OS throttles the command and reclaims its memory.
+    /// </summary>
+    public ulong? MemoryHighMb { get; init; }
+
+    /// <summary>
+    /// Memory at which the OS kills the command.
+    /// </summary>
+    public ulong? MemoryMaxMb { get; init; }
+}
+
+/// <summary>
 /// One GPU adapter.
 /// </summary>
 public sealed record GpuMeter
@@ -380,23 +427,36 @@ public sealed record GpuMeter
     public required string Name { get; init; }
 
     /// <summary>
+    /// How well each job's GPU load is measured on this adapter.
+    /// </summary>
+    public Accuracy ProcessLoad { get; set; } = Accuracy.Exact;
+
+    /// <summary>
     /// Engine load reserved by active leases, in percent. Leases reserve on the adapter with
     /// the most video memory only, so it is 0 on every other adapter.
     /// </summary>
     public required float ReservedPct { get; init; }
 
     /// <summary>
-    /// Video memory reserved by active leases; 0 on every adapter but the reserving one.
+    /// Video memory reserved by active leases; 0 on every adapter but the reserving one. On a
+    /// unified-memory adapter it comes out of RAM, on top of the RAM meter's reservation.
     /// </summary>
     public required ulong ReservedVramMb { get; init; }
 
     /// <summary>
-    /// Dedicated video memory installed, when the OS reports it.
+    /// Whether the adapter's video memory is the machine's RAM, as on Apple Silicon.
+    /// </summary>
+    public bool UnifiedMemory { get; set; } = false;
+
+    /// <summary>
+    /// Dedicated video memory installed, when the OS reports it; <c>null</c> on a unified-memory
+    /// adapter.
     /// </summary>
     public ulong? VramTotalMb { get; init; }
 
     /// <summary>
-    /// Dedicated video memory in use.
+    /// Dedicated video memory in use; on a unified-memory adapter, the RAM the GPU has
+    /// allocated.
     /// </summary>
     public required ulong VramUsedMb { get; init; }
 }
@@ -434,12 +494,13 @@ public sealed record HealthResponse
 public sealed record Holder
 {
     /// <summary>
-    /// PID of the session's <c>claude.exe</c>, the direct parent of its MCP server and its hooks.
+    /// PID of the session's Claude Code process (<c>claude.exe</c> on Windows, <c>claude</c> elsewhere),
+    /// the direct parent of its MCP server and its hooks.
     /// </summary>
     public required uint Pid { get; init; }
 
     /// <summary>
-    /// Start time of <c>pid</c> in seconds since the Unix epoch. Windows reuses PIDs, so a process
+    /// Start time of <c>pid</c> in seconds since the Unix epoch. Every OS reuses PIDs, so a process
     /// with the same PID but another start time is not the holder.
     /// </summary>
     public required ulong PidStartTime { get; init; }
@@ -448,6 +509,25 @@ public sealed record Holder
     /// Session the leases belong to.
     /// </summary>
     public required string Session { get; init; }
+}
+
+/// <summary>
+/// How a lease's processes are found and stopped.
+/// </summary>
+[JsonConverter(typeof(StrictEnumConverter<IsolationKind>))]
+public enum IsolationKind
+{
+    /// <summary>
+    /// A cgroup of its own: exact usage, and a kill ends every process in it at once.
+    /// </summary>
+    [JsonStringEnumMemberName("cgroup")]
+    Cgroup,
+
+    /// <summary>
+    /// The process tree under the command's root, followed sample by sample.
+    /// </summary>
+    [JsonStringEnumMemberName("tree")]
+    Tree,
 }
 
 /// <summary>
@@ -609,6 +689,12 @@ public sealed record Lease
     public required long Id { get; init; }
 
     /// <summary>
+    /// How the lease's command is kept apart from the rest of the machine; <c>null</c> where allotd
+    /// does not report it, as on Windows.
+    /// </summary>
+    public LeaseIsolation? Isolation { get; init; }
+
+    /// <summary>
     /// How the lease shares the machine.
     /// </summary>
     public required LeaseKind Kind { get; init; }
@@ -655,6 +741,28 @@ public sealed record LeaseBinding
     /// Claude Code's ID for the tool call that runs the command.
     /// </summary>
     public required string ToolUseId { get; init; }
+}
+
+/// <summary>
+/// How a lease's command is accounted for and stopped.
+/// </summary>
+public sealed record LeaseIsolation
+{
+    /// <summary>
+    /// Whether the command runs in its own cgroup or is followed as a process tree.
+    /// </summary>
+    public required IsolationKind Kind { get; init; }
+
+    /// <summary>
+    /// Caps the OS enforces on the command.
+    /// </summary>
+    public required EnforcedLimits Limits { get; init; }
+
+    /// <summary>
+    /// Name of the systemd scope that holds the command, for example
+    /// <c>allot-lease-42.scope</c>; <c>null</c> without a cgroup.
+    /// </summary>
+    public string? Scope { get; init; }
 }
 
 /// <summary>
@@ -718,7 +826,7 @@ public sealed record Meters
     public required CpuMeter Cpu { get; init; }
 
     /// <summary>
-    /// Every fixed drive, by drive letter.
+    /// Every fixed drive, by drive letter on Windows and by mount point elsewhere.
     /// </summary>
     public required IReadOnlyList<DriveUsage> Drives { get; init; }
 
@@ -925,7 +1033,7 @@ public sealed record ResourceUsage
     public required float GpuPct { get; init; }
 
     /// <summary>
-    /// Resident memory.
+    /// Resident memory; on macOS the physical footprint, as Activity Monitor shows it.
     /// </summary>
     public required ulong RamMb { get; init; }
 

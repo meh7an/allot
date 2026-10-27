@@ -8,8 +8,8 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use allot_shared::{
     Result,
     types::{
-        CpuStats, DriveUsage, GpuAdapter, GpuEngines, Holder, MemStats, ProcessUsage,
-        ResourceUsage, Rolling, SessionUsage, Snapshot,
+        Accuracy, CpuStats, DriveUsage, GpuAdapter, GpuEngines, GpuSource, Holder, MemStats,
+        ProcessUsage, ResourceUsage, Rolling, SessionUsage, Snapshot,
     },
 };
 
@@ -42,7 +42,7 @@ pub struct RawSample {
     pub processes: Vec<RawProcess>,
     /// Every GPU adapter.
     pub gpus: Vec<RawGpu>,
-    /// Every fixed drive, by drive letter.
+    /// Every fixed drive, by drive letter on Windows and by mount point elsewhere.
     pub drives: Vec<DriveUsage>,
 }
 
@@ -78,6 +78,14 @@ pub struct RawGpu {
     pub dedicated_total_mb: Option<u64>,
     /// Shared system memory in use by the adapter.
     pub shared_used_mb: u64,
+    /// Whether the adapter's video memory is the machine's RAM.
+    pub unified_memory: bool,
+    /// Where the numbers come from.
+    pub source: GpuSource,
+    /// How well the source measures each process's engine load.
+    pub process_load: Accuracy,
+    /// How well the source measures each process's video memory.
+    pub process_memory: Accuracy,
 }
 
 /// Load of each engine group of one adapter, as percentages.
@@ -194,6 +202,10 @@ impl SnapshotBuilder {
                 dedicated_used_mb: gpu.dedicated_used_mb,
                 dedicated_total_mb: gpu.dedicated_total_mb,
                 shared_used_mb: gpu.shared_used_mb,
+                unified_memory: gpu.unified_memory,
+                source: gpu.source,
+                process_load: gpu.process_load,
+                process_memory: gpu.process_memory,
             })
             .collect();
         Snapshot {
@@ -391,6 +403,10 @@ mod tests {
             dedicated_used_mb: 512,
             dedicated_total_mb: Some(8_192),
             shared_used_mb: 64,
+            unified_memory: false,
+            source: GpuSource::Pdh,
+            process_load: Accuracy::Exact,
+            process_memory: Accuracy::Exact,
         }
     }
 

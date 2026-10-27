@@ -33,6 +33,8 @@ pub struct Config {
     pub presets: Presets,
     /// Which shell commands count as heavy.
     pub classifier: ClassifierConfig,
+    /// How leases use cgroups on Linux; ignored on other OSes.
+    pub linux: LinuxConfig,
 }
 
 impl Config {
@@ -284,6 +286,33 @@ pub struct HookConfig {
 impl Default for HookConfig {
     fn default() -> Self {
         Self { fail_open: true }
+    }
+}
+
+/// How leases use cgroups on Linux; ignored on other OSes.
+///
+/// Each active lease runs in a systemd scope of its own, which gives exact usage and a kill
+/// that ends every process at once. Caps on what a lease may use are opt-in, because a job
+/// that outgrows its declared profile is slowed down or, for memory, may be killed.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct LinuxConfig {
+    /// Run each lease in its own cgroup scope when the systemd user manager allows it. Off
+    /// follows the process tree instead, as without systemd.
+    pub scopes: bool,
+    /// Cap a lease's CPU time at its reserved cores.
+    pub enforce_cpu: bool,
+    /// Cap a lease's memory at its reserved RAM.
+    pub enforce_memory: bool,
+}
+
+impl Default for LinuxConfig {
+    fn default() -> Self {
+        Self {
+            scopes: true,
+            enforce_cpu: false,
+            enforce_memory: false,
+        }
     }
 }
 
@@ -616,6 +645,25 @@ mod tests {
         assert_eq!(config.classes.cpu_heavy, defaults.classes.cpu_heavy);
         assert_eq!(config.daemon, defaults.daemon);
         assert_eq!(config.classifier, defaults.classifier);
+    }
+
+    #[test]
+    fn test_config_linux_table_defaults_to_scopes_without_caps_and_merges() {
+        let defaults = LinuxConfig::default();
+        assert!(defaults.scopes);
+        assert!(!defaults.enforce_cpu);
+        assert!(!defaults.enforce_memory);
+
+        let config = Config::from_toml("[linux]\nenforce_memory = true\n").unwrap();
+        assert_eq!(
+            config.linux,
+            LinuxConfig {
+                enforce_memory: true,
+                ..defaults
+            }
+        );
+        let result = Config::from_toml("[linux]\nenforce_io = true\n");
+        assert!(matches!(result, Err(Error::ConfigParse(_))));
     }
 
     #[test]

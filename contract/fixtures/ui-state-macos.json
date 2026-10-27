@@ -1,0 +1,164 @@
+{
+  "generated_at_ms": 1792824720000,
+  "service": {
+    "version": "0.2.0",
+    "pid": 58260,
+    "uptime_secs": 7380
+  },
+  "first_session_at_ms": 1792738320000,
+  "sessions": [
+    {
+      "session": "b81d44f0-5a3e-4d2b-9c61-0e7f2a9d3c15",
+      "cwd": "/Users/mehran/work/ml-trainer",
+      "usage": {
+        "cores": 1.5,
+        "ram_mb": 3584,
+        "gpu_pct": 58.5,
+        "vram_mb": 0
+      }
+    },
+    {
+      "session": "3f2a9c1e-77b0-4f6e-a2d8-5c9e1b4f7a02",
+      "cwd": "/Users/mehran/work/app",
+      "usage": {
+        "cores": 0.25,
+        "ram_mb": 768,
+        "gpu_pct": 0.0,
+        "vram_mb": 0
+      }
+    }
+  ],
+  "active": [
+    {
+      "lease": {
+        "id": 71,
+        "holder": {
+          "session": "b81d44f0-5a3e-4d2b-9c61-0e7f2a9d3c15",
+          "pid": 912,
+          "pid_start_time": 1792820000
+        },
+        "kind": "normal",
+        "state": "active",
+        "class": "gpu_heavy",
+        "profile": {
+          "cores": 2.0,
+          "ram_mb": 4096,
+          "gpu_pct": 60.0,
+          "vram_mb": 8192,
+          "est_secs": 1800
+        },
+        "label": "python train.py --device mps",
+        "cwd": "/Users/mehran/work/ml-trainer",
+        "requested_at_ms": 1792824418500,
+        "granted_at_ms": 1792824420000,
+        "ended_at_ms": null,
+        "expires_at_ms": 1792824765000,
+        "isolation": {
+          "kind": "tree",
+          "scope": null,
+          "limits": {
+            "cpu_cores": null,
+            "memory_high_mb": null,
+            "memory_max_mb": null
+          }
+        }
+      },
+      "process": {
+        "pid": 2210,
+        "name": "python3.13",
+        "exe": "/opt/homebrew/bin/python3.13",
+        "bound": true
+      },
+      "quiet_at_start": null
+    }
+  ],
+  "queue": [
+    {
+      "lease": {
+        "id": 72,
+        "holder": {
+          "session": "3f2a9c1e-77b0-4f6e-a2d8-5c9e1b4f7a02",
+          "pid": 1204,
+          "pid_start_time": 1792820000
+        },
+        "kind": "normal",
+        "state": "queued",
+        "class": "mixed",
+        "profile": {
+          "cores": 6.0,
+          "ram_mb": 8192,
+          "gpu_pct": 50.0,
+          "vram_mb": 16384,
+          "est_secs": 600
+        },
+        "label": "blender -b scene.blend -a",
+        "cwd": "/Users/mehran/work/app",
+        "requested_at_ms": 1792824690000,
+        "granted_at_ms": null,
+        "ended_at_ms": null,
+        "expires_at_ms": 1792824765000
+      },
+      "position": 1,
+      "verdict": {
+        "fits": false,
+        "reasons": [
+          "RAM: 24576 MB requested (16384 MB of it video memory, which shares RAM), 2560 MB free"
+        ],
+        "wait_estimate_secs": 270
+      }
+    }
+  ],
+  "meters": {
+    "headroom_pct": 15.0,
+    "cpu": {
+      "logical_cores": 14,
+      "usage_pct": 38.0,
+      "history_pct": [
+        48.5,
+        52.0,
+        61.25,
+        64.0,
+        58.75,
+        63.5,
+        38.0
+      ],
+      "reserved_cores": 2.0
+    },
+    "ram": {
+      "total_mb": 36864,
+      "used_mb": 24576,
+      "reserved_mb": 4096
+    },
+    "gpus": [
+      {
+        "name": "Apple M3 Max",
+        "busiest_pct": 64.0,
+        "vram_used_mb": 9216,
+        "vram_total_mb": null,
+        "reserved_pct": 60.0,
+        "reserved_vram_mb": 8192,
+        "unified_memory": true,
+        "process_load": "estimated"
+      }
+    ],
+    "drives": [
+      {
+        "name": "/",
+        "total_mb": 999424,
+        "used_mb": 614400,
+        "read_bytes_per_sec": 3145728,
+        "write_bytes_per_sec": 1048576
+      },
+      {
+        "name": "/Volumes/Backup",
+        "total_mb": 1907712,
+        "used_mb": 1048576,
+        "read_bytes_per_sec": 0,
+        "write_bytes_per_sec": 0
+      }
+    ]
+  },
+  "recent": [],
+  "notices": [],
+  "ended": []
+}

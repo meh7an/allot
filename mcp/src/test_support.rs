@@ -10,9 +10,9 @@ use allot_shared::{
         ReleaseResponse, Verdict,
     },
     types::{
-        CpuStats, EndCause, GpuAdapter, GpuEngines, Holder, JobClass, JobProfile, Lease, LeaseId,
-        LeaseKind, LeaseState, MemStats, NoiseReport, ProcessUsage, ResourceUsage, Rolling,
-        SessionKey, SessionUsage, Snapshot,
+        Accuracy, CpuStats, EndCause, GpuAdapter, GpuEngines, GpuSource, Holder, JobClass,
+        JobProfile, Lease, LeaseId, LeaseKind, LeaseState, MemStats, NoiseReport, ProcessUsage,
+        ResourceUsage, Rolling, SessionKey, SessionUsage, Snapshot,
     },
     ui::Notice,
 };
@@ -74,6 +74,10 @@ pub(crate) fn snapshot() -> Snapshot {
             dedicated_used_mb: 2_048,
             dedicated_total_mb: Some(12_288),
             shared_used_mb: 0,
+            unified_memory: false,
+            source: GpuSource::Pdh,
+            process_load: Accuracy::Exact,
+            process_memory: Accuracy::Exact,
         }],
         sessions: vec![session("me", 2.0), session("them", 3.0)],
         unattributed: ResourceUsage::default(),
@@ -227,6 +231,7 @@ pub(crate) fn lease(id: i64, holder: Holder, state: LeaseState) -> Lease {
         expires_at_ms: 60_000,
         end_cause: None,
         binding: None,
+        isolation: None,
     }
 }
 

@@ -8,8 +8,8 @@ use serde::{Deserialize, Serialize};
 use crate::{
     api::{HealthResponse, Verdict},
     types::{
-        DriveUsage, EndCause, JobProfile, JobRun, Lease, LeaseId, NoiseReport, ResourceUsage,
-        SessionKey,
+        Accuracy, DriveUsage, EndCause, JobProfile, JobRun, Lease, LeaseId, NoiseReport,
+        ResourceUsage, SessionKey, is_default,
     },
 };
 
@@ -111,7 +111,7 @@ pub struct Meters {
     pub ram: RamMeter,
     /// Every GPU adapter.
     pub gpus: Vec<GpuMeter>,
-    /// Every fixed drive, by drive letter.
+    /// Every fixed drive, by drive letter on Windows and by mount point elsewhere.
     pub drives: Vec<DriveUsage>,
 }
 
@@ -149,15 +149,28 @@ pub struct GpuMeter {
     pub name: String,
     /// Load of the busiest engine group over the last second, in percent.
     pub busiest_pct: f32,
-    /// Dedicated video memory in use.
+    /// Dedicated video memory in use; on a unified-memory adapter, the RAM the GPU has
+    /// allocated.
     pub vram_used_mb: u64,
-    /// Dedicated video memory installed, when the OS reports it.
+    /// Dedicated video memory installed, when the OS reports it; `None` on a unified-memory
+    /// adapter.
     pub vram_total_mb: Option<u64>,
     /// Engine load reserved by active leases, in percent. Leases reserve on the adapter with
     /// the most video memory only, so it is 0 on every other adapter.
     pub reserved_pct: f32,
-    /// Video memory reserved by active leases; 0 on every adapter but the reserving one.
+    /// Video memory reserved by active leases; 0 on every adapter but the reserving one. On a
+    /// unified-memory adapter it comes out of RAM, on top of the RAM meter's reservation.
     pub reserved_vram_mb: u64,
+    /// Whether the adapter's video memory is the machine's RAM, as on Apple Silicon.
+    // schemars leaves the default out of the schema for fields that skip it; the generated
+    // types need it.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[cfg_attr(any(feature = "schema", test), schemars(extend("default" = false)))]
+    pub unified_memory: bool,
+    /// How well each job's GPU load is measured on this adapter.
+    #[serde(default, skip_serializing_if = "is_default")]
+    #[cfg_attr(any(feature = "schema", test), schemars(extend("default" = "exact")))]
+    pub process_load: Accuracy,
 }
 
 /// A finished job.
@@ -290,6 +303,26 @@ mod tests {
         value.as_object_mut().unwrap().remove("ended");
         let state: UiState = serde_json::from_value(value).unwrap();
         assert!(state.ended.is_empty());
+    }
+
+    #[test]
+    fn test_gpu_meter_schema_defaults_match_the_rust_defaults() {
+        let schema = schemars::schema_for!(GpuMeter);
+        let properties = &schema.as_value()["properties"];
+        assert_eq!(
+            properties["process_load"]["default"],
+            serde_json::to_value(Accuracy::default()).unwrap()
+        );
+        assert_eq!(properties["unified_memory"]["default"], bool::default());
+    }
+
+    #[test]
+    fn test_gpu_meter_from_an_older_allotd_is_exact_and_not_unified() {
+        let old = r#"{"name":"RTX","busiest_pct":1.0,"vram_used_mb":0,"vram_total_mb":null,
+                      "reserved_pct":0.0,"reserved_vram_mb":0}"#;
+        let meter: GpuMeter = serde_json::from_str(old).unwrap();
+        assert!(!meter.unified_memory);
+        assert_eq!(meter.process_load, Accuracy::Exact);
     }
 
     #[test]

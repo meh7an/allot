@@ -101,6 +101,7 @@ mod tests {
             expires_at_ms: 60_000,
             end_cause: Some(cause),
             binding: None,
+            isolation: None,
         }
     }
 

@@ -23,9 +23,10 @@ pub struct SessionKey(pub String);
 pub struct Holder {
     /// Session the leases belong to.
     pub session: SessionKey,
-    /// PID of the session's `claude.exe`, the direct parent of its MCP server and its hooks.
+    /// PID of the session's Claude Code process (`claude.exe` on Windows, `claude` elsewhere),
+    /// the direct parent of its MCP server and its hooks.
     pub pid: u32,
-    /// Start time of `pid` in seconds since the Unix epoch. Windows reuses PIDs, so a process
+    /// Start time of `pid` in seconds since the Unix epoch. Every OS reuses PIDs, so a process
     /// with the same PID but another start time is not the holder.
     pub pid_start_time: u64,
 }
@@ -95,21 +96,69 @@ impl GpuEngines {
     }
 }
 
-/// One GPU adapter as reported by the Windows PDH counters.
+/// One GPU adapter.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct GpuAdapter {
     /// Adapter name, for example `NVIDIA GeForce RTX 4070`.
     pub name: String,
-    /// Adapter LUID as it appears in PDH instance names, for example `0x00000000_0x0000d1a2`.
+    /// Stable ID of the adapter: on Windows its LUID as it appears in PDH instance names, for
+    /// example `0x00000000_0x0000d1a2`; other OSes use their own stable ID.
     pub luid: String,
     /// Engine utilization.
     pub engines: GpuEngines,
-    /// Dedicated video memory in use.
+    /// Dedicated video memory in use. On a unified-memory adapter, the system memory the GPU
+    /// has allocated, which RAM use already counts.
     pub dedicated_used_mb: u64,
-    /// Dedicated video memory installed, when the OS reports it.
+    /// Dedicated video memory installed, when the OS reports it; `None` on a unified-memory
+    /// adapter, which has none of its own.
     pub dedicated_total_mb: Option<u64>,
     /// Shared system memory in use by the adapter.
     pub shared_used_mb: u64,
+    /// Whether the adapter's video memory is the machine's RAM, as on Apple Silicon. Admission
+    /// then counts video memory against RAM.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub unified_memory: bool,
+    /// Where the numbers come from.
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub source: GpuSource,
+    /// How well the source measures each process's engine load.
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub process_load: Accuracy,
+    /// How well the source measures each process's video memory.
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub process_memory: Accuracy,
+}
+
+/// Where a GPU adapter's numbers come from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[non_exhaustive]
+pub enum GpuSource {
+    /// Windows performance counters. allotd builds that do not name a source ran on Windows
+    /// only, so a missing source means this.
+    #[default]
+    Pdh,
+    /// NVIDIA's management library, on Linux.
+    Nvml,
+    /// The DRM drivers' per-client statistics in `/proc/<pid>/fdinfo`, on Linux.
+    DrmFdinfo,
+    /// IOKit accelerator statistics, on macOS.
+    Iokit,
+}
+
+/// How well a GPU source measures something per process.
+#[cfg_attr(any(feature = "schema", test), derive(schemars::JsonSchema))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[non_exhaustive]
+pub enum Accuracy {
+    /// Measured per process.
+    #[default]
+    Exact,
+    /// Measured, but only roughly; the machine total is the reliable figure.
+    Estimated,
+    /// Not measured: per-process values read 0.
+    Unavailable,
 }
 
 /// Resources used by a process or a group of processes, in the units of [`JobProfile`].
@@ -118,7 +167,7 @@ pub struct GpuAdapter {
 pub struct ResourceUsage {
     /// CPU load in logical cores, for example `2.5` for two and a half busy cores.
     pub cores: f32,
-    /// Resident memory.
+    /// Resident memory; on macOS the physical footprint, as Activity Monitor shows it.
     pub ram_mb: u64,
     /// GPU engine load as a percentage of one adapter.
     pub gpu_pct: f32,
@@ -175,7 +224,7 @@ pub struct Snapshot {
     pub sessions: Vec<SessionUsage>,
     /// Usage of processes outside every registered session.
     pub unattributed: ResourceUsage,
-    /// Every fixed drive, by drive letter.
+    /// Every fixed drive, by drive letter on Windows and by mount point elsewhere.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub drives: Vec<DriveUsage>,
 }
@@ -184,7 +233,8 @@ pub struct Snapshot {
 #[cfg_attr(any(feature = "schema", test), derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DriveUsage {
-    /// Drive letter with its colon, for example `C:`.
+    /// Drive letter with its colon on Windows, for example `C:`; mount point elsewhere, for
+    /// example `/home`.
     pub name: String,
     /// Capacity of the volume.
     pub total_mb: u64,
@@ -422,6 +472,52 @@ pub struct Lease {
     /// reports one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub binding: Option<LeaseBinding>,
+    /// How the lease's command is kept apart from the rest of the machine; `None` where allotd
+    /// does not report it, as on Windows.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub isolation: Option<LeaseIsolation>,
+}
+
+/// How a lease's command is accounted for and stopped.
+#[cfg_attr(any(feature = "schema", test), derive(schemars::JsonSchema))]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct LeaseIsolation {
+    /// Whether the command runs in its own cgroup or is followed as a process tree.
+    pub kind: IsolationKind,
+    /// Name of the systemd scope that holds the command, for example
+    /// `allot-lease-42.scope`; `None` without a cgroup.
+    pub scope: Option<String>,
+    /// Caps the OS enforces on the command.
+    pub limits: EnforcedLimits,
+}
+
+/// How a lease's processes are found and stopped.
+#[cfg_attr(any(feature = "schema", test), derive(schemars::JsonSchema))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[non_exhaustive]
+pub enum IsolationKind {
+    /// A cgroup of its own: exact usage, and a kill ends every process in it at once.
+    Cgroup,
+    /// The process tree under the command's root, followed sample by sample.
+    Tree,
+}
+
+/// Caps the OS enforces on a lease's cgroup; each is `None` when not enforced.
+#[cfg_attr(any(feature = "schema", test), derive(schemars::JsonSchema))]
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
+pub struct EnforcedLimits {
+    /// CPU time limit in logical cores.
+    pub cpu_cores: Option<f32>,
+    /// Memory above which the OS throttles the command and reclaims its memory.
+    pub memory_high_mb: Option<u64>,
+    /// Memory at which the OS kills the command.
+    pub memory_max_mb: Option<u64>,
+}
+
+/// Whether `value` is its type's default, which such fields leave off the wire.
+pub(crate) fn is_default<T: Default + PartialEq>(value: &T) -> bool {
+    *value == T::default()
 }
 
 /// The command a lease covers, as the PreToolUse hook reported it, and the process tree it
@@ -616,6 +712,7 @@ mod tests {
         let lease: Lease = serde_json::from_value(lease).unwrap();
         assert_eq!(lease.end_cause, None);
         assert_eq!(lease.binding, None);
+        assert_eq!(lease.isolation, None);
 
         let mut snapshot = serde_json::to_value(sample_snapshot()).unwrap();
         snapshot.as_object_mut().unwrap().remove("drives");
@@ -626,6 +723,91 @@ mod tests {
         let snapshot: Snapshot = serde_json::from_value(snapshot).unwrap();
         assert!(snapshot.drives.is_empty());
         assert_eq!(snapshot.sessions[0].processes[0].exe, None);
+    }
+
+    #[test]
+    fn test_windows_adapter_and_lease_omit_every_cross_platform_field() {
+        let snapshot = serde_json::to_value(sample_snapshot()).unwrap();
+        let gpu = snapshot["gpus"][0].as_object().unwrap();
+        for field in ["unified_memory", "source", "process_load", "process_memory"] {
+            assert!(gpu.get(field).is_none(), "{field}");
+        }
+        let lease = serde_json::to_value(sample_lease()).unwrap();
+        assert!(lease.get("isolation").is_none());
+    }
+
+    #[test]
+    fn test_adapter_from_an_older_allotd_is_a_windows_adapter() {
+        let mut value = serde_json::to_value(&sample_snapshot().gpus[0]).unwrap();
+        let object = value.as_object_mut().unwrap();
+        for field in ["unified_memory", "source", "process_load", "process_memory"] {
+            object.remove(field);
+        }
+        let gpu: GpuAdapter = serde_json::from_value(value).unwrap();
+        assert!(!gpu.unified_memory);
+        assert_eq!(gpu.source, GpuSource::Pdh);
+        assert_eq!(gpu.process_load, Accuracy::Exact);
+        assert_eq!(gpu.process_memory, Accuracy::Exact);
+    }
+
+    #[test]
+    fn test_unified_adapter_round_trips_and_writes_snake_case() {
+        let gpu = GpuAdapter {
+            name: "Apple M3 Max".into(),
+            luid: "4294969310".into(),
+            dedicated_used_mb: 9_216,
+            dedicated_total_mb: None,
+            shared_used_mb: 0,
+            unified_memory: true,
+            source: GpuSource::Iokit,
+            process_load: Accuracy::Estimated,
+            process_memory: Accuracy::Unavailable,
+            ..sample_snapshot().gpus[0].clone()
+        };
+        assert_json_round_trip(&gpu);
+        let value = serde_json::to_value(&gpu).unwrap();
+        assert_eq!(value["unified_memory"], true);
+        assert_eq!(value["source"], "iokit");
+        assert_eq!(value["process_load"], "estimated");
+        assert_eq!(value["process_memory"], "unavailable");
+        let fdinfo = serde_json::to_value(GpuSource::DrmFdinfo).unwrap();
+        assert_eq!(fdinfo, "drm_fdinfo");
+    }
+
+    #[test]
+    fn test_lease_with_isolation_round_trips_for_cgroup_and_tree() {
+        let cgroup = LeaseIsolation {
+            kind: IsolationKind::Cgroup,
+            scope: Some("allot-lease-7.scope".into()),
+            limits: EnforcedLimits {
+                cpu_cores: Some(8.0),
+                memory_high_mb: Some(4096),
+                memory_max_mb: Some(6144),
+            },
+        };
+        let tree = LeaseIsolation {
+            kind: IsolationKind::Tree,
+            scope: None,
+            limits: EnforcedLimits::default(),
+        };
+        for isolation in [cgroup, tree] {
+            assert_json_round_trip(&Lease {
+                isolation: Some(isolation),
+                ..sample_lease()
+            });
+        }
+        let value = serde_json::to_value(Lease {
+            isolation: Some(LeaseIsolation {
+                kind: IsolationKind::Tree,
+                scope: None,
+                limits: EnforcedLimits::default(),
+            }),
+            ..sample_lease()
+        })
+        .unwrap();
+        assert_eq!(value["isolation"]["kind"], "tree");
+        assert!(value["isolation"]["scope"].is_null());
+        assert!(value["isolation"]["limits"]["memory_max_mb"].is_null());
     }
 
     #[test]

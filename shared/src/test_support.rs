@@ -3,9 +3,9 @@ use std::fmt::Debug;
 use serde::{Serialize, de::DeserializeOwned};
 
 use crate::types::{
-    CpuStats, DriveUsage, GpuAdapter, GpuEngines, Holder, JobClass, JobProfile, Lease, LeaseId,
-    LeaseKind, LeaseState, MemStats, ProcessUsage, ResourceUsage, Rolling, SessionKey,
-    SessionUsage, Snapshot,
+    Accuracy, CpuStats, DriveUsage, GpuAdapter, GpuEngines, GpuSource, Holder, JobClass,
+    JobProfile, Lease, LeaseId, LeaseKind, LeaseState, MemStats, ProcessUsage, ResourceUsage,
+    Rolling, SessionKey, SessionUsage, Snapshot,
 };
 
 /// Serializes `value` to JSON, parses it back, and asserts nothing changed.
@@ -88,6 +88,10 @@ pub(crate) fn sample_snapshot() -> Snapshot {
             dedicated_used_mb: 1800,
             dedicated_total_mb: Some(12_288),
             shared_used_mb: 300,
+            unified_memory: false,
+            source: GpuSource::Pdh,
+            process_load: Accuracy::Exact,
+            process_memory: Accuracy::Exact,
         }],
         sessions: vec![sample_session_usage()],
         unattributed: ResourceUsage {
@@ -128,5 +132,6 @@ pub(crate) fn sample_lease() -> Lease {
         expires_at_ms: 1_793_000_072_000,
         end_cause: None,
         binding: None,
+        isolation: None,
     }
 }

@@ -224,6 +224,8 @@ fn meters(latest: &Latest, active: &[&Lease], headroom_pct: f32) -> Meters {
                     vram_total_mb: gpu.dedicated_total_mb,
                     reserved_pct: if reserving { reserved_gpu_pct } else { 0.0 },
                     reserved_vram_mb: if reserving { reserved_vram_mb } else { 0 },
+                    unified_memory: gpu.unified_memory,
+                    process_load: gpu.process_load,
                 }
             })
             .collect(),

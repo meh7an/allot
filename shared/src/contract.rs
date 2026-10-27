@@ -18,8 +18,9 @@ use crate::{
         UnkilledProcess, Verdict,
     },
     types::{
-        BoundProcess, DriveUsage, EndCause, Holder, JobClass, JobProfile, Lease, LeaseBinding,
-        LeaseId, LeaseKind, LeaseState, NoiseReport, ResourceUsage, SessionKey,
+        Accuracy, BoundProcess, DriveUsage, EndCause, EnforcedLimits, Holder, IsolationKind,
+        JobClass, JobProfile, Lease, LeaseBinding, LeaseId, LeaseIsolation, LeaseKind, LeaseState,
+        NoiseReport, ResourceUsage, SessionKey,
     },
     ui::{
         ActiveJob, CpuMeter, EndedLease, GpuMeter, JobProcess, Meters, Notice, QueuedJob, RamMeter,
@@ -118,6 +119,7 @@ fn active_lease(id: i64, holder: Holder, label: &str, cwd: &str, granted_ago_ms:
         expires_at_ms: NOW_MS + 45_000,
         end_cause: None,
         binding: None,
+        isolation: None,
     }
 }
 
@@ -197,6 +199,8 @@ fn rtx(busiest_pct: f32, reserved_pct: f32, reserved_vram_mb: u64) -> GpuMeter {
         vram_total_mb: Some(11_264),
         reserved_pct,
         reserved_vram_mb,
+        unified_memory: false,
+        process_load: Accuracy::Exact,
     }
 }
 
@@ -361,6 +365,8 @@ fn benchmark() -> UiState {
         vram_total_mb: None,
         reserved_pct: 0.0,
         reserved_vram_mb: 0,
+        unified_memory: false,
+        process_load: Accuracy::Exact,
     };
     UiState {
         generated_at_ms: NOW_MS,
@@ -513,12 +519,218 @@ fn first_run() -> UiState {
     }
 }
 
-fn scenarios() -> [(&'static str, UiState); 4] {
+/// A Linux desktop: a build in its own cgroup scope with caps, a training run followed as a
+/// process tree where scopes were unavailable, a queued request, and drives by mount point.
+fn linux() -> UiState {
+    let build = Lease {
+        isolation: Some(LeaseIsolation {
+            kind: IsolationKind::Cgroup,
+            scope: Some("allot-lease-61.scope".into()),
+            limits: EnforcedLimits {
+                cpu_cores: Some(8.0),
+                memory_high_mb: Some(4096),
+                memory_max_mb: None,
+            },
+        }),
+        ..active_lease(
+            61,
+            holder(APP, 4_120),
+            "cargo build --release",
+            "/home/mehran/work/app",
+            48_000,
+        )
+    };
+    let train = Lease {
+        class: Some(JobClass::GpuHeavy),
+        profile: profile(2.0, 4096, 60.0, 2048, 1_800),
+        isolation: Some(LeaseIsolation {
+            kind: IsolationKind::Tree,
+            scope: None,
+            limits: EnforcedLimits::default(),
+        }),
+        ..active_lease(
+            62,
+            holder(TRAINER, 4_388),
+            "python train.py --epochs 40",
+            "/home/mehran/work/ml-trainer",
+            600_000,
+        )
+    };
+    let test = queued_lease(
+        63,
+        holder(APP, 4_120),
+        "cargo test --workspace",
+        "/home/mehran/work/app",
+        12_000,
+    );
+    let mut meters = meters(71.5, 10.0, 8_192, Vec::new());
+    meters.gpus = vec![GpuMeter {
+        name: "NVIDIA GeForce GTX 970".into(),
+        busiest_pct: 57.0,
+        vram_used_mb: 2_304,
+        vram_total_mb: Some(4_096),
+        reserved_pct: 60.0,
+        reserved_vram_mb: 2_048,
+        unified_memory: false,
+        process_load: Accuracy::Exact,
+    }];
+    meters.drives = vec![
+        drive("/", 102_400, 61_440, 12_582_912, 33_554_432),
+        drive("/home", 819_200, 409_600, 0, 4_194_304),
+    ];
+    UiState {
+        generated_at_ms: NOW_MS,
+        service: service(),
+        first_session_at_ms: Some(NOW_MS - 2 * 60 * MINUTE_MS),
+        sessions: vec![
+            session(
+                APP,
+                Some("/home/mehran/work/app"),
+                usage(7.5, 3_328, 0.0, 0),
+            ),
+            session(
+                TRAINER,
+                Some("/home/mehran/work/ml-trainer"),
+                usage(1.75, 5_120, 55.0, 1_920),
+            ),
+        ],
+        active: vec![
+            ActiveJob {
+                lease: train,
+                process: Some(JobProcess {
+                    pid: 4_502,
+                    name: "python3".into(),
+                    exe: Some("/usr/bin/python3.13".into()),
+                    bound: true,
+                }),
+                quiet_at_start: None,
+            },
+            ActiveJob {
+                lease: build,
+                process: Some(JobProcess {
+                    pid: 4_131,
+                    name: "rustc".into(),
+                    exe: Some("/home/mehran/.rustup/toolchains/stable/bin/rustc".into()),
+                    bound: true,
+                }),
+                quiet_at_start: None,
+            },
+        ],
+        queue: vec![QueuedJob {
+            lease: test,
+            position: 1,
+            verdict: waiting(&["cores: 8.0 requested, 3.6 free"], Some(252)),
+        }],
+        meters,
+        recent: Vec::new(),
+        notices: Vec::new(),
+        ended: Vec::new(),
+    }
+}
+
+/// An Apple Silicon Mac: one GPU whose memory is RAM, with a training run's video memory
+/// reserved out of it, estimated per-job GPU load, and a request waiting for shared memory.
+fn macos() -> UiState {
+    let train = Lease {
+        class: Some(JobClass::GpuHeavy),
+        profile: profile(2.0, 4096, 60.0, 8_192, 1_800),
+        isolation: Some(LeaseIsolation {
+            kind: IsolationKind::Tree,
+            scope: None,
+            limits: EnforcedLimits::default(),
+        }),
+        ..active_lease(
+            71,
+            holder(TRAINER, 912),
+            "python train.py --device mps",
+            "/Users/mehran/work/ml-trainer",
+            300_000,
+        )
+    };
+    let render = Lease {
+        class: Some(JobClass::Mixed),
+        profile: profile(6.0, 8192, 50.0, 16_384, 600),
+        ..queued_lease(
+            72,
+            holder(APP, 1_204),
+            "blender -b scene.blend -a",
+            "/Users/mehran/work/app",
+            30_000,
+        )
+    };
+    let mut meters = meters(38.0, 2.0, 4_096, Vec::new());
+    meters.cpu.logical_cores = 14;
+    meters.ram = RamMeter {
+        total_mb: 36_864,
+        used_mb: 24_576,
+        reserved_mb: 4_096,
+    };
+    meters.gpus = vec![GpuMeter {
+        name: "Apple M3 Max".into(),
+        busiest_pct: 64.0,
+        vram_used_mb: 9_216,
+        vram_total_mb: None,
+        reserved_pct: 60.0,
+        reserved_vram_mb: 8_192,
+        unified_memory: true,
+        process_load: Accuracy::Estimated,
+    }];
+    meters.drives = vec![
+        drive("/", 999_424, 614_400, 3_145_728, 1_048_576),
+        drive("/Volumes/Backup", 1_907_712, 1_048_576, 0, 0),
+    ];
+    UiState {
+        generated_at_ms: NOW_MS,
+        service: service(),
+        first_session_at_ms: Some(NOW_MS - 24 * 60 * MINUTE_MS),
+        sessions: vec![
+            session(
+                TRAINER,
+                Some("/Users/mehran/work/ml-trainer"),
+                usage(1.5, 3_584, 58.5, 0),
+            ),
+            session(
+                APP,
+                Some("/Users/mehran/work/app"),
+                usage(0.25, 768, 0.0, 0),
+            ),
+        ],
+        active: vec![ActiveJob {
+            lease: train,
+            process: Some(JobProcess {
+                pid: 2_210,
+                name: "python3.13".into(),
+                exe: Some("/opt/homebrew/bin/python3.13".into()),
+                bound: true,
+            }),
+            quiet_at_start: None,
+        }],
+        queue: vec![QueuedJob {
+            lease: render,
+            position: 1,
+            verdict: waiting(
+                &[
+                    "RAM: 24576 MB requested (16384 MB of it video memory, which shares RAM), \
+                     2560 MB free",
+                ],
+                Some(270),
+            ),
+        }],
+        meters,
+        recent: Vec::new(),
+        notices: Vec::new(),
+        ended: Vec::new(),
+    }
+}
+
+fn scenarios() -> [(&'static str, UiState); 6] {
     [
         ("busy", busy()),
         ("benchmark", benchmark()),
         ("idle", idle()),
         ("first-run", first_run()),
+        ("linux", linux()),
+        ("macos", macos()),
     ]
 }
 

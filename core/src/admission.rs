@@ -20,9 +20,12 @@ pub struct Room {
     pub ram_mb: f64,
     /// GPU engine load on the primary adapter, or `None` without a GPU.
     pub gpu_pct: Option<f64>,
-    /// Dedicated video memory on the primary adapter, or `None` when there is no GPU or its
-    /// VRAM size is unknown.
+    /// Dedicated video memory on the primary adapter, or `None` when there is no GPU, its
+    /// VRAM size is unknown, or it shares RAM.
     pub vram_mb: Option<f64>,
+    /// Whether the primary adapter's video memory is RAM, so requested VRAM comes out of
+    /// `ram_mb`.
+    pub unified_memory: bool,
 }
 
 impl Room {
@@ -50,14 +53,20 @@ impl Room {
                 - background(memory.used_mb as f64, leased.ram_mb as f64),
             gpu_pct: None,
             vram_mb: None,
+            unified_memory: false,
         };
         if let Some(gpu) = primary_adapter(&snapshot.gpus) {
             let busiest = f64::from(gpu.engines.busiest(|load| load.avg_10s));
             room.gpu_pct = Some(100.0 * keep - background(busiest, f64::from(leased.gpu_pct)));
-            room.vram_mb = gpu.dedicated_total_mb.map(|total_mb| {
-                total_mb as f64 * keep
-                    - background(gpu.dedicated_used_mb as f64, leased.vram_mb as f64)
-            });
+            // RAM use already counts the video memory of a unified adapter.
+            room.unified_memory = gpu.unified_memory;
+            room.vram_mb = gpu
+                .dedicated_total_mb
+                .filter(|_| !gpu.unified_memory)
+                .map(|total_mb| {
+                    total_mb as f64 * keep
+                        - background(gpu.dedicated_used_mb as f64, leased.vram_mb as f64)
+                });
         }
         for lease in active {
             room.reserve(&lease.profile);
@@ -77,7 +86,7 @@ impl Room {
 
     fn shift(&mut self, profile: &JobProfile, sign: f64) {
         self.cores += sign * f64::from(profile.cores);
-        self.ram_mb += sign * profile.ram_mb as f64;
+        self.ram_mb += sign * self.ram_needed_mb(profile);
         if let Some(gpu_pct) = &mut self.gpu_pct {
             *gpu_pct += sign * f64::from(profile.gpu_pct);
         }
@@ -97,10 +106,18 @@ impl Room {
                 self.cores.max(0.0)
             ));
         }
-        if exceeds(profile.ram_mb as f64, self.ram_mb) {
+        let ram_needed_mb = self.ram_needed_mb(profile);
+        if exceeds(ram_needed_mb, self.ram_mb) {
+            let shared = if ram_needed_mb > profile.ram_mb as f64 {
+                format!(
+                    " ({} MB of it video memory, which shares RAM)",
+                    profile.vram_mb
+                )
+            } else {
+                String::new()
+            };
             reasons.push(format!(
-                "RAM: {} MB requested, {:.0} MB free",
-                profile.ram_mb,
+                "RAM: {ram_needed_mb:.0} MB requested{shared}, {:.0} MB free",
                 self.ram_mb.max(0.0)
             ));
         }
@@ -126,6 +143,16 @@ impl Room {
             ));
         }
         reasons
+    }
+
+    /// The RAM `profile` takes: its own, plus its video memory when that is RAM.
+    fn ram_needed_mb(&self, profile: &JobProfile) -> f64 {
+        let vram_mb = if self.unified_memory {
+            profile.vram_mb
+        } else {
+            0
+        };
+        profile.ram_mb.saturating_add(vram_mb) as f64
     }
 }
 
@@ -220,7 +247,7 @@ fn exceeds(requested: f64, free: f64) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_support::{active_lease, gpu, profile, session_usage, snapshot};
+    use crate::test_support::{active_lease, gpu, profile, session_usage, snapshot, unified_gpu};
 
     struct Case {
         name: &'static str,
@@ -303,6 +330,29 @@ mod tests {
                 profile: gpu_profile(10.0, 400_000),
                 shortfall: None,
             },
+            Case {
+                name: "unified memory counts VRAM against RAM",
+                snapshot: snapshot(0.0, 22_000, Some(unified_gpu(0.0, 4_000))),
+                active: vec![],
+                profile: gpu_profile(10.0, 8_000),
+                shortfall: Some(
+                    "RAM: 9000 MB requested (8000 MB of it video memory, which shares RAM)",
+                ),
+            },
+            Case {
+                name: "unified memory fits VRAM and RAM together",
+                snapshot: snapshot(0.0, 22_000, Some(unified_gpu(0.0, 4_000))),
+                active: vec![],
+                profile: gpu_profile(10.0, 6_000),
+                shortfall: None,
+            },
+            Case {
+                name: "unified memory takes active VRAM reservations out of RAM",
+                snapshot: snapshot(0.0, 0, Some(unified_gpu(0.0, 0))),
+                active: vec![active_lease(1, "a", gpu_profile(10.0, 23_000))],
+                profile: gpu_profile(10.0, 6_000),
+                shortfall: Some("RAM: 7000 MB requested"),
+            },
         ];
         for case in cases {
             let active: Vec<&Lease> = case.active.iter().collect();
@@ -331,6 +381,18 @@ mod tests {
         let mut snapshot = snapshot(cpu_pct, 0, None);
         snapshot.sessions.push(session_usage(session, cores));
         snapshot
+    }
+
+    #[test]
+    fn test_room_on_unified_memory_has_no_separate_vram() {
+        let room = Room::measure(&snapshot(0.0, 0, Some(unified_gpu(0.0, 4_000))), &[], 10.0);
+        assert!(room.unified_memory);
+        assert_eq!(room.vram_mb, None);
+        assert!(room.gpu_pct.is_some());
+
+        let discrete = Room::measure(&snapshot(0.0, 0, Some(gpu(0.0, 0, Some(8_192)))), &[], 10.0);
+        assert!(!discrete.unified_memory);
+        assert!(discrete.vram_mb.is_some());
     }
 
     #[test]

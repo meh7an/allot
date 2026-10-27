@@ -1,6 +1,6 @@
 use allot_shared::types::{
-    CpuStats, GpuAdapter, GpuEngines, Holder, JobProfile, Lease, LeaseId, LeaseKind, LeaseState,
-    MemStats, ResourceUsage, Rolling, SessionKey, SessionUsage, Snapshot,
+    Accuracy, CpuStats, GpuAdapter, GpuEngines, GpuSource, Holder, JobProfile, Lease, LeaseId,
+    LeaseKind, LeaseState, MemStats, ResourceUsage, Rolling, SessionKey, SessionUsage, Snapshot,
 };
 
 use crate::sampler::RawProcess;
@@ -50,6 +50,21 @@ pub(crate) fn gpu(three_d_pct: f32, used_mb: u64, total_mb: Option<u64>) -> GpuA
         dedicated_used_mb: used_mb,
         dedicated_total_mb: total_mb,
         shared_used_mb: 0,
+        unified_memory: false,
+        source: GpuSource::Pdh,
+        process_load: Accuracy::Exact,
+        process_memory: Accuracy::Exact,
+    }
+}
+
+/// An Apple Silicon style adapter with a steady 3D load and `used_mb` of RAM allocated.
+pub(crate) fn unified_gpu(three_d_pct: f32, used_mb: u64) -> GpuAdapter {
+    GpuAdapter {
+        unified_memory: true,
+        source: GpuSource::Iokit,
+        process_load: Accuracy::Estimated,
+        process_memory: Accuracy::Unavailable,
+        ..gpu(three_d_pct, used_mb, None)
     }
 }
 
@@ -107,6 +122,7 @@ pub(crate) fn queued_lease(
         expires_at_ms: requested_at_ms + 60_000,
         end_cause: None,
         binding: None,
+        isolation: None,
     }
 }
 

@@ -20,7 +20,7 @@ use std::{
 use allot_core::sampler::{RawGpu, RawProcess, RawSample, Sampler};
 use allot_shared::{
     Result,
-    types::{MemStats, ResourceUsage},
+    types::{Accuracy, GpuSource, MemStats, ResourceUsage},
 };
 use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System};
 
@@ -179,6 +179,10 @@ impl SystemSampler {
                 dedicated_total_mb,
                 name,
                 luid,
+                unified_memory: false,
+                source: GpuSource::Pdh,
+                process_load: Accuracy::Exact,
+                process_memory: Accuracy::Exact,
             })
             .collect();
         Ok(GpuReading {

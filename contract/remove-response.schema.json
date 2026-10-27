@@ -64,18 +64,50 @@
         }
       ]
     },
+    "EnforcedLimits": {
+      "description": "Caps the OS enforces on a lease's cgroup; each is `None` when not enforced.",
+      "type": "object",
+      "properties": {
+        "cpu_cores": {
+          "description": "CPU time limit in logical cores.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float"
+        },
+        "memory_high_mb": {
+          "description": "Memory above which the OS throttles the command and reclaims its memory.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 0
+        },
+        "memory_max_mb": {
+          "description": "Memory at which the OS kills the command.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 0
+        }
+      }
+    },
     "Holder": {
       "description": "The process a session's leases live and die with.",
       "type": "object",
       "properties": {
         "pid": {
-          "description": "PID of the session's `claude.exe`, the direct parent of its MCP server and its hooks.",
+          "description": "PID of the session's Claude Code process (`claude.exe` on Windows, `claude` elsewhere),\nthe direct parent of its MCP server and its hooks.",
           "type": "integer",
           "format": "uint32",
           "minimum": 0
         },
         "pid_start_time": {
-          "description": "Start time of `pid` in seconds since the Unix epoch. Windows reuses PIDs, so a process\nwith the same PID but another start time is not the holder.",
+          "description": "Start time of `pid` in seconds since the Unix epoch. Every OS reuses PIDs, so a process\nwith the same PID but another start time is not the holder.",
           "type": "integer",
           "format": "uint64",
           "minimum": 0
@@ -93,6 +125,21 @@
         "session",
         "pid",
         "pid_start_time"
+      ]
+    },
+    "IsolationKind": {
+      "description": "How a lease's processes are found and stopped.",
+      "oneOf": [
+        {
+          "description": "A cgroup of its own: exact usage, and a kill ends every process in it at once.",
+          "type": "string",
+          "const": "cgroup"
+        },
+        {
+          "description": "The process tree under the command's root, followed sample by sample.",
+          "type": "string",
+          "const": "tree"
+        }
       ]
     },
     "JobClass": {
@@ -240,6 +287,17 @@
             }
           ]
         },
+        "isolation": {
+          "description": "How the lease's command is kept apart from the rest of the machine; `None` where allotd\ndoes not report it, as on Windows.",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/LeaseIsolation"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "kind": {
           "description": "How the lease shares the machine.",
           "allOf": [
@@ -319,6 +377,39 @@
       "description": "Identifies a lease. Assigned by the daemon's database when the lease is first stored.",
       "type": "integer",
       "format": "int64"
+    },
+    "LeaseIsolation": {
+      "description": "How a lease's command is accounted for and stopped.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "description": "Whether the command runs in its own cgroup or is followed as a process tree.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/IsolationKind"
+            }
+          ]
+        },
+        "limits": {
+          "description": "Caps the OS enforces on the command.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/EnforcedLimits"
+            }
+          ]
+        },
+        "scope": {
+          "description": "Name of the systemd scope that holds the command, for example\n`allot-lease-42.scope`; `None` without a cgroup.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "kind",
+        "limits"
+      ]
     },
     "LeaseKind": {
       "description": "How a lease shares the machine.",

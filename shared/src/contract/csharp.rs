@@ -221,12 +221,23 @@ fn emit_properties(
         // the member is present. A null default is what an absent member gets anyway.
         let (accessors, initializer) =
             match (is_required, cs_type.nullable, property.get("default")) {
-                (true, _, None) | (false, true, None | Some(Value::Null)) => ("get; init;", ""),
-                (false, false, Some(Value::String(text))) if text.is_empty() => {
-                    ("get; set;", " = \"\";")
+                (true, _, None) | (false, true, None | Some(Value::Null)) => {
+                    ("get; init;", String::new())
+                }
+                (false, false, Some(Value::String(text)))
+                    if text.is_empty() && cs_type.name == "string" =>
+                {
+                    ("get; set;", " = \"\";".to_owned())
+                }
+                (false, false, Some(Value::String(text))) if is_enum(definitions, property) => (
+                    "get; set;",
+                    format!(" = {}.{};", cs_type.name, pascal_case(text)),
+                ),
+                (false, false, Some(Value::Bool(false))) if cs_type.name == "bool" => {
+                    ("get; set;", " = false;".to_owned())
                 }
                 (false, false, Some(Value::Array(items))) if items.is_empty() => {
-                    ("get; set;", " = [];")
+                    ("get; set;", " = [];".to_owned())
                 }
                 _ => panic!("{record}.{json_name}: no C# mapping for its required and default mix"),
             };
@@ -313,6 +324,22 @@ fn type_of(definitions: &Map<String, Value>, schema: &Value) -> CsType {
         name: primitive_of(schema).to_owned(),
         nullable: false,
     }
+}
+
+/// Whether `schema` refers to a unit enum, whose default is one of its names.
+fn is_enum(definitions: &Map<String, Value>, schema: &Value) -> bool {
+    if let Some([only]) = schema["allOf"].as_array().map(Vec::as_slice) {
+        return is_enum(definitions, only);
+    }
+    schema["$ref"]
+        .as_str()
+        .and_then(|reference| reference.strip_prefix("#/definitions/"))
+        .and_then(|name| definitions[name]["oneOf"].as_array())
+        .is_some_and(|variants| {
+            variants
+                .iter()
+                .all(|variant| variant.get("const").is_some())
+        })
 }
 
 fn primitive_of(schema: &Value) -> &'static str {

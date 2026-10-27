@@ -88,6 +88,26 @@
     "notices"
   ],
   "definitions": {
+    "Accuracy": {
+      "description": "How well a GPU source measures something per process.",
+      "oneOf": [
+        {
+          "description": "Measured per process.",
+          "type": "string",
+          "const": "exact"
+        },
+        {
+          "description": "Measured, but only roughly; the machine total is the reliable figure.",
+          "type": "string",
+          "const": "estimated"
+        },
+        {
+          "description": "Not measured: per-process values read 0.",
+          "type": "string",
+          "const": "unavailable"
+        }
+      ]
+    },
     "ActiveJob": {
       "description": "An active lease and the process its command runs as.",
       "type": "object",
@@ -295,7 +315,7 @@
       "type": "object",
       "properties": {
         "name": {
-          "description": "Drive letter with its colon, for example `C:`.",
+          "description": "Drive letter with its colon on Windows, for example `C:`; mount point elsewhere, for\nexample `/home`.",
           "type": "string"
         },
         "read_bytes_per_sec": {
@@ -415,6 +435,38 @@
         "ended_at_ms"
       ]
     },
+    "EnforcedLimits": {
+      "description": "Caps the OS enforces on a lease's cgroup; each is `None` when not enforced.",
+      "type": "object",
+      "properties": {
+        "cpu_cores": {
+          "description": "CPU time limit in logical cores.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float"
+        },
+        "memory_high_mb": {
+          "description": "Memory above which the OS throttles the command and reclaims its memory.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 0
+        },
+        "memory_max_mb": {
+          "description": "Memory at which the OS kills the command.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 0
+        }
+      }
+    },
     "GpuMeter": {
       "description": "One GPU adapter.",
       "type": "object",
@@ -428,19 +480,33 @@
           "description": "Adapter name, for example `NVIDIA GeForce RTX 4070`.",
           "type": "string"
         },
+        "process_load": {
+          "description": "How well each job's GPU load is measured on this adapter.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/Accuracy"
+            }
+          ],
+          "default": "exact"
+        },
         "reserved_pct": {
           "description": "Engine load reserved by active leases, in percent. Leases reserve on the adapter with\nthe most video memory only, so it is 0 on every other adapter.",
           "type": "number",
           "format": "float"
         },
         "reserved_vram_mb": {
-          "description": "Video memory reserved by active leases; 0 on every adapter but the reserving one.",
+          "description": "Video memory reserved by active leases; 0 on every adapter but the reserving one. On a\nunified-memory adapter it comes out of RAM, on top of the RAM meter's reservation.",
           "type": "integer",
           "format": "uint64",
           "minimum": 0
         },
+        "unified_memory": {
+          "description": "Whether the adapter's video memory is the machine's RAM, as on Apple Silicon.",
+          "type": "boolean",
+          "default": false
+        },
         "vram_total_mb": {
-          "description": "Dedicated video memory installed, when the OS reports it.",
+          "description": "Dedicated video memory installed, when the OS reports it; `None` on a unified-memory\nadapter.",
           "type": [
             "integer",
             "null"
@@ -449,7 +515,7 @@
           "minimum": 0
         },
         "vram_used_mb": {
-          "description": "Dedicated video memory in use.",
+          "description": "Dedicated video memory in use; on a unified-memory adapter, the RAM the GPU has\nallocated.",
           "type": "integer",
           "format": "uint64",
           "minimum": 0
@@ -502,13 +568,13 @@
       "type": "object",
       "properties": {
         "pid": {
-          "description": "PID of the session's `claude.exe`, the direct parent of its MCP server and its hooks.",
+          "description": "PID of the session's Claude Code process (`claude.exe` on Windows, `claude` elsewhere),\nthe direct parent of its MCP server and its hooks.",
           "type": "integer",
           "format": "uint32",
           "minimum": 0
         },
         "pid_start_time": {
-          "description": "Start time of `pid` in seconds since the Unix epoch. Windows reuses PIDs, so a process\nwith the same PID but another start time is not the holder.",
+          "description": "Start time of `pid` in seconds since the Unix epoch. Every OS reuses PIDs, so a process\nwith the same PID but another start time is not the holder.",
           "type": "integer",
           "format": "uint64",
           "minimum": 0
@@ -526,6 +592,21 @@
         "session",
         "pid",
         "pid_start_time"
+      ]
+    },
+    "IsolationKind": {
+      "description": "How a lease's processes are found and stopped.",
+      "oneOf": [
+        {
+          "description": "A cgroup of its own: exact usage, and a kill ends every process in it at once.",
+          "type": "string",
+          "const": "cgroup"
+        },
+        {
+          "description": "The process tree under the command's root, followed sample by sample.",
+          "type": "string",
+          "const": "tree"
+        }
       ]
     },
     "JobClass": {
@@ -705,6 +786,17 @@
             }
           ]
         },
+        "isolation": {
+          "description": "How the lease's command is kept apart from the rest of the machine; `None` where allotd\ndoes not report it, as on Windows.",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/LeaseIsolation"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "kind": {
           "description": "How the lease shares the machine.",
           "allOf": [
@@ -785,6 +877,39 @@
       "type": "integer",
       "format": "int64"
     },
+    "LeaseIsolation": {
+      "description": "How a lease's command is accounted for and stopped.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "description": "Whether the command runs in its own cgroup or is followed as a process tree.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/IsolationKind"
+            }
+          ]
+        },
+        "limits": {
+          "description": "Caps the OS enforces on the command.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/EnforcedLimits"
+            }
+          ]
+        },
+        "scope": {
+          "description": "Name of the systemd scope that holds the command, for example\n`allot-lease-42.scope`; `None` without a cgroup.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "kind",
+        "limits"
+      ]
+    },
     "LeaseKind": {
       "description": "How a lease shares the machine.",
       "oneOf": [
@@ -838,7 +963,7 @@
           ]
         },
         "drives": {
-          "description": "Every fixed drive, by drive letter.",
+          "description": "Every fixed drive, by drive letter on Windows and by mount point elsewhere.",
           "type": "array",
           "items": {
             "$ref": "#/definitions/DriveUsage"
@@ -1132,7 +1257,7 @@
           "format": "float"
         },
         "ram_mb": {
-          "description": "Resident memory.",
+          "description": "Resident memory; on macOS the physical footprint, as Activity Monitor shows it.",
           "type": "integer",
           "format": "uint64",
           "minimum": 0

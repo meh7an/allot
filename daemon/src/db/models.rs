@@ -105,6 +105,7 @@ impl TryFrom<LeaseRow> for Lease {
                 .map(|name| end_cause(name, "leases.end_cause"))
                 .transpose()?,
             binding,
+            isolation: None,
         })
     }
 }

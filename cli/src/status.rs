@@ -306,6 +306,7 @@ mod tests {
             expires_at_ms: 60_000,
             end_cause: None,
             binding: None,
+            isolation: None,
         }
     }
 

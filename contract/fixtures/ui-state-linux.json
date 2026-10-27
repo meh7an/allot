@@ -1,0 +1,204 @@
+{
+  "generated_at_ms": 1792824720000,
+  "service": {
+    "version": "0.2.0",
+    "pid": 58260,
+    "uptime_secs": 7380
+  },
+  "first_session_at_ms": 1792817520000,
+  "sessions": [
+    {
+      "session": "3f2a9c1e-77b0-4f6e-a2d8-5c9e1b4f7a02",
+      "cwd": "/home/mehran/work/app",
+      "usage": {
+        "cores": 7.5,
+        "ram_mb": 3328,
+        "gpu_pct": 0.0,
+        "vram_mb": 0
+      }
+    },
+    {
+      "session": "b81d44f0-5a3e-4d2b-9c61-0e7f2a9d3c15",
+      "cwd": "/home/mehran/work/ml-trainer",
+      "usage": {
+        "cores": 1.75,
+        "ram_mb": 5120,
+        "gpu_pct": 55.0,
+        "vram_mb": 1920
+      }
+    }
+  ],
+  "active": [
+    {
+      "lease": {
+        "id": 62,
+        "holder": {
+          "session": "b81d44f0-5a3e-4d2b-9c61-0e7f2a9d3c15",
+          "pid": 4388,
+          "pid_start_time": 1792820000
+        },
+        "kind": "normal",
+        "state": "active",
+        "class": "gpu_heavy",
+        "profile": {
+          "cores": 2.0,
+          "ram_mb": 4096,
+          "gpu_pct": 60.0,
+          "vram_mb": 2048,
+          "est_secs": 1800
+        },
+        "label": "python train.py --epochs 40",
+        "cwd": "/home/mehran/work/ml-trainer",
+        "requested_at_ms": 1792824118500,
+        "granted_at_ms": 1792824120000,
+        "ended_at_ms": null,
+        "expires_at_ms": 1792824765000,
+        "isolation": {
+          "kind": "tree",
+          "scope": null,
+          "limits": {
+            "cpu_cores": null,
+            "memory_high_mb": null,
+            "memory_max_mb": null
+          }
+        }
+      },
+      "process": {
+        "pid": 4502,
+        "name": "python3",
+        "exe": "/usr/bin/python3.13",
+        "bound": true
+      },
+      "quiet_at_start": null
+    },
+    {
+      "lease": {
+        "id": 61,
+        "holder": {
+          "session": "3f2a9c1e-77b0-4f6e-a2d8-5c9e1b4f7a02",
+          "pid": 4120,
+          "pid_start_time": 1792820000
+        },
+        "kind": "normal",
+        "state": "active",
+        "class": "cpu_heavy",
+        "profile": {
+          "cores": 8.0,
+          "ram_mb": 4096,
+          "gpu_pct": 0.0,
+          "vram_mb": 0,
+          "est_secs": 300
+        },
+        "label": "cargo build --release",
+        "cwd": "/home/mehran/work/app",
+        "requested_at_ms": 1792824670500,
+        "granted_at_ms": 1792824672000,
+        "ended_at_ms": null,
+        "expires_at_ms": 1792824765000,
+        "isolation": {
+          "kind": "cgroup",
+          "scope": "allot-lease-61.scope",
+          "limits": {
+            "cpu_cores": 8.0,
+            "memory_high_mb": 4096,
+            "memory_max_mb": null
+          }
+        }
+      },
+      "process": {
+        "pid": 4131,
+        "name": "rustc",
+        "exe": "/home/mehran/.rustup/toolchains/stable/bin/rustc",
+        "bound": true
+      },
+      "quiet_at_start": null
+    }
+  ],
+  "queue": [
+    {
+      "lease": {
+        "id": 63,
+        "holder": {
+          "session": "3f2a9c1e-77b0-4f6e-a2d8-5c9e1b4f7a02",
+          "pid": 4120,
+          "pid_start_time": 1792820000
+        },
+        "kind": "normal",
+        "state": "queued",
+        "class": "cpu_heavy",
+        "profile": {
+          "cores": 8.0,
+          "ram_mb": 4096,
+          "gpu_pct": 0.0,
+          "vram_mb": 0,
+          "est_secs": 300
+        },
+        "label": "cargo test --workspace",
+        "cwd": "/home/mehran/work/app",
+        "requested_at_ms": 1792824708000,
+        "granted_at_ms": null,
+        "ended_at_ms": null,
+        "expires_at_ms": 1792824765000
+      },
+      "position": 1,
+      "verdict": {
+        "fits": false,
+        "reasons": [
+          "cores: 8.0 requested, 3.6 free"
+        ],
+        "wait_estimate_secs": 252
+      }
+    }
+  ],
+  "meters": {
+    "headroom_pct": 15.0,
+    "cpu": {
+      "logical_cores": 16,
+      "usage_pct": 71.5,
+      "history_pct": [
+        48.5,
+        52.0,
+        61.25,
+        64.0,
+        58.75,
+        63.5,
+        71.5
+      ],
+      "reserved_cores": 10.0
+    },
+    "ram": {
+      "total_mb": 32768,
+      "used_mb": 22938,
+      "reserved_mb": 8192
+    },
+    "gpus": [
+      {
+        "name": "NVIDIA GeForce GTX 970",
+        "busiest_pct": 57.0,
+        "vram_used_mb": 2304,
+        "vram_total_mb": 4096,
+        "reserved_pct": 60.0,
+        "reserved_vram_mb": 2048
+      }
+    ],
+    "drives": [
+      {
+        "name": "/",
+        "total_mb": 102400,
+        "used_mb": 61440,
+        "read_bytes_per_sec": 12582912,
+        "write_bytes_per_sec": 33554432
+      },
+      {
+        "name": "/home",
+        "total_mb": 819200,
+        "used_mb": 409600,
+        "read_bytes_per_sec": 0,
+        "write_bytes_per_sec": 4194304
+      }
+    ]
+  },
+  "recent": [],
+  "notices": [],
+  "ended": []
+}

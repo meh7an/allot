@@ -139,6 +139,50 @@ public sealed class ContractFixtureTests
     }
 
     [TestMethod]
+    public void WindowsFixtureLeavesTheCrossPlatformFieldsAtTheirDefaults()
+    {
+        var state = DecodeFixture("busy");
+
+        Assert.IsNull(state.Active[0].Lease.Isolation);
+        Assert.IsFalse(state.Meters.Gpus[0].UnifiedMemory);
+        Assert.AreEqual(Accuracy.Exact, state.Meters.Gpus[0].ProcessLoad);
+    }
+
+    [TestMethod]
+    public void LinuxFixtureKeepsIsolationAndMountPoints()
+    {
+        var state = DecodeFixture("linux");
+
+        var tree = state.Active[0].Lease.Isolation;
+        Assert.IsNotNull(tree);
+        Assert.AreEqual(IsolationKind.Tree, tree.Kind);
+        Assert.IsNull(tree.Scope);
+        Assert.IsNull(tree.Limits.CpuCores);
+        var cgroup = state.Active[1].Lease.Isolation;
+        Assert.IsNotNull(cgroup);
+        Assert.AreEqual(IsolationKind.Cgroup, cgroup.Kind);
+        Assert.AreEqual("allot-lease-61.scope", cgroup.Scope);
+        Assert.AreEqual(8.0f, cgroup.Limits.CpuCores);
+        Assert.AreEqual(4096UL, cgroup.Limits.MemoryHighMb);
+        Assert.IsNull(cgroup.Limits.MemoryMaxMb);
+        Assert.IsNull(state.Queue[0].Lease.Isolation);
+        Assert.AreEqual("/home", state.Meters.Drives[1].Name);
+    }
+
+    [TestMethod]
+    public void MacosFixtureSharesMemoryAndEstimatesGpuLoad()
+    {
+        var state = DecodeFixture("macos");
+
+        var gpu = state.Meters.Gpus[0];
+        Assert.IsTrue(gpu.UnifiedMemory);
+        Assert.AreEqual(Accuracy.Estimated, gpu.ProcessLoad);
+        Assert.IsNull(gpu.VramTotalMb);
+        Assert.AreEqual(8_192UL, gpu.ReservedVramMb);
+        Assert.AreEqual(IsolationKind.Tree, state.Active[0].Lease.Isolation?.Kind);
+    }
+
+    [TestMethod]
     public void MissingLeaseCwdDecodesAsEmpty()
     {
         var root = FixtureNode("busy");

@@ -10,6 +10,7 @@
 
 use allot_shared::{
     api::JobSummary,
+    platform::{PATH_STYLE, PathStyle},
     types::{EndCause, JobProfile, JobRun},
 };
 
@@ -44,13 +45,17 @@ pub struct Estimate {
 ///
 /// The command is the first heavy part of `label` as the classifier sees it, so redirects,
 /// pipes into `tail`, and a leading `cd` do not change it. A label with no heavy part is
-/// used whole. Words are joined by single spaces and the program is lowercased; paths compare
-/// case-insensitively, as Windows does.
+/// used whole. Words are joined by single spaces and the program is lowercased on every OS;
+/// the directory is spelled and compared as the OS does it ([`PATH_STYLE`]).
 pub fn fingerprint(classifier: &Classifier, label: &str, cwd: &str) -> String {
+    fingerprint_in(PATH_STYLE, classifier, label, cwd)
+}
+
+fn fingerprint_in(style: PathStyle, classifier: &Classifier, label: &str, cwd: &str) -> String {
     format!(
         "{}|{}",
         normalize_command(classifier, label),
-        normalize_cwd(cwd)
+        normalize_cwd(style, cwd)
     )
 }
 
@@ -102,10 +107,31 @@ fn redirect(word: &str) -> Option<Redirect> {
     }
 }
 
+/// The directory as `style` compares it, without a trailing separator.
+fn normalize_cwd(style: PathStyle, cwd: &str) -> String {
+    let cwd = cwd.trim();
+    match style {
+        PathStyle::Windows => normalize_windows_cwd(cwd),
+        PathStyle::Macos | PathStyle::Linux => {
+            let trimmed = cwd.trim_end_matches('/');
+            let path = if trimmed.is_empty() && cwd.starts_with('/') {
+                "/"
+            } else {
+                trimmed
+            };
+            if style.ignores_case() {
+                path.to_lowercase()
+            } else {
+                path.to_owned()
+            }
+        }
+    }
+}
+
 /// Lowercase with backslashes and no trailing separator; Git Bash paths such as `/e/work`
 /// become `e:\work`.
-fn normalize_cwd(cwd: &str) -> String {
-    let mut path = cwd.trim().replace('/', "\\").to_lowercase();
+fn normalize_windows_cwd(cwd: &str) -> String {
+    let mut path = cwd.replace('/', "\\").to_lowercase();
     let bytes = path.as_bytes();
     let msys_drive = bytes.first() == Some(&b'\\')
         && bytes.get(1).is_some_and(u8::is_ascii_alphabetic)
@@ -316,6 +342,7 @@ mod tests {
             ram_mb: 27_000.0,
             gpu_pct: Some(85.0),
             vram_mb: Some(9_000.0),
+            unified_memory: false,
         }
     }
 
@@ -352,7 +379,7 @@ mod tests {
     #[test]
     fn test_fingerprint_ignores_wrappers_redirects_and_path_spelling() {
         let classifier = classifier();
-        let plain = fingerprint(&classifier, "cargo build -p allotd", r"E:\Work\App");
+        let plain = windows_fingerprint(&classifier, "cargo build -p allotd", r"E:\Work\App");
         assert_eq!(plain, r"cargo build -p allotd|e:\work\app");
         for (label, cwd) in [
             (
@@ -368,7 +395,7 @@ mod tests {
             ("cargo build -p allotd *>&1", r"e:\work\app"),
         ] {
             assert_eq!(
-                fingerprint(&classifier, label, cwd),
+                windows_fingerprint(&classifier, label, cwd),
                 plain,
                 "{label} in {cwd}"
             );
@@ -378,23 +405,69 @@ mod tests {
     #[test]
     fn test_fingerprint_keeps_arguments_and_directories_apart() {
         let classifier = classifier();
-        let base = fingerprint(&classifier, "cargo build", r"E:\app");
+        let base = windows_fingerprint(&classifier, "cargo build", r"E:\app");
         assert_ne!(
-            fingerprint(&classifier, "cargo build --release", r"E:\app"),
+            windows_fingerprint(&classifier, "cargo build --release", r"E:\app"),
             base
         );
-        assert_ne!(fingerprint(&classifier, "cargo build", r"E:\other"), base);
-        assert_eq!(fingerprint(&classifier, "  ", ""), "|");
+        assert_ne!(
+            windows_fingerprint(&classifier, "cargo build", r"E:\other"),
+            base
+        );
+        assert_eq!(windows_fingerprint(&classifier, "  ", ""), "|");
     }
 
     #[test]
     fn test_fingerprint_of_a_light_label_uses_the_whole_label() {
         let classifier = classifier();
         assert_eq!(
-            fingerprint(&classifier, "Render   scene 4", r"C:\"),
+            windows_fingerprint(&classifier, "Render   scene 4", r"C:\"),
             r"render scene 4|c:\"
         );
-        assert_eq!(fingerprint(&classifier, "x", "/c"), r"x|c:\");
+        assert_eq!(windows_fingerprint(&classifier, "x", "/c"), r"x|c:\");
+    }
+
+    fn windows_fingerprint(classifier: &Classifier, label: &str, cwd: &str) -> String {
+        fingerprint_in(PathStyle::Windows, classifier, label, cwd)
+    }
+
+    #[test]
+    fn test_fingerprint_uses_the_path_style_of_this_os() {
+        let classifier = classifier();
+        assert_eq!(
+            fingerprint(&classifier, "cargo build", "/Work/App"),
+            fingerprint_in(PATH_STYLE, &classifier, "cargo build", "/Work/App")
+        );
+    }
+
+    #[test]
+    fn test_normalize_cwd_per_path_style_table() {
+        let cases = [
+            (PathStyle::Windows, r"E:\Work\App\", r"e:\work\app"),
+            (PathStyle::Windows, "/e/Work/App", r"e:\work\app"),
+            (PathStyle::Windows, "C:/", r"c:\"),
+            (PathStyle::Macos, "/Users/Mehran/App/", "/users/mehran/app"),
+            (PathStyle::Macos, " /Users/Mehran/App ", "/users/mehran/app"),
+            (PathStyle::Macos, "//", "/"),
+            (PathStyle::Linux, "/home/Mehran/App/", "/home/Mehran/App"),
+            (PathStyle::Linux, "/home/mehran/app", "/home/mehran/app"),
+            (PathStyle::Linux, r"/srv/a\b", r"/srv/a\b"),
+            (PathStyle::Linux, "/", "/"),
+            (PathStyle::Linux, "", ""),
+        ];
+        for (style, cwd, expected) in cases {
+            assert_eq!(normalize_cwd(style, cwd), expected, "{style:?} {cwd:?}");
+        }
+    }
+
+    #[test]
+    fn test_fingerprint_on_linux_keeps_directories_that_differ_in_case_apart() {
+        let classifier = classifier();
+        let linux = |cwd| fingerprint_in(PathStyle::Linux, &classifier, "Cargo build", cwd);
+        assert_eq!(linux("/home/me/App/"), "cargo build|/home/me/App");
+        assert_ne!(linux("/home/me/App"), linux("/home/me/app"));
+        let macos = |cwd| fingerprint_in(PathStyle::Macos, &classifier, "cargo build", cwd);
+        assert_eq!(macos("/Users/me/App"), macos("/users/me/app/"));
     }
 
     #[test]
