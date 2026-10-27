@@ -12,6 +12,9 @@ use anyhow::Context;
 
 use crate::sample;
 
+#[cfg(unix)]
+mod unix;
+
 const ENV_VALUE_PREFIXES: [&str; 3] = ["CLAUDE", "ANTHROPIC", "MCP"];
 const SECRET_MARKERS: [&str; 5] = ["TOKEN", "KEY", "SECRET", "PASSWORD", "AUTH"];
 
@@ -96,6 +99,8 @@ fn build_report(args: &ProbeArgs) -> anyhow::Result<String> {
             node.exe.as_deref().unwrap_or("-"),
         )?;
     }
+    #[cfg(unix)]
+    unix::write_details(&mut report, &chain)?;
 
     let mut vars: Vec<(String, String)> = env::vars_os()
         .map(|(name, value)| {

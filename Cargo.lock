@@ -12,6 +12,7 @@ dependencies = [
  "allot-shared",
  "anyhow",
  "clap",
+ "libc",
  "serde",
  "serde_json",
 ]
