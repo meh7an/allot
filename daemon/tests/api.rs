@@ -205,6 +205,26 @@ impl Daemon {
         request.send().await.unwrap()
     }
 
+    /// Waits until `count` samples taken after `after_ms` have reached the daemon, so a test
+    /// does not depend on how quickly a loaded CI runner schedules the sampling loop.
+    async fn wait_for_samples_after(&self, after_ms: i64, count: usize) {
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        let mut seen = Vec::new();
+        while seen.len() < count {
+            let snapshot: Value = self.get("/snapshot").await.json().await.unwrap();
+            let taken = snapshot["taken_at_ms"].as_i64().unwrap();
+            if taken > after_ms && !seen.contains(&taken) {
+                seen.push(taken);
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "only {} sample(s) after {after_ms} within 10 s",
+                seen.len()
+            );
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    }
+
     fn post(&self, path: &str) -> RequestBuilder {
         self.client.post(self.url(path)).bearer_auth(TOKEN)
     }
@@ -927,7 +947,11 @@ async fn test_benchmark_on_a_busy_machine_is_granted_without_quiet() {
     let response = daemon.wait(queued.lease.id, "alice", 10).await;
     let resumed: AcquireResponse = response.json().await.unwrap();
     assert_eq!(resumed.lease.state, LeaseState::Active);
-    tokio::time::sleep(Duration::from_millis(100)).await;
+    let granted_at = resumed
+        .lease
+        .granted_at_ms
+        .expect("an active lease has a grant time");
+    daemon.wait_for_samples_after(granted_at, 2).await;
 
     let released = daemon.release_response(queued.lease.id, "alice").await;
     assert!(!released.noise.expect("a noise report").quiet_at_start);
