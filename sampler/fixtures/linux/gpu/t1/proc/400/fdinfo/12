@@ -1,0 +1,3 @@
+drm-driver:	amdgpu
+drm-pdev:	0000:03:00.0
+drm-engine-gfx:	160000000 ns

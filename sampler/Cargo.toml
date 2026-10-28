@@ -22,3 +22,6 @@ windows = { version = "0.62.2", features = ["Win32_Foundation", "Win32_System_Pe
 
 [target."cfg(unix)".dependencies]
 libc = "0.2.191"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+nvml-wrapper = "0.13.0"

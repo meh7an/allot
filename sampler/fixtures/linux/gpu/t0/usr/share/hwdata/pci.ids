@@ -1,0 +1,23 @@
+#
+#	List of PCI ID's (excerpt for tests)
+#
+# Syntax:
+# vendor  vendor_name
+#	device  device_name				<-- single tab
+#		subvendor subdevice  subsystem_name	<-- two tabs
+
+1002  Advanced Micro Devices, Inc. [AMD/ATI]
+	73df  Navi 22 [Radeon RX 6700/6700 XT/6750 XT / 6800M/6850M XT]
+	73ff  Navi 23 [Radeon RX 6600/6600 XT/6600M]
+		1da2 e445  Sapphire Pulse Radeon RX 6600
+10de  NVIDIA Corporation
+	13c2  GM204 [GeForce GTX 970]
+13b5  ARM
+	0001  Mali Example
+8086  Intel Corporation
+	46a6  Alder Lake-P GT2 [Iris Xe Graphics]
+
+# List of known device classes, subclasses and programming interfaces
+
+C 00  Unclassified device
+	00  Non-VGA unclassified device

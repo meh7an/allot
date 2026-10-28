@@ -5,12 +5,15 @@ use std::{
     time::{Duration, Instant},
 };
 
-use allot_core::sampler::{Sampler, SnapshotBuilder};
+use allot_core::sampler::{RawProcess, Sampler, SnapshotBuilder};
 use allot_sampler::{SystemSampler, current_ancestry};
 use allot_shared::{
     platform::SESSION_ROOTS,
     types::{Holder, ResourceUsage, SessionKey, Snapshot},
 };
+
+/// Processes listed per sample with their GPU use.
+const GPU_PROCESSES_SHOWN: usize = 5;
 
 /// Prints one sample per second for `secs` seconds, then the sampler's own CPU cost.
 ///
@@ -42,13 +45,14 @@ pub fn run(secs: u64) -> anyhow::Result<()> {
             .iter()
             .find(|process| process.pid == own_pid)
             .map_or(0.0, |process| process.usage.cores);
+        let gpu_processes = format_gpu_processes(&raw.processes);
         let snapshot = builder.build(raw, &sessions);
         if tick == 1 {
             for (index, gpu) in snapshot.gpus.iter().enumerate() {
                 println!("gpu{index}: {} (luid {})", gpu.name, gpu.luid);
             }
         }
-        print!("{}", format_snapshot(tick, &snapshot));
+        print!("{}{gpu_processes}", format_snapshot(tick, &snapshot));
         logical_cores = snapshot.cpu.logical_cores.max(1);
     }
 
@@ -113,6 +117,31 @@ fn format_snapshot(tick: u64, snapshot: &Snapshot) -> String {
         format_usage(&snapshot.unattributed)
     ));
     text
+}
+
+/// The processes using the GPU most, busiest first, for checking per-process GPU figures
+/// against the vendor's tools.
+fn format_gpu_processes(processes: &[RawProcess]) -> String {
+    let mut using: Vec<&RawProcess> = processes
+        .iter()
+        .filter(|process| process.usage.gpu_pct > 0.0 || process.usage.vram_mb > 0)
+        .collect();
+    using.sort_by(|a, b| {
+        b.usage
+            .gpu_pct
+            .total_cmp(&a.usage.gpu_pct)
+            .then(b.usage.vram_mb.cmp(&a.usage.vram_mb))
+    });
+    using
+        .into_iter()
+        .take(GPU_PROCESSES_SHOWN)
+        .map(|process| {
+            format!(
+                "     pid {:>7} {:<16} gpu {:3.0}%  vram {} MB\n",
+                process.pid, process.name, process.usage.gpu_pct, process.usage.vram_mb
+            )
+        })
+        .collect()
 }
 
 fn format_usage(usage: &ResourceUsage) -> String {

@@ -1,6 +1,7 @@
 //! Linux implementation of [`allot_core::sampler::Sampler`]: sysinfo for CPU, processes,
 //! and exe paths; `/proc/meminfo` for memory; the mount table, statvfs, and
-//! `/proc/diskstats` for drives; `/proc/pressure` for stall information. The parsers read
+//! `/proc/diskstats` for drives; NVML, DRM fdinfo, and sysfs for GPUs; `/proc/pressure` for
+//! stall information. The parsers read
 //! below a root path, normally `/`, so fixtures in `fixtures/linux` stand in for a machine.
 
 // Off Linux only the fixture tests use the parsers, and the live sampler is not built.
@@ -8,6 +9,7 @@
 
 mod diskstats;
 mod drives;
+mod gpu;
 mod meminfo;
 mod mounts;
 mod pressure;

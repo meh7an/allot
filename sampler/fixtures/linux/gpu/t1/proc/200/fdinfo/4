@@ -1,0 +1,11 @@
+drm-driver:	i915
+drm-pdev:	0000:00:02.0
+drm-client-id:	7
+drm-client-name:	vaapi-encode
+drm-total-system0:	65536 KiB
+drm-resident-system0:	65536 KiB
+drm-engine-render:	1300000000 ns
+drm-engine-copy:	0 ns
+drm-engine-video:	1500000000 ns
+drm-engine-capacity-video:	2
+drm-engine-video-enhance:	0 ns

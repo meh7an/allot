@@ -12,7 +12,12 @@ use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System, UpdateKind};
 
 use crate::{
     cpu::{CpuTimes, ProcessTime},
-    linux::{drives::Drives, meminfo::MemInfo, pressure::Pressure},
+    linux::{
+        drives::Drives,
+        gpu::{GpuReading, Gpus},
+        meminfo::MemInfo,
+        pressure::Pressure,
+    },
 };
 
 const BYTES_PER_MB: u64 = 1024 * 1024;
@@ -32,13 +37,17 @@ pub struct SystemSampler {
     /// Logical cores per PID since the previous refresh.
     process_cores: HashMap<u32, f32>,
     drives: Drives,
+    gpus: Gpus,
+    /// GPU use as of the last refresh.
+    gpu: GpuReading,
 }
 
 impl SystemSampler {
     /// Takes a first reading, so the next [`Sampler::sample`] has a baseline for its rates.
     ///
     /// Drives are best effort: without the mount table or `/proc/diskstats` samples list
-    /// fewer drives or read them as idle.
+    /// fewer drives or read them as idle. GPUs are too: without NVML or a DRM driver that
+    /// publishes fdinfo statistics, samples list no adapters.
     ///
     /// # Errors
     ///
@@ -49,6 +58,8 @@ impl SystemSampler {
             cpu_times: CpuTimes::default(),
             process_cores: HashMap::new(),
             drives: Drives::new(Path::new(ROOT)),
+            gpus: Gpus::new(Path::new(ROOT)),
+            gpu: GpuReading::default(),
         };
         sampler.refresh();
         Ok(sampler)
@@ -86,6 +97,7 @@ impl SystemSampler {
         let logical_cores = self.system.cpus().len().max(1) as f32;
         self.process_cores = self.cpu_times.update(now, &times, logical_cores);
         self.drives.refresh(now);
+        self.gpu = self.gpus.read(now);
     }
 }
 
@@ -94,12 +106,14 @@ impl Sampler for SystemSampler {
         self.refresh();
         let memory = MemInfo::read(Path::new(ROOT))
             .map_err(|error| Error::Sampler(format!("reading /proc/meminfo: {error}")))?;
+        let gpu = std::mem::take(&mut self.gpu);
         let processes = self
             .system
             .processes()
             .values()
             .map(|process| {
                 let pid = process.pid().as_u32();
+                let process_gpu = gpu.processes.get(&pid).copied().unwrap_or_default();
                 RawProcess {
                     pid,
                     parent_pid: process.parent().map(Pid::as_u32),
@@ -109,7 +123,8 @@ impl Sampler for SystemSampler {
                     usage: ResourceUsage {
                         cores: self.process_cores.get(&pid).copied().unwrap_or_default(),
                         ram_mb: process.memory() / BYTES_PER_MB,
-                        ..ResourceUsage::default()
+                        gpu_pct: process_gpu.gpu_pct,
+                        vram_mb: process_gpu.vram_mb,
                     },
                 }
             })
@@ -129,7 +144,7 @@ impl Sampler for SystemSampler {
                 .collect(),
             memory: memory.mem_stats(),
             processes,
-            gpus: Vec::new(),
+            gpus: gpu.adapters,
             drives: self.drives.read(),
         })
     }
@@ -138,6 +153,8 @@ impl Sampler for SystemSampler {
 #[cfg(test)]
 mod tests {
     use std::{fs, io::Write, process, thread, time::Duration};
+
+    use allot_shared::types::GpuSource;
 
     use super::*;
 
@@ -159,7 +176,27 @@ mod tests {
             raw.memory.total_mb - raw.memory.available_mb
         );
         assert!(raw.memory.commit_used_mb <= raw.memory.commit_limit_mb);
-        assert!(raw.gpus.is_empty());
+    }
+
+    #[test]
+    fn test_system_sampler_lists_the_nvidia_gpu_when_its_driver_is_loaded() {
+        let mut sampler = SystemSampler::new().unwrap();
+        let raw = sampler.sample().unwrap();
+        let nvidia: Vec<_> = raw
+            .gpus
+            .iter()
+            .filter(|gpu| gpu.source == GpuSource::Nvml)
+            .collect();
+        // CI runners have no GPU; a machine with the driver loaded must list its devices.
+        let driver_loaded = Path::new("/proc/driver/nvidia/version").exists();
+        assert_eq!(!nvidia.is_empty(), driver_loaded, "{:?}", raw.gpus);
+        for gpu in &raw.gpus {
+            assert!(gpu.engines.busiest() <= 100.0, "{gpu:?}");
+            assert!(
+                gpu.dedicated_total_mb
+                    .is_none_or(|total| gpu.dedicated_used_mb <= total)
+            );
+        }
     }
 
     #[test]

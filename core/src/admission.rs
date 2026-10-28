@@ -6,7 +6,7 @@
 
 use std::collections::HashSet;
 
-use allot_shared::types::{GpuAdapter, JobProfile, Lease, ResourceUsage, Snapshot};
+use allot_shared::types::{Accuracy, GpuAdapter, JobProfile, Lease, ResourceUsage, Snapshot};
 
 // Tolerance for float sums of reservations, so 8.0 cores fit in 8.0 cores of room.
 const EPSILON: f64 = 1e-6;
@@ -56,8 +56,21 @@ impl Room {
             unified_memory: false,
         };
         if let Some(gpu) = primary_adapter(&snapshot.gpus) {
+            // Where the source cannot measure processes exactly, the leased sessions' own GPU
+            // use is not known, so each active lease is taken to use what it reserved.
+            let reserved = |pick: fn(&JobProfile) -> f64| -> f64 {
+                active.iter().map(|lease| pick(&lease.profile)).sum()
+            };
+            let leased_gpu_pct = match gpu.process_load {
+                Accuracy::Exact => f64::from(leased.gpu_pct),
+                _ => reserved(|profile| f64::from(profile.gpu_pct)),
+            };
+            let leased_vram_mb = match gpu.process_memory {
+                Accuracy::Exact => leased.vram_mb as f64,
+                _ => reserved(|profile| profile.vram_mb as f64),
+            };
             let busiest = f64::from(gpu.engines.busiest(|load| load.avg_10s));
-            room.gpu_pct = Some(100.0 * keep - background(busiest, f64::from(leased.gpu_pct)));
+            room.gpu_pct = Some(100.0 * keep - background(busiest, leased_gpu_pct));
             // RAM use already counts the video memory of a unified adapter.
             room.unified_memory = gpu.unified_memory;
             room.vram_mb = gpu
@@ -65,7 +78,7 @@ impl Room {
                 .filter(|_| !gpu.unified_memory)
                 .map(|total_mb| {
                     total_mb as f64 * keep
-                        - background(gpu.dedicated_used_mb as f64, leased.vram_mb as f64)
+                        - background(gpu.dedicated_used_mb as f64, leased_vram_mb)
                 });
         }
         for lease in active {
@@ -393,6 +406,33 @@ mod tests {
         let discrete = Room::measure(&snapshot(0.0, 0, Some(gpu(0.0, 0, Some(8_192)))), &[], 10.0);
         assert!(!discrete.unified_memory);
         assert!(discrete.vram_mb.is_some());
+    }
+
+    #[test]
+    fn test_room_without_exact_process_figures_counts_a_gpu_lease_once() {
+        // A leased job uses 60% and 3000 MB; the source cannot say which process does.
+        let unmeasured = GpuAdapter {
+            process_load: Accuracy::Unavailable,
+            process_memory: Accuracy::Unavailable,
+            ..gpu(60.0, 3_000, Some(8_000))
+        };
+        let lease = active_lease(1, "a", gpu_profile(50.0, 2_000));
+        let room = Room::measure(&snapshot(0.0, 0, Some(unmeasured)), &[&lease], 10.0);
+        // 90% usable, 10% of the load beyond the reservation, 50% reserved.
+        assert!((room.gpu_pct.unwrap() - 30.0).abs() < 1e-9, "{room:?}");
+        // 7200 MB usable, 1000 MB beyond the reservation, 2000 MB reserved.
+        assert!((room.vram_mb.unwrap() - 4_200.0).abs() < 1e-9, "{room:?}");
+
+        // With exact figures the same load comes from an unleased process: background.
+        let measured = Room::measure(
+            &snapshot(0.0, 0, Some(gpu(60.0, 3_000, Some(8_000)))),
+            &[&lease],
+            10.0,
+        );
+        assert!(
+            (measured.gpu_pct.unwrap() + 20.0).abs() < 1e-9,
+            "{measured:?}"
+        );
     }
 
     #[test]
