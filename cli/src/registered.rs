@@ -2,14 +2,6 @@
 //! `~/.claude.json` and the hooks in `~/.claude/settings.json`. Paths in those files are
 //! compared the way the OS compares them.
 
-#![cfg_attr(
-    not(windows),
-    allow(
-        dead_code,
-        reason = "only allot install reads these, and it is Windows-only for now"
-    )
-)]
-
 use std::path::Path;
 
 use allot_shared::platform::{PATH_STYLE, PathStyle};

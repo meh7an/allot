@@ -1,13 +1,19 @@
-//! The parts of the setup that live in Claude Code's and Windows' own configuration: the MCP
-//! server, the hooks, the CLAUDE.md rule, and the logon task. `allot install` sets them up and
-//! `allot uninstall` removes them again. A file is only written when something in it changes,
-//! after a copy of the old one is kept beside it.
+//! The parts of the setup that live in Claude Code's and the OS's own configuration: the MCP
+//! server, the hooks, the CLAUDE.md rule, and what starts allotd at login. `allot install` sets
+//! them up and `allot uninstall` removes them again. A file is only written when something in it
+//! changes, after a copy of the old one is kept beside it.
 
+mod autostart;
 mod claude_json;
 mod claude_md;
 mod json;
+#[cfg(target_os = "macos")]
+mod launchd;
 mod mcp;
 mod settings;
+#[cfg(target_os = "linux")]
+mod systemd;
+#[cfg(windows)]
 mod task;
 
 use std::{
@@ -23,15 +29,9 @@ use anyhow::Context;
 use serde_json::Value;
 
 use self::claude_md::Added;
-use crate::{
-    legacy,
-    registered::{
-        HOOKS, HookSpec, MCP_NAME, is_allot_hook, mcp_registered, missing_hooks, same_path,
-    },
-};
-
-/// The name of the scheduled task that starts allotd at logon.
-const TASK_NAME: &str = "allot";
+use crate::registered::{HOOKS, HookSpec, MCP_NAME, is_allot_hook, mcp_registered, missing_hooks};
+#[cfg(windows)]
+use crate::{legacy, registered::same_path};
 
 /// Whether a step is done, as far as allot can tell.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -147,14 +147,15 @@ fn allotd_exe(paths: &Paths) -> PathBuf {
 pub struct Setup {
     /// The MCP server, the hooks, and the CLAUDE.md rule.
     pub claude: bool,
-    /// The scheduled task that starts allotd at logon.
-    pub logon_task: bool,
+    /// What starts allotd at login: the scheduled task on Windows, the systemd user unit on
+    /// Linux, the LaunchAgent on macOS.
+    pub autostart: bool,
 }
 
-/// Registers the MCP server, adds the hooks and the CLAUDE.md import, and registers the logon
-/// task where missing, as `setup` asks, then prints every step with what is still left to do
-/// by hand.
-pub fn register(paths: &Paths, setup: Setup) {
+/// Registers the MCP server, adds the hooks and the CLAUDE.md import, and sets up allotd's
+/// autostart where missing, as `setup` asks, then prints every step with what is still left to
+/// do by hand. Returns whether the autostart is in place.
+pub fn register(paths: &Paths, setup: Setup) -> bool {
     let mut steps = Vec::new();
     if setup.claude {
         steps.extend([register_mcp(paths), add_hooks(paths), import_rule(paths)]);
@@ -162,11 +163,14 @@ pub fn register(paths: &Paths, setup: Setup) {
     let claude_changed = steps
         .iter()
         .any(|step| step.state == State::Done && step.note.is_some());
-    if setup.logon_task {
-        steps.push(register_task(paths));
+    let mut autostarted = false;
+    if setup.autostart {
+        let step = register_autostart(paths);
+        autostarted = step.state == State::Done;
+        steps.push(step);
     }
     if steps.is_empty() {
-        return;
+        return autostarted;
     }
     println!();
     println!("Setup; [todo] and [check] steps are yours to run:");
@@ -180,6 +184,7 @@ pub fn register(paths: &Paths, setup: Setup) {
              restart them. The hooks apply at once."
         );
     }
+    autostarted
 }
 
 fn register_mcp(paths: &Paths) -> Step {
@@ -373,30 +378,19 @@ fn import_rule(paths: &Paths) -> Step {
     }
 }
 
-/// Registers the logon task unless it already starts this install's allotd; one of the same name
-/// that starts another allotd, such as a development build, is replaced.
-fn register_task(paths: &Paths) -> Step {
-    let title = format!("allotd at logon, scheduled task \"{TASK_NAME}\"");
+/// Sets up what starts this install's allotd at login, unless it is in place already.
+fn register_autostart(paths: &Paths) -> Step {
+    let title = autostart::title(paths);
     let allotd = allotd_exe(paths);
-    let found = task::find(TASK_NAME);
-    if found.starts(&allotd) {
-        return Step::done(title);
-    }
-    let note = match &found {
-        task::Found::Runs(other) => format!("registered; it started {other} before"),
-        _ => "registered".to_owned(),
-    };
-    match task::register(&allotd, paths.root()) {
-        Ok(()) => Step::changed(title, note),
-        Err(error) => {
-            let mut manual = vec!["In PowerShell (no admin needed):".to_owned()];
-            manual.extend(
-                register_task_script(paths)
-                    .lines()
-                    .map(|line| format!("  {line}")),
-            );
-            Step::manual(State::Missing, title, Some(format!("{error:#}")), manual)
-        }
+    match autostart::set_up(paths, &allotd) {
+        Ok(None) => Step::done(title),
+        Ok(Some(note)) => Step::changed(title, note),
+        Err(error) => Step::manual(
+            State::Missing,
+            title,
+            Some(format!("{error:#}")),
+            autostart::manual_set_up(paths, &allotd),
+        ),
     }
 }
 
@@ -490,9 +484,10 @@ pub fn unregister(paths: &Paths) -> Vec<String> {
         manual.push(format!("Delete {} ({error})", rule.display()));
     }
 
-    // Only the task that starts this install's allotd; one for another allotd is not ours to remove.
-    if task::find(TASK_NAME).starts(&allotd_exe(paths)) {
-        delete_task(TASK_NAME, &mut done, &mut manual);
+    match autostart::remove(paths, &allotd_exe(paths)) {
+        Ok(Some(line)) => done.push(line),
+        Ok(None) => {}
+        Err(error) => manual.push(format!("{} ({error:#})", autostart::manual_remove(paths))),
     }
 
     for line in &done {
@@ -505,6 +500,7 @@ pub fn unregister(paths: &Paths) -> Vec<String> {
 /// where it runs the old binaries: the MCP server, the hooks, the CLAUDE.md import and its
 /// rule file, and the logon task. Prints what it removed and returns what is left to undo by
 /// hand, for [`print_manual_steps`].
+#[cfg(windows)]
 pub fn unregister_legacy(paths: &Paths) -> Vec<String> {
     let mut done = Vec::new();
     let mut manual = Vec::new();
@@ -576,17 +572,17 @@ pub fn unregister_legacy(paths: &Paths) -> Vec<String> {
     match removed {
         Ok(true) => done.push(format!(
             "removed the line @{} from {}",
-            legacy::RULE_FILE,
+            claude_md::OLD_FILE_NAME,
             path.display()
         )),
         Ok(false) => {}
         Err(error) => manual.push(format!(
             "Remove the line @{} from {} ({error:#})",
-            legacy::RULE_FILE,
+            claude_md::OLD_FILE_NAME,
             path.display()
         )),
     }
-    let rule = claude_dir(paths).join(legacy::RULE_FILE);
+    let rule = claude_dir(paths).join(claude_md::OLD_FILE_NAME);
     match fs::remove_file(&rule) {
         Ok(()) => done.push(format!("removed {}", rule.display())),
         Err(error) if error.kind() == io::ErrorKind::NotFound => {}
@@ -603,13 +599,11 @@ pub fn unregister_legacy(paths: &Paths) -> Vec<String> {
     manual
 }
 
+#[cfg(windows)]
 fn delete_task(name: &str, done: &mut Vec<String>, manual: &mut Vec<String>) {
     match task::delete(name) {
         Ok(()) => done.push(format!("removed the scheduled task \"{name}\"")),
-        Err(error) => manual.push(format!(
-            "In PowerShell: Unregister-ScheduledTask -TaskName '{name}' -Confirm:$false \
-             ({error:#})"
-        )),
+        Err(error) => manual.push(format!("{} ({error:#})", task::manual_delete(name))),
     }
 }
 
@@ -656,13 +650,19 @@ fn rewrite(path: &Path, old: Option<&str>, new: &str) -> anyhow::Result<Option<P
         }
         None => None,
     };
+    write_atomic(path, new)?;
+    Ok(backup)
+}
+
+/// Writes `contents` to `path` through a temporary file beside it, which then replaces the file
+/// at once: a reader never sees half of it, and a failed write leaves the old file whole.
+fn write_atomic(path: &Path, contents: &str) -> anyhow::Result<()> {
     if let Some(dir) = path.parent() {
         fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
     }
     let temporary = sibling(path, "allot-new");
-    fs::write(&temporary, new).with_context(|| format!("writing {}", temporary.display()))?;
-    fs::rename(&temporary, path).with_context(|| format!("replacing {}", path.display()))?;
-    Ok(backup)
+    fs::write(&temporary, contents).with_context(|| format!("writing {}", temporary.display()))?;
+    fs::rename(&temporary, path).with_context(|| format!("replacing {}", path.display()))
 }
 
 /// Writes `contents` to `path` unless it already holds them; returns whether it wrote.
@@ -689,23 +689,15 @@ fn backup_note(backup: Option<PathBuf>) -> String {
         .unwrap_or_default()
 }
 
-/// The hook command with forward slashes, the form Claude Code's settings examples use.
+/// The hook command: on Windows with forward slashes, the form Claude Code's settings examples
+/// use; elsewhere as it is, since `\` is a file name character there.
 fn hook_command(paths: &Paths) -> String {
-    allot_exe(paths).to_string_lossy().replace('\\', "/")
-}
-
-/// PowerShell that registers the logon task for the current user. Task Scheduler's defaults
-/// would stop allotd after 72 hours and refuse to start it on battery.
-fn register_task_script(paths: &Paths) -> String {
-    let exe = allotd_exe(paths).to_string_lossy().replace('\'', "''");
-    format!(
-        "$action = New-ScheduledTaskAction -Execute '{exe}'\n\
-         $trigger = New-ScheduledTaskTrigger -AtLogOn -User \"$env:USERDOMAIN\\$env:USERNAME\"\n\
-         $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) \
-         -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -MultipleInstances IgnoreNew\n\
-         Register-ScheduledTask -TaskName '{TASK_NAME}' -Action $action -Trigger $trigger \
-         -Settings $settings -Description 'Starts the allot daemon (allotd) at logon'"
-    )
+    let exe = allot_exe(paths).to_string_lossy().into_owned();
+    if cfg!(windows) {
+        exe.replace('\\', "/")
+    } else {
+        exe
+    }
 }
 
 #[cfg(test)]
@@ -719,6 +711,7 @@ mod tests {
         Paths::under(r"C:\Users\someone")
     }
 
+    #[cfg(windows)]
     #[test]
     fn test_mcp_registered_matches_path_without_case_or_separator() {
         let config = json!({
@@ -801,6 +794,7 @@ mod tests {
         ));
     }
 
+    #[cfg(windows)]
     #[test]
     fn test_hook_entry_uses_forward_slashes_and_exec_form() {
         let entry = entry(POST_TOOL);
@@ -834,12 +828,17 @@ mod tests {
         assert!(missing_hooks(Some("{"), &exe).is_err());
     }
 
+    #[cfg(unix)]
     #[test]
-    fn test_register_task_script_disables_the_time_limit_and_quotes_the_path() {
-        let script = register_task_script(&Paths::under(r"C:\Users\o'brien"));
-        assert!(script.contains(r"-Execute 'C:\Users\o''brien\.allot\bin\allotd.exe'"));
-        assert!(script.contains("-ExecutionTimeLimit ([TimeSpan]::Zero)"));
-        assert!(script.contains("-AtLogOn -User \"$env:USERDOMAIN\\$env:USERNAME\""));
-        assert_eq!(script.lines().count(), 4);
+    fn test_hook_command_on_unix_keeps_backslashes() {
+        let paths = Paths::under(r"/home/a\b");
+        assert_eq!(hook_command(&paths), r"/home/a\b/.allot/bin/allot");
+        let manual = manual_hooks(&paths, &HOOKS);
+        assert!(
+            manual
+                .iter()
+                .any(|line| line.contains(r#""/home/a\\b/.allot/bin/allot""#)),
+            "{manual:?}"
+        );
     }
 }

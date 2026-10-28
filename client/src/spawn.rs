@@ -10,8 +10,15 @@ use std::{
     process::{Command, Stdio},
     time::Duration,
 };
+#[cfg(target_os = "linux")]
+use std::{fs, path::Path};
 
 use allot_shared::platform::DAEMON_EXE;
+#[cfg(target_os = "linux")]
+use allot_shared::{
+    autostart::{CONFIG_HOME_VAR, SYSTEMD_UNIT, systemd_unit_exec, systemd_unit_file},
+    platform::HOME_VAR,
+};
 
 const DEFAULT_READY_TIMEOUT: Duration = Duration::from_secs(5);
 /// Set to `1` by Claude Code inside its Bash sandbox.
@@ -66,6 +73,10 @@ impl SpawnOptions {
             command.creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP);
             command.spawn().map(drop)
         }
+        #[cfg(target_os = "linux")]
+        if self.start_through_unit() {
+            return Ok(());
+        }
         #[cfg(unix)]
         {
             use std::os::unix::process::CommandExt;
@@ -95,6 +106,43 @@ impl SpawnOptions {
                 .map(drop)
         }
     }
+
+    /// Starts allotd through the systemd user unit `allot install` set up, when that unit
+    /// starts this `daemon_exe`. allotd then runs in the unit's own cgroup: a process forked
+    /// here would stay in the caller's, which may be a lease's scope that a kill ends. Returns
+    /// false when there is no such unit or `systemctl` failed, such as without a user manager.
+    #[cfg(target_os = "linux")]
+    fn start_through_unit(&self) -> bool {
+        let Some(home) = env::var_os(HOME_VAR).filter(|home| !home.is_empty()) else {
+            return false;
+        };
+        let unit = systemd_unit_file(Path::new(&home), env::var_os(CONFIG_HOME_VAR).as_deref());
+        let starts_this =
+            fs::read_to_string(unit).is_ok_and(|text| unit_starts(&text, &self.daemon_exe));
+        starts_this
+            && Command::new("systemctl")
+                .args(["--user", "start", SYSTEMD_UNIT])
+                .current_dir("/")
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status()
+                .is_ok_and(|status| status.success())
+    }
+}
+
+/// Whether the user unit `text` starts `daemon_exe`, compared as the files they name where
+/// both exist.
+#[cfg(target_os = "linux")]
+fn unit_starts(text: &str, daemon_exe: &Path) -> bool {
+    let Some(exec) = systemd_unit_exec(text) else {
+        return false;
+    };
+    let exec = Path::new(&exec);
+    match (fs::canonicalize(exec), fs::canonicalize(daemon_exe)) {
+        (Ok(exec), Ok(daemon_exe)) => exec == daemon_exe,
+        _ => exec == daemon_exe,
+    }
 }
 
 /// Whether this process runs inside Claude Code's sandbox, which has no network at all, so
@@ -117,5 +165,21 @@ mod tests {
         assert!(!sandbox_flag(Some(OsStr::new("0"))));
         assert!(!sandbox_flag(Some(OsStr::new(""))));
         assert!(!sandbox_flag(None));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn test_unit_starts_only_the_daemon_it_names() {
+        use allot_shared::autostart::systemd_unit;
+
+        let dir = tempfile::tempdir().unwrap();
+        let allotd = dir.path().join("allotd");
+        fs::write(&allotd, "").unwrap();
+        let unit = systemd_unit(&allotd);
+        assert!(unit_starts(&unit, &allotd));
+        assert!(unit_starts(&unit, &dir.path().join(".").join("allotd")));
+        assert!(!unit_starts(&unit, Path::new("/elsewhere/allotd")));
+        assert!(!unit_starts(&unit, Path::new("allotd")));
+        assert!(!unit_starts("[Service]\n", &allotd));
     }
 }

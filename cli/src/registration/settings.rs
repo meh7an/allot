@@ -110,10 +110,23 @@ mod tests {
 
     use super::*;
 
+    #[cfg(windows)]
     const COMMAND: &str = "C:/Users/someone/.allot/bin/allot.exe";
+    #[cfg(not(windows))]
+    const COMMAND: &str = "/home/someone/.allot/bin/allot";
+    /// The command as a hand-edited file may spell it, JSON-escaped: Windows ignores case and
+    /// separators.
+    #[cfg(windows)]
+    const SPELLED: &str = r"c:\\users\\someone\\.allot\\bin\\allot.exe";
+    #[cfg(not(windows))]
+    const SPELLED: &str = COMMAND;
 
     fn exe() -> PathBuf {
-        PathBuf::from(r"C:\Users\someone\.allot\bin\allot.exe")
+        if cfg!(windows) {
+            PathBuf::from(r"C:\Users\someone\.allot\bin\allot.exe")
+        } else {
+            PathBuf::from(COMMAND)
+        }
     }
 
     #[test]
@@ -176,8 +189,10 @@ mod tests {
         let settings = "{\r\n  \"hooks\": {\r\n    \"PreToolUse\": [\r\n      {\r\n        \
             \"matcher\": \"Bash|PowerShell\",\r\n        \"hooks\": [\r\n          \
             { \"command\": \"rtk hook\" },\r\n          \
-            { \"command\": \"c:\\\\users\\\\someone\\\\.allot\\\\bin\\\\allot.exe\", \
-            \"args\": [\"hook\", \"pre-tool\"] }\r\n        ]\r\n      }\r\n    ]\r\n  }\r\n}";
+            { \"command\": \"SPELLED\", \
+            \"args\": [\"hook\", \"pre-tool\"] }\r\n        ]\r\n      }\r\n    ]\r\n  }\r\n}"
+            .replace("SPELLED", SPELLED);
+        let settings = settings.as_str();
 
         let removed = remove_hooks(settings, &exe()).unwrap().unwrap();
 

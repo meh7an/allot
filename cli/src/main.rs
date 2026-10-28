@@ -1,18 +1,16 @@
 use std::{path::PathBuf, process::ExitCode};
 
-use clap::{Parser, Subcommand, ValueEnum};
+use clap::{Parser, Subcommand};
 
 mod classes;
 mod daemon;
 mod history;
 mod hook;
-#[cfg(windows)]
 mod install;
 #[cfg(windows)]
 mod legacy;
 mod probe;
 mod registered;
-#[cfg(windows)]
 mod registration;
 mod sample;
 mod status;
@@ -69,14 +67,29 @@ enum Command {
     /// Record this process's ancestry, environment, and optionally stdin to a file, or print
     /// live machine samples with `--sample`.
     Probe(probe::ProbeArgs),
+    /// Copy the built binaries into ~/.allot/bin and link allot into ~/.local/bin, restart
+    /// allotd on them when it runs, copy the resource-guard skill, register the MCP server,
+    /// hooks, and CLAUDE.md rule with Claude Code, set up the systemd user unit (Linux) or
+    /// LaunchAgent (macOS) that starts allotd at login, and print what is left.
+    #[cfg(not(windows))]
+    Install {
+        /// Directory holding the built allot, allotd, and allot-mcp (default: this
+        /// executable's directory, such as target/release).
+        #[arg(long, value_name = "DIR")]
+        from: Option<PathBuf>,
+        /// Leave Claude Code alone: no skill, MCP server, hooks, or CLAUDE.md rule.
+        #[arg(long)]
+        no_claude: bool,
+        /// Do not set up the systemd user unit (Linux) or LaunchAgent (macOS) that starts
+        /// allotd at login.
+        #[arg(long)]
+        no_autostart: bool,
+    },
     /// Copy the built binaries into %USERPROFILE%\.allot\bin, restart allotd on them
     /// when it runs, install and start the tray app, copy the resource-guard skill, register
     /// the MCP server, hooks, and CLAUDE.md rule with Claude Code, register the logon task,
     /// and print what is left.
-    #[cfg_attr(
-        not(windows),
-        allow(dead_code, reason = "installing is Windows-only for now")
-    )]
+    #[cfg(windows)]
     Install {
         /// Directory holding the built allot.exe, allotd.exe, and allot-mcp.exe (default: this
         /// executable's directory, such as target\release).
@@ -94,16 +107,22 @@ enum Command {
         #[arg(long)]
         no_claude: bool,
         /// Do not register the scheduled task that starts allotd at logon.
-        #[arg(long)]
+        #[arg(long, alias = "no-autostart")]
         no_logon_task: bool,
+    },
+    /// Stop allotd and remove its systemd user unit or LaunchAgent, the binaries, the link in
+    /// ~/.local/bin, and the skill copy, unregister them from Claude Code, and print what is
+    /// left. Keeps the database, token, config, and logs.
+    #[cfg(not(windows))]
+    Uninstall {
+        /// Also delete the database, token, config, and logs.
+        #[arg(long)]
+        purge: bool,
     },
     /// Quit and remove the tray app, stop allotd, remove the binaries and the skill copy,
     /// unregister them from Claude Code, and print what is left. Keeps the database, token,
     /// config, settings, and logs.
-    #[cfg_attr(
-        not(windows),
-        allow(dead_code, reason = "installing is Windows-only for now")
-    )]
+    #[cfg(windows)]
     Uninstall {
         /// Also delete the database, token, config, and logs.
         #[arg(long)]
@@ -126,7 +145,8 @@ enum HookEvent {
     PostTool,
 }
 
-#[derive(Debug, Clone, Copy, ValueEnum)]
+#[cfg(windows)]
+#[derive(Debug, Clone, Copy, clap::ValueEnum)]
 enum Switch {
     On,
     Off,
@@ -176,15 +196,22 @@ fn main() -> ExitCode {
             launch_at_logon: launch_at_logon.map(|state| matches!(state, Switch::On)),
             setup: registration::Setup {
                 claude: !no_claude,
-                logon_task: !no_logon_task,
+                autostart: !no_logon_task,
             },
         }),
-        #[cfg(windows)]
-        Command::Uninstall { purge } => install::uninstall(purge),
         #[cfg(not(windows))]
-        Command::Install { .. } | Command::Uninstall { .. } => Err(anyhow::anyhow!(
-            "installing is not supported on this OS yet"
-        )),
+        Command::Install {
+            from,
+            no_claude,
+            no_autostart,
+        } => install::install(install::Options {
+            from: from.as_deref(),
+            setup: registration::Setup {
+                claude: !no_claude,
+                autostart: !no_autostart,
+            },
+        }),
+        Command::Uninstall { purge } => install::uninstall(purge),
         Command::Probe(args) => probe::run(&args),
         Command::Hook { event } => match event {
             HookEvent::PreTool => return hook::pre_tool(),

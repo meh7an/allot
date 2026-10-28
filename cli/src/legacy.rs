@@ -28,8 +28,6 @@ const DIR: &str = ".resources-helper";
 pub const MCP_NAME: &str = "resources-helper";
 /// The old logon task.
 pub const TASK_NAME: &str = "resources-helper";
-/// The old rule file beside CLAUDE.md, which CLAUDE.md imported.
-pub const RULE_FILE: &str = "resources-helper.md";
 pub const CLI_EXE: &str = "rh.exe";
 pub const DAEMON_EXE: &str = "rhd.exe";
 pub const MCP_EXE: &str = "rh-mcp.exe";

@@ -8,25 +8,71 @@ use std::{
     process::{Command, Stdio},
 };
 
+use allot_shared::{
+    autostart::{xml_escape, xml_unescape},
+    paths::Paths,
+};
 use anyhow::{Context, bail};
 
-use super::{TASK_NAME, same_path};
+use super::autostart::Found;
 
-/// What `schtasks` knows about the task.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) enum Found {
-    Missing,
-    /// It exists and runs this command.
-    Runs(String),
-    /// `schtasks` could not be run or answered something else.
-    Unknown,
+/// The name of the scheduled task that starts allotd at logon.
+const TASK_NAME: &str = "allot";
+
+/// The setup report's title for the logon task.
+pub(super) fn title(_paths: &Paths) -> String {
+    format!("allotd at logon, scheduled task \"{TASK_NAME}\"")
 }
 
-impl Found {
-    /// Whether the task exists and starts `allotd`.
-    pub(super) fn starts(&self, allotd: &Path) -> bool {
-        matches!(self, Self::Runs(command) if same_path(command, allotd))
+/// Registers the logon task unless it already starts `allotd`; one of the same name that starts
+/// another allotd, such as a development build, is replaced. Returns what changed, `None` when
+/// nothing did.
+///
+/// # Errors
+///
+/// Fails when `schtasks` refuses.
+pub(super) fn set_up(paths: &Paths, allotd: &Path) -> anyhow::Result<Option<String>> {
+    let found = find(TASK_NAME);
+    if found.starts(allotd) {
+        return Ok(None);
     }
+    register(allotd, paths.root())?;
+    Ok(Some(found.replaced_note(allotd, "registered")))
+}
+
+/// How to register the logon task by hand.
+pub(super) fn manual_set_up(_paths: &Paths, allotd: &Path) -> Vec<String> {
+    let mut manual = vec!["In PowerShell (no admin needed):".to_owned()];
+    manual.extend(
+        register_script(allotd)
+            .lines()
+            .map(|line| format!("  {line}")),
+    );
+    manual
+}
+
+/// Deletes the logon task when it starts `allotd`; one for another allotd is not ours to
+/// remove. Returns what was removed.
+///
+/// # Errors
+///
+/// Fails when `schtasks` refuses.
+pub(super) fn remove(_paths: &Paths, allotd: &Path) -> anyhow::Result<Option<String>> {
+    if !find(TASK_NAME).starts(allotd) {
+        return Ok(None);
+    }
+    delete(TASK_NAME)?;
+    Ok(Some(format!("removed the scheduled task \"{TASK_NAME}\"")))
+}
+
+/// How to delete the logon task by hand.
+pub(super) fn manual_remove(_paths: &Paths) -> String {
+    manual_delete(TASK_NAME)
+}
+
+/// How to delete the task called `name` by hand.
+pub(super) fn manual_delete(name: &str) -> String {
+    format!("In PowerShell: Unregister-ScheduledTask -TaskName '{name}' -Confirm:$false")
 }
 
 /// What `schtasks` knows about the task called `name`.
@@ -109,8 +155,8 @@ fn schtasks(args: &[&str]) -> anyhow::Result<()> {
 /// The task: at `user`'s logon, start `allotd` with the user's own rights, with no time limit, on
 /// battery too, and not again while it runs.
 fn task_xml(allotd: &Path, user: &str) -> String {
-    let user = escape(user);
-    let allotd = escape(&allotd.to_string_lossy());
+    let user = xml_escape(user);
+    let allotd = xml_escape(&allotd.to_string_lossy());
     format!(
         r#"<?xml version="1.0" encoding="UTF-16"?>
 <Task version="1.3" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
@@ -151,26 +197,24 @@ fn command_of(xml: &str) -> Option<String> {
     let start = xml.find("<Command>")? + "<Command>".len();
     let end = start + xml[start..].find("</Command>")?;
     Some(
-        unescape(xml[start..end].trim())
+        xml_unescape(xml[start..end].trim())
             .trim_matches('"')
             .to_owned(),
     )
 }
 
-fn escape(text: &str) -> String {
-    text.replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
-        .replace('\'', "&apos;")
-}
-
-fn unescape(text: &str) -> String {
-    text.replace("&lt;", "<")
-        .replace("&gt;", ">")
-        .replace("&quot;", "\"")
-        .replace("&apos;", "'")
-        .replace("&amp;", "&")
+/// PowerShell that registers the logon task for the current user. Task Scheduler's defaults
+/// would stop allotd after 72 hours and refuse to start it on battery.
+fn register_script(allotd: &Path) -> String {
+    let exe = allotd.to_string_lossy().replace('\'', "''");
+    format!(
+        "$action = New-ScheduledTaskAction -Execute '{exe}'\n\
+         $trigger = New-ScheduledTaskTrigger -AtLogOn -User \"$env:USERDOMAIN\\$env:USERNAME\"\n\
+         $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) \
+         -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -MultipleInstances IgnoreNew\n\
+         Register-ScheduledTask -TaskName '{TASK_NAME}' -Action $action -Trigger $trigger \
+         -Settings $settings -Description 'Starts the allot daemon (allotd) at logon'"
+    )
 }
 
 #[cfg(test)]
@@ -190,6 +234,15 @@ mod tests {
             command_of(&xml).as_deref(),
             Some(r"C:\Users\A&B <x>\.allot\bin\allotd.exe")
         );
+    }
+
+    #[test]
+    fn test_register_script_disables_the_time_limit_and_quotes_the_path() {
+        let script = register_script(Path::new(r"C:\Users\o'brien\.allot\bin\allotd.exe"));
+        assert!(script.contains(r"-Execute 'C:\Users\o''brien\.allot\bin\allotd.exe'"));
+        assert!(script.contains("-ExecutionTimeLimit ([TimeSpan]::Zero)"));
+        assert!(script.contains("-AtLogOn -User \"$env:USERDOMAIN\\$env:USERNAME\""));
+        assert_eq!(script.lines().count(), 4);
     }
 
     #[test]

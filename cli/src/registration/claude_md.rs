@@ -3,12 +3,13 @@
 //! file; a copy of the rule pasted by hand before, or the import of the rule from before the
 //! rename to Allot, is replaced by the import.
 
-use crate::legacy;
-
 /// The section the imported file holds.
 pub(super) const RULE: &str = include_str!("../../../skill/claude-md-rule.md");
 /// The imported file's name, beside CLAUDE.md.
 pub(super) const FILE_NAME: &str = "allot.md";
+/// The rule file CLAUDE.md imported before the rename. Only Windows had installs then, but
+/// looking for its import is harmless anywhere.
+pub(super) const OLD_FILE_NAME: &str = "resources-helper.md";
 const IMPORT: &str = "@allot.md";
 /// The words every version of the rule starts with, current and from before the rename.
 const OPENINGS: [&str; 2] = [
@@ -127,12 +128,16 @@ pub(super) fn remove_import(claude_md: &str) -> Option<String> {
 }
 
 /// `claude_md` without the import from before the rename, or `None` when it has none.
+#[cfg_attr(
+    not(windows),
+    allow(dead_code, reason = "only Windows had installs from before the rename")
+)]
 pub(super) fn remove_old_import(claude_md: &str) -> Option<String> {
     remove_line(claude_md, &old_import())
 }
 
 fn old_import() -> String {
-    format!("@{}", legacy::RULE_FILE)
+    format!("@{OLD_FILE_NAME}")
 }
 
 fn position_of(lines: &[&str], import: &str) -> Option<usize> {
