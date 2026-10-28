@@ -1,4 +1,4 @@
-//! Pieces shared by the Linux and macOS backends.
+//! Pieces shared by the Linux and macOS backends: the tree kill.
 
 mod kill;
 

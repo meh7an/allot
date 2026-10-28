@@ -17,8 +17,8 @@ use allot_shared::{
     api::{BenchmarkProgress, Verdict},
     config::Config,
     types::{
-        EndCause, Holder, JobProfile, Lease, LeaseBinding, LeaseId, LeaseKind, LeaseState,
-        SessionKey, Snapshot,
+        EndCause, EnforcedLimits, Holder, IsolationKind, JobProfile, Lease, LeaseBinding, LeaseId,
+        LeaseIsolation, LeaseKind, LeaseState, SessionKey, Snapshot,
     },
 };
 
@@ -277,6 +277,15 @@ impl Ledger {
             return Err(LedgerError::NotActive(id));
         }
         lease.binding = Some(binding);
+        // Windows leaves it unset, which the wire reads as its process tree, so its output
+        // stays as it was before other OSes reported isolation.
+        if cfg!(unix) && lease.isolation.is_none() {
+            lease.isolation = Some(LeaseIsolation {
+                kind: IsolationKind::Tree,
+                scope: None,
+                limits: EnforcedLimits::default(),
+            });
+        }
         Ok(lease)
     }
 
@@ -1223,6 +1232,15 @@ mod tests {
             .bind(LeaseId(1), &session("s"), binding("second"))
             .unwrap();
         assert_eq!(bound.binding, Some(binding("second")));
+        let kind = bound.isolation.as_ref().map(|isolation| isolation.kind);
+        assert_eq!(kind, cfg!(unix).then_some(IsolationKind::Tree));
+        assert_eq!(
+            bound
+                .isolation
+                .as_ref()
+                .and_then(|isolation| isolation.scope.as_ref()),
+            None
+        );
         assert_eq!(
             ledger
                 .bind(LeaseId(1), &session("other"), binding("third"))

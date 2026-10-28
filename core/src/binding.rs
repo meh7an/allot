@@ -18,8 +18,13 @@ use crate::{ancestry::ProcessNode, process::ProcessTable};
 pub const REBIND_WINDOW_MS: i64 = 10_000;
 
 /// How much earlier than the report a child may appear to start: start times are whole
-/// seconds, rounded down.
-pub const START_TOLERANCE_MS: i64 = 1_000;
+/// seconds, rounded down. Linux adds them to the boot time, which it also rounds down to a
+/// second, so there they may read up to two seconds early.
+pub const START_TOLERANCE_MS: i64 = if cfg!(target_os = "linux") {
+    2_000
+} else {
+    1_000
+};
 
 /// Where a lease's command stands after looking at one process table.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -187,11 +192,14 @@ mod tests {
     }
 
     #[test]
-    fn test_resolve_allows_one_second_before_the_report() {
-        // 100 s rounds down from up to 100.999 s, so it may still follow a 100.5 s report.
-        let extra = [raw_process(20, Some(10), "cmd.exe", 100)];
-        assert_eq!(resolve_at(&extra, None, 101_000), bound(20, 100));
-        let extra = [raw_process(20, Some(10), "cmd.exe", 99)];
+    fn test_resolve_allows_the_start_tolerance_before_the_report() {
+        // With a one-second tolerance, 100 s may still follow a 100.5 s report.
+        let earliest = u64::try_from(REPORT_MS - START_TOLERANCE_MS)
+            .unwrap()
+            .div_ceil(1_000);
+        let extra = [raw_process(20, Some(10), "cmd.exe", earliest)];
+        assert_eq!(resolve_at(&extra, None, 101_000), bound(20, earliest));
+        let extra = [raw_process(20, Some(10), "cmd.exe", earliest - 1)];
         assert_eq!(resolve_at(&extra, None, 101_000), BindOutcome::Pending);
     }
 

@@ -2,10 +2,11 @@
 //! session or the coordinator.
 //!
 //! The plan is terminated top-down, root first: a shell killed after its child would run its
-//! next statement in between. A killed parent's children keep its PID as their parent PID, so
-//! later sweeps still find processes a dying parent started at the last moment.
+//! next statement in between. On Windows a killed parent's children keep its PID as their
+//! parent PID, so later sweeps still find processes a dying parent started at the last moment.
+//! Unix re-parents them instead, so a Unix kill also follows the sessions the tree leads.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use allot_shared::{
     platform::ALLOT_BINARIES,
@@ -20,6 +21,10 @@ use crate::{
 
 /// A process identified across PID reuse.
 type ProcessKey = (u32, u64);
+
+/// Session IDs by PID, as Unix reports them: a session's ID is the PID of the process that
+/// started it with `setsid`.
+pub type Sessions = HashMap<u32, u32>;
 
 /// One process a kill terminates.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -159,6 +164,10 @@ pub struct KillPlan {
     /// Every process planned so far: parents before children within one growth step.
     planned: Vec<KillTarget>,
     spared: Vec<Spared>,
+    /// The spared processes, which keep everything below them out of the plan.
+    spared_keys: HashSet<ProcessKey>,
+    /// Planned processes seen leading their own session, with their depth.
+    session_leaders: HashMap<ProcessKey, u32>,
 }
 
 impl KillPlan {
@@ -198,6 +207,8 @@ impl KillPlan {
             protected,
             planned: vec![target(node, 0)],
             spared: Vec::new(),
+            spared_keys: HashSet::new(),
+            session_leaders: HashMap::new(),
         };
         plan.grow(table);
         Ok(plan)
@@ -225,6 +236,87 @@ impl KillPlan {
             .collect();
         targets.sort_by_key(|target| target.depth);
         targets
+    }
+
+    /// [`Self::sweep`] for Unix, where `sessions` holds the session ID of every process in
+    /// `table`. Also plans every member of a session that a planned process leads, wherever
+    /// it was re-parented to, and everything below it.
+    ///
+    /// A session ID stays taken while any member runs, so the members of a planned leader's
+    /// session belong to the command even after the leader exited. Members below a spared
+    /// process are left running with it; protected members and members older than the
+    /// report are spared as in the tree.
+    pub fn sweep_sessions(&mut self, table: &ProcessTable, sessions: &Sessions) -> Vec<KillTarget> {
+        loop {
+            self.grow(table);
+            if !self.adopt_session_members(table, sessions) {
+                break;
+            }
+        }
+        self.sweep(table)
+    }
+
+    /// Plans the members of planned leaders' sessions that are neither planned nor spared
+    /// yet, and returns whether any was planned.
+    fn adopt_session_members(&mut self, table: &ProcessTable, sessions: &Sessions) -> bool {
+        for target in &self.planned {
+            if sessions.get(&target.pid) == Some(&target.pid)
+                && table.is_running(target.pid, target.start_time)
+            {
+                self.session_leaders
+                    .entry((target.pid, target.start_time))
+                    .or_insert(target.depth);
+            }
+        }
+        // A leader's PID that now runs another process was freed, so its session is over.
+        let leaders: HashMap<u32, u32> = self
+            .session_leaders
+            .iter()
+            .filter(|&(&(pid, start_time), _)| {
+                table
+                    .get(pid)
+                    .is_none_or(|node| node.start_time == start_time)
+            })
+            .map(|(&(pid, _), &depth)| (pid, depth))
+            .collect();
+        let seen: HashSet<ProcessKey> = self
+            .planned
+            .iter()
+            .map(|target| (target.pid, target.start_time))
+            .chain(self.spared_keys.iter().copied())
+            .collect();
+        let mut members: Vec<(&ProcessNode, u32)> = table
+            .iter()
+            .filter(|node| !seen.contains(&key(node)))
+            .filter_map(|node| {
+                let depth = leaders.get(sessions.get(&node.pid)?)?;
+                Some((node, depth + 1))
+            })
+            .collect();
+        members.sort_by_key(|(node, _)| (node.start_time, node.pid));
+
+        let mut adopted: HashSet<ProcessKey> = HashSet::new();
+        for (node, depth) in members {
+            // Below a planned process the next growth step plans it at its real depth; below a
+            // spared one it is left running with that process.
+            let below_seen = ancestry(node.pid, |pid| table.get(pid).cloned())
+                .iter()
+                .skip(1)
+                .map(key)
+                .any(|ancestor| seen.contains(&ancestor) || adopted.contains(&ancestor));
+            if below_seen {
+                continue;
+            }
+            if self.protected.covers(node) {
+                self.spare(node, SpareReason::Protected);
+            } else if started_before(node, self.bound_at_ms) {
+                self.spare(node, SpareReason::OlderThanReport);
+            } else {
+                adopted.insert(key(node));
+                self.planned.push(target(node, depth));
+            }
+        }
+        !adopted.is_empty()
     }
 
     /// Adds every unplanned descendant of a planned process, skipping protected and old ones
@@ -262,6 +354,7 @@ impl KillPlan {
     }
 
     fn spare(&mut self, node: &ProcessNode, reason: SpareReason) {
+        self.spared_keys.insert(key(node));
         if !self.spared.iter().any(|spared| spared.pid == node.pid) {
             self.spared.push(Spared {
                 pid: node.pid,
@@ -522,5 +615,141 @@ mod tests {
         assert_eq!(pids(&targets), [25, 26, 27]);
         assert_eq!(targets[1].depth, 3);
         assert!(plan.sweep(&with(&[])).is_empty());
+    }
+
+    /// The Unix machine: systemd (1) runs the user's manager (2), which adopts orphans, and a
+    /// terminal's fish (4, leading session 4) runs the session's claude (10) and allotd.
+    fn unix_base() -> Vec<(RawProcess, u32)> {
+        vec![
+            (raw_process(1, None, "systemd", 1), 1),
+            (raw_process(2, Some(1), "systemd", 2), 2),
+            (raw_process(3, Some(2), "konsole", 20), 2),
+            (raw_process(4, Some(3), "fish", 20), 4),
+            (raw_process(10, Some(4), "claude", 50), 4),
+            (raw_process(11, Some(10), "allot-mcp", 51), 4),
+            (raw_process(ALLOTD, Some(2), "allotd", 52), 2),
+        ]
+    }
+
+    /// A Bash command: Claude Code's zsh leads session 20 and runs a build.
+    fn zsh_command() -> Vec<(RawProcess, u32)> {
+        vec![
+            (raw_process(20, Some(10), "zsh", 101), 20),
+            (raw_process(21, Some(20), "cargo", 102), 20),
+            (raw_process(22, Some(21), "rustc", 103), 20),
+        ]
+    }
+
+    /// The table and the session IDs of `processes` (each with its session) on the Unix base.
+    fn unix(processes: &[(RawProcess, u32)]) -> (ProcessTable, Sessions) {
+        let all: Vec<(RawProcess, u32)> = unix_base()
+            .into_iter()
+            .chain(processes.iter().cloned())
+            .collect();
+        let raw: Vec<RawProcess> = all.iter().map(|(process, _)| process.clone()).collect();
+        let sessions = all
+            .iter()
+            .map(|(process, session)| (process.pid, *session))
+            .collect();
+        (ProcessTable::new(&raw), sessions)
+    }
+
+    #[test]
+    fn test_unix_sweep_adopts_orphans_of_the_command_session_only() {
+        let mut extra = zsh_command();
+        extra.extend([
+            // A server the build started in the background, orphaned by its dead parent.
+            (raw_process(23, Some(2), "node", 102), 20),
+            (raw_process(24, Some(23), "esbuild", 103), 20),
+            // Orphans of the user's manager and of the terminal's session.
+            (raw_process(30, Some(2), "pipewire", 105), 2),
+            (raw_process(31, Some(2), "ssh-agent", 105), 4),
+        ]);
+        let (table, sessions) = unix(&extra);
+        let mut plan = plan(&table, &binding(20, 101)).unwrap();
+        assert_eq!(pids(plan.planned()), [20, 21, 22]);
+
+        let targets = plan.sweep_sessions(&table, &sessions);
+        assert_eq!(pids(&targets), [20, 21, 23, 22, 24]);
+        let depths: Vec<u32> = targets.iter().map(|target| target.depth).collect();
+        assert_eq!(depths, [0, 1, 1, 2, 2]);
+        assert!(plan.spared().is_empty());
+    }
+
+    #[test]
+    fn test_unix_sweep_follows_a_session_after_its_leader_exits() {
+        let (table, sessions) = unix(&zsh_command());
+        let mut plan = plan(&table, &binding(20, 101)).unwrap();
+        plan.sweep_sessions(&table, &sessions);
+
+        // zsh and cargo are gone; rustc was re-parented, and cargo started a linker first.
+        let (after, sessions) = unix(&[
+            (raw_process(22, Some(2), "rustc", 103), 20),
+            (raw_process(25, Some(2), "cc", 104), 20),
+        ]);
+        assert_eq!(pids(&plan.sweep_sessions(&after, &sessions)), [25, 22]);
+    }
+
+    #[test]
+    fn test_unix_sweep_ignores_a_session_whose_leader_pid_was_reused() {
+        let (table, sessions) = unix(&zsh_command());
+        let mut plan = plan(&table, &binding(20, 101)).unwrap();
+        plan.sweep_sessions(&table, &sessions);
+
+        // Session 20 ended, and PID 20 now leads a new session of an unrelated login.
+        let (after, sessions) = unix(&[
+            (raw_process(20, Some(1), "sshd-session", 120), 20),
+            (raw_process(26, Some(1), "fish", 121), 20),
+        ]);
+        assert!(plan.sweep_sessions(&after, &sessions).is_empty());
+    }
+
+    #[test]
+    fn test_unix_sweep_adopts_orphans_of_nested_sessions() {
+        // Under Claude Code's sandbox: bwrap leads session 20, the inner bwrap session 21.
+        let (table, sessions) = unix(&[
+            (raw_process(20, Some(10), "bwrap", 101), 20),
+            (raw_process(21, Some(20), "bwrap", 101), 21),
+            (raw_process(22, Some(21), "zsh", 101), 21),
+            (raw_process(23, Some(22), "cargo", 102), 21),
+            (raw_process(24, Some(2), "node", 103), 21),
+        ]);
+        let mut plan = plan(&table, &binding(20, 101)).unwrap();
+        let targets = plan.sweep_sessions(&table, &sessions);
+        assert_eq!(pids(&targets), [20, 21, 22, 24, 23]);
+        assert_eq!(targets[3].depth, 2);
+    }
+
+    #[test]
+    fn test_unix_sweep_spares_a_nested_claude_with_its_session_members() {
+        let mut extra = zsh_command();
+        extra.extend([
+            // A nested session in the build's session, with its MCP server and a command.
+            (raw_process(40, Some(21), "claude", 104), 20),
+            (raw_process(41, Some(40), "node", 105), 20),
+            (raw_process(42, Some(40), "zsh", 106), 42),
+            (raw_process(43, Some(2), "node", 106), 42),
+        ]);
+        let (table, sessions) = unix(&extra);
+        let others = [holder(40, 104)];
+        let mut plan =
+            KillPlan::new(&binding(20, 101), &table, protected(&table, &others)).unwrap();
+        assert_eq!(pids(&plan.sweep_sessions(&table, &sessions)), [20, 21, 22]);
+        let spared: Vec<(u32, SpareReason)> = plan
+            .spared()
+            .iter()
+            .map(|spared| (spared.pid, spared.reason))
+            .collect();
+        assert_eq!(spared, [(40, SpareReason::Protected)]);
+    }
+
+    #[test]
+    fn test_unix_sweep_spares_session_members_older_than_the_report() {
+        let mut extra = zsh_command();
+        extra.push((raw_process(27, Some(2), "make", 90), 20));
+        let (table, sessions) = unix(&extra);
+        let mut plan = plan(&table, &binding(20, 101)).unwrap();
+        assert_eq!(pids(&plan.sweep_sessions(&table, &sessions)), [20, 21, 22]);
+        assert_eq!(plan.spared()[0].reason, SpareReason::OlderThanReport);
     }
 }
