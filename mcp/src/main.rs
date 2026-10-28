@@ -1,5 +1,5 @@
 //! `allot-mcp`: the stdio MCP server one Claude session talks to. It acts for its parent
-//! `claude.exe`, keeps the leases it acquires alive, and releases them when stdin closes.
+//! `claude`, keeps the leases it acquires alive, and releases them when stdin closes.
 //! Diagnostics go to stderr; stdout carries the protocol.
 
 mod daemon;

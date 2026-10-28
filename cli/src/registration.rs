@@ -23,22 +23,15 @@ use anyhow::Context;
 use serde_json::Value;
 
 use self::claude_md::Added;
-use crate::legacy;
+use crate::{
+    legacy,
+    registered::{
+        HOOKS, HookSpec, MCP_NAME, is_allot_hook, mcp_registered, missing_hooks, same_path,
+    },
+};
 
-/// The name the MCP server is registered under.
-const MCP_NAME: &str = "allot";
 /// The name of the scheduled task that starts allotd at logon.
 const TASK_NAME: &str = "allot";
-
-/// A hook entry `settings.json` needs: the event and the `allot` arguments it runs.
-type HookSpec = (&'static str, [&'static str; 2]);
-
-/// Every hook entry: the lease check before a call, and the notices after one.
-const HOOKS: [HookSpec; 3] = [
-    ("PreToolUse", ["hook", "pre-tool"]),
-    ("PostToolUse", ["hook", "post-tool"]),
-    ("PostToolUseFailure", ["hook", "post-tool"]),
-];
 
 /// Whether a step is done, as far as allot can tell.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -632,21 +625,6 @@ pub fn print_manual_steps(manual: &[String]) {
     }
 }
 
-/// The hook entries `settings` (the file's text, `None` when it does not exist) lacks, in
-/// [`HOOKS`] order.
-fn missing_hooks(settings: Option<&str>, exe: &Path) -> anyhow::Result<Vec<HookSpec>> {
-    let settings: Value = match settings {
-        Some(text) if !text.trim().is_empty() => {
-            serde_json::from_str(text).context("the file is not valid JSON")?
-        }
-        _ => Value::Null,
-    };
-    Ok(HOOKS
-        .into_iter()
-        .filter(|&(event, args)| !hook_registered(&settings, event, args, exe))
-        .collect())
-}
-
 /// The file's text, `None` when it does not exist.
 fn read_text(path: &Path) -> anyhow::Result<Option<String>> {
     match fs::read_to_string(path) {
@@ -711,41 +689,6 @@ fn backup_note(backup: Option<PathBuf>) -> String {
         .unwrap_or_default()
 }
 
-/// Whether `~/.claude.json` registers the MCP server, at user scope, to run `exe`.
-fn mcp_registered(config: &Value, exe: &Path) -> bool {
-    config["mcpServers"][MCP_NAME]["command"]
-        .as_str()
-        .is_some_and(|command| same_path(command, exe))
-}
-
-/// Whether `settings.json` has an `event` hook that runs `exe` with `args`.
-fn hook_registered(settings: &Value, event: &str, args: [&str; 2], exe: &Path) -> bool {
-    let Some(entries) = settings["hooks"][event].as_array() else {
-        return false;
-    };
-    entries
-        .iter()
-        .filter_map(|entry| entry["hooks"].as_array())
-        .flatten()
-        .any(|hook| is_allot_hook(hook, exe, args))
-}
-
-/// Whether one hook of an entry runs `exe` with `args`.
-fn is_allot_hook(hook: &Value, exe: &Path, args: [&str; 2]) -> bool {
-    hook["command"]
-        .as_str()
-        .is_some_and(|command| same_path(command, exe))
-        && hook["args"]
-            .as_array()
-            .is_some_and(|found| found.iter().map(Value::as_str).eq(args.map(Some)))
-}
-
-/// Windows paths compare without case and with either separator.
-fn same_path(text: &str, path: &Path) -> bool {
-    let normalize = |text: &str| text.trim_matches('"').replace('/', "\\").to_lowercase();
-    normalize(text) == normalize(&path.to_string_lossy())
-}
-
 /// The hook command with forward slashes, the form Claude Code's settings examples use.
 fn hook_command(paths: &Paths) -> String {
     allot_exe(paths).to_string_lossy().replace('\\', "/")
@@ -770,6 +713,7 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+    use crate::registered::hook_registered;
 
     fn paths() -> Paths {
         Paths::under(r"C:\Users\someone")

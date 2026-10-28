@@ -11,6 +11,7 @@ mod install;
 #[cfg(windows)]
 mod legacy;
 mod probe;
+mod registered;
 #[cfg(windows)]
 mod registration;
 mod sample;

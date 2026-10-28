@@ -12,7 +12,7 @@ description: >
 
 # Resource Guard
 
-Several Claude sessions share this PC. A per-user daemon (`allotd`) keeps a ledger of *leases*:
+Several Claude sessions share this machine. A per-user daemon (`allotd`) keeps a ledger of *leases*:
 reservations of cores, RAM, GPU and VRAM for heavy jobs. A session runs a heavy command only
 while it holds an active lease that covers it. A PreToolUse hook enforces this for the Bash
 and PowerShell tools, but the hook only knows the rules below; the policy also covers heavy
@@ -21,8 +21,9 @@ work it cannot recognize.
 ## What counts as heavy
 
 The hook classifies commands with these rules. They come from the default config; the user's
-`%USERPROFILE%\.allot\config.toml` can replace them, so run `allot classes` (light, no lease
-needed) when the hook's verdict surprises you or before relying on this list.
+`~/.allot/config.toml` (`%USERPROFILE%\.allot\config.toml` on Windows) can replace them, so run
+`allot classes` (light, no lease needed) when the hook's verdict surprises you or before relying
+on this list.
 
 <!-- allot classes: begin -->
 A command line is heavy when any command in it (after `&&`, `;`, `|`, env prefixes, and wrappers such as `npx` or `bash -c`) matches a rule:
@@ -141,7 +142,7 @@ started before the MCP server was registered: tell the user to restart the sessi
 
 A queued lease always waits. Never ask the user whether to queue or keep waiting, however
 long or unknown the wait; the queue is how the machine is shared, and the user cancels from
-the Allot tray app if they want to.
+the Allot app if they want to.
 
 1. Tell the user in one line what is ahead and for how long, from the result's `verdict`:
    its `reasons` and `wait_estimate_secs`. `list_leases` with `all_sessions` shows the leases
@@ -166,7 +167,7 @@ the Allot tray app if they want to.
 ## When the user stops a job or removes a request
 
 The user can stop a running job (its whole process tree) or remove a queued request from the
-Allot tray app, or with `allot kill` and `allot remove`. You hear about it once: as a note
+Allot app, or with `allot kill` and `allot remove`. You hear about it once: as a note
 after a Bash or PowerShell call ("The user stopped `cargo build` (lease 42) from Allot. ..."),
 or in a tool result whose `end_cause` is `killed` or `removed` (`acquire_lease`,
 `release_lease`, or `stopped_by_user` in `list_leases`).

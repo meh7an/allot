@@ -11,9 +11,9 @@ use std::{fs, path::Path};
 
 use anyhow::{Context, anyhow};
 use diesel::{
-    QueryResult,
+    Connection, QueryResult,
     connection::SimpleConnection,
-    r2d2::{ConnectionManager, CustomizeConnection, Pool},
+    r2d2::{ConnectionManager, CustomizeConnection, HandleError, LoggingErrorHandler, Pool},
     sqlite::SqliteConnection,
 };
 use diesel_migrations::{EmbeddedMigrations, MigrationHarness, embed_migrations};
@@ -35,13 +35,29 @@ pub type DbPool = Pool<ConnectionManager<SqliteConnection>>;
 /// Returns an error when the directory cannot be created, the path is not UTF-8, the pool
 /// cannot connect, or a migration fails.
 pub fn open_pool(path: &Path) -> anyhow::Result<DbPool> {
+    open_pool_with(path, Box::new(LoggingErrorHandler))
+}
+
+/// [`open_pool`], with the pool's connection errors going to `errors`.
+fn open_pool_with(
+    path: &Path,
+    errors: Box<dyn HandleError<diesel::r2d2::Error>>,
+) -> anyhow::Result<DbPool> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)
             .with_context(|| format!("creating database directory {}", parent.display()))?;
     }
     let url = path.to_str().context("database path is not valid UTF-8")?;
+    // WAL is stored in the file, and switching a new file to it fails at once, without the
+    // busy timeout, while another connection has it open. One connection switches it before
+    // the pool opens all of its connections together.
+    let mut first = SqliteConnection::establish(url)
+        .with_context(|| format!("opening database {}", path.display()))?;
+    configure(&mut first).with_context(|| format!("configuring database {}", path.display()))?;
+    drop(first);
     let pool = Pool::builder()
         .max_size(MAX_CONNECTIONS)
+        .error_handler(errors)
         .connection_customizer(Box::new(ConnectionSetup))
         .build(ConnectionManager::new(url))
         .with_context(|| format!("opening database {}", path.display()))?;
@@ -66,11 +82,12 @@ pub fn run_migrations(conn: &mut SqliteConnection) -> anyhow::Result<()> {
 ///
 /// WAL lets readers continue while another pooled connection writes, and `synchronous =
 /// NORMAL` is crash-safe under WAL. SQLite leaves foreign keys off per connection unless
-/// asked, which would silently skip the cascades the migrations declare.
+/// asked, which would silently skip the cascades the migrations declare. The busy timeout
+/// comes first, so the other pragmas wait for a connection that holds the file's lock.
 pub(crate) fn configure(conn: &mut SqliteConnection) -> QueryResult<()> {
     conn.batch_execute(&format!(
-        "PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA foreign_keys = ON; \
-         PRAGMA busy_timeout = {BUSY_TIMEOUT_MS};"
+        "PRAGMA busy_timeout = {BUSY_TIMEOUT_MS}; PRAGMA journal_mode = WAL; \
+         PRAGMA synchronous = NORMAL; PRAGMA foreign_keys = ON;"
     ))
 }
 
@@ -85,6 +102,11 @@ impl CustomizeConnection<SqliteConnection, diesel::r2d2::Error> for ConnectionSe
 
 #[cfg(test)]
 mod tests {
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
+
     use diesel::{
         QueryableByName, RunQueryDsl, sql_query,
         sql_types::{BigInt, Text},
@@ -137,6 +159,28 @@ mod tests {
         let pool = open_pool(&path).unwrap();
         assert!(path.is_file());
         assert_eq!(table_names(&mut pool.get().unwrap()), TABLES);
+    }
+
+    /// Counts the pool's connection errors.
+    #[derive(Debug)]
+    struct CountedErrors(Arc<AtomicUsize>);
+
+    impl HandleError<diesel::r2d2::Error> for CountedErrors {
+        fn handle_error(&self, _error: diesel::r2d2::Error) {
+            self.0.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
+    #[test]
+    fn test_open_pool_fresh_database_opens_every_connection_without_lock_errors() {
+        // The race between the pool's first connections only shows up now and then.
+        for _ in 0..20 {
+            let dir = TempDir::new().unwrap();
+            let errors = Arc::new(AtomicUsize::new(0));
+            let path = dir.path().join("allot.db");
+            open_pool_with(&path, Box::new(CountedErrors(errors.clone()))).unwrap();
+            assert_eq!(errors.load(Ordering::SeqCst), 0);
+        }
     }
 
     #[test]

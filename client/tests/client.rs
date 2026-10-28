@@ -394,3 +394,54 @@ async fn test_blocking_client_works_outside_the_runtime() {
     assert_eq!(state, LeaseState::Released);
     daemon.stop().await;
 }
+
+/// The client starts a stand-in for allotd, a script that reports its directory and PID and
+/// then waits; it never answers, so the client gives up after the ready timeout.
+#[cfg(unix)]
+#[tokio::test]
+async fn test_client_starts_allotd_in_its_own_session_and_reaps_it() {
+    use std::{fs, os::unix::fs::PermissionsExt, time::Instant};
+
+    let dir = TempDir::new().unwrap();
+    let report = dir.path().join("report");
+    let script = dir.path().join("allotd");
+    fs::write(
+        &script,
+        format!(
+            "#!/bin/sh\npwd > '{0}.tmp'\necho $$ >> '{0}.tmp'\nmv '{0}.tmp' '{0}'\n\
+             exec tail -f /dev/null\n",
+            report.display()
+        ),
+    )
+    .unwrap();
+    fs::set_permissions(&script, fs::Permissions::from_mode(0o755)).unwrap();
+    let mut options = options(closed_addr().await, TokenSource::Fixed(TOKEN.into()));
+    options.spawn = Some(SpawnOptions {
+        daemon_exe: script,
+        ready_timeout: Duration::from_millis(500),
+    });
+
+    let error = Client::new(options).unwrap().ensure_running().await;
+    assert!(matches!(error, Err(ClientError::Spawn(_))), "{error:?}");
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !report.exists() {
+        assert!(Instant::now() < deadline, "the stand-in never reported");
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    let text = fs::read_to_string(&report).unwrap();
+    let (cwd, pid) = text.trim().split_once('\n').unwrap();
+    let pid: libc::pid_t = pid.parse().unwrap();
+
+    // SAFETY: getsid only reads; the signal goes to the stand-in this test started.
+    let (session, own_session) = unsafe { (libc::getsid(pid), libc::getsid(0)) };
+    assert_eq!(cwd, "/");
+    assert_eq!(session, pid, "the stand-in leads a session of its own");
+    assert_ne!(session, own_session);
+    assert_eq!(unsafe { libc::kill(pid, libc::SIGTERM) }, 0);
+    // A zombie still takes signal 0, so this also checks that the client reaped it.
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while unsafe { libc::kill(pid, 0) } == 0 {
+        assert!(Instant::now() < deadline, "the stand-in was not reaped");
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+}

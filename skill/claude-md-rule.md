@@ -1,6 +1,6 @@
 ## Shared Machine Resources
 
-This PC is shared by several Claude sessions, coordinated by the Allot daemon.
+This machine is shared by several Claude sessions, coordinated by the Allot daemon.
 
 - Before any heavy command (builds, test suites, benchmarks, training, rendering, or anything
   that keeps several cores or the GPU busy for more than ~30 s), follow the `resource-guard`

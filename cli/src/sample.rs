@@ -64,7 +64,7 @@ pub fn run(secs: u64) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// The nearest `claude.exe` ancestor, keyed by this session's ID when Claude set one.
+/// The nearest `claude` ancestor (`claude.exe` on Windows), keyed by this session's ID when Claude set one.
 fn current_session() -> anyhow::Result<Option<Holder>> {
     let root = current_ancestry()?.into_iter().find(|node| {
         SESSION_ROOTS

@@ -24,6 +24,7 @@ dependencies = [
  "allot-core",
  "allot-shared",
  "allotd",
+ "libc",
  "reqwest",
  "serde",
  "tempfile",

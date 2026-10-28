@@ -226,7 +226,7 @@ mod tests {
         assert!(RULE.starts_with("## Shared Machine Resources\n"), "{RULE}");
         let body = rule_body();
         assert!(
-            body.starts_with("This PC is shared by several Claude sessions"),
+            body.starts_with("This machine is shared by several Claude sessions"),
             "{body}"
         );
         assert!(

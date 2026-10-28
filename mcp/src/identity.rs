@@ -1,8 +1,9 @@
 //! Which Claude session this server belongs to.
 //!
-//! Claude Code starts each stdio MCP server as a direct child of the session's `claude.exe`
-//! and sets `CLAUDE_CODE_SESSION_ID` in its environment, so the parent process is the lease
-//! holder and the variable is the session key.
+//! Claude Code starts each stdio MCP server as a direct child of the session's `claude`
+//! (`claude.exe` on Windows) and sets `CLAUDE_CODE_SESSION_ID` in its environment, on Linux
+//! and macOS too, so the parent process is the lease holder and the variable is the session
+//! key. Unlike hooks and Bash commands, MCP servers get no `CLAUDE_PID`.
 
 use std::env;
 

@@ -22,6 +22,7 @@ use allot_shared::{
     },
     config::Config,
     paths::Paths,
+    platform::DAEMON_LOG_TEXT,
     types::{Holder, JobRun, Lease, LeaseId, SessionKey, SessionUsage, Snapshot},
     ui::{Notice, UiState},
 };
@@ -67,11 +68,11 @@ pub struct ClientOptions {
 
 impl ClientOptions {
     /// Options for the local install: the port from `config.toml` and the token file under
-    /// `%USERPROFILE%\.allot\`.
+    /// `~/.allot/` (`%USERPROFILE%\.allot\` on Windows).
     ///
     /// # Errors
     ///
-    /// Fails when `USERPROFILE` is unset or the config file is invalid.
+    /// Fails when the home directory variable is unset or the config file is invalid.
     pub fn discover(auto_spawn: bool) -> Result<Self> {
         let paths = Paths::from_env()?;
         let config = Config::load(&paths.config_file())?;
@@ -515,6 +516,9 @@ impl Client {
     }
 
     async fn start_daemon(&self, spawn: &SpawnOptions) -> Result<()> {
+        if spawn::in_claude_sandbox() {
+            return Err(ClientError::Sandboxed);
+        }
         spawn.spawn_detached().map_err(|error| {
             ClientError::Spawn(format!("{}: {error}", spawn.daemon_exe.display()))
         })?;
@@ -528,7 +532,7 @@ impl Client {
             tokio::time::sleep(READY_POLL).await;
         }
         Err(ClientError::Spawn(format!(
-            "{} started but did not answer within {} s; see %USERPROFILE%\\.allot\\logs\\allotd.log",
+            "{} started but did not answer within {} s; see {DAEMON_LOG_TEXT}",
             spawn.daemon_exe.display(),
             spawn.ready_timeout.as_secs()
         )))

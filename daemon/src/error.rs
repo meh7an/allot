@@ -1,6 +1,7 @@
 //! The one error type handlers return, and its HTTP mapping.
 
 use allot_core::ledger::LedgerError;
+use allot_shared::platform::{DAEMON_LOG_TEXT, DATA_DIR_TEXT};
 use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
@@ -11,8 +12,7 @@ use axum::{
 pub enum AppError {
     /// The bearer token is missing or wrong.
     #[error(
-        "missing or invalid bearer token; clients read it from the token file in \
-         %USERPROFILE%\\.allot"
+        "missing or invalid bearer token; clients read it from the token file in {DATA_DIR_TEXT}"
     )]
     Unauthorized,
     /// The lease or resource does not exist.
@@ -58,8 +58,7 @@ impl IntoResponse for AppError {
             Self::Unavailable => StatusCode::SERVICE_UNAVAILABLE,
             Self::Internal(error) => {
                 tracing::error!("request failed: {error:#}");
-                let message = "internal error; the details are in \
-                               %USERPROFILE%\\.allot\\logs\\allotd.log";
+                let message = format!("internal error; the details are in {DAEMON_LOG_TEXT}");
                 return (StatusCode::INTERNAL_SERVER_ERROR, message).into_response();
             }
         };

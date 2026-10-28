@@ -41,6 +41,13 @@ pub enum ClientError {
          builds, so install them together"
     )]
     Decode(String),
+    /// allotd is not answering, and this process runs inside Claude Code's sandbox, which has
+    /// no network, so it can neither reach allotd nor start one.
+    #[error(
+        "allotd cannot be reached from inside Claude Code's sandbox, which has no network; run \
+         allot outside the sandbox (the hooks and the allot MCP server already run outside it)"
+    )]
+    Sandboxed,
     /// Starting allotd in the background failed or it never became ready.
     #[error("could not start allotd: {0}")]
     Spawn(String),

@@ -1,7 +1,7 @@
 // No console window when the logon task starts allotd. Output goes to allotd.log, not the console.
 #![cfg_attr(windows, windows_subsystem = "windows")]
 
-use std::{fs, net::Ipv4Addr, time::Duration};
+use std::{net::Ipv4Addr, time::Duration};
 
 use allot_core::sampler::Sampler;
 use allot_sampler::SystemSampler;
@@ -38,8 +38,7 @@ fn main() -> anyhow::Result<()> {
 #[tokio::main]
 async fn daemon() -> anyhow::Result<()> {
     let paths = Paths::from_env()?;
-    fs::create_dir_all(paths.root())
-        .with_context(|| format!("creating {}", paths.root().display()))?;
+    startup::create_data_dir(paths.root())?;
     let _lock = startup::InstanceLock::acquire(&paths.lock_file())?;
     startup::init_logging(&paths.log_dir())?;
 
@@ -79,9 +78,38 @@ async fn run(paths: &Paths) -> anyhow::Result<()> {
 }
 
 async fn shutdown_signal() {
+    tokio::select! {
+        () = interrupt() => {}
+        () = terminate() => {}
+    }
+    tracing::info!("shutdown requested");
+}
+
+async fn interrupt() {
     if let Err(error) = tokio::signal::ctrl_c().await {
         tracing::error!("listening for Ctrl+C failed: {error}");
         std::future::pending::<()>().await;
     }
-    tracing::info!("shutdown requested");
+}
+
+/// SIGTERM, which `kill`, systemd and launchd send to stop a service.
+#[cfg(unix)]
+async fn terminate() {
+    use tokio::signal::unix::{SignalKind, signal};
+
+    match signal(SignalKind::terminate()) {
+        Ok(mut terminate) => {
+            terminate.recv().await;
+        }
+        Err(error) => {
+            tracing::error!("listening for SIGTERM failed: {error}");
+            std::future::pending::<()>().await;
+        }
+    }
+}
+
+/// Windows has no SIGTERM; allotd stops through `POST /shutdown` or Ctrl+C.
+#[cfg(not(unix))]
+async fn terminate() {
+    std::future::pending::<()>().await;
 }

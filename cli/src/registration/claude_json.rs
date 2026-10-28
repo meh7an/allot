@@ -84,14 +84,14 @@ mod tests {
                 "env": {},
             })
         );
-        assert!(super::super::mcp_registered(&tree, &exe()));
+        assert!(crate::registered::mcp_registered(&tree, &exe()));
     }
 
     #[test]
     fn test_set_server_replaces_one_that_runs_another_exe() {
         let config = r#"{"mcpServers": {"allot": {"command": "E:/target/allot-mcp.exe"}}}"#;
         let tree: Value = serde_json::from_str(&set_server(config, &exe()).unwrap()).unwrap();
-        assert!(super::super::mcp_registered(&tree, &exe()));
+        assert!(crate::registered::mcp_registered(&tree, &exe()));
         assert_eq!(tree["mcpServers"].as_object().unwrap().len(), 1);
     }
 

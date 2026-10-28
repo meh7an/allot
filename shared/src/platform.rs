@@ -37,6 +37,20 @@ pub const CONSOLE_HOSTS: &[&str] = if cfg!(windows) { &["conhost.exe"] } else { 
 /// The environment variable that holds the user's home directory.
 pub const HOME_VAR: &str = if cfg!(windows) { "USERPROFILE" } else { "HOME" };
 
+/// The data directory as messages to the user spell it.
+pub const DATA_DIR_TEXT: &str = if cfg!(windows) {
+    r"%USERPROFILE%\.allot"
+} else {
+    "~/.allot"
+};
+
+/// The daemon's log file as messages to the user spell it.
+pub const DAEMON_LOG_TEXT: &str = if cfg!(windows) {
+    r"%USERPROFILE%\.allot\logsllotd.log"
+} else {
+    "~/.allot/logs/allotd.log"
+};
+
 /// How the target OS spells and compares paths.
 pub const PATH_STYLE: PathStyle = if cfg!(windows) {
     PathStyle::Windows

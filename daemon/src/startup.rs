@@ -1,9 +1,9 @@
-//! One-time setup before the daemon serves: the single-instance lock, the bearer token, and
-//! logging.
+//! One-time setup before the daemon serves: the data directory, the single-instance lock, the
+//! bearer token, and logging.
 
 use std::{
-    fs::{self, File, OpenOptions, TryLockError},
-    io,
+    fs::{self, DirBuilder, File, OpenOptions, TryLockError},
+    io::{self, Write},
     path::Path,
     sync::Mutex,
 };
@@ -14,6 +14,30 @@ use crate::logfile::{KEPT_LOG_FILES, MAX_LOG_BYTES, RotatingFile};
 
 const TOKEN_BYTES: usize = 32;
 const HEX_DIGITS: &[u8; 16] = b"0123456789abcdef";
+// Owner-only modes on Unix: anyone who reads the token can act for every session, and the
+// database holds every command and directory the sessions ran.
+const PRIVATE_DIR_MODE: u32 = 0o700;
+const PRIVATE_FILE_MODE: u32 = 0o600;
+
+/// Creates the data directory `root` when missing. On Unix only its owner may enter it, and a
+/// directory an earlier build left open to others is closed.
+///
+/// # Errors
+///
+/// Fails when the directory cannot be created or its permissions cannot be changed.
+pub fn create_data_dir(root: &Path) -> anyhow::Result<()> {
+    let mut builder = DirBuilder::new();
+    builder.recursive(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        builder.mode(PRIVATE_DIR_MODE);
+    }
+    builder
+        .create(root)
+        .with_context(|| format!("creating {}", root.display()))?;
+    keep_private(root, PRIVATE_DIR_MODE)
+}
 
 /// Holds the daemon's lock file for as long as it lives; dropping it releases the lock.
 #[derive(Debug)]
@@ -55,12 +79,18 @@ impl InstanceLock {
 ///
 /// Fails when the file cannot be read or written, or the OS has no randomness to offer.
 pub fn load_or_create_token(path: &Path) -> anyhow::Result<String> {
-    match fs::read_to_string(path) {
-        Ok(token) if !token.trim().is_empty() => return Ok(token.trim().to_owned()),
-        Ok(_) => {}
-        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+    let token = match fs::read_to_string(path) {
+        Ok(token) if !token.trim().is_empty() => token.trim().to_owned(),
+        Ok(_) => create_token(path)?,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => create_token(path)?,
         Err(error) => return Err(error).with_context(|| format!("reading {}", path.display())),
-    }
+    };
+    keep_private(path, PRIVATE_FILE_MODE)?;
+    Ok(token)
+}
+
+/// Writes a new random token to `path`, readable only by its owner on Unix.
+fn create_token(path: &Path) -> anyhow::Result<String> {
     let mut bytes = [0u8; TOKEN_BYTES];
     getrandom::fill(&mut bytes).map_err(|error| anyhow!("generating the token: {error}"))?;
     let token: String = bytes
@@ -73,8 +103,40 @@ pub fn load_or_create_token(path: &Path) -> anyhow::Result<String> {
         })
         .map(char::from)
         .collect();
-    fs::write(path, &token).with_context(|| format!("writing {}", path.display()))?;
+    let mut options = OpenOptions::new();
+    options.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(PRIVATE_FILE_MODE);
+    }
+    options
+        .open(path)
+        .and_then(|mut file| file.write_all(token.as_bytes()))
+        .with_context(|| format!("writing {}", path.display()))?;
     Ok(token)
+}
+
+/// Sets `path` to `mode` when its group or others have any access to it.
+#[cfg(unix)]
+fn keep_private(path: &Path, mode: u32) -> anyhow::Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+
+    let mut permissions = fs::metadata(path)
+        .with_context(|| format!("reading the permissions of {}", path.display()))?
+        .permissions();
+    if permissions.mode() & 0o077 == 0 {
+        return Ok(());
+    }
+    permissions.set_mode(mode);
+    fs::set_permissions(path, permissions)
+        .with_context(|| format!("restricting {} to its owner", path.display()))
+}
+
+/// The user profile is private on Windows already.
+#[cfg(not(unix))]
+fn keep_private(_path: &Path, _mode: u32) -> anyhow::Result<()> {
+    Ok(())
 }
 
 /// Sends `tracing` output at INFO and above to `allotd.log` in `log_dir`, which rotates at
@@ -130,5 +192,57 @@ mod tests {
         let path = dir.path().join("token");
         fs::write(&path, "  \n").unwrap();
         assert_eq!(load_or_create_token(&path).unwrap().len(), TOKEN_BYTES * 2);
+    }
+
+    #[cfg(unix)]
+    fn mode(path: &Path) -> u32 {
+        use std::os::unix::fs::PermissionsExt;
+
+        fs::metadata(path).unwrap().permissions().mode() & 0o777
+    }
+
+    #[cfg(unix)]
+    fn set_mode(path: &Path, mode: u32) {
+        use std::os::unix::fs::PermissionsExt;
+
+        fs::set_permissions(path, fs::Permissions::from_mode(mode)).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_create_data_dir_new_dir_and_token_are_owner_only() {
+        let home = TempDir::new().unwrap();
+        let root = home.path().join(".allot");
+        create_data_dir(&root).unwrap();
+        let token = root.join("token");
+        load_or_create_token(&token).unwrap();
+        assert_eq!((mode(&root), mode(&token)), (0o700, 0o600));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_create_data_dir_open_dir_and_token_are_closed() {
+        let home = TempDir::new().unwrap();
+        let root = home.path().join(".allot");
+        fs::create_dir(&root).unwrap();
+        set_mode(&root, 0o755);
+        let token = root.join("token");
+        fs::write(&token, "0123abcd").unwrap();
+        set_mode(&token, 0o644);
+
+        create_data_dir(&root).unwrap();
+        assert_eq!(load_or_create_token(&token).unwrap(), "0123abcd");
+        assert_eq!((mode(&root), mode(&token)), (0o700, 0o600));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_create_data_dir_private_modes_are_left_alone() {
+        let home = TempDir::new().unwrap();
+        let root = home.path().join(".allot");
+        fs::create_dir(&root).unwrap();
+        set_mode(&root, 0o500);
+        create_data_dir(&root).unwrap();
+        assert_eq!(mode(&root), 0o500);
     }
 }

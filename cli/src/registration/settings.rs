@@ -154,7 +154,7 @@ mod tests {
         assert_eq!(pre_tool[0]["hooks"][0]["command"], "rtk hook");
         for (event, args) in HOOKS {
             assert!(
-                super::super::hook_registered(&tree, event, args, &exe()),
+                crate::registered::hook_registered(&tree, event, args, &exe()),
                 "{event}"
             );
         }
