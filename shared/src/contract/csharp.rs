@@ -1,12 +1,14 @@
 //! Emits the C# records the tray app decodes `GET /ui/state` and the kill and remove responses
 //! with, from the same JSON Schemas as `contract/*.schema.json`.
-//!
-//! It maps only the schema shapes the contract uses and panics on anything else, so a new
-//! shape gets a deliberate mapping instead of a silent `object`.
 
 use std::fmt::Write;
 
 use serde_json::{Map, Value};
+
+use super::schema::{
+    Absent, Contract, Primitive, PropertyType, Shape, Type, enum_value, pascal_case, properties,
+    shape, tag_property, tag_value,
+};
 
 const NAMESPACE: &str = "Allot.Tray.Core.Contract";
 
@@ -42,78 +44,56 @@ public sealed class StrictEnumConverter<TEnum> : JsonStringEnumConverter<TEnum>
 }
 ";
 
-/// A C# type reference, with `?` when the schema allows `null`.
-struct CsType {
-    name: String,
-    nullable: bool,
+/// The C# spelling of a property type, with `?` when the schema allows `null`.
+fn render(property_type: &PropertyType) -> String {
+    let name = match &property_type.ty {
+        Type::Primitive(primitive) => primitive_name(*primitive).to_owned(),
+        Type::Named(name) => (*name).to_owned(),
+        Type::Array(item) => format!("IReadOnlyList<{}>", render(item)),
+    };
+    if property_type.nullable {
+        format!("{name}?")
+    } else {
+        name
+    }
 }
 
-impl CsType {
-    fn render(&self) -> String {
-        if self.nullable {
-            format!("{}?", self.name)
-        } else {
-            self.name.clone()
-        }
+fn primitive_name(primitive: Primitive) -> &'static str {
+    match primitive {
+        Primitive::Bool => "bool",
+        Primitive::String => "string",
+        Primitive::Int64 => "long",
+        Primitive::UInt64 => "ulong",
+        Primitive::UInt32 => "uint",
+        Primitive::Float => "float",
+        Primitive::Double => "double",
     }
 }
 
 /// Returns the C# source for `roots` (the `UiState` schema first) and every definition they
 /// use, each type once.
 pub(super) fn emit(roots: &[&Value]) -> String {
-    let mut definitions = Map::new();
-    for root in roots {
-        let own = root["definitions"]
-            .as_object()
-            .expect("the schema has definitions");
-        for (name, schema) in own {
-            match definitions.get(name) {
-                Some(known) => assert_eq!(known, schema, "{name} differs between the roots"),
-                None => {
-                    definitions.insert(name.clone(), schema.clone());
-                }
-            }
-        }
-    }
-    let root_names: Vec<&str> = roots
-        .iter()
-        .map(|root| root["title"].as_str().expect("the root schema has a title"))
-        .collect();
-
+    let contract = Contract::new(roots);
     let mut out = format!("{HEADER}namespace {NAMESPACE};\n");
-    for (root, name) in roots.iter().zip(&root_names) {
-        assert!(
-            !definitions.contains_key(*name),
-            "{name} is both a root and a definition"
-        );
-        emit_definition(&mut out, &definitions, name, root);
-    }
-    for (name, schema) in &definitions {
-        emit_definition(&mut out, &definitions, name, schema);
+    for (name, schema) in contract.types() {
+        emit_definition(&mut out, &contract.definitions, name, schema);
     }
     out.push_str(STRICT_ENUM_CONVERTER);
-    emit_context(&mut out, &root_names);
+    emit_context(&mut out, &contract.root_names());
     out
 }
 
 fn emit_definition(out: &mut String, definitions: &Map<String, Value>, name: &str, schema: &Value) {
-    if let Some(variants) = schema["oneOf"].as_array() {
-        if variants
-            .iter()
-            .all(|variant| variant.get("const").is_some())
-        {
-            emit_enum(out, name, schema, variants);
-        } else {
-            emit_tagged_union(out, definitions, name, schema, variants);
+    match shape(schema) {
+        Shape::Enum(variants) => emit_enum(out, name, schema, variants),
+        Shape::Union(variants) => emit_tagged_union(out, definitions, name, schema, variants),
+        Shape::Record => {
+            out.push('\n');
+            write_doc(out, "", schema);
+            writeln!(out, "public sealed record {name}").unwrap();
+            emit_properties(out, definitions, name, schema, None, "");
         }
-    } else if schema.get("properties").is_some() {
-        out.push('\n');
-        write_doc(out, "", schema);
-        writeln!(out, "public sealed record {name}").unwrap();
-        emit_properties(out, definitions, name, schema, None, "");
-    } else {
-        // Newtypes such as `LeaseId` are inlined as their primitive by `type_of`.
-        primitive_of(schema);
+        Shape::Inline => {}
     }
 }
 
@@ -123,7 +103,7 @@ fn emit_enum(out: &mut String, name: &str, schema: &Value, variants: &[Value]) {
     writeln!(out, "[JsonConverter(typeof(StrictEnumConverter<{name}>))]").unwrap();
     writeln!(out, "public enum {name}\n{{").unwrap();
     for (index, variant) in variants.iter().enumerate() {
-        let value = variant["const"].as_str().expect("enum values are strings");
+        let value = enum_value(variant);
         if index > 0 {
             out.push('\n');
         }
@@ -145,7 +125,7 @@ fn emit_tagged_union(
     let tag = tag_property(name, variants);
     let tag_values: Vec<&str> = variants
         .iter()
-        .map(|variant| variant["properties"][tag]["const"].as_str().unwrap())
+        .map(|variant| tag_value(variant, tag))
         .collect();
 
     out.push('\n');
@@ -176,22 +156,6 @@ fn emit_tagged_union(
     out.push_str("}\n");
 }
 
-/// The one property every variant fixes to a `const`, which serde writes as the tag.
-fn tag_property<'a>(name: &str, variants: &'a [Value]) -> &'a str {
-    let first = variants[0]["properties"]
-        .as_object()
-        .unwrap_or_else(|| panic!("{name}: variants must be objects"));
-    first
-        .iter()
-        .find(|(key, _)| {
-            variants
-                .iter()
-                .all(|variant| variant["properties"][key.as_str()].get("const").is_some())
-        })
-        .map(|(key, _)| key.as_str())
-        .unwrap_or_else(|| panic!("{name}: no tag property shared by every variant"))
-}
-
 /// Writes the `{ ... }` body of a record; `skip` is a tag property the converter consumes.
 fn emit_properties(
     out: &mut String,
@@ -201,58 +165,39 @@ fn emit_properties(
     skip: Option<&str>,
     indent: &str,
 ) {
-    let properties = schema["properties"].as_object().unwrap();
-    let required: Vec<&str> = schema["required"]
-        .as_array()
-        .map(|names| names.iter().map(|name| name.as_str().unwrap()).collect())
-        .unwrap_or_default();
-
     writeln!(out, "{indent}{{").unwrap();
-    let mut first = true;
-    for (json_name, property) in properties {
-        if Some(json_name.as_str()) == skip {
-            continue;
-        }
-        let member = member_name(record, json_name);
-        let cs_type = type_of(definitions, property);
-        let is_required = required.contains(&json_name.as_str());
+    for (index, property) in properties(definitions, record, schema, skip)
+        .iter()
+        .enumerate()
+    {
+        let member = member_name(record, property.json_name);
+        let cs_type = render(&property.ty);
         // The source generator sets every init-only property in its object initializer, so an
         // absent member would overwrite the default with null; a setter is only called when
         // the member is present. A null default is what an absent member gets anyway.
-        let (accessors, initializer) =
-            match (is_required, cs_type.nullable, property.get("default")) {
-                (true, _, None) | (false, true, None | Some(Value::Null)) => {
-                    ("get; init;", String::new())
-                }
-                (false, false, Some(Value::String(text)))
-                    if text.is_empty() && cs_type.name == "string" =>
-                {
-                    ("get; set;", " = \"\";".to_owned())
-                }
-                (false, false, Some(Value::String(text))) if is_enum(definitions, property) => (
-                    "get; set;",
-                    format!(" = {}.{};", cs_type.name, pascal_case(text)),
-                ),
-                (false, false, Some(Value::Bool(false))) if cs_type.name == "bool" => {
-                    ("get; set;", " = false;".to_owned())
-                }
-                (false, false, Some(Value::Array(items))) if items.is_empty() => {
-                    ("get; set;", " = [];".to_owned())
-                }
-                _ => panic!("{record}.{json_name}: no C# mapping for its required and default mix"),
-            };
-        let keyword = if is_required { "required " } else { "" };
+        let (accessors, initializer) = match property.absent {
+            Absent::Fail | Absent::Null => ("get; init;", String::new()),
+            Absent::EmptyString => ("get; set;", " = \"\";".to_owned()),
+            Absent::Variant(value) => {
+                ("get; set;", format!(" = {cs_type}.{};", pascal_case(value)))
+            }
+            Absent::False => ("get; set;", " = false;".to_owned()),
+            Absent::EmptyArray => ("get; set;", " = [];".to_owned()),
+        };
+        let keyword = if property.is_required() {
+            "required "
+        } else {
+            ""
+        };
 
-        if !first {
+        if index > 0 {
             out.push('\n');
         }
-        first = false;
         let inner = format!("{indent}    ");
-        write_doc(out, &inner, property);
+        write_doc(out, &inner, property.schema);
         writeln!(
             out,
-            "{inner}public {keyword}{} {member} {{ {accessors} }}{initializer}",
-            cs_type.render()
+            "{inner}public {keyword}{cs_type} {member} {{ {accessors} }}{initializer}"
         )
         .unwrap();
     }
@@ -275,91 +220,6 @@ fn member_name(record: &str, json_name: &str) -> String {
         "{record}.{json_name}: a C# member cannot share its record's name"
     );
     member
-}
-
-fn type_of(definitions: &Map<String, Value>, schema: &Value) -> CsType {
-    if let Some(reference) = schema["$ref"].as_str() {
-        let name = reference
-            .strip_prefix("#/definitions/")
-            .unwrap_or_else(|| panic!("unsupported $ref {reference}"));
-        let target = &definitions[name];
-        let is_named_type = target.get("properties").is_some() || target.get("oneOf").is_some();
-        let name = if is_named_type {
-            name.to_owned()
-        } else {
-            primitive_of(target).to_owned()
-        };
-        return CsType {
-            name,
-            nullable: false,
-        };
-    }
-    if let Some([only]) = schema["allOf"].as_array().map(Vec::as_slice) {
-        return type_of(definitions, only);
-    }
-    if let Some([inner, null]) = schema["anyOf"].as_array().map(Vec::as_slice)
-        && null["type"] == "null"
-    {
-        return CsType {
-            nullable: true,
-            ..type_of(definitions, inner)
-        };
-    }
-    if let Some([kind, null]) = schema["type"].as_array().map(Vec::as_slice)
-        && null == "null"
-    {
-        return CsType {
-            name: primitive(kind.as_str().unwrap(), schema["format"].as_str()).to_owned(),
-            nullable: true,
-        };
-    }
-    if schema["type"] == "array" {
-        let item = type_of(definitions, &schema["items"]);
-        return CsType {
-            name: format!("IReadOnlyList<{}>", item.render()),
-            nullable: false,
-        };
-    }
-    CsType {
-        name: primitive_of(schema).to_owned(),
-        nullable: false,
-    }
-}
-
-/// Whether `schema` refers to a unit enum, whose default is one of its names.
-fn is_enum(definitions: &Map<String, Value>, schema: &Value) -> bool {
-    if let Some([only]) = schema["allOf"].as_array().map(Vec::as_slice) {
-        return is_enum(definitions, only);
-    }
-    schema["$ref"]
-        .as_str()
-        .and_then(|reference| reference.strip_prefix("#/definitions/"))
-        .and_then(|name| definitions[name]["oneOf"].as_array())
-        .is_some_and(|variants| {
-            variants
-                .iter()
-                .all(|variant| variant.get("const").is_some())
-        })
-}
-
-fn primitive_of(schema: &Value) -> &'static str {
-    let kind = schema["type"]
-        .as_str()
-        .unwrap_or_else(|| panic!("no C# mapping for schema {schema}"));
-    primitive(kind, schema["format"].as_str())
-}
-
-fn primitive(kind: &str, format: Option<&str>) -> &'static str {
-    match (kind, format) {
-        ("boolean", None) => "bool",
-        ("string", None) => "string",
-        ("integer", Some("int64")) => "long",
-        ("integer", Some("uint64")) => "ulong",
-        ("integer", Some("uint32")) => "uint",
-        ("number", Some("float")) => "float",
-        ("number", Some("double")) => "double",
-        _ => panic!("no C# mapping for type {kind} with format {format:?}"),
-    }
 }
 
 fn emit_context(out: &mut String, root_names: &[&str]) {
@@ -420,16 +280,4 @@ fn xml_doc(markdown: &str) -> String {
         }
     }
     doc
-}
-
-fn pascal_case(snake: &str) -> String {
-    snake
-        .split('_')
-        .map(|word| {
-            let mut chars = word.chars();
-            chars.next().map_or_else(String::new, |first| {
-                first.to_ascii_uppercase().to_string() + chars.as_str()
-            })
-        })
-        .collect()
 }

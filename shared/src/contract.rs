@@ -1,11 +1,15 @@
-//! Golden files for the tray app: the JSON Schemas of [`UiState`] and of the kill and remove
-//! responses, one fixture per flyout scenario and response shape, kept in `contract/` at the
-//! repository root, and the C# types generated from the schemas in the tray's logic library.
+//! Golden files for the desktop apps: the JSON Schemas of [`UiState`] and of the kill and
+//! remove responses, one fixture per flyout scenario and response shape, kept in `contract/` at
+//! the repository root, and the types generated from the schemas: C# in the tray's logic
+//! library, a Swift package and a JavaScript module with JSDoc types in `contract/`.
 //!
 //! The tests fail when a file no longer matches the types. Rerun them with
 //! `ALLOT_UPDATE_CONTRACT=1` to rewrite the files, then review the diff.
 
 mod csharp;
+mod schema;
+mod swift;
+mod typescript;
 
 use std::{env, fs, path::PathBuf};
 
@@ -33,6 +37,8 @@ const SCHEMA_FILE: &str = "contract/ui-state.schema.json";
 const KILL_SCHEMA_FILE: &str = "contract/kill-response.schema.json";
 const REMOVE_SCHEMA_FILE: &str = "contract/remove-response.schema.json";
 const CSHARP_FILE: &str = "tray/src/Allot.Tray.Core/Contract/UiState.g.cs";
+const SWIFT_FILE: &str = "contract/swift/Sources/AllotContract/Contract.g.swift";
+const TYPESCRIPT_FILE: &str = "contract/typescript/contract.g.mjs";
 
 // 2026-10-24 06:52 UTC; every scenario is built relative to it.
 const NOW_MS: i64 = 1_792_824_720_000;
@@ -826,7 +832,7 @@ fn root_schema<T: schemars::JsonSchema>() -> Schema {
         .into_root_schema_for::<T>()
 }
 
-/// Every root the tray decodes, with its committed schema file; `UiState` first.
+/// Every root the desktop apps decode, with its committed schema file; `UiState` first.
 fn contract_schemas() -> [(&'static str, Schema); 3] {
     [
         (SCHEMA_FILE, root_schema::<UiState>()),
@@ -842,14 +848,29 @@ fn test_contract_schemas_match_committed_files() {
     }
 }
 
-#[test]
-fn test_csharp_types_match_committed_file() {
+/// Compares the output of `emit` for the contract roots with the committed `file`.
+fn assert_emitted_file(file: &str, emit: fn(&[&serde_json::Value]) -> String) {
     let schemas = contract_schemas();
     let roots: Vec<&serde_json::Value> = schemas
         .iter()
         .map(|(_, schema)| schema.as_value())
         .collect();
-    assert_matches_file(CSHARP_FILE, &csharp::emit(&roots));
+    assert_matches_file(file, &emit(&roots));
+}
+
+#[test]
+fn test_csharp_types_match_committed_file() {
+    assert_emitted_file(CSHARP_FILE, csharp::emit);
+}
+
+#[test]
+fn test_swift_types_match_committed_file() {
+    assert_emitted_file(SWIFT_FILE, swift::emit);
+}
+
+#[test]
+fn test_typescript_module_matches_committed_file() {
+    assert_emitted_file(TYPESCRIPT_FILE, typescript::emit);
 }
 
 #[test]

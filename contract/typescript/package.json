@@ -1,0 +1,23 @@
+{
+  "name": "allot-contract",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Allot's daemon contract as a JavaScript module with JSDoc types",
+  "scripts": {
+    "typecheck": "tsc",
+    "test": "node --test"
+  },
+  "license": "MIT OR Apache-2.0",
+  "devEngines": {
+    "packageManager": {
+      "name": "pnpm",
+      "version": "12.15.0",
+      "onFail": "download"
+    }
+  },
+  "packageManager": "pnpm@12.15.0",
+  "type": "module",
+  "devDependencies": {
+    "typescript": "7.0.2"
+  }
+}
