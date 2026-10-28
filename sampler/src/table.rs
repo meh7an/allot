@@ -1,6 +1,6 @@
 //! The running processes as sysinfo reports them on every OS: the process table a kill plans
 //! against, and the current process's ancestry, which the CLI and MCP server use to find their
-//! Claude session.
+//! Claude session. Linux threads are left out; sysinfo would list each as a process.
 
 use allot_core::{
     ancestry::{ProcessNode, ancestry},
@@ -13,7 +13,11 @@ use sysinfo::{Pid, Process, ProcessRefreshKind, ProcessesToUpdate, System, Updat
 /// Every running process with its parent, name, and start time; no usage or exe paths.
 pub fn process_table() -> ProcessTable {
     let mut system = System::new();
-    system.refresh_processes_specifics(ProcessesToUpdate::All, true, ProcessRefreshKind::nothing());
+    system.refresh_processes_specifics(
+        ProcessesToUpdate::All,
+        true,
+        ProcessRefreshKind::nothing().without_tasks(),
+    );
     let processes: Vec<RawProcess> = system
         .processes()
         .values()
@@ -40,7 +44,9 @@ pub fn current_ancestry() -> Result<Vec<ProcessNode>> {
     system.refresh_processes_specifics(
         ProcessesToUpdate::All,
         true,
-        ProcessRefreshKind::nothing().with_exe(UpdateKind::OnlyIfNotSet),
+        ProcessRefreshKind::nothing()
+            .with_exe(UpdateKind::OnlyIfNotSet)
+            .without_tasks(),
     );
     let own_pid = sysinfo::get_current_pid().map_err(|error| Error::Sampler(error.into()))?;
     Ok(ancestry(own_pid.as_u32(), |pid| {
