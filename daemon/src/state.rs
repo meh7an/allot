@@ -1,7 +1,7 @@
 //! State shared by the HTTP handlers and the sampling task.
 
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     sync::{
         Arc, Mutex, PoisonError, RwLock,
         atomic::{AtomicBool, Ordering},
@@ -21,7 +21,10 @@ use allot_shared::{
 use diesel::sqlite::SqliteConnection;
 use tokio::sync::{Mutex as AsyncMutex, watch};
 
-use crate::db::{DbPool, repo};
+use crate::{
+    db::{DbPool, repo},
+    scopes::Scopes,
+};
 
 /// Handle the handlers receive through Axum's `State`.
 pub type AppState = Arc<Shared>;
@@ -69,6 +72,8 @@ pub struct Shared {
     pub shutdown: watch::Sender<bool>,
     /// When the daemon started.
     pub started: Instant,
+    /// The cgroup scopes of Linux leases.
+    pub scopes: Scopes,
     settings: RwLock<Arc<Settings>>,
     config_error: Mutex<Option<String>>,
     latest: RwLock<Option<Arc<Latest>>>,
@@ -79,7 +84,7 @@ pub struct Shared {
 
 impl Shared {
     /// Fresh state with an empty ledger and no sample yet.
-    pub fn new(config: Config, token: String, pool: DbPool) -> Self {
+    pub fn new(config: Config, token: String, pool: DbPool, scopes: Scopes) -> Self {
         let ledger = Ledger::new(LedgerSettings::from_config(&config));
         Self {
             token,
@@ -88,6 +93,7 @@ impl Shared {
             changes: watch::Sender::new(0),
             shutdown: watch::Sender::new(false),
             started: Instant::now(),
+            scopes,
             settings: RwLock::new(Arc::new(Settings::new(config))),
             config_error: Mutex::new(None),
             latest: RwLock::new(None),
@@ -175,6 +181,16 @@ impl Shared {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .insert(holder.session.clone(), holder);
+    }
+
+    /// The PIDs of every registered session's holder.
+    pub fn holder_pids(&self) -> HashSet<u32> {
+        self.sessions
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .values()
+            .map(|holder| holder.pid)
+            .collect()
     }
 
     /// Forgets sessions whose holder is gone and returns the rest.

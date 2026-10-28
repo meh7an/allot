@@ -29,7 +29,7 @@ use allot_shared::{
     ui::{Notice, UiState},
 };
 use allotd::{
-    DaemonOptions, Maintenance,
+    DaemonOptions, Maintenance, Scopes,
     db::{
         open_pool,
         repo::{self, LeaseDraft},
@@ -173,6 +173,7 @@ impl Daemon {
                 config_poll: Duration::from_millis(20),
                 prune_every: Duration::from_secs(3_600),
             },
+            scopes: Scopes::disabled(),
         };
         let (stop, stopped) = oneshot::channel::<()>();
         let server = tokio::spawn(allotd::serve(listener, options, async {

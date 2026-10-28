@@ -27,6 +27,16 @@ pub struct MeteredRun {
     pub overlapped: bool,
 }
 
+/// CPU and RAM of a lease's own cgroup over the last sample interval, which replace the
+/// session's in the next sample the meter observes.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ScopeUsage {
+    /// CPU time over the interval in logical cores.
+    pub cores: f32,
+    /// Memory charged to the cgroup without its file cache.
+    pub ram_mb: u64,
+}
+
 /// Accumulates load samples while a lease is active.
 #[derive(Debug, Clone)]
 pub struct RunMeter {
@@ -42,6 +52,9 @@ pub struct RunMeter {
     holder_peak: ResourceUsage,
     busy_samples: u32,
     busy_sum: [f64; 2],
+    /// Set once the lease runs in a cgroup; from then on CPU and RAM come from it alone.
+    scoped: bool,
+    scope: Option<ScopeUsage>,
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -84,6 +97,8 @@ impl RunMeter {
             holder_peak: ResourceUsage::default(),
             busy_samples: 0,
             busy_sum: [0.0; 2],
+            scoped: false,
+            scope: None,
         }
     }
 
@@ -107,6 +122,14 @@ impl RunMeter {
         self.overlapped = true;
     }
 
+    /// Uses `usage` of the lease's cgroup for CPU and RAM in the next new sample. Once a
+    /// lease has reported one, a sample without it counts as no CPU and RAM: the cgroup holds
+    /// the command, and the rest of the session is not the job.
+    pub fn observe_scope(&mut self, usage: ScopeUsage) {
+        self.scoped = true;
+        self.scope = Some(usage);
+    }
+
     /// Adds `snapshot` unless it was already counted.
     pub fn observe(&mut self, snapshot: &Snapshot) {
         if snapshot.taken_at_ms <= self.last_taken_at_ms {
@@ -123,6 +146,18 @@ impl RunMeter {
             } else {
                 others += session.usage;
             }
+        }
+        if self.scoped {
+            let scope = self.scope.take().unwrap_or(ScopeUsage {
+                cores: 0.0,
+                ram_mb: 0,
+            });
+            // Processes that left the session's tree before it moved them (daemons a build
+            // starts) count in the scope and outside the session; this is the least of that.
+            let outside = (scope.cores - holder.cores).max(0.0);
+            others.cores = (others.cores - outside).max(0.0);
+            holder.cores = scope.cores;
+            holder.ram_mb = scope.ram_mb;
         }
         let logical_cores = snapshot.cpu.logical_cores.max(1) as f32;
         self.noise_cpu.add(others.cores / logical_cores * 100.0);
@@ -284,5 +319,41 @@ mod tests {
         let busy = gpu.finish().unwrap().holder_busy.unwrap();
         assert!((busy.cores - 0.1).abs() < 1e-4, "{busy:?}");
         assert_eq!(busy.gpu_pct, 60.0);
+    }
+
+    #[test]
+    fn test_run_meter_takes_cpu_and_ram_from_the_scope_once_it_has_one() {
+        let mut meter = RunMeter::start(LeaseId(7), SessionKey("s".into()), true, &at(0, 0.0));
+        let sample = |second: i64, session_cores: f32| {
+            let mut sample = at(second * 1_000, 50.0);
+            sample.sessions = vec![session_usage("s", session_cores)];
+            sample.sessions[0].usage.ram_mb = 900;
+            sample.sessions[0].usage.gpu_pct = 30.0;
+            sample.unattributed.cores = 3.2;
+            sample
+        };
+        meter.observe(&sample(1, 0.05));
+        // A build daemon outside the session's tree adds 1.6 cores to the scope.
+        meter.observe_scope(ScopeUsage {
+            cores: 4.0,
+            ram_mb: 600,
+        });
+        meter.observe(&sample(2, 2.4));
+        // The scope missed a sample: the command is done, its cgroup used nothing.
+        meter.observe(&sample(3, 0.05));
+        let run = meter.finish().unwrap();
+        assert_eq!(run.holder_peak.cores, 4.0);
+        assert_eq!(run.holder_peak.ram_mb, 900);
+        assert!(
+            (run.holder_avg.cores - (0.05 + 4.0) / 3.0).abs() < 1e-4,
+            "{run:?}"
+        );
+        assert_eq!(run.holder_avg.ram_mb, 500);
+        assert_eq!(run.holder_avg.gpu_pct, 30.0);
+        // Noise: 3.2, then 3.2 - 1.6, then 3.2 cores of 16.
+        assert!(
+            (run.noise.avg_cpu_pct - 8.0 / 3.0 / 16.0 * 100.0).abs() < 1e-3,
+            "{run:?}"
+        );
     }
 }

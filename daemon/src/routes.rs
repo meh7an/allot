@@ -37,6 +37,7 @@ use tokio::sync::watch;
 use crate::{
     db::repo::{self, LeaseDraft},
     error::AppError,
+    scopes,
     state::{AppState, Latest, Shared, now_ms},
     ui,
 };
@@ -428,20 +429,25 @@ async fn bind(
     };
     let tool_use_id = binding.tool_use_id.clone();
     let mut ledger = state.ledger.lock().await;
-    match ledger.bind(id, &owner.session, binding.clone()) {
-        Ok(_) => {}
+    let (holder, profile, granted_at_ms) = match ledger.bind(id, &owner.session, binding.clone()) {
+        Ok(lease) => (
+            lease.holder.clone(),
+            lease.profile,
+            lease.granted_at_ms.unwrap_or(lease.requested_at_ms),
+        ),
         Err(LedgerError::NotFound(_)) => {
             drop(ledger);
             stored_lease(&state, id, &owner.session).await?;
             return Err(untracked(&state, id).await);
         }
         Err(error) => return Err(error.into()),
-    }
+    };
     // Written under the ledger lock, so a sample's rebind cannot overwrite a newer report.
     state
         .with_db(move |conn| repo::bind_lease(conn, id, &binding))
         .await?;
     drop(ledger);
+    scopes::follow_command(&state, id, granted_at_ms, &holder, profile);
     tracing::info!(
         lease = id.0,
         tool_use_id,
@@ -489,6 +495,8 @@ async fn kill(
     state
         .with_db(move |conn| repo::end_lease(conn, id, EndCause::Killed, now, "killed by the user"))
         .await?;
+    // Under the ledger lock, so a sample cannot release the scope before it is killed.
+    let scoped = state.scopes.kill(id).await.unwrap_or_default();
     state.notify_changes();
     // The freed room may let queued leases start right away.
     state.tick(&mut ledger).await?;
@@ -510,8 +518,12 @@ async fn kill(
         }
         Err(reason) => (KillReport::default(), Some(reason)),
     };
+    // The scope's processes already ended; the tree kill caught what never moved into it.
+    let in_scope = |pid: u32| scoped.iter().any(|(scoped_pid, _)| *scoped_pid == pid);
+    let untouched_reason = untouched_reason.filter(|_| scoped.is_empty());
     tracing::info!(
         lease = id.0,
+        scoped = scoped.len(),
         terminated = report.terminated.len(),
         failed = report.failed.len(),
         spared = report.spared.len(),
@@ -521,17 +533,27 @@ async fn kill(
     let lease = ended_lease(&state, id).await?;
     Ok(Json(KillResponse {
         lease,
-        terminated: report
-            .terminated
+        terminated: scoped
             .iter()
-            .map(|target| KilledProcess {
-                pid: target.pid,
-                name: target.name.clone(),
+            .map(|(pid, name)| KilledProcess {
+                pid: *pid,
+                name: name.clone(),
             })
+            .chain(
+                report
+                    .terminated
+                    .iter()
+                    .filter(|target| !in_scope(target.pid))
+                    .map(|target| KilledProcess {
+                        pid: target.pid,
+                        name: target.name.clone(),
+                    }),
+            )
             .collect(),
         failed: report
             .failed
             .iter()
+            .filter(|failure| !in_scope(failure.target.pid))
             .map(|failure| UnkilledProcess {
                 pid: failure.target.pid,
                 name: failure.target.name.clone(),

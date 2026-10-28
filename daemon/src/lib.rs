@@ -7,20 +7,25 @@ pub mod logfile;
 mod maintenance;
 mod routes;
 mod sampling;
+pub mod scopes;
 pub mod startup;
 mod state;
 mod ui;
 
 use std::{future::Future, sync::Arc, time::Duration};
 
-use allot_shared::{api::LeaseQuery, config::Config, types::LeaseState};
+use allot_shared::{
+    api::LeaseQuery,
+    config::Config,
+    types::{LeaseId, LeaseState},
+};
 use tokio::net::TcpListener;
 
 use crate::{
     db::{DbPool, repo},
     state::{Shared, now_ms},
 };
-pub use crate::{maintenance::Maintenance, sampling::SamplerFactory};
+pub use crate::{maintenance::Maintenance, sampling::SamplerFactory, scopes::Scopes};
 
 /// What the daemon needs to serve, prepared by `main` or by a test.
 pub struct DaemonOptions {
@@ -37,6 +42,8 @@ pub struct DaemonOptions {
     pub sample_interval: Duration,
     /// Config reloading and pruning.
     pub maintenance: Maintenance,
+    /// Cgroup scopes for Linux leases; [`Scopes::disabled`] follows process trees only.
+    pub scopes: Scopes,
 }
 
 /// Serves the API on `listener` until `shutdown` resolves or a client calls
@@ -54,8 +61,14 @@ pub async fn serve(
     options: DaemonOptions,
     shutdown: impl Future<Output = ()> + Send + 'static,
 ) -> anyhow::Result<()> {
-    let state = Arc::new(Shared::new(options.config, options.token, options.pool));
+    let state = Arc::new(Shared::new(
+        options.config,
+        options.token,
+        options.pool,
+        options.scopes,
+    ));
     restore_leftovers(&state).await?;
+    adopt_scopes(&state).await;
     let samples = sampling::spawn_sampler(options.sampler, options.sample_interval)?;
     let sampling = tokio::spawn(sampling::run(state.clone(), samples));
     let upkeep = tokio::spawn(maintenance::run(state.clone(), options.maintenance));
@@ -80,6 +93,26 @@ pub async fn serve(
     upkeep.abort();
     tracing::info!("stopped");
     Ok(served?)
+}
+
+/// Takes back the scopes a previous run started for the leases still active, so their
+/// commands stay isolated, and releases the rest.
+async fn adopt_scopes(state: &Shared) {
+    let mut ledger = state.ledger.lock().await;
+    let active: Vec<(LeaseId, i64)> = ledger
+        .leases()
+        .iter()
+        .filter(|lease| lease.state == LeaseState::Active)
+        .map(|lease| {
+            let granted_at_ms = lease.granted_at_ms.unwrap_or(lease.requested_at_ms);
+            (lease.id, granted_at_ms)
+        })
+        .collect();
+    for (id, isolation) in state.scopes.adopt(&active).await {
+        tracing::info!(lease = id.0, "took back the lease's scope");
+        // The lease was just restored as active, so it is tracked.
+        let _ = ledger.set_isolation(id, isolation);
+    }
 }
 
 /// Puts the leases a previous run left queued or active back into the ledger, oldest first,

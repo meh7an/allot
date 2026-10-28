@@ -293,7 +293,7 @@ impl Default for HookConfig {
 ///
 /// Each active lease runs in a systemd scope of its own, which gives exact usage and a kill
 /// that ends every process at once. Caps on what a lease may use are opt-in, because a job
-/// that outgrows its declared profile is slowed down or, for memory, may be killed.
+/// that outgrows its declared profile is slowed down by them.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct LinuxConfig {
@@ -302,7 +302,7 @@ pub struct LinuxConfig {
     pub scopes: bool,
     /// Cap a lease's CPU time at its reserved cores.
     pub enforce_cpu: bool,
-    /// Cap a lease's memory at its reserved RAM.
+    /// Throttle a lease above its reserved RAM (`MemoryHigh`); it is never killed for memory.
     pub enforce_memory: bool,
 }
 

@@ -6,7 +6,7 @@ use std::{fs, net::Ipv4Addr, time::Duration};
 use allot_core::sampler::Sampler;
 use allot_sampler::SystemSampler;
 use allot_shared::{config::Config, paths::Paths};
-use allotd::{DaemonOptions, Maintenance, db, startup};
+use allotd::{DaemonOptions, Maintenance, Scopes, db, startup};
 use anyhow::Context;
 use clap::Parser;
 use tokio::net::TcpListener;
@@ -14,11 +14,29 @@ use tokio::net::TcpListener;
 /// Resource coordinator daemon: samples system usage and arbitrates heavy-job leases.
 #[derive(Debug, Parser)]
 #[command(version)]
-struct Args {}
+struct Args {
+    /// Run as the idle anchor that keeps a lease's cgroup scope alive; allotd starts these.
+    #[cfg(target_os = "linux")]
+    #[arg(long = "anchor", value_name = "SCOPE", hide = true)]
+    anchor: Option<String>,
+}
+
+fn main() -> anyhow::Result<()> {
+    let args = Args::parse();
+    #[cfg(target_os = "linux")]
+    if args.anchor.is_some() {
+        // It only has to exist: it holds nothing, and allotd ends it with SIGKILL.
+        loop {
+            std::thread::park();
+        }
+    }
+    #[cfg(not(target_os = "linux"))]
+    let _ = args;
+    daemon()
+}
 
 #[tokio::main]
-async fn main() -> anyhow::Result<()> {
-    Args::parse();
+async fn daemon() -> anyhow::Result<()> {
     let paths = Paths::from_env()?;
     fs::create_dir_all(paths.root())
         .with_context(|| format!("creating {}", paths.root().display()))?;
@@ -55,6 +73,7 @@ async fn run(paths: &Paths) -> anyhow::Result<()> {
         sampler: Box::new(|| Ok(Box::new(SystemSampler::new()?) as Box<dyn Sampler>)),
         sample_interval: Duration::from_secs(1),
         maintenance: Maintenance::standard(config_file),
+        scopes: Scopes::detect(paths.root()).await,
     };
     allotd::serve(listener, options, shutdown_signal()).await
 }

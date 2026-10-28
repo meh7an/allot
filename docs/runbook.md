@@ -47,6 +47,12 @@ Kill (in the flyout, or `allot kill <id>`) works on an active lease, whichever s
    or the root has already exited, the lease still ends and nothing is terminated; the
    response says so.
 
+On Linux with `linux.scopes` on, a lease's command also runs in its own systemd scope, and Kill
+ends every process in that scope at once (`cgroup.kill`), then anything of the tree that started
+before it moved into the scope. A scope that holds a nested Claude session or an allot binary is
+left to the tree kill, which spares them. Releasing a lease never ends what still runs in its
+scope, such as a job started in the background.
+
 Remove (`allot remove <id>`) ends a queued lease before it starts. Either way the session gets
 a notice through its next hook call or MCP tool result, and Claude tells you and asks whether
 to retry or skip. The notice is delivered once.
@@ -125,6 +131,9 @@ are rejected. `allot classes` prints the classifier rules and class profiles in 
 | `retention.lease_days`, `history_days` | 30, 90 | Age at which ended leases and job runs are pruned (hourly). |
 | `retention.keep_runs_per_job`, `max_job_runs` | 20, 5000 | Runs kept per job regardless of age, and in total. |
 | `hook.fail_open` | true | See Fail-open behavior. |
+| `linux.scopes` | true | Linux: run each lease's command in a systemd scope of its own (`allot-<id>-<grant time>-<tag>.scope`), which gives its exact CPU time and memory and a kill that ends it at once. Needs cgroup v2 and a systemd user session; without them leases follow their process tree. |
+| `linux.enforce_cpu` | false | Linux: cap a lease's scope at its reserved cores (`CPUQuota`). |
+| `linux.enforce_memory` | false | Linux: throttle a lease's scope above its reserved RAM (`MemoryHigh`); it is never killed for memory. |
 | `[classes.<class>]` | built in | Profiles of `light`, `cpu_heavy`, `gpu_heavy`, `mixed`. |
 | `[[classifier.rules]]` | built in | Heavy-command rules. A list here replaces the default list. |
 

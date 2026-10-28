@@ -19,7 +19,7 @@ use allot_shared::{
         EndCause, Holder, JobClass, LeaseKind, LeaseState, MemStats, ResourceUsage, SessionKey,
     },
 };
-use allotd::{DaemonOptions, Maintenance, db::open_pool};
+use allotd::{DaemonOptions, Maintenance, Scopes, db::open_pool};
 use tempfile::TempDir;
 use tokio::{net::TcpListener, sync::oneshot, task::JoinHandle};
 
@@ -115,6 +115,7 @@ impl Daemon {
             sampler: Box::new(move || Ok(Box::new(FakeSampler(sampled)) as Box<dyn Sampler>)),
             sample_interval: Duration::from_millis(20),
             maintenance: Maintenance::default(),
+            scopes: Scopes::disabled(),
         };
         let (stop, stopped) = oneshot::channel::<()>();
         let server = tokio::spawn(async move {

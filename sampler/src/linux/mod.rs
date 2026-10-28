@@ -1,12 +1,13 @@
 //! Linux implementation of [`allot_core::sampler::Sampler`]: sysinfo for CPU, processes,
 //! and exe paths; `/proc/meminfo` for memory; the mount table, statvfs, and
 //! `/proc/diskstats` for drives; NVML, DRM fdinfo, and sysfs for GPUs; `/proc/pressure` for
-//! stall information. The parsers read
+//! stall information; and the cgroup v2 files of lease scopes. The parsers read
 //! below a root path, normally `/`, so fixtures in `fixtures/linux` stand in for a machine.
 
 // Off Linux only the fixture tests use the parsers, and the live sampler is not built.
 #![cfg_attr(not(target_os = "linux"), allow(dead_code))]
 
+pub mod cgroup;
 mod diskstats;
 mod drives;
 mod gpu;

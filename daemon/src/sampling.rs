@@ -103,6 +103,7 @@ async fn ingest(
         cpu_history_pct: cpu_history.iter().copied().collect(),
     });
     let mut ledger = state.ledger.lock().await;
+    ledger.observe_scopes(&state.scopes.usage());
     if let Err(error) = state.tick(&mut ledger).await {
         tracing::error!("persisting lease transitions failed: {error:#}");
     }
@@ -116,6 +117,12 @@ async fn ingest(
             Vec::new()
         }
     };
+    state.scopes.retain(|id| {
+        ledger
+            .leases()
+            .iter()
+            .any(|lease| lease.id == id && lease.state == LeaseState::Active)
+    });
     drop(ledger);
     for run in runs {
         routes::store_job_run(state, run).await;

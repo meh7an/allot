@@ -25,7 +25,7 @@ use allot_shared::{
 use crate::{
     admission::{self, Room, Running},
     benchmark::{Quiet, QuietLimits, QuietWindow},
-    meter::{MeteredRun, RunMeter},
+    meter::{MeteredRun, RunMeter, ScopeUsage},
 };
 
 /// The config values the ledger works with, with times in milliseconds.
@@ -287,6 +287,36 @@ impl Ledger {
             });
         }
         Ok(lease)
+    }
+
+    /// Records how an active lease's command is isolated, once its cgroup exists or was found
+    /// again after a restart. Later bindings keep it.
+    ///
+    /// # Errors
+    ///
+    /// [`LedgerError::NotFound`] or [`LedgerError::NotActive`].
+    pub fn set_isolation(
+        &mut self,
+        id: LeaseId,
+        isolation: LeaseIsolation,
+    ) -> Result<&Lease, LedgerError> {
+        let index = self.index(id)?;
+        let lease = &mut self.leases[index];
+        if lease.state != LeaseState::Active {
+            return Err(LedgerError::NotActive(id));
+        }
+        lease.isolation = Some(isolation);
+        Ok(lease)
+    }
+
+    /// Hands the usage of active leases' cgroups to their meters, for the next sample they
+    /// observe. Leases without a meter are skipped.
+    pub fn observe_scopes(&mut self, usages: &[(LeaseId, ScopeUsage)]) {
+        for (id, usage) in usages {
+            if let Some(meter) = self.meters.iter_mut().find(|meter| meter.lease_id() == *id) {
+                meter.observe_scope(*usage);
+            }
+        }
     }
 
     /// Ends a queued or active lease at its holder's request and stops tracking it.
@@ -1253,6 +1283,61 @@ mod tests {
                 .unwrap_err(),
             LedgerError::NotFound(LeaseId(9))
         );
+    }
+
+    #[test]
+    fn test_set_isolation_survives_a_later_binding() {
+        let mut ledger = Ledger::new(settings());
+        enqueue(&mut ledger, 1, 8.0, 300, 0);
+        let cgroup = LeaseIsolation {
+            kind: IsolationKind::Cgroup,
+            scope: Some("allot-1-0a1b2c3d.scope".into()),
+            limits: EnforcedLimits {
+                cpu_cores: Some(8.0),
+                ..EnforcedLimits::default()
+            },
+        };
+        assert_eq!(
+            ledger
+                .set_isolation(LeaseId(1), cgroup.clone())
+                .unwrap_err(),
+            LedgerError::NotActive(LeaseId(1))
+        );
+        assert_eq!(tick_seconds(&mut ledger, 0, 0, 0.0), [1]);
+        ledger.set_isolation(LeaseId(1), cgroup.clone()).unwrap();
+        let binding = LeaseBinding {
+            tool_use_id: "toolu_02".into(),
+            bound_at_ms: 2_000,
+            root: None,
+        };
+        let bound = ledger.bind(LeaseId(1), &session("s"), binding).unwrap();
+        assert_eq!(bound.isolation, Some(cgroup.clone()));
+        assert_eq!(
+            ledger.set_isolation(LeaseId(9), cgroup).unwrap_err(),
+            LedgerError::NotFound(LeaseId(9))
+        );
+    }
+
+    #[test]
+    fn test_observed_scope_usage_reaches_the_run() {
+        let mut ledger = Ledger::new(settings());
+        enqueue(&mut ledger, 1, 8.0, 300, 0);
+        assert_eq!(tick_seconds(&mut ledger, 0, 0, 0.0), [1]);
+        let usage = ScopeUsage {
+            cores: 6.5,
+            ram_mb: 2_048,
+        };
+        ledger.observe_scopes(&[(LeaseId(1), usage), (LeaseId(9), usage)]);
+        let mut busy = sample(1_000, 60.0);
+        busy.sessions = vec![session_usage("s", 7.0)];
+        ledger.tick(1_000, &busy, &alive());
+        let run = ledger
+            .release(LeaseId(1), &session("s"), 2_000)
+            .unwrap()
+            .run
+            .unwrap();
+        assert_eq!(run.holder_peak.cores, 6.5);
+        assert_eq!(run.holder_peak.ram_mb, 2_048);
     }
 
     #[test]

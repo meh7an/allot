@@ -16,7 +16,7 @@ mod unix;
 mod windows;
 
 #[cfg(target_os = "linux")]
-pub use crate::linux::{Pressure, PressureLine, Stall, SystemSampler};
+pub use crate::linux::{Pressure, PressureLine, Stall, SystemSampler, cgroup};
 #[cfg(target_os = "macos")]
 pub use crate::macos::SystemSampler;
 pub use crate::table::{current_ancestry, process_table};
