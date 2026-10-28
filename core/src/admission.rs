@@ -436,6 +436,23 @@ mod tests {
     }
 
     #[test]
+    fn test_room_on_unified_memory_counts_a_gpu_leases_memory_once() {
+        // macOS charges GPU allocations to the process footprint, so the leased session's
+        // 7000 MB of RAM holds the 6000 MB its job allocated for the GPU.
+        let lease = active_lease(1, "a", gpu_profile(50.0, 6_000));
+        let mut snapshot = snapshot(0.0, 10_000, Some(unified_gpu(60.0, 6_000)));
+        let mut session = session_usage("a", 0.0);
+        session.usage.ram_mb = 7_000;
+        snapshot.sessions.push(session);
+        let room = Room::measure(&snapshot, &[&lease], 10.0);
+        // 29491.2 MB usable, 3000 MB of background, 1000 + 6000 MB reserved.
+        assert!((room.ram_mb - 19_491.2).abs() < 1e-6, "{room:?}");
+        // Estimated process load: 90% usable, 10% beyond the reservation, 50% reserved.
+        assert!((room.gpu_pct.unwrap() - 30.0).abs() < 1e-6, "{room:?}");
+        assert_eq!(room.vram_mb, None);
+    }
+
+    #[test]
     fn test_primary_adapter_prefers_most_vram_then_first() {
         let integrated = gpu(0.0, 0, Some(512));
         let discrete = gpu(0.0, 0, Some(12_288));

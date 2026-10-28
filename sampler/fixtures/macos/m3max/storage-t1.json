@@ -1,0 +1,171 @@
+[
+ {
+  "IOObjectClass": "IOBlockStorageDriver",
+  "IORegistryEntryID": 4294970573,
+  "IORegistryEntryName": "IOBlockStorageDriver",
+  "Statistics": {
+   "Bytes (Read)": 406265344,
+   "Bytes (Write)": 553909760,
+   "Errors (Read)": 0,
+   "Errors (Write)": 0,
+   "Latency Time (Read)": 0,
+   "Latency Time (Write)": 0,
+   "Operations (Read)": 3670,
+   "Operations (Write)": 10574,
+   "Retries (Read)": 0,
+   "Retries (Write)": 0,
+   "Total Time (Read)": 30911889923,
+   "Total Time (Write)": 75195364068
+  }
+ },
+ {
+  "IOObjectClass": "IOBlockStorageDriver",
+  "IORegistryEntryChildren": [
+   {
+    "BSD Name": "disk0",
+    "IOObjectClass": "IOMedia",
+    "IORegistryEntryID": 4294969755,
+    "IORegistryEntryName": "APPLE SSD AP1024Z Media",
+    "Size": 1000555581440
+   }
+  ],
+  "IORegistryEntryID": 4294969754,
+  "IORegistryEntryName": "IOBlockStorageDriver",
+  "Statistics": {
+   "Bytes (Read)": 2559615463424,
+   "Bytes (Write)": 1838685675520,
+   "Errors (Read)": 0,
+   "Errors (Write)": 0,
+   "Latency Time (Read)": 0,
+   "Latency Time (Write)": 0,
+   "Operations (Read)": 82714477,
+   "Operations (Write)": 46829169,
+   "Retries (Read)": 0,
+   "Retries (Write)": 0,
+   "Total Time (Read)": 23151048837806,
+   "Total Time (Write)": 3434036686017
+  }
+ },
+ {
+  "IOObjectClass": "IOBlockStorageDriver",
+  "IORegistryEntryID": 4296312193,
+  "IORegistryEntryName": "IOBlockStorageDriver",
+  "Statistics": {
+   "Bytes (Read)": 0,
+   "Bytes (Write)": 0,
+   "Errors (Read)": 0,
+   "Errors (Write)": 0,
+   "Latency Time (Read)": 0,
+   "Latency Time (Write)": 0,
+   "Operations (Read)": 0,
+   "Operations (Write)": 0,
+   "Retries (Read)": 0,
+   "Retries (Write)": 0,
+   "Total Time (Read)": 0,
+   "Total Time (Write)": 0
+  }
+ },
+ {
+  "IOObjectClass": "IOBlockStorageDriver",
+  "IORegistryEntryID": 4296312199,
+  "IORegistryEntryName": "IOBlockStorageDriver",
+  "Statistics": {
+   "Bytes (Read)": 0,
+   "Bytes (Write)": 0,
+   "Errors (Read)": 0,
+   "Errors (Write)": 0,
+   "Latency Time (Read)": 0,
+   "Latency Time (Write)": 0,
+   "Operations (Read)": 0,
+   "Operations (Write)": 0,
+   "Retries (Read)": 0,
+   "Retries (Write)": 0,
+   "Total Time (Read)": 0,
+   "Total Time (Write)": 0
+  }
+ },
+ {
+  "IOObjectClass": "IOBlockStorageDriver",
+  "IORegistryEntryChildren": [
+   {
+    "BSD Name": "disk8",
+    "IOObjectClass": "IOMedia",
+    "IORegistryEntryID": 4295251570,
+    "IORegistryEntryName": "Apple Disk Image Media",
+    "Size": 765843456
+   }
+  ],
+  "IORegistryEntryID": 4295251569,
+  "IORegistryEntryName": "IOBlockStorageDriver",
+  "Statistics": {
+   "Bytes (Read)": 785093632,
+   "Bytes (Write)": 0,
+   "Errors (Read)": 0,
+   "Errors (Write)": 0,
+   "Latency Time (Read)": 0,
+   "Latency Time (Write)": 0,
+   "Operations (Read)": 2632,
+   "Operations (Write)": 0,
+   "Retries (Read)": 0,
+   "Retries (Write)": 0,
+   "Total Time (Read)": 18409778925,
+   "Total Time (Write)": 0
+  }
+ },
+ {
+  "IOObjectClass": "IOBlockStorageDriver",
+  "IORegistryEntryChildren": [
+   {
+    "BSD Name": "disk10",
+    "IOObjectClass": "IOMedia",
+    "IORegistryEntryID": 4296258421,
+    "IORegistryEntryName": "Apple Disk Image Media",
+    "Size": 544210944
+   }
+  ],
+  "IORegistryEntryID": 4296258420,
+  "IORegistryEntryName": "IOBlockStorageDriver",
+  "Statistics": {
+   "Bytes (Read)": 890461184,
+   "Bytes (Write)": 0,
+   "Errors (Read)": 0,
+   "Errors (Write)": 0,
+   "Latency Time (Read)": 0,
+   "Latency Time (Write)": 0,
+   "Operations (Read)": 9835,
+   "Operations (Write)": 0,
+   "Retries (Read)": 0,
+   "Retries (Write)": 0,
+   "Total Time (Read)": 7576416479,
+   "Total Time (Write)": 0
+  }
+ },
+ {
+  "IOObjectClass": "IOBlockStorageDriver",
+  "IORegistryEntryChildren": [
+   {
+    "BSD Name": "disk9",
+    "IOObjectClass": "IOMedia",
+    "IORegistryEntryID": 4295251591,
+    "IORegistryEntryName": "Apple UDIF read-only compressed (lzma) Media",
+    "Size": 765843456
+   }
+  ],
+  "IORegistryEntryID": 4295251590,
+  "IORegistryEntryName": "IOBlockStorageDriver",
+  "Statistics": {
+   "Bytes (Read)": 4800000,
+   "Bytes (Write)": 0,
+   "Errors (Read)": 0,
+   "Errors (Write)": 0,
+   "Latency Time (Read)": 0,
+   "Latency Time (Write)": 0,
+   "Operations (Read)": 982,
+   "Operations (Write)": 0,
+   "Retries (Read)": 0,
+   "Retries (Write)": 0,
+   "Total Time (Read)": 451439455,
+   "Total Time (Write)": 0
+  }
+ }
+]

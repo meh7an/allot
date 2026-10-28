@@ -64,6 +64,9 @@ dependencies = [
  "allot-shared",
  "libc",
  "nvml-wrapper",
+ "objc2-core-foundation",
+ "objc2-io-kit",
+ "serde_json",
  "sysinfo",
  "windows",
 ]

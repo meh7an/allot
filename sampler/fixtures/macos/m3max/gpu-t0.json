@@ -1,0 +1,969 @@
+[
+ {
+  "IOObjectClass": "AGXAcceleratorG15X",
+  "IORegistryEntryChildren": [
+   {
+    "AppUsage": [],
+    "IOObjectClass": "AGXDeviceUserClient",
+    "IORegistryEntryID": 4294971522,
+    "IORegistryEntryName": "AGXDeviceUserClient",
+    "IOUserClientCreator": "pid 544, app1"
+   },
+   {
+    "AppUsage": [],
+    "IOObjectClass": "AGXDeviceUserClient",
+    "IORegistryEntryID": 4294971700,
+    "IORegistryEntryName": "AGXDeviceUserClient",
+    "IOUserClientCreator": "pid 539, WindowServer"
+   },
+   {
+    "AppUsage": [
+     {
+      "API": "Metal",
+      "accumulatedGPUTime": 30543808896333,
+      "lastSubmittedTime": 787761810294833
+     },
+     {
+      "API": "Metal",
+      "accumulatedGPUTime": 585623375,
+      "lastSubmittedTime": 787529236707375
+     },
+     {
+      "API": "Metal",
+      "accumulatedGPUTime": 0,
+      "lastSubmittedTime": 0
+     },
+     {
+      "API": "Metal",
+      "accumulatedGPUTime": 2101000,
+      "lastSubmittedTime": 339005305148958
+     }
+    ],
+    "CommandQueueCount": 4,
+    "IOObjectClass": "AGXDeviceUserClient",
+    "IORegistryEntryID": 4294971705,
+    "IORegistryEntryName": "AGXDeviceUserClient",
+    "IOUserClientCreator": "pid 539, WindowServer"
+   },
+   {
+    "AppUsage": [],
+    "IOObjectClass": "AGXDeviceUserClient",
+    "IORegistryEntryID": 4294972137,
+    "IORegistryEntryName": "AGXDeviceUserClient",
+    "IOUserClientCreator": "pid 847, app2"
+   },
+   {
+    "AppUsage": [
+     {
+      "API": "Metal",
+      "accumulatedGPUTime": 1058067208,
+      "lastSubmittedTime": 784215700198666
+     }
+    ],
+    "CommandQueueCount": 1,
+    "IOObjectClass": "AGXDeviceUserClient",
+    "IORegistryEntryID": 4294972230,
+    "IORegistryEntryName": "AGXDeviceUserClient",
+    "IOUserClientCreator": "pid 850, app3"
+   },
+   {
+    "AppUsage": [],
+    "IOObjectClass": "AGXDeviceUserClient",
+    "IORegistryEntryID": 4294972238,
+    "IORegistryEntryName": "AGXDeviceUserClient",
+    "IOUserClientCreator": "pid 798, app4"
+   },
+   {
+    "AppUsage": [
+     {
+      "API": "Metal",
+      "accumulatedGPUTime": 8774166,
+      "lastSubmittedTime": 768568455595000
+     },
+     {
+      "API": "Metal",
+      "accumulatedGPUTime": 2232625,
+      "lastSubmittedTime": 772191990821958
+     }
+    ],
+    "CommandQueueCount": 2,
+    "IOObjectClass": "AGXDeviceUserClient",
+    "IORegistryEntryID": 4294972295,
+    "IORegistryEntryName": "AGXDeviceUserClient",
+    "IOUserClientCreator": "pid 805, Finder"
+   },
+   {
+    "AppUsage": [
+     {
+      "API": "Metal",
+      "accumulatedGPUTime": 44488041750,
+      "lastSubmittedTime": 787508753023833
+     }
+    ],
+    "CommandQueueCount": 1,
+    "IOObjectClass": "AGXDeviceUserClient",
+    "IORegistryEntryID": 4294972307,
+    "IORegistryEntryName": "AGXDeviceUserClient",
+    "IOUserClientCreator": "pid 543, loginwindow"
+   },
+   {
+    "AppUsage": [],
+    "IOObjectClass": "AGXDeviceUserClient",
+    "IORegistryEntryID": 4294972313,
+    "IORegistryEntryName": "AGXDeviceUserClient",
+    "IOUserClientCreator": "pid 934, app5"
+   },
+   {
+    "AppUsage": [],
+    "IOObjectClass": "AGXDeviceUserClient",
+    "IORegistryEntryID": 4294972325,
+    "IORegistryEntryName": "AGXDeviceUserClient",
+    "IOUserClientCreator": "pid 952, app6"
+   },
+   {
+    "AppUsage": [
+     {
+      "API": "Metal",
+      "accumulatedGPUTime": 6580583,
+      "lastSubmittedTime": 750777449174250
+     }
+    ],
+    "CommandQueueCount": 1,
+    "IOObjectClass": "AGXDeviceUserClient",
+    "IORegistryEntryID": 4294972345,
+    "IORegistryEntryName": "AGXDeviceUserClient",
+    "IOUserClientCreator": "pid 950, app7"
+   },
+   {
+    "AppUsage": [
+     {
+      "API": "Metal",
+      "accumulatedGPUTime": 45751542916,
+      "lastSubmittedTime": 787744324826333
+     }
+    ],
+    "CommandQueueCount": 1,
+    "IOObjectClass": "AGXDeviceUserClient",
+    "IORegistryEntryID": 4294972352,
+    "IORegistryEntryName": "AGXDeviceUserClient",
+    "IOUserClientCreator": "pid 796, ControlCenter"
+   },
+   {
+    "AppUsage": [
+     {
+      "API": "Metal",
+      "accumulatedGPUTime": 32852600750,
+      "lastSubmittedTime": 787675665991875
+     }
+    ],
+    "CommandQueueCount": 1,
+    "IOObjectClass": "AGXDeviceUserClient",
+    "IORegistryEntryID": 4294972360,
+    "IORegistryEntryName": "AGXDeviceUserClient",
+    "IOUserClientCreator": "pid 913, app8"
+   },
+   {
+    "AppUsage": [],
+    "IOObjectClass": "AGXDeviceUserClient",
+    "IORegistryEntryID": 4294972376,
+    "IORegistryEntryName": "AGXDeviceUserClient",
+    "IOUserClientCreator": "pid 970, app9"
+   },
+   {
+    "AppUsage": [
+     {
+      "API": "Metal",
+      "accumulatedGPUTime": 0,
+      "lastSubmittedTime": 0
+     },
+     {
+      "API": "Metal",
+      "accumulatedGPUTime": 1152028083,
+      "lastSubmittedTime": 784700952663416
+     }
+    ],
+    "CommandQueueCount": 2,
+    "IOObjectClass": "AGXDeviceUserClient",
+    "IORegistryEntryID": 4294972378,
+    "IORegistryEntryName": "AGXDeviceUserClient",
+    "IOUserClientCreator": "pid 1006, app10"
+   },
+   {
+    "AppUsage": [],
+    "IOObjectClass": "AGXDeviceUserClient",
+    "IORegistryEntryID": 4294972410,
+    "IORegistryEntryName": "AGXDeviceUserClient",
+    "IOUserClientCreator": "pid 1023, app11"
+   },
+   {
+    "AppUsage": [
+     {
+      "API": "Metal",
+      "accumulatedGPUTime": 26813541,
+      "lastSubmittedTime": 749629440756375
+     }
+    ],
+    "CommandQueueCount": 1,
+    "IOObjectClass": "AGXDeviceUserClient",
+    "IORegistryEntryID": 4294972437,
+    "IORegistryEntryName": "AGXDeviceUserClient",
+    "IOUserClientCreator": "pid 981, app12"
+   },
+   {
+    "AppUsage": [],
+    "IOObjectClass": "AGXDeviceUserClient",
+    "IORegistryEntryID": 4294972619,
+    "IORegistryEntryName": "AGXDeviceUserClient",
+    "IOUserClientCreator": "pid 1372, app13"
+   },
+   {
+    "AppUsage": [
+     {
+      "API": "Metal",
+      "accumulatedGPUTime": 1430657375,
+      "lastSubmittedTime": 787530025009416
+     }
+    ],
+    "CommandQueueCount": 1,
+    "IOObjectClass": "AGXDeviceUserClient",
+    "IORegistryEntryID": 4294972802,
+    "IORegistryEntryName": "AGXDeviceUserClient",
+    "IOUserClientCreator": "pid 1789, app14"
+   },
+   {
+    "AppUsage": [],
+    "CommandQueueCount": 0,
+    "IOObjectClass": "AGXDeviceUserClient",
+    "IORegistryEntryID": 4294973007,
+    "IORegistryEntryName": "AGXDeviceUserClient",
+    "IOUserClientCreator": "pid 2837, app15"
+   },
+   {
+    "AppUsage": [
+     {
+      "API": "Metal",
+      "accumulatedGPUTime": 17339291,
+      "lastSubmittedTime": 784707379083583
+     }
+    ],
+    "CommandQueueCount": 1,
+    "IOObjectClass": "AGXDeviceUserClient",
+    "IORegistryEntryID": 4294973020,
+    "IORegistryEntryName": "AGXDeviceUserClient",
+    "IOUserClientCreator": "pid 2864, app16"
+   },
+   {
+    "AppUsage": [],
+    "CommandQueueCount": 0,
+    "IOObjectClass": "AGXDeviceUserClient",
+    "IORegistryEntryID": 4295006513,
+    "IORegistryEntryName": "AGXDeviceUserClient",
+    "IOUserClientCreator": "pid 37020, app16"
+   },
+   {
+    "AppUsage": [],
+    "IOObjectClass": "AGXDeviceUserClient",
+    "IORegistryEntryID": 4295007598,
+    "IORegistryEntryName": "AGXDeviceUserClient",
+    "IOUserClientCreator": "pid 882, app17"
+   },
+   {
+    "AppUsage": [],
+    "IOObjectClass": "AGXDeviceUserClient",
+    "IORegistryEntryID": 4295011262,
+    "IORegistryEntryName": "AGXDeviceUserClient",
+    "IOUserClientCreator": "pid 9170, app18"
+   },
+   {
+    "AppUsage": [],
+    "CommandQueueCount": 0,
+    "IOObjectClass": "AGXDeviceUserClient",
+    "IORegistryEntryID": 4295026171,
+    "IORegistryEntryName": "AGXDeviceUserClient",
+    "IOUserClientCreator": "pid 536, app19"
+   },
+   {
+    "AppUsage": [],
+    "IOObjectClass": "AGXDeviceUserClient",
+    "IORegistryEntryID": 4295034820,
+    "IORegistryEntryName": "AGXDeviceUserClient",
+    "IOUserClientCreator": "pid 73443, app20"
+   },
+   {
+    "AppUsage": [],
+    "IOObjectClass": "AGXDeviceUserClient",
+    "IORegistryEntryID": 4295046864,
+    "IORegistryEntryName": "AGXDeviceUserClient",
+    "IOUserClientCreator": "pid 88977, app21"
+   },
+   {
+    "AppUsage": [
+     {
+      "API": "Metal",
+      "accumulatedGPUTime": 270041562583,
+      "lastSubmittedTime": 772735650846000
+     }
+    ],
+    "CommandQueueCount": 1,
+    "IOObjectClass": "AGXDeviceUserClient",
+    "IORegistryEntryID": 4295076648,
+    "IORegistryEntryName": "AGXDeviceUserClient",
+    "IOUserClientCreator": "pid 37926, app22"
+   },
+   {
+    "AppUsage": [],
+    "IOObjectClass": "AGXDeviceUserClient",
+    "IORegistryEntryID": 4295076654,
+    "IORegistryEntryName": "AGXDeviceUserClient",
+    "IOUserClientCreator": "pid 37948, app13"
+   },
+   {
+    "AppUsage": [],
+    "IOObjectClass": "AGXDeviceUserClient",
+    "IORegistryEntryID": 4295102649,
+    "IORegistryEntryName": "AGXDeviceUserClient",
+    "IOUserClientCreator": "pid 955, app23"
+   },
+   {
+    "AppUsage": [],
+    "IOObjectClass": "AGXDeviceUserClient",
+    "IORegistryEntryID": 4295149051,
+    "IORegistryEntryName": "AGXDeviceUserClient",
+    "IOUserClientCreator": "pid 770, app24"
+   },
+   {
+    "AppUsage": [],
+    "IOObjectClass": "AGXDeviceUserClient",
+    "IORegistryEntryID": 4295188334,
+    "IORegistryEntryName": "AGXDeviceUserClient",
+    "IOUserClientCreator": "pid 959, app25"
+   },
+   {
+    "AppUsage": [],
+    "IOObjectClass": "AGXDeviceUserClient",
+    "IORegistryEntryID": 4295188406,
+    "IORegistryEntryName": "AGXDeviceUserClient",
+    "IOUserClientCreator": "pid 84805, app26"
+   },
+   {
+    "AppUsage": [
+     {
+      "API": "Metal",
+      "accumulatedGPUTime": 45285842625,
+      "lastSubmittedTime": 787531287187583
+     }
+    ],
+    "CommandQueueCount": 1,
+    "IOObjectClass": "AGXDeviceUserClient",
+    "IORegistryEntryID": 4295188578,
+    "IORegistryEntryName": "AGXDeviceUserClient",
+    "IOUserClientCreator": "pid 84862, app27"
+   },
+   {
+    "AppUsage": [],
+    "IOObjectClass": "AGXDeviceUserClient",
+    "IORegistryEntryID": 4295190503,
+    "IORegistryEntryName": "AGXDeviceUserClient",
+    "IOUserClientCreator": "pid 86641, app28"
+   },
+   {
+    "AppUsage": [
+     {
+      "API": "Metal",
+      "accumulatedGPUTime": 17770208,
+      "lastSubmittedTime": 779076828620583
+     },
+     {
+      "API": "Metal",
+      "accumulatedGPUTime": 4695916,
+      "lastSubmittedTime": 784466963236208
+     }
+    ],
+    "CommandQueueCount": 2,
+    "IOObjectClass": "AGXDeviceUserClient",
+    "IORegistryEntryID": 4295191022,
+    "IORegistryEntryName": "AGXDeviceUserClient",
+    "IOUserClientCreator": "pid 87725, app29"
+   },
+   {
+    "AppUsage": [
+     {
+      "API": "Metal",
+      "accumulatedGPUTime": 970500,
+      "lastSubmittedTime": 747737354462583
+     }
+    ],
+    "CommandQueueCount": 1,
+    "IOObjectClass": "AGXDeviceUserClient",
+    "IORegistryEntryID": 4295213034,
+    "IORegistryEntryName": "AGXDeviceUserClient",
+    "IOUserClientCreator": "pid 24559, app30"
+   },
+   {
+    "AppUsage": [],
+    "IOObjectClass": "AGXDeviceUserClient",
+    "IORegistryEntryID": 4295220450,
+    "IORegistryEntryName": "AGXDeviceUserClient",
+    "IOUserClientCreator": "pid 36933, app31"
+   },
+   {
+    "AppUsage": [
+     {
+      "API": "Metal",
+      "accumulatedGPUTime": 114975375,
+      "lastSubmittedTime": 754966986750958
+     },
+     {
+      "API": "Metal",
+      "accumulatedGPUTime": 2742187930458,
+      "lastSubmittedTime": 787761812376416
+     }
+    ],
+    "CommandQueueCount": 2,
+    "IOObjectClass": "AGXDeviceUserClient",
+    "IORegistryEntryID": 4295295769,
+    "IORegistryEntryName": "AGXDeviceUserClient",
+    "IOUserClientCreator": "pid 46026, app32"
+   },
+   {
+    "AppUsage": [
+     {
+      "API": "Metal",
+      "accumulatedGPUTime": 543041,
+      "lastSubmittedTime": 600769249332541
+     }
+    ],
+    "CommandQueueCount": 1,
+    "IOObjectClass": "AGXDeviceUserClient",
+    "IORegistryEntryID": 4295295771,
+    "IORegistryEntryName": "AGXDeviceUserClient",
+    "IOUserClientCreator": "pid 46017, app33"
+   },
+   {
+    "AppUsage": [
+     {
+      "API": "Metal",
+      "accumulatedGPUTime": 2845208,
+      "lastSubmittedTime": 740287632305458
+     }
+    ],
+    "CommandQueueCount": 1,
+    "IOObjectClass": "AGXDeviceUserClient",
+    "IORegistryEntryID": 4295392860,
+    "IORegistryEntryName": "AGXDeviceUserClient",
+    "IOUserClientCreator": "pid 60663, app34"
+   },
+   {
+    "AppUsage": [],
+    "IOObjectClass": "AGXDeviceUserClient",
+    "IORegistryEntryID": 4295392884,
+    "IORegistryEntryName": "AGXDeviceUserClient",
+    "IOUserClientCreator": "pid 60664, app35"
+   },
+   {
+    "AppUsage": [],
+    "IOObjectClass": "AGXDeviceUserClient",
+    "IORegistryEntryID": 4295684865,
+    "IORegistryEntryName": "AGXDeviceUserClient",
+    "IOUserClientCreator": "pid 46373, app36"
+   },
+   {
+    "AppUsage": [
+     {
+      "API": "Metal",
+      "accumulatedGPUTime": 81545875,
+      "lastSubmittedTime": 601326090331041
+     }
+    ],
+    "CommandQueueCount": 1,
+    "IOObjectClass": "AGXDeviceUserClient",
+    "IORegistryEntryID": 4295684943,
+    "IORegistryEntryName": "AGXDeviceUserClient",
+    "IOUserClientCreator": "pid 46414, app37"
+   },
+   {
+    "AppUsage": [
+     {
+      "API": "Metal",
+      "accumulatedGPUTime": 1540041,
+      "lastSubmittedTime": 751218032826458
+     },
+     {
+      "API": "Metal",
+      "accumulatedGPUTime": 1327000,
+      "lastSubmittedTime": 783494723471375
+     }
+    ],
+    "CommandQueueCount": 2,
+    "IOObjectClass": "AGXDeviceUserClient",
+    "IORegistryEntryID": 4295906427,
+    "IORegistryEntryName": "AGXDeviceUserClient",
+    "IOUserClientCreator": "pid 28378, app38"
+   },
+   {
+    "AppUsage": [],
+    "IOObjectClass": "AGXDeviceUserClient",
+    "IORegistryEntryID": 4295921213,
+    "IORegistryEntryName": "AGXDeviceUserClient",
+    "IOUserClientCreator": "pid 864, app39"
+   },
+   {
+    "AppUsage": [],
+    "IOObjectClass": "AGXDeviceUserClient",
+    "IORegistryEntryID": 4296252643,
+    "IORegistryEntryName": "AGXDeviceUserClient",
+    "IOUserClientCreator": "pid 15237, app40"
+   },
+   {
+    "AppUsage": [],
+    "IOObjectClass": "AGXDeviceUserClient",
+    "IORegistryEntryID": 4296253474,
+    "IORegistryEntryName": "AGXDeviceUserClient",
+    "IOUserClientCreator": "pid 16988, app41"
+   },
+   {
+    "AppUsage": [
+     {
+      "API": "Metal",
+      "accumulatedGPUTime": 0,
+      "lastSubmittedTime": 0
+     },
+     {
+      "API": "Metal",
+      "accumulatedGPUTime": 81782519875,
+      "lastSubmittedTime": 749625399589625
+     }
+    ],
+    "CommandQueueCount": 2,
+    "IOObjectClass": "AGXDeviceUserClient",
+    "IORegistryEntryID": 4296253476,
+    "IORegistryEntryName": "AGXDeviceUserClient",
+    "IOUserClientCreator": "pid 16995, app42"
+   },
+   {
+    "AppUsage": [],
+    "IOObjectClass": "AGXDeviceUserClient",
+    "IORegistryEntryID": 4296253519,
+    "IORegistryEntryName": "AGXDeviceUserClient",
+    "IOUserClientCreator": "pid 17073, app13"
+   },
+   {
+    "AppUsage": [],
+    "IOObjectClass": "AGXDeviceUserClient",
+    "IORegistryEntryID": 4296260015,
+    "IORegistryEntryName": "AGXDeviceUserClient",
+    "IOUserClientCreator": "pid 18035, app43"
+   },
+   {
+    "AppUsage": [],
+    "IOObjectClass": "AGXDeviceUserClient",
+    "IORegistryEntryID": 4296260017,
+    "IORegistryEntryName": "AGXDeviceUserClient",
+    "IOUserClientCreator": "pid 18036, app44"
+   },
+   {
+    "AppUsage": [
+     {
+      "API": "Metal",
+      "accumulatedGPUTime": 15368250,
+      "lastSubmittedTime": 734760502113166
+     }
+    ],
+    "CommandQueueCount": 1,
+    "IOObjectClass": "AGXDeviceUserClient",
+    "IORegistryEntryID": 4296260040,
+    "IORegistryEntryName": "AGXDeviceUserClient",
+    "IOUserClientCreator": "pid 18054, app45"
+   },
+   {
+    "AppUsage": [],
+    "IOObjectClass": "AGXDeviceUserClient",
+    "IORegistryEntryID": 4296260083,
+    "IORegistryEntryName": "AGXDeviceUserClient",
+    "IOUserClientCreator": "pid 18071, app46"
+   },
+   {
+    "AppUsage": [
+     {
+      "API": "Metal",
+      "accumulatedGPUTime": 771984125,
+      "lastSubmittedTime": 787577748615958
+     },
+     {
+      "API": "Metal",
+      "accumulatedGPUTime": 149862833,
+      "lastSubmittedTime": 745355724578666
+     },
+     {
+      "API": "Metal",
+      "accumulatedGPUTime": 19129625,
+      "lastSubmittedTime": 736775294446791
+     }
+    ],
+    "CommandQueueCount": 3,
+    "IOObjectClass": "AGXDeviceUserClient",
+    "IORegistryEntryID": 4296260943,
+    "IORegistryEntryName": "AGXDeviceUserClient",
+    "IOUserClientCreator": "pid 18119, app47"
+   },
+   {
+    "AppUsage": [],
+    "IOObjectClass": "AGXDeviceUserClient",
+    "IORegistryEntryID": 4296269229,
+    "IORegistryEntryName": "AGXDeviceUserClient",
+    "IOUserClientCreator": "pid 19379, app48"
+   },
+   {
+    "AppUsage": [
+     {
+      "API": "Metal",
+      "accumulatedGPUTime": 0,
+      "lastSubmittedTime": 0
+     },
+     {
+      "API": "GL/CL",
+      "accumulatedGPUTime": 259817433083,
+      "lastSubmittedTime": 787746848237333
+     },
+     {
+      "API": "Metal",
+      "accumulatedGPUTime": 0,
+      "lastSubmittedTime": 0
+     },
+     {
+      "API": "GL/CL",
+      "accumulatedGPUTime": 58807673916,
+      "lastSubmittedTime": 740113684393333
+     },
+     {
+      "API": "Metal",
+      "accumulatedGPUTime": 0,
+      "lastSubmittedTime": 0
+     },
+     {
+      "API": "GL/CL",
+      "accumulatedGPUTime": 86538815416,
+      "lastSubmittedTime": 784373769943041
+     }
+    ],
+    "CommandQueueCount": 6,
+    "IOObjectClass": "AGXDeviceUserClient",
+    "IORegistryEntryID": 4296269231,
+    "IORegistryEntryName": "AGXDeviceUserClient",
+    "IOUserClientCreator": "pid 19382, app49"
+   },
+   {
+    "AppUsage": [],
+    "IOObjectClass": "AGXDeviceUserClient",
+    "IORegistryEntryID": 4296269235,
+    "IORegistryEntryName": "AGXDeviceUserClient",
+    "IOUserClientCreator": "pid 19385, app50"
+   },
+   {
+    "AppUsage": [
+     {
+      "API": "Metal",
+      "accumulatedGPUTime": 404230369083,
+      "lastSubmittedTime": 787752556557291
+     },
+     {
+      "API": "Metal",
+      "accumulatedGPUTime": 6337956958,
+      "lastSubmittedTime": 785639020748791
+     },
+     {
+      "API": "Metal",
+      "accumulatedGPUTime": 11941833,
+      "lastSubmittedTime": 785625979195500
+     }
+    ],
+    "CommandQueueCount": 3,
+    "IOObjectClass": "AGXDeviceUserClient",
+    "IORegistryEntryID": 4296269363,
+    "IORegistryEntryName": "AGXDeviceUserClient",
+    "IOUserClientCreator": "pid 19443, app51"
+   },
+   {
+    "AppUsage": [],
+    "IOObjectClass": "AGXDeviceUserClient",
+    "IORegistryEntryID": 4296269368,
+    "IORegistryEntryName": "AGXDeviceUserClient",
+    "IOUserClientCreator": "pid 19450, app13"
+   },
+   {
+    "AppUsage": [],
+    "IOObjectClass": "AGXDeviceUserClient",
+    "IORegistryEntryID": 4296269533,
+    "IORegistryEntryName": "AGXDeviceUserClient",
+    "IOUserClientCreator": "pid 19559, app13"
+   },
+   {
+    "AppUsage": [
+     {
+      "API": "Metal",
+      "accumulatedGPUTime": 565971463625,
+      "lastSubmittedTime": 737833184777833
+     }
+    ],
+    "CommandQueueCount": 1,
+    "IOObjectClass": "AGXDeviceUserClient",
+    "IORegistryEntryID": 4296269871,
+    "IORegistryEntryName": "AGXDeviceUserClient",
+    "IOUserClientCreator": "pid 19854, app52"
+   },
+   {
+    "AppUsage": [
+     {
+      "API": "Metal",
+      "accumulatedGPUTime": 2744250,
+      "lastSubmittedTime": 775525190868166
+     }
+    ],
+    "CommandQueueCount": 1,
+    "IOObjectClass": "AGXDeviceUserClient",
+    "IORegistryEntryID": 4296270247,
+    "IORegistryEntryName": "AGXDeviceUserClient",
+    "IOUserClientCreator": "pid 20402, app53"
+   },
+   {
+    "AppUsage": [],
+    "IOObjectClass": "AGXDeviceUserClient",
+    "IORegistryEntryID": 4296270362,
+    "IORegistryEntryName": "AGXDeviceUserClient",
+    "IOUserClientCreator": "pid 19394, app54"
+   },
+   {
+    "AppUsage": [
+     {
+      "API": "Metal",
+      "accumulatedGPUTime": 14934666,
+      "lastSubmittedTime": 738746203374000
+     }
+    ],
+    "CommandQueueCount": 1,
+    "IOObjectClass": "AGXDeviceUserClient",
+    "IORegistryEntryID": 4296271586,
+    "IORegistryEntryName": "AGXDeviceUserClient",
+    "IOUserClientCreator": "pid 23284, app55"
+   },
+   {
+    "AppUsage": [],
+    "IOObjectClass": "AGXDeviceUserClient",
+    "IORegistryEntryID": 4296271594,
+    "IORegistryEntryName": "AGXDeviceUserClient",
+    "IOUserClientCreator": "pid 23285, app56"
+   },
+   {
+    "AppUsage": [],
+    "IOObjectClass": "AGXDeviceUserClient",
+    "IORegistryEntryID": 4296271597,
+    "IORegistryEntryName": "AGXDeviceUserClient",
+    "IOUserClientCreator": "pid 23292, app46"
+   },
+   {
+    "AppUsage": [],
+    "IOObjectClass": "AGXDeviceUserClient",
+    "IORegistryEntryID": 4296272165,
+    "IORegistryEntryName": "AGXDeviceUserClient",
+    "IOUserClientCreator": "pid 25063, app57"
+   },
+   {
+    "AppUsage": [
+     {
+      "API": "Metal",
+      "accumulatedGPUTime": 5000583,
+      "lastSubmittedTime": 773282015858958
+     },
+     {
+      "API": "Metal",
+      "accumulatedGPUTime": 1987507541,
+      "lastSubmittedTime": 787568870923500
+     }
+    ],
+    "CommandQueueCount": 2,
+    "IOObjectClass": "AGXDeviceUserClient",
+    "IORegistryEntryID": 4296273499,
+    "IORegistryEntryName": "AGXDeviceUserClient",
+    "IOUserClientCreator": "pid 33362, app58"
+   },
+   {
+    "AppUsage": [],
+    "IOObjectClass": "AGXDeviceUserClient",
+    "IORegistryEntryID": 4296273503,
+    "IORegistryEntryName": "AGXDeviceUserClient",
+    "IOUserClientCreator": "pid 33354, app59"
+   },
+   {
+    "AppUsage": [],
+    "IOObjectClass": "AGXDeviceUserClient",
+    "IORegistryEntryID": 4296273510,
+    "IORegistryEntryName": "AGXDeviceUserClient",
+    "IOUserClientCreator": "pid 33391, app13"
+   },
+   {
+    "AppUsage": [],
+    "IOObjectClass": "AGXDeviceUserClient",
+    "IORegistryEntryID": 4296276546,
+    "IORegistryEntryName": "AGXDeviceUserClient",
+    "IOUserClientCreator": "pid 41985, app60"
+   },
+   {
+    "AppUsage": [
+     {
+      "API": "Metal",
+      "accumulatedGPUTime": 1017375,
+      "lastSubmittedTime": 744559675688083
+     },
+     {
+      "API": "Metal",
+      "accumulatedGPUTime": 1348499875,
+      "lastSubmittedTime": 744569482312291
+     }
+    ],
+    "CommandQueueCount": 2,
+    "IOObjectClass": "AGXDeviceUserClient",
+    "IORegistryEntryID": 4296276548,
+    "IORegistryEntryName": "AGXDeviceUserClient",
+    "IOUserClientCreator": "pid 41996, app61"
+   },
+   {
+    "AppUsage": [
+     {
+      "API": "Metal",
+      "accumulatedGPUTime": 29675875,
+      "lastSubmittedTime": 748398086305500
+     }
+    ],
+    "CommandQueueCount": 1,
+    "IOObjectClass": "AGXDeviceUserClient",
+    "IORegistryEntryID": 4296278586,
+    "IORegistryEntryName": "AGXDeviceUserClient",
+    "IOUserClientCreator": "pid 47921, app62"
+   },
+   {
+    "AppUsage": [
+     {
+      "API": "Metal",
+      "accumulatedGPUTime": 18437708,
+      "lastSubmittedTime": 786497415212500
+     }
+    ],
+    "CommandQueueCount": 1,
+    "IOObjectClass": "AGXDeviceUserClient",
+    "IORegistryEntryID": 4296278604,
+    "IORegistryEntryName": "AGXDeviceUserClient",
+    "IOUserClientCreator": "pid 47953, app63"
+   },
+   {
+    "AppUsage": [
+     {
+      "API": "Metal",
+      "accumulatedGPUTime": 4320916,
+      "lastSubmittedTime": 768542057121041
+     }
+    ],
+    "CommandQueueCount": 1,
+    "IOObjectClass": "AGXDeviceUserClient",
+    "IORegistryEntryID": 4296289963,
+    "IORegistryEntryName": "AGXDeviceUserClient",
+    "IOUserClientCreator": "pid 71836, app64"
+   },
+   {
+    "AppUsage": [],
+    "IOObjectClass": "AGXDeviceUserClient",
+    "IORegistryEntryID": 4296289970,
+    "IORegistryEntryName": "AGXDeviceUserClient",
+    "IOUserClientCreator": "pid 71876, app13"
+   },
+   {
+    "AppUsage": [],
+    "IOObjectClass": "AGXDeviceUserClient",
+    "IORegistryEntryID": 4296300926,
+    "IORegistryEntryName": "AGXDeviceUserClient",
+    "IOUserClientCreator": "pid 92822, app65"
+   },
+   {
+    "AppUsage": [
+     {
+      "API": "Metal",
+      "accumulatedGPUTime": 482708,
+      "lastSubmittedTime": 768894523045458
+     }
+    ],
+    "CommandQueueCount": 1,
+    "IOObjectClass": "AGXDeviceUserClient",
+    "IORegistryEntryID": 4296300928,
+    "IORegistryEntryName": "AGXDeviceUserClient",
+    "IOUserClientCreator": "pid 92829, app16"
+   },
+   {
+    "AppUsage": [],
+    "IOObjectClass": "AGXDeviceUserClient",
+    "IORegistryEntryID": 4296301006,
+    "IORegistryEntryName": "AGXDeviceUserClient",
+    "IOUserClientCreator": "pid 92912, app66"
+   },
+   {
+    "AppUsage": [],
+    "IOObjectClass": "AGXDeviceUserClient",
+    "IORegistryEntryID": 4296305534,
+    "IORegistryEntryName": "AGXDeviceUserClient",
+    "IOUserClientCreator": "pid 2125, app67"
+   },
+   {
+    "AppUsage": [],
+    "CommandQueueCount": 0,
+    "IOObjectClass": "AGXDeviceUserClient",
+    "IORegistryEntryID": 4296310088,
+    "IORegistryEntryName": "AGXDeviceUserClient",
+    "IOUserClientCreator": "pid 93711, app68"
+   },
+   {
+    "AppUsage": [],
+    "CommandQueueCount": 0,
+    "IOObjectClass": "AGXDeviceUserClient",
+    "IORegistryEntryID": 4296311892,
+    "IORegistryEntryName": "AGXDeviceUserClient",
+    "IOUserClientCreator": "pid 32722, app69"
+   },
+   {
+    "AppUsage": [],
+    "IOObjectClass": "AGXDeviceUserClient",
+    "IORegistryEntryID": 4296312370,
+    "IORegistryEntryName": "AGXDeviceUserClient",
+    "IOUserClientCreator": "pid 34030, app70"
+   },
+   {
+    "AppUsage": [
+     {
+      "API": "Metal",
+      "accumulatedGPUTime": 1354991625,
+      "lastSubmittedTime": 787761814908041
+     }
+    ],
+    "CommandQueueCount": 1,
+    "IOObjectClass": "AGXDeviceUserClient",
+    "IORegistryEntryID": 4296312433,
+    "IORegistryEntryName": "AGXDeviceUserClient",
+    "IOUserClientCreator": "pid 34354, gpuburn"
+   }
+  ],
+  "IORegistryEntryID": 4294968386,
+  "IORegistryEntryName": "AGXAcceleratorG15X",
+  "PerformanceStatistics": {
+   "Alloc system memory": 31540248576,
+   "Allocated PB Size": 212467712,
+   "Device Utilization %": 43,
+   "In use system memory": 1842151424,
+   "In use system memory (driver)": 0,
+   "Renderer Utilization %": 37,
+   "SplitSceneCount": 0,
+   "TiledSceneBytes": 1474560,
+   "Tiler Utilization %": 38,
+   "lastRecoveryTime": 0,
+   "recoveryCount": 0
+  },
+  "gpu-core-count": 30,
+  "model": "Apple M3 Max"
+ }
+]

@@ -1,0 +1,202 @@
+[
+ {
+  "mount_point": "/",
+  "source": "/dev/disk4s1s1",
+  "fs_type": "apfs",
+  "flags": 1149292545,
+  "block_bytes": 4096,
+  "blocks": 206047232,
+  "free_blocks": 50975809,
+  "available_blocks": 50975809
+ },
+ {
+  "mount_point": "/dev",
+  "source": "devfs",
+  "fs_type": "devfs",
+  "flags": 68161536,
+  "block_bytes": 512,
+  "blocks": 461,
+  "free_blocks": 0,
+  "available_blocks": 0
+ },
+ {
+  "mount_point": "/System/Volumes/VM",
+  "source": "/dev/disk4s6",
+  "fs_type": "apfs",
+  "flags": 345018372,
+  "block_bytes": 4096,
+  "blocks": 206047232,
+  "free_blocks": 50974949,
+  "available_blocks": 50974949
+ },
+ {
+  "mount_point": "/System/Volumes/Preboot",
+  "source": "/dev/disk4s2",
+  "fs_type": "apfs",
+  "flags": 76582912,
+  "block_bytes": 4096,
+  "blocks": 206047232,
+  "free_blocks": 50976789,
+  "available_blocks": 50976789
+ },
+ {
+  "mount_point": "/System/Volumes/Update",
+  "source": "/dev/disk4s4",
+  "fs_type": "apfs",
+  "flags": 76582912,
+  "block_bytes": 4096,
+  "blocks": 206054912,
+  "free_blocks": 50973564,
+  "available_blocks": 50973564
+ },
+ {
+  "mount_point": "/System/Volumes/xarts",
+  "source": "/dev/disk1s2",
+  "fs_type": "apfs",
+  "flags": 345018372,
+  "block_bytes": 4096,
+  "blocks": 128000,
+  "free_blocks": 122870,
+  "available_blocks": 122870
+ },
+ {
+  "mount_point": "/System/Volumes/iSCPreboot",
+  "source": "/dev/disk1s1",
+  "fs_type": "apfs",
+  "flags": 76582912,
+  "block_bytes": 4096,
+  "blocks": 128000,
+  "free_blocks": 122870,
+  "available_blocks": 122870
+ },
+ {
+  "mount_point": "/System/Volumes/Hardware",
+  "source": "/dev/disk1s3",
+  "fs_type": "apfs",
+  "flags": 76582912,
+  "block_bytes": 4096,
+  "blocks": 128000,
+  "free_blocks": 122866,
+  "available_blocks": 122866
+ },
+ {
+  "mount_point": "/System/Volumes/Data",
+  "source": "/dev/disk4s5",
+  "fs_type": "apfs",
+  "flags": 76583040,
+  "block_bytes": 4096,
+  "blocks": 206047232,
+  "free_blocks": 50975867,
+  "available_blocks": 50975867
+ },
+ {
+  "mount_point": "/Volumes/Fedora Linux with KDE Plasma - Data",
+  "source": "/dev/disk2s1",
+  "fs_type": "apfs",
+  "flags": 76583040,
+  "block_bytes": 4096,
+  "blocks": 610304,
+  "free_blocks": 325845,
+  "available_blocks": 325845
+ },
+ {
+  "mount_point": "/Volumes/Fedora Linux with KDE Plasma",
+  "source": "/dev/disk2s2",
+  "fs_type": "apfs",
+  "flags": 75534337,
+  "block_bytes": 4096,
+  "blocks": 610304,
+  "free_blocks": 325845,
+  "available_blocks": 325845
+ },
+ {
+  "mount_point": "/System/Volumes/Data/home",
+  "source": "map auto_home",
+  "fs_type": "autofs",
+  "flags": 72351744,
+  "block_bytes": 1024,
+  "blocks": 0,
+  "free_blocks": 0,
+  "available_blocks": 0
+ },
+ {
+  "mount_point": "/Volumes/Recovery",
+  "source": "/dev/disk4s3",
+  "fs_type": "apfs",
+  "flags": 76582912,
+  "block_bytes": 4096,
+  "blocks": 206047232,
+  "free_blocks": 50974949,
+  "available_blocks": 50974949
+ },
+ {
+  "mount_point": "/System/Volumes/Update/SFR/mnt1",
+  "source": "/dev/disk3s1",
+  "fs_type": "apfs",
+  "flags": 76582912,
+  "block_bytes": 4096,
+  "blocks": 1310709,
+  "free_blocks": 681371,
+  "available_blocks": 681371
+ },
+ {
+  "mount_point": "/private/var/folders/51/nx0t2v3d79lbztqlv1khks900000gn/X/61459FB5-1E2B-5E5B-8573-69E724112BE4",
+  "source": "/Applications/Screen Mirror.app/Wrapper",
+  "fs_type": "nullfs",
+  "flags": 68161561,
+  "block_bytes": 4096,
+  "blocks": 206047232,
+  "free_blocks": 11575839,
+  "available_blocks": 11575839
+ },
+ {
+  "mount_point": "/Users/user/Library/Developer/CoreDevice/DeviceFS",
+  "source": "devices -- file:///Users/user/Library/Containers/com.apple.CoreDevice.CoreDeviceService/Data/",
+  "fs_type": "devicefs",
+  "flags": 271586328,
+  "block_bytes": 4096,
+  "blocks": 268435456,
+  "free_blocks": 268435456,
+  "available_blocks": 268435456
+ },
+ {
+  "mount_point": "/private/var/folders/51/nx0t2v3d79lbztqlv1khks900000gn/X/1E11ACB4-5B8F-5FC3-8C12-930E947F105F",
+  "source": "/Applications/Screen Mirror.app/Wrapper",
+  "fs_type": "nullfs",
+  "flags": 68161561,
+  "block_bytes": 4096,
+  "blocks": 206047232,
+  "free_blocks": 7006302,
+  "available_blocks": 7006302
+ },
+ {
+  "mount_point": "/Volumes/Google Chrome",
+  "source": "/dev/disk8s2",
+  "fs_type": "hfs",
+  "flags": 69244441,
+  "block_bytes": 2048,
+  "blocks": 373931,
+  "free_blocks": 0,
+  "available_blocks": 0
+ },
+ {
+  "mount_point": "/private/var/folders/51/nx0t2v3d79lbztqlv1khks900000gn/T/KvDzrA",
+  "source": "/dev/disk9s2",
+  "fs_type": "hfs",
+  "flags": 70293017,
+  "block_bytes": 2048,
+  "blocks": 373931,
+  "free_blocks": 0,
+  "available_blocks": 0
+ },
+ {
+  "mount_point": "/Volumes/CleanMyMac 5.7.0",
+  "source": "/dev/disk11s1",
+  "fs_type": "apfs",
+  "flags": 77633049,
+  "block_bytes": 4096,
+  "blocks": 132854,
+  "free_blocks": 21970,
+  "available_blocks": 21970
+ }
+]
