@@ -79,7 +79,7 @@ function stripComment(line) {
  * @returns {number}
  */
 function parsePort(value) {
-  const digits = value.trim().replaceAll("_", "");
+  const digits = value.trim().replace(/_/g, "");
   if (!/^\d+$/.test(digits)) {
     return DEFAULT_PORT;
   }

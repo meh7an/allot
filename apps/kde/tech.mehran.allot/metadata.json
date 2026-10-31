@@ -1,0 +1,19 @@
+{
+    "KPackageStructure": "Plasma/Applet",
+    "KPlugin": {
+        "Authors": [
+            {
+                "Email": "hi@mehran.tech",
+                "Name": "Mehran"
+            }
+        ],
+        "Category": "System Information",
+        "Description": "Shows the jobs Allot runs and queues for your Claude Code sessions.",
+        "Icon": "utilities-system-monitor",
+        "Id": "tech.mehran.allot",
+        "License": "MIT OR Apache-2.0",
+        "Name": "Allot",
+        "Website": "https://github.com/meh7an/allot"
+    },
+    "X-Plasma-API-Minimum-Version": "6.0"
+}

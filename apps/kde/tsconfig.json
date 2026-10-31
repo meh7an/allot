@@ -1,0 +1,52 @@
+{
+  // Visit https://aka.ms/tsconfig to read more about this file
+  "compilerOptions": {
+    // Environment Settings
+    // See also https://aka.ms/tsconfig/module
+    "module": "nodenext",
+    // The sources may use any syntax, since tools/emit.mjs lowers it for QML. Built-ins are
+    // not lowered, and Qt's V4 engine lacks newer ones such as Array.prototype.at, so the
+    // library stays at ES2016.
+    "target": "es2022",
+    "lib": ["es2016"],
+    "types": [],
+
+    // The widget's logic is JavaScript with JSDoc types, like the GNOME extension's. The
+    // generated code under tech.mehran.allot/contents/code is not checked.
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+
+    // Stricter Typechecking Options
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+
+    // Style Options
+    // "noImplicitReturns": true,
+    // "noImplicitOverride": true,
+    // "noUnusedLocals": true,
+    // "noUnusedParameters": true,
+    // "noFallthroughCasesInSwitch": true,
+    // "noPropertyAccessFromIndexSignature": true,
+
+    // Recommended Options
+    "strict": true,
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+    "noUncheckedSideEffectImports": true,
+    "moduleDetection": "force",
+    "skipLibCheck": true,
+  },
+  // The GNOME modules the widget shares are checked here too, against the ES2016 library.
+  "include": [
+    "src/*.js",
+    "../gnome/allot@mehran.tech/lib/client.js",
+    "../gnome/allot@mehran.tech/lib/config.js",
+    "../gnome/allot@mehran.tech/lib/format.js",
+    "../gnome/allot@mehran.tech/lib/indicator-status.js",
+    "../gnome/allot@mehran.tech/lib/poller.js",
+    "../gnome/allot@mehran.tech/lib/popup-model.js",
+    "../gnome/allot@mehran.tech/lib/schedule.js",
+    "../gnome/allot@mehran.tech/lib/snapshot.js",
+  ],
+}

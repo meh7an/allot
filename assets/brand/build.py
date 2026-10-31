@@ -1,8 +1,8 @@
 """Builds Allot's icons from the mark's geometry.
 
 Writes the Windows tray and app icons into the tray app, the macOS menu bar and app icons into
-the macOS app's asset catalog, the panel icons into the GNOME extension, and the prepared Linux,
-macOS and web assets into this folder.
+the macOS app's asset catalog, the panel icons into the GNOME extension and the KDE widget, and
+the prepared Linux, macOS and web assets into this folder.
 Standard library only; the output is the same on every run:
 
     python assets/brand/build.py
@@ -23,6 +23,7 @@ ROOT = BRAND.parents[1]
 TRAY_ASSETS = ROOT / "tray" / "src" / "Allot.Tray" / "Assets"
 MACOS_ASSETS = ROOT / "apps" / "macos" / "Allot" / "Assets.xcassets"
 GNOME_ICONS = ROOT / "apps" / "gnome" / "allot@mehran.tech" / "icons"
+KDE_ICONS = ROOT / "apps" / "kde" / "tech.mehran.allot" / "contents" / "icons"
 
 
 def rgb(hex_color):
@@ -406,15 +407,18 @@ def tile_svg():
             f'<rect x="-4" y="-4" width="24" height="24" fill="{INK}"/>{bars}</svg>\n')
 
 
-def state_svg(state, glyph, badge_fills):
+def state_svg(state, glyph, badge_fills, glyph_class=None, style=""):
     """A tray state as a vector. `badge_fills` maps each badged state to (class, colour); a
-    class of None leaves the badge in the glyph colour."""
+    class of None leaves the badge in the glyph colour. `glyph_class` and `style` let a desktop
+    recolour the glyph from a stylesheet."""
     b = BADGE
     opacity = STATE_ALPHA[state]
-    bars = svg_bars(lambda _: f'fill="{glyph}"')
+    glyph_attr = f'class="{glyph_class}" ' if glyph_class else ""
+    bars = svg_bars(lambda _: f'{glyph_attr}fill="{glyph}"')
     group = f'<g opacity="{opacity:g}">{bars}</g>' if opacity < 1 else bars
+    head = f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">{style}'
     if state not in badge_fills:
-        return f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">{group}</svg>\n'
+        return f"{head}{group}</svg>\n"
 
     notch = (f'<mask id="notch"><rect width="16" height="16" fill="#fff"/>'
              f'<circle cx="{b["cx"]:g}" cy="{b["cy"]:g}" r="{b["r"] + b["ring"]:g}"/></mask>')
@@ -429,8 +433,7 @@ def state_svg(state, glyph, badge_fills):
                  f'stroke="#000" stroke-width="{b["stroke"]:g}" stroke-linecap="round"/>')
         defs += f'<mask id="cross"><rect width="16" height="16" fill="#fff"/>{cross}</mask>'
         dot += ' mask="url(#cross)"'
-    return (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><defs>{defs}</defs>'
-            f'<g mask="url(#notch)">{group}</g>{dot}/></svg>\n')
+    return f'{head}<defs>{defs}</defs><g mask="url(#notch)">{group}</g>{dot}/></svg>\n'
 
 
 # ---------------------------------------------------------------------------------------------
@@ -477,6 +480,28 @@ def build_linux():
         write(GNOME_ICONS / name, svg)
     # The popup header's glyph: the bare mark, dimmed by the extension while idle.
     write(GNOME_ICONS / "allot-mark-symbolic.svg", state_svg("busy", "#2e3436", {}))
+    build_kde()
+
+
+def build_kde():
+    """The same icons for the Plasma widget. Plasma recolours elements whose class names a
+    colour of its scheme, from a stylesheet with this id; the colours here are Breeze's light
+    ones, for viewers outside Plasma."""
+    scheme = {"Text": "#232629", "PositiveText": "#27ae60", "NeutralText": "#f67400",
+              "NegativeText": "#da4453"}
+    rules = "".join(f".ColorScheme-{name}{{color:{colour}}}" for name, colour in scheme.items())
+    style = f'<style id="current-color-scheme" type="text/css">{rules}</style>'
+    badges = {
+        "busy": ("ColorScheme-PositiveText", "currentColor"),
+        "benchmark": ("ColorScheme-Text", "currentColor"),
+        "queued": ("ColorScheme-NeutralText", "currentColor"),
+        "down": ("ColorScheme-NegativeText", "currentColor"),
+    }
+    for state in TRAY_STATES:
+        svg = state_svg(state, "currentColor", badges, "ColorScheme-Text", style)
+        write(KDE_ICONS / f"allot-{state}-symbolic.svg", svg)
+    write(KDE_ICONS / "allot-mark-symbolic.svg",
+          state_svg("busy", "currentColor", {}, "ColorScheme-Text", style))
 
 
 def build_macos():

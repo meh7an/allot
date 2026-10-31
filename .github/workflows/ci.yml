@@ -151,6 +151,15 @@ jobs:
           pnpm typecheck
           pnpm test
 
+      # The KDE widget's logic, the GNOME modules it shares, and its generated code being current.
+      - name: KDE widget
+        if: matrix.os == 'ubuntu-24.04'
+        working-directory: apps/kde
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm typecheck
+          pnpm test
+
       - name: Contract package
         if: matrix.os == 'macos-15'
         working-directory: contract/swift

@@ -24,7 +24,7 @@ export function shortId(session) {
  */
 export function project(cwd) {
   const segments = (cwd ?? "").split(/[/\\]/).filter((segment) => segment !== "");
-  return segments.at(-1) ?? "";
+  return segments[segments.length - 1] ?? "";
 }
 
 /**
