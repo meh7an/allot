@@ -10,6 +10,10 @@ struct PanelActions {
     let openLogs: () -> Void
     let quit: () -> Void
 
+    /// Debug builds: the handoff scenarios More options lists, and showing one.
+    let scenarios: [String]
+    let showScenario: (String) -> Void
+
     /// The panel's natural height changed; the window follows it.
     let heightChanged: (CGFloat) -> Void
 }
@@ -36,7 +40,7 @@ struct PanelView: View {
             HeaderView(model: model, actions: actions)
                 .onGeometryChange(for: CGFloat.self, of: \.size.height) { headerHeight = $0 }
             ScrollView {
-                JobListView(snapshot: model.snapshot)
+                JobListView(snapshot: model.snapshot, actions: cardActions)
                     .onGeometryChange(for: CGFloat.self, of: \.size.height) { listHeight = $0 }
             }
             .scrollBounceBehavior(.basedOnSize)
@@ -45,5 +49,11 @@ struct PanelView: View {
         .frame(width: Tokens.panelWidth)
         .fixedSize(horizontal: false, vertical: true)
         .onGeometryChange(for: CGFloat.self, of: \.size.height) { actions.heightChanged($0) }
+    }
+
+    private var cardActions: CardActions {
+        CardActions(
+            kill: { _ = model.pressKill($0) },
+            remove: { _ = model.pressRemove($0) })
     }
 }

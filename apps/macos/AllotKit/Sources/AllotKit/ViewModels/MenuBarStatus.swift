@@ -28,7 +28,9 @@ public struct MenuBarStatus: Sendable, Equatable {
     /// quiet or runs alone; Queued while anything else waits; Busy while a job runs; Idle
     /// otherwise. The same order as the Windows tray icon.
     public static func from(_ snapshot: PanelSnapshot) -> MenuBarStatus {
-        let isWaiting = snapshot.groups.contains { group in group.jobs.contains(where: \.isQueued) }
+        let isWaiting = snapshot.groups.contains { group in
+            group.jobs.contains { $0.isQueued && !$0.isEnding }
+        }
         let icon: MenuBarIcon = if snapshot.isLastKnown {
             .down
         } else if snapshot.benchmark != nil {

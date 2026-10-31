@@ -18,8 +18,12 @@ final class PanelController: NSObject, NSWindowDelegate {
     /// Called when the panel opens or closes.
     var onOpenChanged: ((Bool) -> Void)?
 
+    /// Debug builds: shows a handoff scenario picked under More options.
+    var onShowScenario: ((String) -> Void)?
+
     private let model: PanelModel
     private let logDirectory: URL
+    private let scenarios: [String]
     private let layout = PanelLayout()
     private let panel = AllotPanel()
     private let effectView = NSVisualEffectView()
@@ -31,9 +35,11 @@ final class PanelController: NSObject, NSWindowDelegate {
     private var activationObserver: NSObjectProtocol?
     private var lastOutsideClose: ContinuousClock.Instant?
 
-    init(model: PanelModel, logDirectory: URL) {
+    /// - Parameter scenarios: Debug builds: the handoff scenarios More options lists.
+    init(model: PanelModel, logDirectory: URL, scenarios: [String] = []) {
         self.model = model
         self.logDirectory = logDirectory
+        self.scenarios = scenarios
         super.init()
         installContent()
     }
@@ -84,6 +90,7 @@ final class PanelController: NSObject, NSWindowDelegate {
             return
         }
         isShown = false
+        model.cancelConfirms()
         removeDismissMonitors()
         lastOutsideClose = outsideClick ? ContinuousClock.now : nil
         onOpenChanged?(false)
@@ -223,13 +230,19 @@ final class PanelController: NSObject, NSWindowDelegate {
 
     // MARK: - Light dismiss
 
+    // Esc first turns Kill? back into Kill, then closes a light-dismiss panel.
     private func cancel() {
+        if model.cancelConfirms() {
+            return
+        }
         if !model.mode.isStayOpen {
             close()
         }
     }
 
     func windowDidResignKey(_ notification: Notification) {
+        // Kill? goes back to Kill when the panel loses focus, as it does on Windows.
+        model.cancelConfirms()
         // A click on the status item closes the panel through toggle().
         if !model.mode.isStayOpen && !isOverStatusItem {
             close()
@@ -285,6 +298,8 @@ final class PanelController: NSObject, NSWindowDelegate {
             togglePinned: { [weak self] in self?.togglePinned() },
             openLogs: { [weak self] in self?.openLogs() },
             quit: { NSApp.terminate(nil) },
+            scenarios: scenarios,
+            showScenario: { [weak self] in self?.onShowScenario?($0) },
             heightChanged: { [weak self] in self?.contentHeightChanged($0) })
         let hosting = NSHostingView(
             rootView: PanelView(model: model, layout: layout, actions: actions))

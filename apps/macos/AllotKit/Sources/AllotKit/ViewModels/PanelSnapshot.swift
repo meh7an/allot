@@ -50,9 +50,10 @@ public struct SessionStrip: Sendable, Equatable {
     public let usage: String
 }
 
-/// One job row: an active lease or a queued request.
+/// One card: an active lease, a queued request, or a benchmark that finished a moment ago.
 public struct JobRow: Sendable, Equatable, Identifiable {
-    /// The lease ID.
+    /// The lease ID; a finished benchmark keeps its lease's, so its card replaces the running
+    /// one in place.
     public let id: Int64
 
     /// The command, from the lease's label.
@@ -62,6 +63,13 @@ public struct JobRow: Sendable, Equatable, Identifiable {
 
     /// Waiting in the queue rather than running.
     public let isQueued: Bool
+
+    /// The job row's text and state at the snapshot's moment.
+    public let card: JobCard
+
+    /// Stopped or removed in this panel and still showing its final state, or a finished
+    /// benchmark; it no longer counts in the summary.
+    public let isEnding: Bool
 }
 
 public struct JobGroup: Sendable, Equatable, Identifiable {
@@ -86,10 +94,28 @@ public struct IdleLine: Sendable, Equatable {
     public let usage: String
 }
 
+/// One row of the Recently finished card.
+public struct RecentLine: Sendable, Equatable, Identifiable {
+    /// Its place in the list, newest first.
+    public let id: Int
+
+    /// The command as it ran.
+    public let command: String
+
+    /// The session's short ID, or empty for runs recorded before sessions were.
+    public let shortId: String
+
+    /// Run time and age, for example `4:52 · 4 min ago`.
+    public let meta: String
+}
+
 /// Everything the panel header and job list show for one poll, built by a pure function so
-/// that every string is testable. The Windows tray app's `FlyoutSnapshot` without what later
-/// milestones add: card details, stops, recent runs and the first-run card.
+/// that every string is testable. The Windows tray app's `FlyoutSnapshot` without the first-run
+/// card, which comes with the service-down and first-run views.
 public struct PanelSnapshot: Sendable, Equatable {
+    // How long a benchmark that finished on its own keeps its card.
+    private static let finishedHoldMs: Int64 = 60_000
+
     public let header: PanelHeader
 
     /// Benchmark, Running and Waiting, in that order, each only when it has jobs.
@@ -98,81 +124,122 @@ public struct PanelSnapshot: Sendable, Equatable {
     /// The idle line, or `nil` when no session is idle.
     public let idle: IdleLine?
 
-    /// The "No jobs running or waiting." line: the service runs and has no jobs.
+    /// Recently finished runs, newest first; only while no job runs or waits.
+    public let recent: [RecentLine]
+
+    /// The "No jobs running or waiting." line: the service runs, and there are no jobs and no
+    /// recent runs.
     public let showNothing: Bool
 
     /// The live benchmark's phase, or `nil` without one.
     public let benchmark: BenchmarkPhase?
 
-    /// The jobs come from the last state allotd served before it went away; they show dimmed.
+    /// The jobs come from the last state allotd served before it went away; they show dimmed
+    /// and without actions.
     public let isLastKnown: Bool
 
     /// - Parameters:
     ///   - status: The service status of the latest poll.
     ///   - state: The latest state, or the last known one while allotd is not running.
-    public static func from(status: ServiceStatus, state: UiState?) -> PanelSnapshot {
+    ///   - jobs: The jobs to show instead of the state's, with ended stops put back
+    ///     (``JobStops/merge(_:)``); the state's own when `nil`.
+    ///   - stops: Kills and removals of this panel by lease; ended ones show Stopped or Removed
+    ///     and no longer count. Ignored for last known state.
+    ///   - nowMs: The moment times are shown for, in the daemon's clock; the state's own time
+    ///     when `nil`. Last known state always shows its own time.
+    public static func from(
+        status: ServiceStatus,
+        state: UiState?,
+        jobs: ShownJobs? = nil,
+        stops: [Int64: StopView] = [:],
+        nowMs: Int64? = nil
+    ) -> PanelSnapshot {
         let lastKnown = status != .running
+        let stops = lastKnown ? [:] : stops
+        let now = lastKnown
+            ? state?.generatedAtMs ?? 0
+            : nowMs ?? state?.generatedAtMs ?? 0
         var sessions: [String: UiSession] = [:]
         var ordered: [UiSession] = []
         for session in state?.sessions ?? [] where sessions[session.session] == nil {
             sessions[session.session] = session
             ordered.append(session)
         }
-        let active = state?.active ?? []
-        let runningSessions = Set(active.map(\.lease.holder.session))
-        let waitingSessions = Set((state?.queue ?? []).map(\.lease.holder.session))
+        let shown = jobs ?? state.map(ShownJobs.init) ?? ShownJobs(active: [], queue: [])
+        let isEnding = { (lease: Lease) in stops[lease.id]?.phase == .ended }
+        let runningSessions = Set(shown.active.map(\.lease.holder.session))
+        // A stopped or removed benchmark no longer holds anything back.
+        var benchmarkAhead = shown.active.contains { job in
+            isBenchmark(job.lease) && !isEnding(job.lease)
+        }
+        let othersActive = shown.active.contains { !isEnding($0.lease) }
 
         var benchmark: [JobRow] = []
         var running: [JobRow] = []
         var waiting: [JobRow] = []
-        var benchmarkRuns = false
-        for job in active {
+        for job in shown.active {
             let lease = job.lease
-            let strip = strip(lease.holder.session, lease.cwd, sessions, alsoRunning: false)
-            let row = JobRow(id: lease.id, command: lease.label, session: strip, isQueued: false)
+            let row = JobRow(
+                id: lease.id,
+                command: lease.label,
+                session: strip(lease.holder.session, lease.cwd, sessions, alsoRunning: false),
+                isQueued: false,
+                card: .forActive(job, nowMs: now, lastKnown: lastKnown, stop: stops[lease.id]),
+                isEnding: isEnding(lease))
             if isBenchmark(lease) {
                 benchmark.append(row)
-                benchmarkRuns = true
             } else {
                 running.append(row)
             }
         }
-        var firstQueuedBenchmark: QueuedJob?
-        for job in state?.queue ?? [] {
+        for job in shown.queue {
             let lease = job.lease
             let alsoRunning = runningSessions.contains(lease.holder.session)
-            let strip = strip(lease.holder.session, lease.cwd, sessions, alsoRunning: alsoRunning)
-            let row = JobRow(id: lease.id, command: lease.label, session: strip, isQueued: true)
+            let card = JobCard.forQueued(
+                job,
+                nowMs: now,
+                afterBenchmark: benchmarkAhead && !isBenchmark(lease),
+                lastKnown: lastKnown,
+                stop: stops[lease.id],
+                othersActive: othersActive)
+            let row = JobRow(
+                id: lease.id,
+                command: lease.label,
+                session: strip(lease.holder.session, lease.cwd, sessions, alsoRunning: alsoRunning),
+                isQueued: true,
+                card: card,
+                isEnding: isEnding(lease))
             if isBenchmark(lease) {
                 benchmark.append(row)
-                firstQueuedBenchmark = firstQueuedBenchmark ?? job
+                benchmarkAhead = benchmarkAhead || !row.isEnding
             } else {
                 waiting.append(row)
             }
         }
+        benchmark += finished(state, shown, sessions, now: now)
 
         var groups: [JobGroup] = []
         if !benchmark.isEmpty {
             groups.append(JobGroup(kind: .benchmark, heading: "Benchmark", jobs: benchmark))
         }
         if !running.isEmpty {
-            groups.append(JobGroup(kind: .running, heading: "Running · \(running.count)",
-                                   jobs: running))
+            groups.append(
+                JobGroup(kind: .running, heading: counted("Running", running), jobs: running))
         }
         if !waiting.isEmpty {
-            groups.append(JobGroup(kind: .waiting, heading: "Waiting · \(waiting.count)",
-                                   jobs: waiting))
+            groups.append(
+                JobGroup(kind: .waiting, heading: counted("Waiting", waiting), jobs: waiting))
         }
 
-        let benchmarkPhase: BenchmarkPhase? = benchmarkRuns
-            ? .runningAlone
-            : firstQueuedBenchmark.map(phase(of:))
+        let benchmarkPhase = phase(of: benchmark, shown)
+        let recent = groups.isEmpty ? recentLines(state, now: now) : []
         return PanelSnapshot(
             header: header(
-                status, running: running.count, waiting: waiting.count, phase: benchmarkPhase),
+                status, running: alive(running), waiting: alive(waiting), phase: benchmarkPhase),
             groups: groups,
-            idle: idleLine(ordered, busy: runningSessions.union(waitingSessions)),
-            showNothing: !lastKnown && groups.isEmpty,
+            idle: idleLine(ordered, state),
+            recent: recent,
+            showNothing: !lastKnown && groups.isEmpty && recent.isEmpty,
             benchmark: benchmarkPhase,
             isLastKnown: lastKnown)
     }
@@ -216,16 +283,30 @@ public struct PanelSnapshot: Sendable, Equatable {
         return parts.isEmpty ? "Idle" : parts.joined(separator: " · ")
     }
 
-    // A queued benchmark either drains the machine or, once it is at the head and drained,
-    // measures the background load.
-    private static func phase(of job: QueuedJob) -> BenchmarkPhase {
-        switch job.verdict.benchmark {
-        case .measuring, .noisy: .waitingForQuiet
-        case .draining, nil: .draining
+    // An active benchmark runs alone; a queued one either drains the machine or, once it is at
+    // the head and drained, measures the background load.
+    private static func phase(of rows: [JobRow], _ shown: ShownJobs) -> BenchmarkPhase? {
+        let alive = rows.filter { !$0.isEnding }
+        guard let first = alive.first else {
+            return nil
+        }
+        let activeIds = Set(shown.active.map(\.lease.id))
+        if alive.contains(where: { activeIds.contains($0.id) }) {
+            return .runningAlone
+        }
+        let verdict = shown.queue.first { $0.lease.id == first.id }?.verdict
+        switch verdict?.benchmark {
+        case .measuring, .noisy: return .waitingForQuiet
+        case .draining, nil: return .draining
         }
     }
 
-    private static func idleLine(_ sessions: [UiSession], busy: Set<String>) -> IdleLine? {
+    private static func idleLine(_ sessions: [UiSession], _ state: UiState?) -> IdleLine? {
+        guard let state else {
+            return nil
+        }
+        let busy = Set(state.active.map(\.lease.holder.session))
+            .union(state.queue.map(\.lease.holder.session))
         let idle = sessions.filter { !busy.contains($0.session) }
         guard !idle.isEmpty else {
             return nil
@@ -234,6 +315,56 @@ public struct PanelSnapshot: Sendable, Equatable {
             label: "Idle · \(idle.count)",
             ids: idle.map { Format.shortId($0.session) }.joined(separator: "  "),
             usage: idle.count == 1 ? Format.usage(idle[0].usage) : "")
+    }
+
+    // Benchmarks that finished on their own in the last finishedHoldMs, from allotd's recent
+    // runs, so the card survives an app restart. A killed one already showed Stopped instead.
+    private static func finished(
+        _ state: UiState?,
+        _ shown: ShownJobs,
+        _ sessions: [String: UiSession],
+        now: Int64
+    ) -> [JobRow] {
+        let live = Set(shown.active.map(\.lease.id)).union(shown.queue.map(\.lease.id))
+        return (state?.recent ?? []).compactMap { run in
+            guard let noise = run.noise, let id = run.leaseId,
+                  run.endCause == nil || run.endCause == .released,
+                  now - run.endedAtMs < finishedHoldMs,
+                  !live.contains(id)
+            else {
+                return nil
+            }
+            return JobRow(
+                id: id,
+                command: run.command,
+                session: strip(run.session ?? "", run.cwd, sessions, alsoRunning: false),
+                isQueued: false,
+                card: .forFinished(run, noise: noise),
+                isEnding: true)
+        }
+    }
+
+    private static func recentLines(_ state: UiState?, now: Int64) -> [RecentLine] {
+        (state?.recent ?? []).enumerated().map { index, run in
+            let ran = Format.duration((run.endedAtMs - run.startedAtMs) / 1000)
+            let ago = Format.ago(max(0, now - run.endedAtMs) / 1000)
+            return RecentLine(
+                id: index,
+                command: run.command,
+                shortId: run.session.map(Format.shortId) ?? "",
+                meta: "\(ran) · \(ago)")
+        }
+    }
+
+    // While every card in a group shows Stopped or Removed, the heading keeps their number
+    // until they collapse, as the handoff prototype does.
+    private static func counted(_ label: String, _ rows: [JobRow]) -> String {
+        let live = alive(rows)
+        return "\(label) · \(live > 0 ? live : rows.count)"
+    }
+
+    private static func alive(_ rows: [JobRow]) -> Int {
+        rows.filter { !$0.isEnding }.count
     }
 
     private static func isBenchmark(_ lease: Lease) -> Bool {

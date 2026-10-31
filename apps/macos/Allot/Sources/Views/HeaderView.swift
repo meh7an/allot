@@ -95,13 +95,21 @@ private struct HeaderButton: View {
     }
 }
 
-/// More options holds Open logs and Quit until the Meters and Notifications submenus arrive.
+/// More options holds Open logs and Quit until the Meters and Notifications submenus arrive;
+/// Debug builds add the handoff scenarios.
 private struct MoreOptionsMenu: View {
     let actions: PanelActions
 
     var body: some View {
         Menu {
             Button("Open Logs", systemImage: "doc.text", action: actions.openLogs)
+            if !actions.scenarios.isEmpty {
+                Menu("Scenario") {
+                    ForEach(actions.scenarios, id: \.self) { name in
+                        Button(name) { actions.showScenario(name) }
+                    }
+                }
+            }
             Divider()
             Button("Quit Allot", action: actions.quit)
         } label: {

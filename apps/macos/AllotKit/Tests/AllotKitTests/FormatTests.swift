@@ -42,4 +42,57 @@ import Testing
 
         #expect(Format.usage(usage) == expected)
     }
+
+    @Test(arguments: [
+        (0, "0:00"), (-5, "0:00"), (186, "3:06"), (3599, "59:59"), (3725, "1:02:05"),
+    ] as [(Int64, String)])
+    func durationReadsMinutesThenHours(seconds: Int64, expected: String) {
+        #expect(Format.duration(seconds) == expected)
+    }
+
+    @Test(arguments: [
+        (0, "1 min"), (29, "1 min"), (90, "2 min"), (130, "2 min"), (3600, "1 h"),
+        (4800, "1 h 20 min"),
+    ] as [(UInt64, String)])
+    func minutesRoundHalvesAwayFromZero(seconds: UInt64, expected: String) {
+        #expect(Format.minutes(seconds) == expected)
+    }
+
+    @Test(arguments: [
+        (59, "just now"), (60, "1 min ago"), (3599, "59 min ago"), (7200, "2 h ago"),
+        (259_200, "3 d ago"),
+    ] as [(Int64, String)])
+    func agoNamesTheLargestUnit(seconds: Int64, expected: String) {
+        #expect(Format.ago(seconds) == expected)
+    }
+
+    @Test(arguments: [
+        ("cargo", "CA"), ("/opt/homebrew/bin/python3.13", "PY"), ("cargo.exe", "CA"),
+        ("\"node\"", "NO"), (#"C:\tools\go.exe"#, "GO"), ("x", "X"), ("--", ""), ("", ""),
+    ])
+    func initialsAreTheFirstTwoLettersOrDigits(program: String, expected: String) {
+        #expect(Format.initials(program) == expected)
+    }
+
+    @Test(arguments: [
+        (1, "1 core"), (8, "8 cores"), (2.5, "2.5 cores"), (0.25, "0.3 cores"),
+    ] as [(Float, String)])
+    func coresDropAZeroDecimal(cores: Float, expected: String) {
+        #expect(Format.cores(cores) == expected)
+    }
+
+    @Test(arguments: [
+        (#"{"cores": 8, "ram_mb": 4096, "gpu_pct": 0, "vram_mb": 0, "est_secs": 1}"#,
+         "8 cores · 4 GB"),
+        (#"{"cores": 2, "ram_mb": 4096, "gpu_pct": 80, "vram_mb": 4096, "est_secs": 1}"#,
+         "2 cores · 4 GB · GPU 80% · 4 GB VRAM"),
+        (#"{"cores": 1, "ram_mb": 1536, "gpu_pct": 0, "vram_mb": 0, "est_secs": 1}"#,
+         "1 core · 1.5 GB"),
+        (#"{"cores": 4, "ram_mb": 0, "gpu_pct": 0, "vram_mb": 0, "est_secs": 1}"#, "4 cores"),
+    ])
+    func reservationShowsOnlyWhatIsReserved(json: String, expected: String) throws {
+        let profile = try JSONDecoder().decode(JobProfile.self, from: Data(json.utf8))
+
+        #expect(Format.reservation(profile) == expected)
+    }
 }

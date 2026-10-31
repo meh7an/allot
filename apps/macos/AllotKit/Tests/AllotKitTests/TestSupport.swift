@@ -181,3 +181,108 @@ final class TemporaryHome {
         try? FileManager.default.removeItem(at: url)
     }
 }
+
+/// A local clock the tests move by hand.
+final class TestClock {
+    private(set) var now = ContinuousClock.now
+
+    func advance(_ duration: Duration) {
+        now += duration
+    }
+
+    var source: () -> ContinuousClock.Instant {
+        { self.now }
+    }
+}
+
+/// Changes a decoded state through its JSON, since the generated types are immutable.
+enum Edit {
+    typealias Object = States.Object
+
+    static func state(
+        _ state: UiState,
+        _ change: (inout Object) throws -> Void
+    ) throws -> UiState {
+        guard var object = try JSONSerialization.jsonObject(
+            with: JSONEncoder().encode(state)) as? Object
+        else {
+            throw CocoaError(.coderReadCorrupt)
+        }
+        try change(&object)
+        let data = try JSONSerialization.data(withJSONObject: object)
+        return try JSONDecoder().decode(UiState.self, from: data)
+    }
+
+    /// The job at `index` of `list` (`active` or `queue`).
+    static func job(
+        _ object: inout Object,
+        _ list: String,
+        _ index: Int,
+        _ change: (inout Object) -> Void
+    ) {
+        var jobs = object[list] as? [Object] ?? []
+        change(&jobs[index])
+        object[list] = jobs
+    }
+
+    static func lease(
+        _ object: inout Object,
+        _ list: String,
+        _ index: Int,
+        _ change: (inout Object) -> Void
+    ) {
+        job(&object, list, index) { job in
+            var lease = job["lease"] as? Object ?? [:]
+            change(&lease)
+            job["lease"] = lease
+        }
+    }
+
+    static func verdict(_ object: inout Object, _ index: Int, _ change: (inout Object) -> Void) {
+        job(&object, "queue", index) { job in
+            var verdict = job["verdict"] as? Object ?? [:]
+            change(&verdict)
+            job["verdict"] = verdict
+        }
+    }
+
+    static func estimate(_ object: inout Object, _ list: String, _ index: Int, secs: Int) {
+        lease(&object, list, index) { lease in
+            var profile = lease["profile"] as? Object ?? [:]
+            profile["est_secs"] = secs
+            lease["profile"] = profile
+        }
+    }
+
+    /// Adds an entry to allotd's ended list.
+    static func ended(_ object: inout Object, lease: Int64, cause: String, reason: String = "") {
+        var ended = object["ended"] as? [Object] ?? []
+        ended.append([
+            "cause": cause, "command": "cargo build --release",
+            "ended_at_ms": Handoff.nowMs, "granted_at_ms": Handoff.nowMs - 186_000,
+            "lease_id": lease, "reason": reason, "session": Handoff.sessionOf("cargo"),
+        ])
+        object["ended"] = ended
+    }
+}
+
+/// Answers every Kill and Remove with one result and records the leases.
+actor FakeStopper: JobStopper {
+    private let result: StopResult
+    private(set) var killed: [Int64] = []
+    private(set) var removed: [Int64] = []
+
+    init(_ result: StopResult) {
+        self.result = result
+    }
+
+    func kill(_ lease: Int64) async throws -> StopResult {
+        killed.append(lease)
+        return result
+    }
+
+    func remove(_ lease: Int64) async throws -> StopResult {
+        removed.append(lease)
+        return result
+    }
+}

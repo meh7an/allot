@@ -75,7 +75,9 @@ private let carol = "c0c0c0c0-0000-4000-8000-000000000003"
         #expect(busy.idle == IdleLine(
             label: "Idle · 1", ids: "7c19e2aa", usage: "0.3 cores · 0.5 GB"))
         #expect(idle.idle == IdleLine(label: "Idle · 2", ids: "3f2a9c1e  b81d44f0", usage: ""))
-        #expect(idle.showNothing)
+        // Its recent runs show instead of the "No jobs" line.
+        #expect(idle.recent.count == 4)
+        #expect(!idle.showNothing)
     }
 
     @Test func groupsComeInBenchmarkRunningWaitingOrder() throws {
