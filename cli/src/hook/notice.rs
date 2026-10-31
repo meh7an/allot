@@ -39,8 +39,8 @@ pub fn describe(notice: &Notice, current: Option<&str>, failed: bool) -> String 
     let (command, id) = (&notice.command, notice.lease_id.0);
     if notice.cause == EndCause::Removed {
         return format!(
-            "The user removed the queued request for `{command}` (lease {id}) from Resources \
-             Helper before it started; it did not run."
+            "The user removed the queued request for `{command}` (lease {id}) from Allot \
+             before it started; it did not run."
         );
     }
     let this_call = current.is_some() && notice.tool_use_id.as_deref() == current;
@@ -116,8 +116,8 @@ mod tests {
         let text = describe(&notice(43, EndCause::Removed, None), None, false);
         assert_eq!(
             text,
-            "The user removed the queued request for `cargo build` (lease 43) from Resources \
-             Helper before it started; it did not run."
+            "The user removed the queued request for `cargo build` (lease 43) from Allot \
+             before it started; it did not run."
         );
     }
 
