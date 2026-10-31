@@ -1,0 +1,68 @@
+/* The popup takes the shell's popup-menu-content background, radius and padding. */
+
+.allot-popup {
+  width: 360px;
+  spacing: 8px;
+}
+
+.allot-header {
+  spacing: 8px;
+  padding: 0 4px;
+}
+
+.allot-header-glyph {
+  icon-size: 16px;
+}
+
+/* GNOME's destructive colour on the dark shell. */
+.allot-header-glyph-error {
+  color: #ff7b63;
+}
+
+.allot-summary {
+  font-weight: bold;
+}
+
+.allot-header-button {
+  padding: 6px;
+  border-radius: 6px;
+}
+
+.allot-header-button StIcon {
+  icon-size: 16px;
+}
+
+.allot-header-button:checked {
+  background-color: -st-accent-color;
+  color: -st-accent-fg-color;
+}
+
+.allot-list {
+  spacing: 4px;
+  padding: 0 4px;
+}
+
+.allot-group-heading {
+  spacing: 6px;
+  padding-top: 4px;
+  font-weight: bold;
+}
+
+.allot-group-heading StIcon {
+  icon-size: 14px;
+}
+
+.allot-job {
+  padding: 2px 0 4px 20px;
+}
+
+.allot-job-strip,
+.allot-idle-line,
+.allot-nothing {
+  font-size: 0.85em;
+}
+
+.allot-idle-line,
+.allot-nothing {
+  padding-top: 4px;
+}

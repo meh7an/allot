@@ -1,0 +1,23 @@
+{
+  "name": "allot-gnome",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Allot's GNOME Shell extension: logic tests and type checks",
+  "scripts": {
+    "typecheck": "tsc",
+    "test": "node --test"
+  },
+  "license": "MIT OR Apache-2.0",
+  "devEngines": {
+    "packageManager": {
+      "name": "pnpm",
+      "version": "12.15.0",
+      "onFail": "download"
+    }
+  },
+  "packageManager": "pnpm@12.15.0",
+  "type": "module",
+  "devDependencies": {
+    "typescript": "7.0.2"
+  }
+}

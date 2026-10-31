@@ -1,7 +1,8 @@
 """Builds Allot's icons from the mark's geometry.
 
 Writes the Windows tray and app icons into the tray app, the macOS menu bar and app icons into
-the macOS app's asset catalog, and the prepared Linux, macOS and web assets into this folder.
+the macOS app's asset catalog, the panel icons into the GNOME extension, and the prepared Linux,
+macOS and web assets into this folder.
 Standard library only; the output is the same on every run:
 
     python assets/brand/build.py
@@ -21,6 +22,7 @@ BRAND = Path(__file__).resolve().parent
 ROOT = BRAND.parents[1]
 TRAY_ASSETS = ROOT / "tray" / "src" / "Allot.Tray" / "Assets"
 MACOS_ASSETS = ROOT / "apps" / "macos" / "Allot" / "Assets.xcassets"
+GNOME_ICONS = ROOT / "apps" / "gnome" / "allot@mehran.tech" / "icons"
 
 
 def rgb(hex_color):
@@ -57,9 +59,8 @@ TASKBAR = {
              "down": "#FF6B6B", "inner": "#1C1C1C"},
 }
 STATE_ALPHA = {"idle": 0.5, "busy": 1.0, "benchmark": 1.0, "queued": 1.0, "down": 0.35}
+# Every platform shows these five states; the Linux panels draw them with plain badges.
 TRAY_STATES = list(STATE_ALPHA)
-# The Linux panels keep four states and plain badges; the macOS menu bar has the tray's five.
-PANEL_STATES = ["idle", "busy", "queued", "down"]
 
 # The status badge sits in the empty top-right corner of the A, cut out of the mark by a
 # one-unit ring.
@@ -406,18 +407,20 @@ def tile_svg():
 
 
 def state_svg(state, glyph, badge_fills):
-    """A tray state as a vector. `badge_fills` maps queued and down to (class, colour)."""
+    """A tray state as a vector. `badge_fills` maps each badged state to (class, colour); a
+    class of None leaves the badge in the glyph colour."""
     b = BADGE
     opacity = STATE_ALPHA[state]
     bars = svg_bars(lambda _: f'fill="{glyph}"')
     group = f'<g opacity="{opacity:g}">{bars}</g>' if opacity < 1 else bars
-    if state not in ("queued", "down"):
+    if state not in badge_fills:
         return f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">{group}</svg>\n'
 
     notch = (f'<mask id="notch"><rect width="16" height="16" fill="#fff"/>'
              f'<circle cx="{b["cx"]:g}" cy="{b["cy"]:g}" r="{b["r"] + b["ring"]:g}"/></mask>')
     css_class, colour = badge_fills[state]
-    dot = f'<circle class="{css_class}" cx="{b["cx"]:g}" cy="{b["cy"]:g}" r="{b["r"]:g}" fill="{colour}"'
+    class_attr = f' class="{css_class}"' if css_class else ""
+    dot = f'<circle{class_attr} cx="{b["cx"]:g}" cy="{b["cy"]:g}" r="{b["r"]:g}" fill="{colour}"'
     defs = notch
     if state == "down":
         a = b["arm"]
@@ -458,11 +461,22 @@ def build_linux():
         write(BRAND / "linux" / "hicolor" / f"{size}x{size}" / "apps" / "allot.png",
               png_bytes(app_icon(size), size))
     write(BRAND / "linux" / "hicolor" / "scalable" / "apps" / "allot.svg", tile_svg())
-    # Symbolic icons: GTK recolours #2e3436 and the warning and error classes to the theme.
-    badges = {"queued": ("warning", "#f57900"), "down": ("error", "#cc0000")}
-    for state in PANEL_STATES:
-        write(BRAND / "linux" / "symbolic" / f"allot-{state}-symbolic.svg",
-              state_svg(state, "#2e3436", badges))
+    # Symbolic icons: GTK and GNOME Shell recolour #2e3436 and the success, warning and error
+    # classes to the theme. The benchmark badge has no class of its own, so it takes the glyph
+    # colour.
+    badges = {
+        "busy": ("success", "#4e9a06"),
+        "benchmark": (None, "#2e3436"),
+        "queued": ("warning", "#f57900"),
+        "down": ("error", "#cc0000"),
+    }
+    for state in TRAY_STATES:
+        svg = state_svg(state, "#2e3436", badges)
+        name = f"allot-{state}-symbolic.svg"
+        write(BRAND / "linux" / "symbolic" / name, svg)
+        write(GNOME_ICONS / name, svg)
+    # The popup header's glyph: the bare mark, dimmed by the extension while idle.
+    write(GNOME_ICONS / "allot-mark-symbolic.svg", state_svg("busy", "#2e3436", {}))
 
 
 def build_macos():

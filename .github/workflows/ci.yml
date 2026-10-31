@@ -142,6 +142,15 @@ jobs:
           pnpm typecheck
           pnpm test
 
+      # The GNOME extension's logic modules, against the same fixtures.
+      - name: GNOME extension
+        if: matrix.os == 'ubuntu-24.04'
+        working-directory: apps/gnome
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm typecheck
+          pnpm test
+
       - name: Contract package
         if: matrix.os == 'macos-15'
         working-directory: contract/swift

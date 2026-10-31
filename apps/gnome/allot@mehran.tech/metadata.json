@@ -1,0 +1,12 @@
+{
+  "name": "Allot",
+  "description": "Shows the jobs Allot runs and queues for your Claude Code sessions.",
+  "uuid": "allot@mehran.tech",
+  "shell-version": [
+    "48",
+    "49",
+    "50",
+    "51"
+  ],
+  "url": "https://github.com/meh7an/allot"
+}
