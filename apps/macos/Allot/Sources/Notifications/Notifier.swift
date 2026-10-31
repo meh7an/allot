@@ -53,7 +53,7 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         Task {
             let center = UNUserNotificationCenter.current()
             // Posting before permission fails, so a first notification asks for it.
-            if await center.notificationSettings().authorizationStatus == .notDetermined {
+            if await Self.authorization() == .notDetermined {
                 _ = try? await center.requestAuthorization(options: [.alert, .sound])
             }
             for request in requests {
@@ -67,6 +67,12 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
                 }
             }
         }
+    }
+
+    // The settings object is not Sendable, so it is read where it is made and only its
+    // status crosses back to the main actor.
+    private nonisolated static func authorization() async -> UNAuthorizationStatus {
+        await UNUserNotificationCenter.current().notificationSettings().authorizationStatus
     }
 
     nonisolated func userNotificationCenter(

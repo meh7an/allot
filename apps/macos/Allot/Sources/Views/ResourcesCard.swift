@@ -148,7 +148,7 @@ private struct DriveRowView: View {
                         RoundedRectangle(cornerRadius: 2).fill(Tokens.track)
                         RoundedRectangle(cornerRadius: 2)
                             .fill(Tokens.driveBar)
-                            .frame(width: proxy.size.width * drive.used)
+                            .frame(width: proxy.size.width * CGFloat(drive.used))
                     }
                 }
                 .frame(height: 4)
@@ -193,8 +193,8 @@ private struct BulletBar: View {
                 layer.clip(to: barShape)
                 layer.fill(Path(bar), with: .color(Tokens.track))
                 drawHatch(in: layer, bar: bar)
-                let used = bar.width * row.used
-                let shared = bar.width * (row.shared ?? 0)
+                let used = bar.width * CGFloat(row.used)
+                let shared = bar.width * CGFloat(row.shared ?? 0)
                 layer.fill(
                     Path(CGRect(
                         x: bar.minX, y: bar.minY, width: used - shared, height: bar.height)),
@@ -206,11 +206,12 @@ private struct BulletBar: View {
                     with: .color(.accentColor.opacity(Tokens.sharedOpacity)))
             }
             if let reserved = row.reserved {
-                let x = min(max(bar.width * reserved - Self.tickSize.width / 2, 0),
+                let mid = bar.width * CGFloat(reserved)
+                let x = min(max(mid - Self.tickSize.width / 2, 0),
                             size.width - Self.tickSize.width)
+                let y = (size.height - Self.tickSize.height) / 2
                 let tick = CGRect(
-                    x: x, y: (size.height - Self.tickSize.height) / 2,
-                    width: Self.tickSize.width, height: Self.tickSize.height)
+                    x: x, y: y, width: Self.tickSize.width, height: Self.tickSize.height)
                 context.fill(Path(tick.insetBy(dx: -1, dy: -1)), with: .color(Tokens.tickRing))
                 context.fill(Path(tick), with: .color(.primary))
             }
@@ -220,7 +221,7 @@ private struct BulletBar: View {
 
     // 1.5 pt diagonal lines every 4·√2 pt, as the handoff's 135° repeating gradient.
     private func drawHatch(in context: GraphicsContext, bar: CGRect) {
-        let start = bar.width * row.headroom
+        let start = bar.width * CGFloat(row.headroom)
         guard start < bar.width else {
             return
         }
