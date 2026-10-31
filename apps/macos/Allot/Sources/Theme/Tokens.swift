@@ -77,7 +77,15 @@ enum Tokens {
     static let reveal = Animation.timingCurve(0.1, 0.9, 0.2, 1, duration: 0.2)
 
     /// Cards entering and leaving, cubic-bezier(.4, 0, .2, 1) over 240 ms.
-    static let cardMotion = Animation.timingCurve(0.4, 0, 0.2, 1, duration: 0.24)
+    static let cardDuration = 0.24
+    static let cardMotion = Animation.timingCurve(0.4, 0, 0.2, 1, duration: cardDuration)
+
+    /// The gap above each list row.
+    static let rowGap: CGFloat = 6
+
+    /// How far the list runs under the Resources card, for the notches beside its rounded top
+    /// corners.
+    static let notchDepth: CGFloat = 6
 
     /// Bars follow the ticking time.
     static let barMotion = Animation.linear(duration: 0.9)

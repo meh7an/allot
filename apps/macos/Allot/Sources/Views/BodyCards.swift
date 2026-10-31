@@ -10,6 +10,10 @@ struct ServiceBannerView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .center, spacing: 8) {
+                Image(systemName: "exclamationmark.circle.fill")
+                    .font(.system(size: 16))
+                    .foregroundStyle(Tokens.danger)
+                    .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(banner.text)
                         .font(Tokens.Font.action)
@@ -67,17 +71,24 @@ struct WelcomeCardView: View {
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             VStack(alignment: .leading, spacing: 2) {
-                Toggle(isOn: Binding(
-                    get: { card.login.isOn },
-                    set: { setLaunchAtLogin($0) })
-                ) {
+                // The state word sits before the switch, as on Windows.
+                HStack(spacing: 8) {
                     Text("Launch at login")
                         .font(Tokens.Font.body)
                         .frame(maxWidth: .infinity, alignment: .leading)
+                    Text(card.login.isOn ? "On" : "Off")
+                        .font(Tokens.Font.body)
+                        .foregroundStyle(.secondary)
+                        .accessibilityHidden(true)
+                    Toggle("Launch at login", isOn: Binding(
+                        get: { card.login.isOn },
+                        set: { setLaunchAtLogin($0) }))
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                        .controlSize(.small)
+                        .disabled(!card.login.canToggle)
                 }
-                .toggleStyle(.switch)
-                .controlSize(.small)
-                .disabled(!card.login.canToggle)
+                .padding(.top, 8)
                 if card.login == .needsApproval {
                     HStack(spacing: 4) {
                         Text(card.login.hint)
@@ -99,6 +110,7 @@ struct WelcomeCardView: View {
             HStack {
                 Spacer()
                 Button("Done", action: done)
+                    .buttonStyle(.bordered)
                     .controlSize(.regular)
             }
         }

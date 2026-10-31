@@ -40,7 +40,10 @@ final class PanelController: NSObject, NSWindowDelegate {
     private let layout = PanelLayout()
     private let panel = AllotPanel()
     private let effectView = NSVisualEffectView()
-    private var hosting: NSHostingView<PanelView>?
+    private var headerHosting: NSHostingView<PanelHeaderView>?
+    private var bodyHosting: NSHostingView<PanelView>?
+    private var headerHeight: CGFloat = 0
+    private var bodyHeight: CGFloat = 0
     private var isShown = false
     private var showGeneration = 0
     private var contentHeight: CGFloat = 0
@@ -192,16 +195,35 @@ final class PanelController: NSObject, NSWindowDelegate {
 
     // MARK: - Size and position
 
-    /// Lays the content out before showing, so the first open already has its full height.
+    /// Lays the content out before showing, so the first open already has its full height. The
+    /// header first: the body's maximum depends on it.
     private func measureContent() {
-        guard let hosting else {
+        guard let headerHosting, let bodyHosting else {
             return
         }
-        hosting.layoutSubtreeIfNeeded()
-        let height = hosting.fittingSize.height
-        if height > 0 {
-            contentHeight = height
+        headerHosting.layoutSubtreeIfNeeded()
+        let header = headerHosting.fittingSize.height
+        if header > 0 {
+            headerHeight = header
+            layout.headerHeight = header
         }
+        bodyHosting.layoutSubtreeIfNeeded()
+        let body = bodyHosting.fittingSize.height
+        if body > 0 {
+            bodyHeight = body
+        }
+        contentHeight = headerHeight + bodyHeight
+    }
+
+    private func headerHeightChanged(_ height: CGFloat) {
+        headerHeight = height
+        layout.headerHeight = height
+        contentHeightChanged(headerHeight + bodyHeight)
+    }
+
+    private func bodyHeightChanged(_ height: CGFloat) {
+        bodyHeight = height
+        contentHeightChanged(headerHeight + bodyHeight)
     }
 
     private func contentHeightChanged(_ height: CGFloat) {
@@ -214,11 +236,14 @@ final class PanelController: NSObject, NSWindowDelegate {
         }
 
         // The top edge stays put. Through the animator, so it replaces an open animation still
-        // running toward the old size.
+        // running toward the old size. The content animates its own height and reports it
+        // frame by frame, so the window only catches up quickly; a longer curve would restart
+        // on every frame and trail behind.
         let frame = panel.frame
         let newHeight = min(height, layout.maxHeight)
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0.1
+            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
             panel.animator().setFrame(
                 NSRect(x: frame.minX, y: frame.maxY - newHeight, width: frame.width,
                        height: newHeight),
@@ -340,21 +365,34 @@ final class PanelController: NSObject, NSWindowDelegate {
             showScenario: { [weak self] in self?.onShowScenario?($0) },
             testNotifications: offersTestNotifications
                 ? { [weak self] in self?.onTestNotifications?() } : nil,
-            heightChanged: { [weak self] in self?.contentHeightChanged($0) })
-        let hosting = NSHostingView(
+            headerHeightChanged: { [weak self] in self?.headerHeightChanged($0) },
+            bodyHeightChanged: { [weak self] in self?.bodyHeightChanged($0) })
+        // Natural heights, the header pinned to the top and the body under it: the panel's
+        // height is set from them, never the reverse. Two hosting views, so the body's
+        // animations can never move the header.
+        let header = NSHostingView(rootView: PanelHeaderView(model: model, actions: actions))
+        let body = NSHostingView(
             rootView: PanelView(model: model, layout: layout, actions: actions))
-        // Natural height, pinned to the top: the panel's height is set from it, never the
-        // reverse.
-        hosting.sizingOptions = [.intrinsicContentSize]
-        hosting.translatesAutoresizingMaskIntoConstraints = false
-        effectView.addSubview(hosting)
+        let container = TopAnchoredView(frame: effectView.bounds)
+        container.autoresizingMask = [.width, .height]
+        effectView.addSubview(container)
+        for hosting in [header, body] as [NSView] {
+            hosting.translatesAutoresizingMaskIntoConstraints = false
+            container.addSubview(hosting)
+            NSLayoutConstraint.activate([
+                hosting.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+                hosting.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            ])
+        }
+        header.sizingOptions = [.intrinsicContentSize]
+        body.sizingOptions = [.intrinsicContentSize]
         NSLayoutConstraint.activate([
-            hosting.leadingAnchor.constraint(equalTo: effectView.leadingAnchor),
-            hosting.trailingAnchor.constraint(equalTo: effectView.trailingAnchor),
-            hosting.topAnchor.constraint(equalTo: effectView.topAnchor),
+            header.topAnchor.constraint(equalTo: container.topAnchor),
+            body.topAnchor.constraint(equalTo: header.bottomAnchor),
         ])
         panel.contentView = effectView
-        self.hosting = hosting
+        headerHosting = header
+        bodyHosting = body
     }
 
     private static func roundedMask(radius: CGFloat) -> NSImage {

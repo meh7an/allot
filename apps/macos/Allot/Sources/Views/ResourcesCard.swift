@@ -7,6 +7,12 @@ struct ResourcesCard: View {
     let view: ResourcesView
     let toggle: () -> Void
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    // The rows fold shut by their height while the summary fades in over the same 240 ms; a
+    // toggle mid-way turns around from where it is. The rows stay laid out when collapsed
+    // (folded to nothing) rather than being removed, since SwiftUI draws a removed view outside
+    // the card's clip while it leaves. With reduced motion both change at once.
     var body: some View {
         VStack(spacing: 0) {
             Button(action: toggle) {
@@ -21,7 +27,8 @@ struct ResourcesCard: View {
                         .truncationMode(.tail)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .opacity(view.isExpanded ? 0 : 1)
-                    Image(systemName: "chevron.down")
+                    // Up while collapsed, down while expanded, as on Windows.
+                    Image(systemName: "chevron.up")
                         .font(.system(size: 11, weight: .semibold))
                         .rotationEffect(.degrees(view.isExpanded ? 180 : 0))
                         .frame(width: 32, height: 32)
@@ -32,19 +39,19 @@ struct ResourcesCard: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .help(view.isExpanded ? "Hide resources" : "Show resources")
+            .help(view.isExpanded ? "Collapse resources" : "Expand resources")
             .accessibilityLabel("Resources")
             .accessibilityValue(view.isExpanded ? "Expanded" : "Collapsed")
             .accessibilityHint(view.summary)
 
-            if view.isExpanded {
-                ResourceRows(view: view)
-                    .transition(.opacity.combined(with: .move(edge: .bottom)))
-            }
+            ResourceRows(view: view)
+                .folded(view.isExpanded ? 1 : 0)
+                .allowsHitTesting(view.isExpanded)
+                .accessibilityHidden(!view.isExpanded)
         }
         .clipped()
         .cardFrame()
-        .animation(Tokens.cardMotion, value: view.isExpanded)
+        .animation(reduceMotion ? nil : Tokens.cardMotion, value: view.isExpanded)
     }
 }
 
@@ -117,7 +124,6 @@ private struct MeterRowView: View {
     var body: some View {
         RowGrid(label: row.label) {
             BulletBar(row: row)
-                .help(row.tooltip)
         } value: {
             HStack(spacing: 6) {
                 if !row.spark.isEmpty {
@@ -131,6 +137,9 @@ private struct MeterRowView: View {
                     .lineLimit(1)
             }
         }
+        // The whole 28 pt row carries the bar's tooltip: the 6 pt bar is hard to hit.
+        .contentShape(Rectangle())
+        .help(row.tooltip)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(row.label)
         .accessibilityValue("\(row.value), \(row.tooltip)")
@@ -176,37 +185,42 @@ private struct DriveRowView: View {
 }
 
 /// The 6 pt bullet bar: the track, hatched headroom from `headroom` on, the used fill (its GPU
-/// share lighter, at its end), and the 2 by 14 pt reserved tick reaching above and below.
+/// share lighter, at its end), and the 2 by 14 pt reserved tick reaching above and below. The
+/// fill glides over 600 ms to each new value; the first value shows at once.
 private struct BulletBar: View {
     private static let barHeight: CGFloat = 6
     private static let tickSize = CGSize(width: 2, height: 14)
+    private static let glide = Animation.easeOut(duration: 0.6)
 
     let row: MeterRow
 
     var body: some View {
-        Canvas { context, size in
-            let bar = CGRect(
-                x: 0, y: (size.height - Self.barHeight) / 2, width: size.width,
-                height: Self.barHeight)
-            let barShape = Path(roundedRect: bar, cornerRadius: 2)
-            context.drawLayer { layer in
-                layer.clip(to: barShape)
-                layer.fill(Path(bar), with: .color(Tokens.track))
-                drawHatch(in: layer, bar: bar)
-                let used = bar.width * CGFloat(row.used)
-                let shared = bar.width * CGFloat(row.shared ?? 0)
-                layer.fill(
-                    Path(CGRect(
-                        x: bar.minX, y: bar.minY, width: used - shared, height: bar.height)),
-                    with: .color(.accentColor))
-                layer.fill(
-                    Path(CGRect(
-                        x: bar.minX + used - shared, y: bar.minY, width: shared,
-                        height: bar.height)),
-                    with: .color(.accentColor.opacity(Tokens.sharedOpacity)))
+        let shared = row.shared ?? 0
+        ZStack {
+            Canvas { context, size in
+                let bar = CGRect(origin: .zero, size: size)
+                context.fill(Path(bar), with: .color(Tokens.track))
+                drawHatch(in: context, bar: bar)
             }
+            BarSpan(start: 0, end: row.used - shared)
+                .fill(Color.accentColor)
+            BarSpan(start: row.used - shared, end: row.used)
+                .fill(Color.accentColor.opacity(Tokens.sharedOpacity))
+        }
+        .animation(Self.glide, value: row.used)
+        .animation(Self.glide, value: row.shared)
+        .frame(height: Self.barHeight)
+        .clipShape(RoundedRectangle(cornerRadius: 2))
+        .overlay {
+            tick.frame(height: Self.tickSize.height + 2)
+        }
+        .frame(height: Self.tickSize.height + 2)
+    }
+
+    private var tick: some View {
+        Canvas { context, size in
             if let reserved = row.reserved {
-                let mid = bar.width * CGFloat(reserved)
+                let mid = size.width * CGFloat(reserved)
                 let x = min(max(mid - Self.tickSize.width / 2, 0),
                             size.width - Self.tickSize.width)
                 let y = (size.height - Self.tickSize.height) / 2
@@ -216,7 +230,6 @@ private struct BulletBar: View {
                 context.fill(Path(tick), with: .color(.primary))
             }
         }
-        .frame(height: Self.tickSize.height + 2)
     }
 
     // 1.5 pt diagonal lines every 4·√2 pt, as the handoff's 135° repeating gradient.
@@ -238,6 +251,24 @@ private struct BulletBar: View {
             x += step
         }
         layer.stroke(lines, with: .color(Tokens.hatchLine), lineWidth: 1.5)
+    }
+}
+
+/// The part of a bar from `start` to `end`, both fractions of its width, animatable so a fill
+/// glides between values.
+private struct BarSpan: Shape {
+    var start: Double
+    var end: Double
+
+    var animatableData: AnimatablePair<Double, Double> {
+        get { AnimatablePair(start, end) }
+        set { (start, end) = (newValue.first, newValue.second) }
+    }
+
+    func path(in rect: CGRect) -> Path {
+        let from = rect.width * CGFloat(max(0, start))
+        let to = rect.width * CGFloat(max(start, end))
+        return Path(CGRect(x: from, y: 0, width: to - from, height: rect.height))
     }
 }
 

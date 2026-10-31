@@ -90,6 +90,9 @@ public struct JobCard: Sendable, Equatable {
     /// chip show at 50%.
     public internal(set) var isEnded = false
 
+    /// A Kill or Remove went to allotd and its answer is not back: `Stopping…` or `Removing…`.
+    public internal(set) var isSending = false
+
     /// The command is struck through: stopped or removed, not finished.
     public internal(set) var isStruck = false
 
@@ -251,6 +254,7 @@ public struct JobCard: Sendable, Equatable {
             card.timeIsWarning = false
             card.action = .none
             card.actionName = ""
+            card.isSending = true
         case .failed:
             card.detail = "Not stopped: \(stop.message)"
             card.detailTooltip = card.detail
@@ -328,6 +332,7 @@ public struct JobCard: Sendable, Equatable {
             card.detail = "Removing…"
             card.action = .none
             card.actionName = ""
+            card.isSending = true
         case .failed:
             card.detail = "Not removed: \(stop.message)"
             card.detailTooltip = card.detail

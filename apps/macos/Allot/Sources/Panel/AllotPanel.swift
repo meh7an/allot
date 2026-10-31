@@ -33,3 +33,12 @@ final class AllotPanel: NSPanel {
         onCancel?()
     }
 }
+
+/// Holds the panel's content with its origin at the top: while the window's height animates,
+/// AppKit moves unflipped subviews with the bottom edge until layout runs, so the content
+/// would jump down and back on every growth.
+final class TopAnchoredView: NSView {
+    override var isFlipped: Bool {
+        true
+    }
+}

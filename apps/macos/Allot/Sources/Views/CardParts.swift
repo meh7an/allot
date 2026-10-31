@@ -62,11 +62,52 @@ struct CardActionView: View {
     let card: JobCard
     let actions: CardActions
 
-    @State private var isHovered = false
+    private static let actions: [CardAction] = [.kill, .confirm, .remove, .none]
 
+    @State private var isHovered = false
+    @State private var widths: [CardAction: CGFloat] = [:]
+
+    /// The Windows morph: Kill? fades in over 167 ms, the others over 120 ms.
+    static func morph(to action: CardAction) -> Animation {
+        .easeOut(duration: action == .confirm ? 0.167 : 0.12)
+    }
+
+    // Every action stays laid out and only the shown one is opaque, so the control's width
+    // can move between theirs: Kill? grows out of Kill at its right edge and shrinks back into
+    // it, and the chip beside it slides both ways. The card row animates that width (not with
+    // reduced motion); the fade always runs.
     var body: some View {
+        ZStack(alignment: .trailing) {
+            ForEach(Self.actions, id: \.self) { action in
+                let isShown = action == card.action
+                button(for: action)
+                    .fixedSize()
+                    .onGeometryChange(for: CGFloat.self, of: \.size.width) { widths[action] = $0 }
+                    .opacity(isShown ? 1 : 0)
+                    .allowsHitTesting(isShown)
+                    .accessibilityHidden(!isShown)
+            }
+        }
+        .animation(Self.morph(to: card.action), value: card.action)
+        .frame(width: width, alignment: .trailing)
+        .clipped()
+        .buttonStyle(.plain)
+        .help(card.actionName)
+        .onHover { isHovered = $0 }
+    }
+
+    // Once a Kill or Remove is sent, the button's place goes at once, so the chip slides right
+    // in one move rather than to a spacer and again when allotd answers.
+    private var width: CGFloat {
+        if card.action == .none && (card.isSending || card.isEnded) {
+            return 0
+        }
+        return widths[card.action] ?? 32
+    }
+
+    @ViewBuilder private func button(for action: CardAction) -> some View {
         Group {
-            switch card.action {
+            switch action {
             case .kill:
                 Button {
                     actions.kill(id)
@@ -118,11 +159,7 @@ struct CardActionView: View {
                     .frame(width: 32, height: 32)
             }
         }
-        .buttonStyle(.plain)
-        .fixedSize()
-        .help(card.actionName)
         .accessibilityLabel(card.actionName)
-        .onHover { isHovered = $0 }
     }
 }
 

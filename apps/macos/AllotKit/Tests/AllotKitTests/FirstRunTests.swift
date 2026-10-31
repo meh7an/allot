@@ -127,6 +127,9 @@ import Testing
         model.pressKill(71)
 
         #expect(noted == [71])
+        let card = model.snapshot.groups.flatMap(\.jobs).first { $0.id == 71 }?.card
+        #expect(card?.isSending == true)
+        #expect(card?.action == CardAction.none)
     }
 }
 

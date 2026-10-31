@@ -13,51 +13,88 @@ struct CardActions {
 }
 
 /// The service-down banner, the groups with one card per job, then the idle line, the
-/// first-run card, and Recently finished while nothing runs or waits. Cards carry the row keys
-/// a notification's Show scrolls to.
+/// first-run card, and Recently finished while nothing runs or waits. Rows enter and leave by
+/// their height and opacity over 240 ms; Recently finished and the empty line wait for the
+/// rows leaving before them. Cards carry the row keys a notification's Show scrolls to.
 struct JobListView: View {
     let snapshot: PanelSnapshot
     let banner: ServiceBanner?
     let actions: CardActions
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 0) {
             if let banner {
                 ServiceBannerView(banner: banner, startService: actions.startService)
+                    .listRow(rowTransition)
             }
             ForEach(snapshot.groups) { group in
                 GroupHeading(group: group)
                     .opacity(dimming)
+                    .listRow(rowTransition)
                 ForEach(group.jobs) { job in
                     JobCardView(job: job, actions: actions)
                         .opacity(dimming)
                         .id(NotificationText.jobTarget(job.id))
-                        .transition(.opacity)
+                        .listRow(rowTransition)
                 }
             }
             if let idle = snapshot.idle {
                 IdleLineView(idle: idle)
                     .opacity(dimming)
+                    .listRow(rowTransition)
             }
             if let welcome = snapshot.welcome {
                 WelcomeCardView(
                     card: welcome, setLaunchAtLogin: actions.setLaunchAtLogin,
                     openLoginItems: actions.openLoginItems, done: actions.finishFirstRun)
+                    .listRow(rowTransition)
             }
             if !snapshot.recent.isEmpty {
                 RecentView(lines: snapshot.recent)
                     .id(NotificationText.recentTarget)
+                    .listRow(reduceMotion ? .opacity : .revealAfterLeaving)
             }
             if snapshot.showNothing {
                 Text("No jobs running or waiting.")
                     .font(Tokens.Font.body)
                     .foregroundStyle(.secondary)
                     .padding(EdgeInsets(top: 4, leading: 6, bottom: 2, trailing: 6))
+                    .listRow(reduceMotion ? .opacity : .revealAfterLeaving)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(EdgeInsets(top: 0, leading: 8, bottom: 8, trailing: 8))
-        .animation(Tokens.cardMotion, value: snapshot.groups.map { $0.jobs.map(\.id) })
+        // The first row's gap is not wanted under the header.
+        .padding(EdgeInsets(top: -Tokens.rowGap, leading: 8, bottom: 8, trailing: 8))
+        .animation(Tokens.cardMotion, value: rowKeys)
+    }
+
+    // With reduced motion rows only fade, and the height changes once.
+    private var rowTransition: AnyTransition {
+        reduceMotion ? .opacity : .reveal
+    }
+
+    // Every row the list shows, in order, so any entering or leaving row animates.
+    private var rowKeys: [String] {
+        var keys: [String] = banner == nil ? [] : ["banner"]
+        for group in snapshot.groups {
+            keys.append("group:\(group.kind)")
+            keys += group.jobs.map { NotificationText.jobTarget($0.id) }
+        }
+        if snapshot.idle != nil {
+            keys.append("idle")
+        }
+        if snapshot.welcome != nil {
+            keys.append("welcome")
+        }
+        if !snapshot.recent.isEmpty {
+            keys.append(NotificationText.recentTarget)
+        }
+        if snapshot.showNothing {
+            keys.append("nothing")
+        }
+        return keys
     }
 
     // Last known jobs show dimmed under the banner, which keeps its full colour.
@@ -178,7 +215,15 @@ private struct IdleLineView: View {
 private struct RecentView: View {
     let lines: [RecentLine]
 
+    // One view, so it enters and leaves as one row with one scroll target.
     var body: some View {
+        VStack(alignment: .leading, spacing: Tokens.rowGap) {
+            heading
+            rows
+        }
+    }
+
+    private var heading: some View {
         HStack(spacing: 6) {
             Image(systemName: "checkmark.circle")
                 .font(.system(size: 12, weight: .medium))
@@ -190,6 +235,9 @@ private struct RecentView: View {
         .padding(EdgeInsets(top: 6, leading: 6, bottom: 0, trailing: 6))
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isHeader)
+    }
+
+    private var rows: some View {
         VStack(spacing: 0) {
             ForEach(lines) { line in
                 HStack(spacing: 8) {
@@ -230,6 +278,8 @@ private struct JobCardView: View {
     let job: JobRow
     let actions: CardActions
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     var body: some View {
         let card = job.card
         VStack(alignment: .leading, spacing: 0) {
@@ -251,6 +301,14 @@ private struct JobCardView: View {
                     CardActionView(id: job.id, card: card, actions: actions)
                 }
                 .frame(minHeight: 32)
+                // With reduced motion the action only fades, and the row takes its new width
+                // at once.
+                .animation(
+                    reduceMotion ? nil : CardActionView.morph(to: card.action),
+                    value: card.action)
+                .animation(
+                    reduceMotion ? nil : CardActionView.morph(to: .none),
+                    value: card.isSending || card.isEnded)
                 DetailLine(card: card)
                     .padding(EdgeInsets(top: 0, leading: 28, bottom: 0, trailing: 8))
                 if let steps = card.steps {
