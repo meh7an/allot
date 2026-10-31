@@ -21,9 +21,22 @@ final class PanelController: NSObject, NSWindowDelegate {
     /// Debug builds: shows a handoff scenario picked under More options.
     var onShowScenario: ((String) -> Void)?
 
+    /// The banner's Start Service.
+    var onStartService: (() -> Void)?
+
+    /// The first-run card's and More options' Launch at Login.
+    var onSetLaunchAtLogin: ((Bool) -> Void)?
+
+    /// The first-run card's Open Login Items.
+    var onOpenLoginItems: (() -> Void)?
+
+    /// Debug builds: More options › Test Notifications.
+    var onTestNotifications: (() -> Void)?
+
     private let model: PanelModel
     private let logDirectory: URL
     private let scenarios: [String]
+    private let offersTestNotifications: Bool
     private let layout = PanelLayout()
     private let panel = AllotPanel()
     private let effectView = NSVisualEffectView()
@@ -35,13 +48,33 @@ final class PanelController: NSObject, NSWindowDelegate {
     private var activationObserver: NSObjectProtocol?
     private var lastOutsideClose: ContinuousClock.Instant?
 
-    /// - Parameter scenarios: Debug builds: the handoff scenarios More options lists.
-    init(model: PanelModel, logDirectory: URL, scenarios: [String] = []) {
+    /// - Parameters:
+    ///   - scenarios: Debug builds: the handoff scenarios More options lists.
+    ///   - offersTestNotifications: Debug builds: More options lists Test Notifications.
+    init(
+        model: PanelModel,
+        logDirectory: URL,
+        scenarios: [String] = [],
+        offersTestNotifications: Bool = false
+    ) {
         self.model = model
         self.logDirectory = logDirectory
         self.scenarios = scenarios
+        self.offersTestNotifications = offersTestNotifications
         super.init()
         installContent()
+    }
+
+    var isOpen: Bool {
+        isShown
+    }
+
+    /// Opens the panel, or keeps it open, scrolled to a notification's row.
+    func open(scrollingTo target: String?) {
+        if !isShown {
+            open()
+        }
+        model.scrollTarget = target ?? ""
     }
 
     // MARK: - Open and close
@@ -61,8 +94,10 @@ final class PanelController: NSObject, NSWindowDelegate {
     }
 
     func open() {
-        // Reopening always starts in light-dismiss mode, under the status item.
+        // Reopening always starts in light-dismiss mode, under the status item. Login Items
+        // may have changed in System Settings meanwhile.
         model.resetForOpen()
+        model.refreshLogin()
         applyMode()
         layout.maxHeight = maxHeight(on: statusScreen)
         measureContent()
@@ -298,8 +333,13 @@ final class PanelController: NSObject, NSWindowDelegate {
             togglePinned: { [weak self] in self?.togglePinned() },
             openLogs: { [weak self] in self?.openLogs() },
             quit: { NSApp.terminate(nil) },
+            startService: { [weak self] in self?.onStartService?() },
+            setLaunchAtLogin: { [weak self] in self?.onSetLaunchAtLogin?($0) },
+            openLoginItems: { [weak self] in self?.onOpenLoginItems?() },
             scenarios: scenarios,
             showScenario: { [weak self] in self?.onShowScenario?($0) },
+            testNotifications: offersTestNotifications
+                ? { [weak self] in self?.onTestNotifications?() } : nil,
             heightChanged: { [weak self] in self?.contentHeightChanged($0) })
         let hosting = NSHostingView(
             rootView: PanelView(model: model, layout: layout, actions: actions))

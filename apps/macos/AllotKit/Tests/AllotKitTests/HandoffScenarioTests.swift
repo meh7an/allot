@@ -27,6 +27,9 @@ private func scenarioCard(_ name: String, _ command: String) throws -> JobCard {
         ("bench-noisy", "Benchmark waiting for quiet", .idle),
         ("bench-forced", "Benchmark running alone", .busy),
         ("down", "Service stopped", .error),
+        ("first-run", "Idle", .idle),
+        ("res-collapsed", "1 running · 1 waiting", .busy),
+        ("res-expanded", "1 running", .busy),
         ("max", "4 running · 2 waiting", .busy),
         ("icons", "4 running · 2 waiting", .busy),
         ("c-active", "1 running", .busy),
@@ -46,7 +49,7 @@ private func scenarioCard(_ name: String, _ command: String) throws -> JobCard {
     }
 
     @Test func everyListedScenarioIsCovered() {
-        #expect(Handoff.scenarioNames.count == 22)
+        #expect(Handoff.scenarioNames.count == 25)
     }
 
     @Test(arguments: [

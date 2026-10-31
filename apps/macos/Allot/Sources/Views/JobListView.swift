@@ -1,33 +1,52 @@
 import AllotKit
 import SwiftUI
 
-/// What a card's button does; the panel model supplies it.
+/// What a card's button does; the panel model and the app supply it.
 @MainActor
 struct CardActions {
     let kill: (Int64) -> Void
     let remove: (Int64) -> Void
+    let startService: () -> Void
+    let setLaunchAtLogin: (Bool) -> Void
+    let openLoginItems: () -> Void
+    let finishFirstRun: () -> Void
 }
 
-/// The groups with one card per job, then the idle line, then Recently finished while nothing
-/// runs or waits.
+/// The service-down banner, the groups with one card per job, then the idle line, the
+/// first-run card, and Recently finished while nothing runs or waits. Cards carry the row keys
+/// a notification's Show scrolls to.
 struct JobListView: View {
     let snapshot: PanelSnapshot
+    let banner: ServiceBanner?
     let actions: CardActions
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
+            if let banner {
+                ServiceBannerView(banner: banner, startService: actions.startService)
+            }
             ForEach(snapshot.groups) { group in
                 GroupHeading(group: group)
+                    .opacity(dimming)
                 ForEach(group.jobs) { job in
                     JobCardView(job: job, actions: actions)
+                        .opacity(dimming)
+                        .id(NotificationText.jobTarget(job.id))
                         .transition(.opacity)
                 }
             }
             if let idle = snapshot.idle {
                 IdleLineView(idle: idle)
+                    .opacity(dimming)
+            }
+            if let welcome = snapshot.welcome {
+                WelcomeCardView(
+                    card: welcome, setLaunchAtLogin: actions.setLaunchAtLogin,
+                    openLoginItems: actions.openLoginItems, done: actions.finishFirstRun)
             }
             if !snapshot.recent.isEmpty {
                 RecentView(lines: snapshot.recent)
+                    .id(NotificationText.recentTarget)
             }
             if snapshot.showNothing {
                 Text("No jobs running or waiting.")
@@ -37,9 +56,13 @@ struct JobListView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .opacity(snapshot.isLastKnown ? Tokens.lastKnownOpacity : 1)
         .padding(EdgeInsets(top: 0, leading: 8, bottom: 8, trailing: 8))
         .animation(Tokens.cardMotion, value: snapshot.groups.map { $0.jobs.map(\.id) })
+    }
+
+    // Last known jobs show dimmed under the banner, which keeps its full colour.
+    private var dimming: Double {
+        snapshot.isLastKnown ? Tokens.lastKnownOpacity : 1
     }
 }
 

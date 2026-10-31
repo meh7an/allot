@@ -5,9 +5,13 @@ import AllotContract
 /// shown state, as it would from allotd's.
 @MainActor
 public final class ScenarioPlayer {
+    /// How long the down scenario's Start Service shows Starting… before the service is back.
+    public static let startDelay = Duration.milliseconds(1400)
+
     private let model: PanelModel
     private var status = ServiceStatus.running
     private var state: UiState?
+    private var starting: Task<Void, Never>?
 
     public init(model: PanelModel) {
         self.model = model
@@ -28,14 +32,42 @@ public final class ScenarioPlayer {
     }
 
     /// Shows a scenario from ``Handoff/scenarioNames``, with its stops frozen until the first
-    /// press.
+    /// press and its Resources card set as the prototype sets it. The first-run scenario
+    /// clears Done and the first showing, so the card and the panel's own opening come back.
     ///
     /// - Throws: `CocoaError` for an unknown name.
     public func show(_ name: String) throws {
+        starting?.cancel()
         (status, state) = try Handoff.scenario(name)
         model.stopper = ScenarioStopper(scenario: name)
         model.frozenStops = Handoff.stops(name)
+        model.updateSettings { settings in
+            if let preset = Handoff.preset(name) {
+                settings.resourcesExpanded = preset.expanded
+                if let meters = preset.meters {
+                    settings.meters = meters
+                }
+            }
+            if name == "first-run" {
+                settings.firstRunDone = false
+                settings.firstRunShown = false
+            }
+        }
         apply()
+    }
+
+    /// Start Service: Starting… for ``startDelay``, then the service is back with
+    /// ``Handoff/startedScenario``.
+    public func startService() {
+        status = .starting
+        apply()
+        starting = Task { [weak self] in
+            try? await Task.sleep(for: Self.startDelay)
+            guard !Task.isCancelled else {
+                return
+            }
+            try? self?.show(Handoff.startedScenario)
+        }
     }
 
     private func drop(_ lease: Int64) {

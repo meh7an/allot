@@ -56,6 +56,23 @@ enum Tokens {
     /// Last known jobs while the service is down.
     static let lastKnownOpacity = 0.55
 
+    /// The service-down banner.
+    static let bannerFill = Color(
+        light: hex(0xC42B1C).opacity(0.08), dark: hex(0xFF99A4).opacity(0.10))
+    static let bannerBorder = Color(
+        light: hex(0xC42B1C).opacity(0.30), dark: hex(0xFF99A4).opacity(0.30))
+    static let bannerText = Color(light: hex(0x8A1E14), dark: hex(0xFFB3BB))
+
+    /// The Resources card's bars: the hatched headroom leases can't take, the reserved tick's
+    /// ring in the surface colour, and the drive bars.
+    static let hatchBack = Color(light: .black.opacity(0.05), dark: .white.opacity(0.05))
+    static let hatchLine = Color(light: .black.opacity(0.20), dark: .white.opacity(0.22))
+    static let tickRing = Color(light: .white, dark: hex(0x2C2C2C))
+    static let driveBar = Color(light: hex(0x6B6B6B), dark: hex(0xA8A8A8))
+
+    /// The GPU's share of RAM inside the RAM bar's used fill.
+    static let sharedOpacity = 0.45
+
     /// The handoff's reveal curve, cubic-bezier(.1, .9, .2, 1).
     static let reveal = Animation.timingCurve(0.1, 0.9, 0.2, 1, duration: 0.2)
 

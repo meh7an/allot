@@ -38,7 +38,7 @@ struct HeaderView: View {
                     label: "Stay open",
                     isOn: mode.isStayOpen,
                     action: actions.toggleStayOpen)
-                MoreOptionsMenu(actions: actions)
+                MoreOptionsMenu(model: model, actions: actions)
                     .padding(.leading, Tokens.buttonGap)
             }
             .animation(Tokens.reveal, value: mode.isStayOpen)
@@ -95,13 +95,43 @@ private struct HeaderButton: View {
     }
 }
 
-/// More options holds Open logs and Quit until the Meters and Notifications submenus arrive;
-/// Debug builds add the handoff scenarios.
+/// More options: the Meters and Notifications check items with their counts, Launch at Login,
+/// Open Logs and Quit; Debug builds add the handoff scenarios and Test Notifications. A check
+/// item closes the menu, as every macOS menu does.
 private struct MoreOptionsMenu: View {
+    let model: PanelModel
     let actions: PanelActions
 
     var body: some View {
+        let settings = model.settings
         Menu {
+            Menu {
+                check("CPU", \.meters.cpu)
+                check("RAM", \.meters.ram)
+                check("GPU", \.meters.gpu)
+                check(model.resources.sharesMemory ? "GPU Memory" : "VRAM", \.meters.vram)
+                check("Drives", \.meters.drives)
+                check("Drive Activity", \.meters.driveActivity)
+                    .disabled(!settings.meters.drives)
+            } label: {
+                Label("Meters", systemImage: "chart.bar.xaxis")
+            }
+            .badge(Text(MenuCounts.meters(settings.meters)))
+            Menu {
+                check("Service Stopped", \.notifications.serviceStopped)
+                check("Running Long", \.notifications.runningLong)
+                check("Benchmark Finished", \.notifications.benchmarkFinished)
+                check("Job Finished", \.notifications.jobFinished)
+                check("Killed Outside the Panel", \.notifications.killedOutsidePanel)
+            } label: {
+                Label("Notifications", systemImage: "bell")
+            }
+            .badge(Text(MenuCounts.notifications(settings.notifications)))
+            Divider()
+            Toggle("Launch at Login", isOn: Binding(
+                get: { model.login.isOn },
+                set: { actions.setLaunchAtLogin($0) }))
+                .disabled(!model.login.canToggle)
             Button("Open Logs", systemImage: "doc.text", action: actions.openLogs)
             if !actions.scenarios.isEmpty {
                 Menu("Scenario") {
@@ -109,6 +139,9 @@ private struct MoreOptionsMenu: View {
                         Button(name) { actions.showScenario(name) }
                     }
                 }
+            }
+            if let testNotifications = actions.testNotifications {
+                Button("Test Notifications", action: testNotifications)
             }
             Divider()
             Button("Quit Allot", action: actions.quit)
@@ -122,5 +155,11 @@ private struct MoreOptionsMenu: View {
         .frame(width: Tokens.buttonSize, height: Tokens.buttonSize)
         .help("More options")
         .accessibilityLabel("More options")
+    }
+
+    private func check(_ title: String, _ key: WritableKeyPath<TraySettings, Bool>) -> some View {
+        Toggle(title, isOn: Binding(
+            get: { model.settings[keyPath: key] },
+            set: { on in model.updateSettings { $0[keyPath: key] = on } }))
     }
 }

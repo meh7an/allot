@@ -78,6 +78,23 @@ public actor DaemonClient: JobStopper {
         }
     }
 
+    /// `POST /shutdown`: allotd stops after answering.
+    ///
+    /// - Returns: `nil` when allotd accepted, else why not.
+    /// - Throws: Only `CancellationError`.
+    public func shutdown() async throws -> String? {
+        do {
+            guard let (_, response) = try await sendWithToken("POST", "shutdown") else {
+                return "no token in \(tokenFile.path)"
+            }
+            return response.statusCode == 202
+                ? nil : "POST /shutdown answered \(response.statusCode)"
+        } catch let error as URLError {
+            try Self.rethrowCancellation(error)
+            return error.localizedDescription
+        }
+    }
+
     public func kill(_ lease: Int64) async throws -> StopResult {
         try await stop("leases/\(lease)/kill", as: KillResponse.self, ended: StopResult.killed)
     }

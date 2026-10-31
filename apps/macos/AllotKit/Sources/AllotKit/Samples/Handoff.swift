@@ -11,14 +11,17 @@ public enum Handoff {
 
     public static let idleSession = "e09c7b3a-1111-4000-8000-000000000000"
 
-    /// The scenarios the app can show, in the state board's order; the Resources and first-run
-    /// ones come with those views.
+    /// The scenarios the app can show, in the state board's order.
     public static let scenarioNames = [
         "empty", "one", "several", "kill-confirm", "killed", "bench-drain", "bench-quiet",
-        "bench-run", "bench-done", "bench-noisy", "bench-forced", "down", "max", "icons",
-        "c-active", "c-over", "c-queued", "c-bench", "c-confirm", "c-killed", "c-removed",
-        "c-refused",
+        "bench-run", "bench-done", "bench-noisy", "bench-forced", "down", "first-run",
+        "res-collapsed", "res-expanded", "max", "icons", "c-active", "c-over", "c-queued",
+        "c-bench", "c-confirm", "c-killed", "c-removed", "c-refused",
     ]
+
+    /// The scenario whose Start Service shows Starting… and then ``startedScenario``.
+    public static let downScenario = "down"
+    public static let startedScenario = "one"
 
     /// The scenario whose Kill the scenario stopper refuses, to show the inline error; not on
     /// the handoff's board.
@@ -91,11 +94,175 @@ public enum Handoff {
         fullSession(jobs[job]?.session ?? "")
     }
 
-    /// The service status and state of a scenario in ``scenarioNames``; the `c-` component
-    /// scenarios are their jobs alone, without the idle session.
+    /// The service status and state of a scenario in ``scenarioNames``, with its meter set
+    /// (the prototype's `METERS`); the `c-` component scenarios are their jobs alone, without
+    /// the idle session.
     ///
     /// - Throws: `CocoaError` for an unknown name, or when the built state does not decode.
     public static func scenario(_ name: String) throws -> (ServiceStatus, UiState) {
+        let (status, state) = try jobsOf(name)
+        let drives = name == "max" || name == "icons" ? 3 : 2
+        let meters = meterSet(meterSetOf(name), drives: drives)
+        let shown = try edited(state) { object in
+            object["meters"] = meters
+            if name == "first-run" {
+                object["first_session_at_ms"] = NSNull()
+            }
+        }
+        return (status, shown)
+    }
+
+    /// How a scenario sets the Resources card (the prototype's `resOpen` and `mv`): expanded,
+    /// and the meter toggles when it changes them; `nil` for one that leaves the card as the
+    /// user set it.
+    public static func preset(_ name: String) -> (expanded: Bool, meters: MeterToggles?)? {
+        switch name {
+        case "one", "bench-run", "max":
+            return (true, nil)
+        case "res-collapsed":
+            return (false, nil)
+        case "res-expanded":
+            var meters = MeterToggles()
+            meters.vram = false
+            meters.driveActivity = false
+            return (true, meters)
+        default:
+            return nil
+        }
+    }
+
+    /// One of each notification with the handoff's sample text, for the Debug build's Test
+    /// Notifications menu. Both Job finished ones share a tag, so the merged one replaces the
+    /// single one.
+    ///
+    /// - Throws: When a built job or run does not decode.
+    public static func notifications() throws -> [NotificationMessage] {
+        let tag = "done-test"
+        let pyState = try Self.state(run: ["py"])
+        let py = pyState.active[0]
+        let cargo = try decode(RecentRun.self, from: run("cargo", endedAgoSecs: 0, ranSecs: 292))
+        let vite = try decode(RecentRun.self, from: run("vite", endedAgoSecs: 0, ranSecs: 61))
+        let go = try decode(RecentRun.self, from: run("go", endedAgoSecs: 0, ranSecs: 20))
+        let bench = try finishedBenchmark()
+        let notice = try decode(Notice.self, from: [
+            "cause": "killed", "command": job("cargo").command, "ended_at_ms": nowMs,
+            "lease_id": leaseId("cargo"), "session": sessionOf("cargo"),
+        ])
+        return [
+            NotificationText.serviceStopped(sessions: 3),
+            NotificationText.runningLong(
+                py, session: nil, nowMs: (py.lease.grantedAtMs ?? nowMs) + 900_000),
+            // The finished benchmark always carries its noise report.
+            NotificationText.benchmarkFinished(bench, noise: bench.noise!),
+            NotificationText.jobFinished(cargo, session: nil, tag: tag),
+            NotificationText.jobsFinished([cargo, vite, go], tag: tag),
+            NotificationText.killedOutsidePanel(notice),
+        ]
+    }
+
+    /// A meter set of the prototype on a Mac: `idle`, `one`, `busy`, `bench` or `max`, on an
+    /// M3 Max with 14 cores, 36 GB and its GPU sharing RAM, with the first `drives` of its
+    /// three drives.
+    static func meterSet(_ name: String, drives: Int = 2) -> Object {
+        let (cpu, cores, ramGb, ramReservedMb, adapter): (Double, Double, Double, Int, Object) =
+            switch name {
+            case "one": (52, 8, 18.2, 4096, self.gpu(3, vramGb: 1.2))
+            case "busy": (64, 10, 22.4, 8192, self.gpu(78, vramGb: 5.1, pct: 80, vramMb: 4096))
+            case "bench": (97, 14, 9.6, 8192, self.gpu(1, vramGb: 1.1))
+            case "max":
+                (88, 13, 25.9, 12288, self.gpu(78, vramGb: 5.1, pct: 80, vramMb: 4096))
+            default: (6, 0, 14.1, 0, self.gpu(2, vramGb: 1.1))
+            }
+        return [
+            "headroom_pct": 15.0,
+            "cpu": [
+                "logical_cores": 14,
+                "usage_pct": cpu,
+                "history_pct": cpuNoise.map { min(max(cpu + $0, 1), 99) },
+                "reserved_cores": cores,
+            ],
+            "ram": [
+                "total_mb": 36864, "used_mb": megabytes(ramGb), "reserved_mb": ramReservedMb,
+            ],
+            "gpus": [adapter],
+            "drives": Array(sampleDrives.prefix(drives)),
+        ]
+    }
+
+    // The prototype's sparkline noise (NOISE), added to the CPU load second by second.
+    private static let cpuNoise: [Double] = [
+        0, 3, -2, 4, 7, 2, -1, -4, 1, 5, 8, 4, 0, -3, -6, -2, 2, 6, 3, -1, -3, 1, 0, -2,
+    ]
+
+    // The system volume 612 / 953 GB reading 42 and writing 8 MB/s, Backup 1.21 / 1.82 TB idle,
+    // Scratch 0.4 / 1.82 TB writing 120 MB/s.
+    private static var sampleDrives: [Object] {
+        [
+            drive("/", usedMb: 612 * 1024, totalMb: 953 * 1024, readMb: 42, writeMb: 8),
+            drive("/Volumes/Backup", usedMb: 1_268_777, totalMb: 1_908_408),
+            drive("/Volumes/Scratch", usedMb: 419_430, totalMb: 1_908_408, writeMb: 120),
+        ]
+    }
+
+    private static func meterSetOf(_ name: String) -> String {
+        switch name {
+        case "empty", "first-run", "bench-quiet", "bench-done", "bench-noisy": "idle"
+        case "one", "bench-drain", "res-expanded": "one"
+        case "bench-run", "bench-forced": "bench"
+        case "max", "icons": "max"
+        default: "busy"
+        }
+    }
+
+    private static func gpu(
+        _ busiest: Double,
+        vramGb: Double,
+        pct: Double = 0,
+        vramMb: Int = 0
+    ) -> Object {
+        [
+            "name": "Apple M3 Max",
+            "busiest_pct": busiest,
+            "vram_used_mb": megabytes(vramGb),
+            "vram_total_mb": NSNull(),
+            "reserved_pct": pct,
+            "reserved_vram_mb": vramMb,
+            "unified_memory": true,
+            "process_load": "estimated",
+        ]
+    }
+
+    private static func drive(
+        _ name: String,
+        usedMb: Int,
+        totalMb: Int,
+        readMb: Int = 0,
+        writeMb: Int = 0
+    ) -> Object {
+        let mib = 1024 * 1024
+        return [
+            "name": name, "used_mb": usedMb, "total_mb": totalMb,
+            "read_bytes_per_sec": readMb * mib, "write_bytes_per_sec": writeMb * mib,
+        ]
+    }
+
+    private static func megabytes(_ gigabytes: Double) -> Int {
+        Int((gigabytes * 1024).rounded())
+    }
+
+    private static func edited(_ state: UiState, _ change: (inout Object) -> Void) throws
+        -> UiState
+    {
+        guard var object = try JSONSerialization.jsonObject(
+            with: JSONEncoder().encode(state)) as? Object
+        else {
+            throw CocoaError(.coderReadCorrupt)
+        }
+        change(&object)
+        return try decode(UiState.self, from: object)
+    }
+
+    private static func jobsOf(_ name: String) throws -> (ServiceStatus, UiState) {
         switch name {
         case "empty":
             return try (.running, state(recent: true))
@@ -119,6 +286,12 @@ public enum Handoff {
             return try (.running, state(wait: ["npmB"], bench: "forced"))
         case "down":
             return try (.stopped, state(run: ["cargo"]))
+        case "first-run":
+            return try (.running, state())
+        case "res-collapsed":
+            return try (.running, state(run: ["cargo"], wait: ["npm"]))
+        case "res-expanded":
+            return try (.running, state(run: ["cargo"]))
         case "max":
             return try (.running, maxState(exes: false))
         case "icons":
@@ -236,18 +409,14 @@ public enum Handoff {
     ///
     /// - Throws: When the state does not round-trip, which a contract change would cause.
     public static func without(_ lease: Int64, in state: UiState) throws -> UiState {
-        guard var object = try JSONSerialization.jsonObject(
-            with: JSONEncoder().encode(state)) as? Object
-        else {
-            throw CocoaError(.coderReadCorrupt)
-        }
-        for list in ["active", "queue"] {
-            let jobs = object[list] as? [Object] ?? []
-            object[list] = jobs.filter { job in
-                ((job["lease"] as? Object)?["id"] as? NSNumber)?.int64Value != lease
+        try edited(state) { object in
+            for list in ["active", "queue"] {
+                let jobs = object[list] as? [Object] ?? []
+                object[list] = jobs.filter { job in
+                    ((job["lease"] as? Object)?["id"] as? NSNumber)?.int64Value != lease
+                }
             }
         }
-        return try decode(UiState.self, from: object)
     }
 
     typealias Object = [String: Any]

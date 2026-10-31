@@ -109,9 +109,33 @@ public struct RecentLine: Sendable, Equatable, Identifiable {
     public let meta: String
 }
 
+/// What the first-run card needs from outside allotd's state.
+public struct FirstRunState: Sendable, Equatable {
+    /// Done was pressed (`tray.json`).
+    public let isDone: Bool
+
+    /// The login item, for the card's Launch at login switch.
+    public let login: LoginItemStatus
+
+    public init(isDone: Bool, login: LoginItemStatus) {
+        self.isDone = isDone
+        self.login = login
+    }
+}
+
+/// The first-run card (handoff section 4).
+public struct WelcomeCard: Sendable, Equatable {
+    public static let title = "Welcome to Allot"
+    public static let body = "When a Claude Code session runs a build, test suite or training "
+        + "job, it reserves cores, RAM or GPU here first. Jobs that don't fit wait their turn. "
+        + "You'll see each one here and can stop it."
+
+    /// The state of its Launch at login switch.
+    public let login: LoginItemStatus
+}
+
 /// Everything the panel header and job list show for one poll, built by a pure function so
-/// that every string is testable. The Windows tray app's `FlyoutSnapshot` without the first-run
-/// card, which comes with the service-down and first-run views.
+/// that every string is testable. The Windows tray app's `FlyoutSnapshot`.
 public struct PanelSnapshot: Sendable, Equatable {
     // How long a benchmark that finished on its own keeps its card.
     private static let finishedHoldMs: Int64 = 60_000
@@ -127,8 +151,8 @@ public struct PanelSnapshot: Sendable, Equatable {
     /// Recently finished runs, newest first; only while no job runs or waits.
     public let recent: [RecentLine]
 
-    /// The "No jobs running or waiting." line: the service runs, and there are no jobs and no
-    /// recent runs.
+    /// The "No jobs running or waiting." line: the service runs, and there are no jobs, no
+    /// recent runs and no first-run card.
     public let showNothing: Bool
 
     /// The live benchmark's phase, or `nil` without one.
@@ -137,6 +161,10 @@ public struct PanelSnapshot: Sendable, Equatable {
     /// The jobs come from the last state allotd served before it went away; they show dimmed
     /// and without actions.
     public let isLastKnown: Bool
+
+    /// The first-run card, shown while no session has ever connected and Done was not
+    /// pressed; never for last known state.
+    public let welcome: WelcomeCard?
 
     /// - Parameters:
     ///   - status: The service status of the latest poll.
@@ -147,12 +175,14 @@ public struct PanelSnapshot: Sendable, Equatable {
     ///     and no longer count. Ignored for last known state.
     ///   - nowMs: The moment times are shown for, in the daemon's clock; the state's own time
     ///     when `nil`. Last known state always shows its own time.
+    ///   - firstRun: Done and the login item, for the first-run card; no card when `nil`.
     public static func from(
         status: ServiceStatus,
         state: UiState?,
         jobs: ShownJobs? = nil,
         stops: [Int64: StopView] = [:],
-        nowMs: Int64? = nil
+        nowMs: Int64? = nil,
+        firstRun: FirstRunState? = nil
     ) -> PanelSnapshot {
         let lastKnown = status != .running
         let stops = lastKnown ? [:] : stops
@@ -233,15 +263,25 @@ public struct PanelSnapshot: Sendable, Equatable {
 
         let benchmarkPhase = phase(of: benchmark, shown)
         let recent = groups.isEmpty ? recentLines(state, now: now) : []
+        let welcome = !lastKnown && state != nil && state?.firstSessionAtMs == nil
+            && firstRun?.isDone == false
+            ? firstRun.map { WelcomeCard(login: $0.login) } : nil
         return PanelSnapshot(
             header: header(
                 status, running: alive(running), waiting: alive(waiting), phase: benchmarkPhase),
             groups: groups,
             idle: idleLine(ordered, state),
             recent: recent,
-            showNothing: !lastKnown && groups.isEmpty && recent.isEmpty,
+            showNothing: !lastKnown && groups.isEmpty && recent.isEmpty && welcome == nil,
             benchmark: benchmarkPhase,
-            isLastKnown: lastKnown)
+            isLastKnown: lastKnown,
+            welcome: welcome)
+    }
+
+    /// The first-run card shows for the first time ever: the panel opens by itself and Launch
+    /// at login takes its default, on. Later launches leave both alone, even before Done.
+    public func showsFirstRunForTheFirstTime(_ settings: TraySettings) -> Bool {
+        welcome != nil && !settings.firstRunShown
     }
 
     private static func header(
