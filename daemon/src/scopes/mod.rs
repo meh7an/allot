@@ -1035,7 +1035,7 @@ mod tests {
     #[cfg(target_os = "linux")]
     #[tokio::test]
     async fn test_live_scope_moves_measures_and_kills_a_tree() {
-        use std::{os::unix::process::ExitStatusExt, process::Command};
+        use std::{os::unix::process::ExitStatusExt, process::Command, time::Instant};
 
         let dir = tempfile::tempdir().unwrap();
         // An anchor whose last argument is the scope name and which starts no child: a child
@@ -1050,11 +1050,16 @@ mod tests {
         let isolation = scopes
             .ensure(id, GRANTED_MS, &profile(1.0, 0), &config(true, false))
             .await;
+        let backend = scopes.backend.as_ref().unwrap();
         let mut command = Command::new("setsid")
             .args(["sh", "-c", "sleep 600 & while :; do :; done"])
             .spawn()
             .unwrap();
-        tokio::time::sleep(Duration::from_millis(100)).await;
+        // A loaded runner can reach `settle` before the shell has forked its sleep.
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while tree(&*backend.host, command.id(), &by_name).len() < 2 && Instant::now() < deadline {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
         let settled = match &isolation {
             Ok(_) => scopes
                 .settle(id, command.id(), &by_name)
@@ -1062,7 +1067,6 @@ mod tests {
                 .map_err(|error| error.to_string()),
             Err(error) => Err(error.to_string()),
         };
-        let backend = scopes.backend.as_ref().unwrap();
         let moved = tree(&*backend.host, command.id(), &by_name);
         tokio::time::sleep(Duration::from_millis(1_500)).await;
         let usage = scopes.usage();
