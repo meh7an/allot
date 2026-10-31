@@ -3,13 +3,16 @@ using System.Globalization;
 namespace Allot.Tray.Core.TrayIcon;
 
 /// <summary>
-/// The four states of the Allot mark in the tray: dimmed while idle, solid while busy, an amber
-/// badge while queued, and dimmed with a red badge while the service is down.
+/// The states of the Allot mark in the tray: dimmed while idle, solid with a green play badge
+/// while busy, a purple stopwatch badge during a benchmark, an amber clock badge while queued,
+/// and dimmed with a red cross badge while the service is down. The badges follow the flyout's
+/// running, benchmark and waiting icons.
 /// </summary>
 public enum TrayIconState
 {
     Idle,
     Busy,
+    Benchmark,
     Queued,
     Down,
 }
@@ -68,6 +71,7 @@ public static class TrayIconAsset
     {
         TrayIconState.Idle => "idle",
         TrayIconState.Busy => "busy",
+        TrayIconState.Benchmark => "benchmark",
         TrayIconState.Queued => "queued",
         TrayIconState.Down => "down",
         _ => throw new ArgumentOutOfRangeException(nameof(state)),

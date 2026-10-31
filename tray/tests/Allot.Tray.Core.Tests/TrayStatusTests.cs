@@ -46,15 +46,21 @@ public sealed class TrayStatusTests
         Assert.AreEqual(TrayIconState.Queued, StatusOf(Handoff.State(wait: ["npm"])).Icon);
 
     [TestMethod]
-    public void QueuedWhileABenchmarkWaitsForQuiet() =>
+    public void BenchmarkWhileABenchmarkDrainsAheadOfRunningAndWaitingJobs() =>
         Assert.AreEqual(
-            new TrayStatus(TrayIconState.Queued, "Benchmark waiting for quiet"),
+            TrayIconState.Benchmark,
+            StatusOf(Handoff.State(run: ["cargo"], wait: ["npmB"], bench: "drain")).Icon);
+
+    [TestMethod]
+    public void BenchmarkWhileABenchmarkWaitsForQuiet() =>
+        Assert.AreEqual(
+            new TrayStatus(TrayIconState.Benchmark, "Benchmark waiting for quiet"),
             StatusOf(Handoff.State(bench: "quiet")));
 
     [TestMethod]
-    public void BusyWhileABenchmarkRunsAlone() =>
+    public void BenchmarkWhileABenchmarkRunsAlone() =>
         Assert.AreEqual(
-            new TrayStatus(TrayIconState.Busy, "Benchmark running alone"),
+            new TrayStatus(TrayIconState.Benchmark, "Benchmark running alone"),
             StatusOf(Handoff.State(bench: "run")));
 
     [TestMethod]

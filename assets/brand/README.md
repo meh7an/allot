@@ -43,7 +43,7 @@ python assets/brand/build.py
 
 | Output | Use |
 |--------|-----|
-| `tray/src/Allot.Tray/Assets/Tray/allot-{state}-on-{light,dark}-taskbar.ico` | Windows tray icon, 16 to 256 px frames; the glyph follows the taskbar theme |
+| `tray/src/Allot.Tray/Assets/Tray/allot-{idle,busy,benchmark,queued,down}-on-{light,dark}-taskbar.ico` | Windows tray icon, 16 to 256 px frames; the glyph follows the taskbar theme |
 | `tray/src/Allot.Tray/Assets/Tray/allot-*-256.png` | Toast logos for the same states |
 | `tray/src/Allot.Tray/Assets/AppIcon.ico` | Windows app: exe, setup, Start menu, toast registration |
 | `web/favicon.ico`, `web/favicon.svg` | Favicon; the SVG follows the light or dark scheme |
@@ -53,7 +53,10 @@ python assets/brand/build.py
 | `macos/menubar/allot-{idle,busy}-template.svg` | macOS menu bar template images |
 
 Tray states: idle is the mark at half opacity, busy is solid, queued adds an amber badge, and down
-is the mark at 35% with a red badge. The badge sits in the empty top-right corner of the A.
+is the mark at 35% with a red badge. The badge sits in the empty top-right corner of the A. The
+Windows tray also has a benchmark state, and its badges carry the tray flyout's icons in its
+colours: busy a green play badge, benchmark a purple stopwatch, queued an amber clock and down a
+red cross. The Linux and macOS panel icons keep the four states with plain badges.
 
 `social-preview.ps1` renders `github/social-preview.png` (1280 x 640) with System.Drawing and
 Segoe UI, so it runs on Windows only:

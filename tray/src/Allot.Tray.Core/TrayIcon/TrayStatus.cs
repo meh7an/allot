@@ -13,13 +13,15 @@ public sealed record TrayStatus(TrayIconState Icon, string Summary)
     public string Tooltip => TrayIconAsset.Tooltip(Summary);
 
     /// <summary>
-    /// Down while allotd is not serving state; Queued while anything waits, since its icon also
-    /// shows bars; Busy while a job runs or a benchmark runs alone; Idle otherwise.
+    /// Down while allotd is not serving state; Benchmark while a benchmark drains, waits for quiet
+    /// or runs alone; Queued while anything else waits, since its icon also shows bars; Busy while
+    /// a job runs; Idle otherwise.
     /// </summary>
     public static TrayStatus From(FlyoutSnapshot snapshot)
     {
         var header = snapshot.Header;
         var icon = snapshot.IsLastKnown ? TrayIconState.Down
+            : snapshot.Benchmark is not null ? TrayIconState.Benchmark
             : IsWaiting(snapshot) ? TrayIconState.Queued
             : header.Glyph == HeaderGlyph.Busy ? TrayIconState.Busy
             : TrayIconState.Idle;

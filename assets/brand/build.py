@@ -44,17 +44,29 @@ PALETTE = {
 INK = "#16171B"
 WHITE = "#F4F4F6"
 
-# The tray glyph follows the taskbar theme: "light" is a light taskbar, so a dark glyph.
+# The tray glyph follows the taskbar theme: "light" is a light taskbar, so a dark glyph. Busy
+# and benchmark take the tray flyout's running green and benchmark purple; "inner" draws the
+# glyph inside a badge.
 TASKBAR = {
-    "light": {"glyph": INK, "queued": "#C27A00", "down": "#C42B1C", "cross": "#FFFFFF"},
-    "dark": {"glyph": WHITE, "queued": "#FCE100", "down": "#FF6B6B", "cross": "#1C1C1C"},
+    "light": {"glyph": INK, "busy": "#0F7B0F", "benchmark": "#6F3FB0", "queued": "#C27A00",
+              "down": "#C42B1C", "inner": "#FFFFFF"},
+    "dark": {"glyph": WHITE, "busy": "#6CCB5F", "benchmark": "#C9A8F0", "queued": "#FCE100",
+             "down": "#FF6B6B", "inner": "#1C1C1C"},
 }
-STATE_ALPHA = {"idle": 0.5, "busy": 1.0, "queued": 1.0, "down": 0.35}
-STATES = list(STATE_ALPHA)
+STATE_ALPHA = {"idle": 0.5, "busy": 1.0, "benchmark": 1.0, "queued": 1.0, "down": 0.35}
+TRAY_STATES = list(STATE_ALPHA)
+# The Linux and macOS panels keep four states and plain badges.
+PANEL_STATES = ["idle", "busy", "queued", "down"]
 
 # The status badge sits in the empty top-right corner of the A, cut out of the mark by a
 # one-unit ring.
-BADGE = {"cx": 13.5, "cy": 2.5, "r": 2.5, "ring": 1.0, "arm": 0.95, "stroke": 0.95}
+BADGE = {"cx": 13.5, "cy": 2.5, "r": 2.5, "ring": 1.0, "arm": 0.95, "stroke": 0.95, "hand": 1.3}
+
+# The tray badges' glyphs follow the flyout's icons: busy a play triangle, benchmark a
+# stopwatch needle, queued clock hands and down a cross. The play triangle's corners are
+# relative to the badge centre, before rounding by PLAY_RADIUS.
+PLAY = [(-0.55, -0.85), (-0.55, 0.85), (0.95, 0.0)]
+PLAY_RADIUS = 0.2
 
 TRAY_SIZES = [16, 20, 24, 32, 40, 48, 64, 256]
 APP_SIZES = [16, 20, 24, 32, 40, 48, 64, 256]
@@ -110,6 +122,38 @@ class Capsule:
         t = ((x - self.x0) * dx + (y - self.y0) * dy) / (dx * dx + dy * dy)
         t = max(0.0, min(1.0, t))
         return math.hypot(x - self.x0 - t * dx, y - self.y0 - t * dy) - self.half
+
+
+class Triangle:
+    """A triangle whose corners are rounded by `radius`, growing it by `radius` on every side."""
+
+    def __init__(self, points, radius):
+        self.points, self.radius = points, radius
+        mx, my = sum(p[0] for p in points) / 3, sum(p[1] for p in points) / 3
+        self.edges = []
+        for k in range(3):
+            (x0, y0), (x1, y1) = points[k], points[(k + 1) % 3]
+            length = math.hypot(x1 - x0, y1 - y0)
+            nx, ny = (y1 - y0) / length, (x0 - x1) / length
+            if (mx - x0) * nx + (my - y0) * ny > 0:
+                nx, ny = -nx, -ny
+            self.edges.append((x0, y0, x1, y1, nx, ny))
+
+    def bounds(self):
+        r = self.radius
+        xs, ys = [p[0] for p in self.points], [p[1] for p in self.points]
+        return min(xs) - r, min(ys) - r, max(xs) + r, max(ys) + r
+
+    def distance(self, x, y):
+        planes = [(x - x0) * nx + (y - y0) * ny for x0, y0, _, _, nx, ny in self.edges]
+        if max(planes) <= 0:
+            return max(planes) - self.radius
+        nearest = math.inf
+        for x0, y0, x1, y1, _, _ in self.edges:
+            dx, dy = x1 - x0, y1 - y0
+            t = max(0.0, min(1.0, ((x - x0) * dx + (y - y0) * dy) / (dx * dx + dy * dy)))
+            nearest = min(nearest, math.hypot(x - x0 - t * dx, y - y0 - t * dy))
+        return nearest - self.radius
 
 
 # ---------------------------------------------------------------------------------------------
@@ -192,16 +236,30 @@ def bar_rects(scale, left, top):
     return rects
 
 
+def badge_glyph(state, cx, cy, scale):
+    """The shapes inside a state's badge centred on (cx, cy)."""
+    stroke, hand = BADGE["stroke"] * scale, BADGE["hand"] * scale
+    if state == "down":
+        arm = BADGE["arm"] * scale
+        return [Capsule(cx - arm, cy - arm, cx + arm, cy + arm, stroke),
+                Capsule(cx + arm, cy - arm, cx - arm, cy + arm, stroke)]
+    if state == "busy":
+        corners = [(cx + x * scale, cy + y * scale) for x, y in PLAY]
+        return [Triangle(corners, PLAY_RADIUS * scale)]
+    if state == "queued":
+        return [Capsule(cx, cy, cx, cy - hand, stroke),
+                Capsule(cx, cy, cx + 0.75 * hand, cy, stroke)]
+    reach = hand * math.sqrt(0.5)
+    return [Capsule(cx, cy, cx + reach, cy - reach, stroke)]
+
+
 def badge_ops(scale, left, top, state, colours):
     cx, cy = left + BADGE["cx"] * scale, top + BADGE["cy"] * scale
     r = BADGE["r"] * scale
     ops = [("clear", Circle(cx, cy, r + BADGE["ring"] * scale))]
     ops.append(("paint", Circle(cx, cy, r), rgb(colours[state]), 1.0))
-    if state == "down":
-        arm, stroke = BADGE["arm"] * scale, BADGE["stroke"] * scale
-        cross = rgb(colours["cross"])
-        ops.append(("paint", Capsule(cx - arm, cy - arm, cx + arm, cy + arm, stroke), cross, 1.0))
-        ops.append(("paint", Capsule(cx + arm, cy - arm, cx - arm, cy + arm, stroke), cross, 1.0))
+    inner = rgb(colours["inner"])
+    ops += [("paint", shape, inner, 1.0) for shape in badge_glyph(state, cx, cy, scale)]
     return ops
 
 
@@ -210,7 +268,7 @@ def tray_icon(size, state, taskbar):
     scale = size / 16
     glyph = rgb(colours["glyph"])
     ops = [("paint", rect, glyph, STATE_ALPHA[state]) for rect, _ in bar_rects(scale, 0, 0)]
-    if state in ("queued", "down"):
+    if state != "idle":
         ops += badge_ops(scale, 0, 0, state, colours)
     return render(size, ops)
 
@@ -338,7 +396,7 @@ def state_svg(state, glyph, badge_fills):
 
 
 def build_windows():
-    for state in STATES:
+    for state in TRAY_STATES:
         for taskbar in TASKBAR:
             name = f"allot-{state}-on-{taskbar}-taskbar"
             frames = {size: png_bytes(tray_icon(size, state, taskbar), size) for size in TRAY_SIZES}
@@ -362,7 +420,7 @@ def build_linux():
     write(BRAND / "linux" / "hicolor" / "scalable" / "apps" / "allot.svg", tile_svg())
     # Symbolic icons: GTK recolours #2e3436 and the warning and error classes to the theme.
     badges = {"queued": ("warning", "#f57900"), "down": ("error", "#cc0000")}
-    for state in STATES:
+    for state in PANEL_STATES:
         write(BRAND / "linux" / "symbolic" / f"allot-{state}-symbolic.svg",
               state_svg(state, "#2e3436", badges))
 

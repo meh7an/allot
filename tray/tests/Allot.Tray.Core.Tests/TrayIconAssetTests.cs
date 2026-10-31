@@ -8,6 +8,7 @@ public sealed class TrayIconAssetTests
     [TestMethod]
     [DataRow(TrayIconState.Idle, TaskbarTheme.Light, "allot-idle-on-light-taskbar.ico")]
     [DataRow(TrayIconState.Busy, TaskbarTheme.Dark, "allot-busy-on-dark-taskbar.ico")]
+    [DataRow(TrayIconState.Benchmark, TaskbarTheme.Light, "allot-benchmark-on-light-taskbar.ico")]
     [DataRow(TrayIconState.Queued, TaskbarTheme.Light, "allot-queued-on-light-taskbar.ico")]
     [DataRow(TrayIconState.Down, TaskbarTheme.Dark, "allot-down-on-dark-taskbar.ico")]
     public void FileNameMatchesTheHandoffAssets(
