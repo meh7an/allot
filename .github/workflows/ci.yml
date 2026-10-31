@@ -146,3 +146,29 @@ jobs:
         if: matrix.os == 'macos-15'
         working-directory: contract/swift
         run: swift test
+
+      # The macOS app: its client and view models in a package, the app from project.yml.
+      - name: App package
+        if: matrix.os == 'macos-15'
+        working-directory: apps/macos/AllotKit
+        run: swift test
+
+      - name: Install XcodeGen
+        if: matrix.os == 'macos-15'
+        run: |
+          zip="$RUNNER_TEMP/xcodegen.zip"
+          curl -fsSL -o "$zip" \
+            https://github.com/yonaskolb/XcodeGen/releases/download/2.46.0/xcodegen.zip
+          echo "4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806  $zip" \
+            | shasum -a 256 -c -
+          unzip -q "$zip" -d "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/xcodegen/bin" >> "$GITHUB_PATH"
+
+      - name: App
+        if: matrix.os == 'macos-15'
+        working-directory: apps/macos
+        run: |
+          xcodegen generate
+          xcodebuild -project Allot.xcodeproj -scheme Allot -configuration Release \
+            -derivedDataPath build build
+          codesign --verify --strict build/Build/Products/Release/Allot.app

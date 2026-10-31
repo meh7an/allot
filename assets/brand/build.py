@@ -1,7 +1,8 @@
 """Builds Allot's icons from the mark's geometry.
 
-Writes the Windows tray and app icons into the tray app, and the prepared Linux, macOS and
-web assets into this folder. Standard library only; the output is the same on every run:
+Writes the Windows tray and app icons into the tray app, the macOS menu bar and app icons into
+the macOS app's asset catalog, and the prepared Linux, macOS and web assets into this folder.
+Standard library only; the output is the same on every run:
 
     python assets/brand/build.py
 
@@ -10,6 +11,7 @@ bar edges to whole pixels, so small sizes stay sharp: rows keep a whole-pixel he
 and horizontal edges round away from the centre to keep the mark symmetric.
 """
 
+import json
 import math
 import struct
 import zlib
@@ -18,6 +20,7 @@ from pathlib import Path
 BRAND = Path(__file__).resolve().parent
 ROOT = BRAND.parents[1]
 TRAY_ASSETS = ROOT / "tray" / "src" / "Allot.Tray" / "Assets"
+MACOS_ASSETS = ROOT / "apps" / "macos" / "Allot" / "Assets.xcassets"
 
 
 def rgb(hex_color):
@@ -55,7 +58,7 @@ TASKBAR = {
 }
 STATE_ALPHA = {"idle": 0.5, "busy": 1.0, "benchmark": 1.0, "queued": 1.0, "down": 0.35}
 TRAY_STATES = list(STATE_ALPHA)
-# The Linux and macOS panels keep four states and plain badges.
+# The Linux panels keep four states and plain badges; the macOS menu bar has the tray's five.
 PANEL_STATES = ["idle", "busy", "queued", "down"]
 
 # The status badge sits in the empty top-right corner of the A, cut out of the mark by a
@@ -70,6 +73,9 @@ PLAY_RADIUS = 0.2
 
 TRAY_SIZES = [16, 20, 24, 32, 40, 48, 64, 256]
 APP_SIZES = [16, 20, 24, 32, 40, 48, 64, 256]
+# Points of the macOS app icon set, each at 1x and 2x.
+MACOS_ICON_POINTS = [16, 32, 128, 256, 512]
+MENU_BAR_POINTS = 16
 FAVICON_SIZES = [16, 32, 48]
 HICOLOR_SIZES = [16, 22, 24, 32, 48, 64, 128, 256, 512]
 
@@ -253,24 +259,37 @@ def badge_glyph(state, cx, cy, scale):
     return [Capsule(cx, cy, cx + reach, cy - reach, stroke)]
 
 
-def badge_ops(scale, left, top, state, colours):
+def badge_ops(scale, left, top, state, fill, inner):
+    """A state's badge in `fill` with its glyph in `inner`, or cut out when `inner` is None."""
     cx, cy = left + BADGE["cx"] * scale, top + BADGE["cy"] * scale
     r = BADGE["r"] * scale
     ops = [("clear", Circle(cx, cy, r + BADGE["ring"] * scale))]
-    ops.append(("paint", Circle(cx, cy, r), rgb(colours[state]), 1.0))
-    inner = rgb(colours["inner"])
-    ops += [("paint", shape, inner, 1.0) for shape in badge_glyph(state, cx, cy, scale)]
+    ops.append(("paint", Circle(cx, cy, r), fill, 1.0))
+    for shape in badge_glyph(state, cx, cy, scale):
+        ops.append(("clear", shape) if inner is None else ("paint", shape, inner, 1.0))
     return ops
+
+
+def state_icon(size, state, glyph, fill, inner):
+    scale = size / 16
+    ops = [("paint", rect, glyph, STATE_ALPHA[state]) for rect, _ in bar_rects(scale, 0, 0)]
+    if state != "idle":
+        ops += badge_ops(scale, 0, 0, state, fill, inner)
+    return render(size, ops)
 
 
 def tray_icon(size, state, taskbar):
     colours = TASKBAR[taskbar]
-    scale = size / 16
     glyph = rgb(colours["glyph"])
-    ops = [("paint", rect, glyph, STATE_ALPHA[state]) for rect, _ in bar_rects(scale, 0, 0)]
-    if state != "idle":
-        ops += badge_ops(scale, 0, 0, state, colours)
-    return render(size, ops)
+    fill = rgb(colours[state]) if state != "idle" else glyph
+    return state_icon(size, state, glyph, fill, rgb(colours["inner"]))
+
+
+def template_icon(size, state):
+    """A macOS template image: black with alpha, which the menu bar tints. The badge carries
+    the state by its glyph's shape, cut out of the badge, since a template has no colour."""
+    black = (0.0, 0.0, 0.0)
+    return state_icon(size, state, black, black, None)
 
 
 def tile_ops(size, body, scale):
@@ -293,6 +312,21 @@ def macos_app_icon():
     """1024 px canvas with Apple's 824 px rounded body; the mark keeps its 16 / 24 share."""
     body = RoundRect(100, 100, 924, 924, 185.4)
     return render(1024, tile_ops(1024, body, 824 / 24))
+
+
+def downsample(pixels, size, target):
+    """Box-filters straight RGBA pixels by a whole factor, averaging with premultiplied alpha,
+    as the icon set's smaller sizes are scaled from the 1024 px master."""
+    factor = size // target
+    out = []
+    for j in range(target):
+        for i in range(target):
+            r = g = b = a = 0.0
+            for y in range(j * factor, (j + 1) * factor):
+                for pr, pg, pb, pa in pixels[y * size + i * factor : y * size + (i + 1) * factor]:
+                    r, g, b, a = r + pr * pa, g + pg * pa, b + pb * pa, a + pa
+            out.append([r / a, g / a, b / a, a / factor**2] if a else [0.0, 0.0, 0.0, 0.0])
+    return out
 
 
 # ---------------------------------------------------------------------------------------------
@@ -334,6 +368,12 @@ def write(path, data):
         data = data.encode("utf-8")
     path.write_bytes(data)
     print(path.relative_to(ROOT).as_posix())
+
+
+def asset_contents(**members):
+    """An asset catalog Contents.json in Xcode's own layout, so opening Xcode rewrites nothing."""
+    members["info"] = {"author": "xcode", "version": 1}
+    return json.dumps(members, indent=2, separators=(",", " : "), sort_keys=True) + "\n"
 
 
 # ---------------------------------------------------------------------------------------------
@@ -426,11 +466,31 @@ def build_linux():
 
 
 def build_macos():
-    write(BRAND / "macos" / "AppIcon-1024.png", png_bytes(macos_app_icon(), 1024))
-    # Template images are black with alpha; the app tints them and draws badges itself.
-    for state in ("idle", "busy"):
-        write(BRAND / "macos" / "menubar" / f"allot-{state}-template.svg",
-              state_svg(state, "#000000", {}))
+    master = macos_app_icon()
+    write(BRAND / "macos" / "AppIcon-1024.png", png_bytes(master, 1024))
+    write(MACOS_ASSETS / "Contents.json", asset_contents())
+
+    images = []
+    for points in MACOS_ICON_POINTS:
+        for scale in (1, 2):
+            size = points * scale
+            name = f"icon_{points}x{points}{'@2x' if scale == 2 else ''}.png"
+            pixels = master if size == 1024 else downsample(master, 1024, size)
+            write(MACOS_ASSETS / "AppIcon.appiconset" / name, png_bytes(pixels, size))
+            images.append({"filename": name, "idiom": "mac", "scale": f"{scale}x",
+                           "size": f"{points}x{points}"})
+    write(MACOS_ASSETS / "AppIcon.appiconset" / "Contents.json", asset_contents(images=images))
+
+    for state in TRAY_STATES:
+        folder = MACOS_ASSETS / f"MenuBar{state.capitalize()}.imageset"
+        images = []
+        for scale in (1, 2):
+            size = MENU_BAR_POINTS * scale
+            name = f"allot-{state}-template{'@2x' if scale == 2 else ''}.png"
+            write(folder / name, png_bytes(template_icon(size, state), size))
+            images.append({"filename": name, "idiom": "universal", "scale": f"{scale}x"})
+        properties = {"template-rendering-intent": "template"}
+        write(folder / "Contents.json", asset_contents(images=images, properties=properties))
 
 
 if __name__ == "__main__":

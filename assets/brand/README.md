@@ -50,13 +50,16 @@ python assets/brand/build.py
 | `linux/hicolor/` | Linux app icon, PNG sizes and scalable SVG |
 | `linux/symbolic/allot-{state}-symbolic.svg` | Panel icons for GNOME and KDE; badges use the theme's warning and error colours |
 | `macos/AppIcon-1024.png` | macOS app icon source on Apple's 824 px body |
-| `macos/menubar/allot-{idle,busy}-template.svg` | macOS menu bar template images |
+| `apps/macos/Allot/Assets.xcassets/AppIcon.appiconset/` | macOS app icon, 16 to 512 pt at 1x and 2x, box-filtered from the 1024 px master |
+| `apps/macos/Allot/Assets.xcassets/MenuBar{Idle,Busy,Benchmark,Queued,Down}.imageset/` | macOS menu bar template images, 16 pt at 1x and 2x |
 
 Tray states: idle is the mark at half opacity, busy is solid, queued adds an amber badge, and down
 is the mark at 35% with a red badge. The badge sits in the empty top-right corner of the A. The
 Windows tray also has a benchmark state, and its badges carry the tray flyout's icons in its
 colours: busy a green play badge, benchmark a purple stopwatch, queued an amber clock and down a
-red cross. The Linux and macOS panel icons keep the four states with plain badges.
+red cross. The macOS menu bar has the same five states as template images: black with alpha,
+which the menu bar tints, so each badge is solid with its glyph cut out and the state shows by
+shape alone. The Linux panel icons keep the four states with plain badges.
 
 `social-preview.ps1` renders `github/social-preview.png` (1280 x 640) with System.Drawing and
 Segoe UI, so it runs on Windows only:
