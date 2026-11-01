@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { FakeTimers, fixtureText, settle } from "../../gnome/tests/support.mjs";
-import { GROUP_ICONS, groupIcon, idleText, stripText } from "../src/widget.js";
+import { NOW_MS, leaseId, scenarioJson } from "../../gnome/tests/handoff.mjs";
+import { DESKTOP_ENTRIES_COMMAND } from "../src/app-icons.js";
+import { GROUP_ICONS, groupIcon, idleText } from "../src/widget.js";
 import { fakeHost } from "./support.mjs";
 
 const HOME = "/home/user one/.allot";
@@ -97,7 +99,7 @@ test("opening polls at once on the 1 s cadence and starts without Keep Open", as
   await settle();
 
   assert.equal(subject.requests.length, 2, "opening polled without waiting 5 s");
-  assert.deepEqual(subject.timers.delays, [1000]);
+  assert.deepEqual(subject.timers.delays, [1000, 1000], "the poll's wait and the card tick");
 
   subject.widget.setExpanded(false);
   assert.equal(subject.widget.keepOpen, true, "closing alone keeps the mode until reopened");
@@ -144,16 +146,6 @@ test("stopping while the config is read never starts polling", async () => {
   assert.equal(subject.requests.length, 0);
 });
 
-test("a job's session line leaves out empty parts", () => {
-  const strip = { shortId: "a1b2c3d4", project: "app", projectPath: "/w/app", usage: "" };
-
-  assert.equal(stripText(strip), "a1b2c3d4 · app");
-  assert.equal(
-    stripText({ ...strip, usage: "1.5 cores · 2.0 GB" }),
-    "a1b2c3d4 · app · 1.5 cores · 2.0 GB",
-  );
-});
-
 test("the idle line separates its parts with two spaces", () => {
   const idle = { label: "Idle · 2", ids: "aaaa  bbbb", usage: "" };
 
@@ -165,3 +157,259 @@ test("each group has a Breeze icon", () => {
   assert.equal(groupIcon("running"), "media-playback-start");
   assert.equal(groupIcon("waiting"), GROUP_ICONS.waiting);
 });
+
+/**
+ * An open widget against a daemon serving a handoff scenario, on a clock the test moves. Kill and
+ * Remove end the lease as allotd would, or answer `refusal` with a 409.
+ *
+ * @param {string} name
+ * @param {{ refusal?: string, desktopEntries?: string, stalls?: boolean }} [options]
+ */
+async function opened(name, options = {}) {
+  const timers = new FakeTimers();
+  const { json } = scenarioJson(name);
+  const state = /** @type {any} */ (json);
+  const clock = { ms: NOW_MS };
+  const subject = fakeHost({
+    timers,
+    now: () => clock.ms,
+    files: { [TOKEN_FILE]: "t" },
+    ...(options.desktopEntries === undefined ? {} : { desktopEntries: options.desktopEntries }),
+    daemon: (request) => {
+      if (request.method === "GET") {
+        return { status: 200, body: JSON.stringify({ ...state, generated_at_ms: clock.ms }) };
+      }
+      if (options.stalls === true) {
+        return undefined;
+      }
+      if (options.refusal !== undefined) {
+        return { status: 409, body: `lease 1 was not killed: ${options.refusal}` };
+      }
+      const id = Number(/leases\/(\d+)\//.exec(request.url)?.[1]);
+      const listed = [...state.active, ...state.queue].find((job) => job.lease.id === id);
+      state.active = state.active.filter((/** @type {any} */ job) => job.lease.id !== id);
+      state.queue = state.queue.filter((/** @type {any} */ job) => job.lease.id !== id);
+      const lease = { ...listed.lease, state: "expired", ended_at_ms: clock.ms };
+      const body = request.url.endsWith("/kill")
+        ? { failed: [], lease, spared: [], terminated: [], untouched_reason: null }
+        : { lease };
+      return { status: 200, body: JSON.stringify(body) };
+    },
+  });
+  subject.widget.start();
+  await settle();
+  subject.widget.setExpanded(true);
+  await settle();
+  /** @param {number} lease */
+  const cardOf = (lease) => /** @type {any} */ (subject.shown.data[`job:${lease}`]).job.card;
+  return {
+    ...subject,
+    state,
+    cardOf,
+    /** @param {number} ms */
+    advance: (ms) => {
+      clock.ms += ms;
+    },
+    posts: () => subject.requests.filter((request) => request.sent.method === "POST"),
+  };
+}
+
+test("opening shows the rows at once, without animation", async () => {
+  const subject = await opened("several");
+
+  assert.deepEqual(subject.rows.keys.slice(0, 2), ["group:running", `job:${leaseId("cargo")}`]);
+  assert.equal(subject.rows.get(0).entering, false);
+});
+
+test("while closed the list is left alone and no tick runs", async () => {
+  const timers = new FakeTimers();
+  const body = fixtureText("ui-state-busy.json");
+  const subject = fakeHost({
+    timers,
+    files: { [TOKEN_FILE]: "t" },
+    daemon: () => ({ status: 200, body }),
+  });
+  subject.widget.start();
+  await settle();
+
+  assert.equal(subject.rows.count, 0);
+  assert.deepEqual(timers.delays, [5000]);
+});
+
+test("the tick updates times every second and keeps every view", async () => {
+  const subject = await opened("one");
+  const lease = leaseId("cargo");
+  const inserted = subject.rows.inserted;
+  const before = subject.cardOf(lease).time;
+
+  subject.advance(1000);
+  subject.timers.fireAll();
+  await settle();
+
+  assert.notEqual(subject.cardOf(lease).time, before);
+  assert.equal(subject.rows.inserted, inserted);
+  assert.equal(subject.shown.animate, true);
+});
+
+test("Kill asks first, ignores a double press, and sends on a later press", async () => {
+  const subject = await opened("one");
+  const lease = leaseId("cargo");
+
+  subject.widget.pressKill(lease);
+  assert.equal(subject.cardOf(lease).action, "confirm");
+  assert.match(subject.cardOf(lease).detail, /^Stops cargo and its child processes/);
+  assert.equal(subject.cardOf(lease).time, "4s");
+
+  subject.advance(200);
+  subject.widget.pressKill(lease);
+  assert.equal(subject.posts().length, 0, "a double press within 300 ms is ignored");
+
+  subject.advance(300);
+  subject.widget.pressKill(lease);
+  assert.equal(subject.cardOf(lease).isSending, true);
+  assert.equal(subject.cardOf(lease).action, "none");
+  await settle();
+
+  assert.equal(subject.posts()[0]?.sent.url, `http://127.0.0.1:47823/leases/${lease}/kill`);
+  assert.equal(subject.cardOf(lease).strong, "Stopped");
+  assert.equal(subject.cardOf(lease).isStruck, true);
+  assert.equal(subject.widget.model.snapshot.header.summary, "Idle");
+});
+
+test("answering a kill polls at once, without waiting for the 1 s cadence", async () => {
+  const subject = await opened("one");
+  const lease = leaseId("cargo");
+  subject.widget.pressKill(lease);
+  subject.advance(500);
+  const polls = () => subject.requests.filter((request) => request.sent.method === "GET").length;
+  const before = polls();
+
+  subject.widget.pressKill(lease);
+  await settle();
+
+  assert.equal(polls(), before + 1);
+});
+
+test("a stopped card holds 4 s, then its row leaves and goes", async () => {
+  const subject = await opened("one");
+  const lease = leaseId("cargo");
+  subject.widget.pressKill(lease);
+  subject.advance(500);
+  subject.widget.pressKill(lease);
+  await settle();
+  assert.equal(subject.rows.isLeaving(`job:${lease}`), false);
+
+  subject.advance(4000);
+  subject.timers.fireAll();
+  await settle();
+
+  assert.equal(subject.rows.isLeaving(`job:${lease}`), true);
+  subject.widget.rowGone(`job:${lease}`);
+  assert.equal(subject.rows.keys.includes(`job:${lease}`), false);
+});
+
+test("Kill? goes back after 4 s, on Esc, on focus leaving and on closing", async () => {
+  const subject = await opened("one");
+  const lease = leaseId("cargo");
+
+  subject.widget.pressKill(lease);
+  subject.advance(4000);
+  subject.timers.fireAll();
+  assert.equal(subject.cardOf(lease).action, "kill", "the countdown ended");
+
+  subject.widget.pressKill(lease);
+  subject.widget.cancelConfirms();
+  assert.equal(subject.cardOf(lease).action, "kill", "Esc");
+
+  subject.widget.pressKill(lease);
+  subject.widget.cancelConfirm(lease);
+  assert.equal(subject.cardOf(lease).action, "kill", "focus left");
+
+  subject.widget.pressKill(lease);
+  subject.widget.setExpanded(false);
+  subject.widget.setExpanded(true);
+  assert.equal(subject.cardOf(lease).action, "kill", "closed and opened");
+  assert.equal(subject.posts().length, 0);
+});
+
+test("a refusal reads in red and the card keeps its Kill", async () => {
+  const subject = await opened("one", { refusal: "it is protected" });
+  const lease = leaseId("cargo");
+  subject.widget.pressKill(lease);
+  subject.advance(500);
+
+  subject.widget.pressKill(lease);
+  await settle();
+
+  assert.equal(subject.cardOf(lease).detail, "Not stopped: it is protected");
+  assert.equal(subject.cardOf(lease).detailIsDanger, true);
+  assert.equal(subject.cardOf(lease).action, "kill");
+});
+
+test("a kill without an answer says so after its own 10 s", async () => {
+  const subject = await opened("one", { stalls: true });
+  const lease = leaseId("cargo");
+  subject.widget.pressKill(lease);
+  subject.advance(500);
+
+  subject.widget.pressKill(lease);
+  await settle();
+  assert.ok(subject.timers.delays.includes(10_000));
+  subject.timers.fireAll();
+  await settle();
+
+  assert.equal(
+    subject.cardOf(lease).detail,
+    "Not stopped: the service did not answer within 10 s",
+  );
+});
+
+test("Remove sends at the first press and holds Removed", async () => {
+  const subject = await opened("c-queued");
+  const lease = leaseId("npm");
+
+  subject.widget.pressRemove(lease);
+  assert.equal(subject.cardOf(lease).detail, "Removing…");
+  await settle();
+
+  assert.equal(subject.posts()[0]?.sent.url, `http://127.0.0.1:47823/leases/${lease}/remove`);
+  assert.equal(subject.cardOf(lease).strong, "Removed");
+  assert.equal(subject.widget.model.nextStopChangeMs, 4000);
+});
+
+test("after closing, a tick still runs for a card's hold", async () => {
+  const subject = await opened("c-queued");
+  subject.widget.pressRemove(leaseId("npm"));
+  await settle();
+  subject.widget.setExpanded(false);
+  await settle();
+
+  assert.ok(subject.timers.delays.includes(4000));
+});
+
+test("the desktop entries are read once per opening and give the card its icon", async () => {
+  const subject = await opened("icons", {
+    desktopEntries: [
+      "--",
+      "./vim.desktop:Type=Application",
+      "./vim.desktop:Exec=vim %F",
+      "./vim.desktop:Icon=gvim",
+      "",
+    ].join("\n"),
+  });
+  await settle();
+
+  const reads = () =>
+    subject.commands.filter((command) => command === DESKTOP_ENTRIES_COMMAND).length;
+  const icons = Object.values(subject.shown.data).flatMap((row) =>
+    row.kind === "job" && row.icon !== null ? [row.icon] : [],
+  );
+  assert.equal(reads(), 1);
+  assert.deepEqual(icons, ["gvim"]);
+
+  subject.widget.setExpanded(false);
+  subject.widget.setExpanded(true);
+  await settle();
+  assert.equal(reads(), 2);
+});
+

@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
-import { readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { test } from "node:test";
 
 import { INDICATOR_ICONS, iconFile } from "../../gnome/allot@mehran.tech/lib/indicator-status.js";
 import { FakeTimers, fixtureText, settle } from "../../gnome/tests/support.mjs";
 import { CODE_DIR, emit } from "../tools/emit.mjs";
-import { PACKAGE_DIR, catAnswer, fakeRequests } from "./support.mjs";
+import { FakeRowModel, PACKAGE_DIR, catAnswer, fakeRequests } from "./support.mjs";
 
 /** @param {URL} dir @param {string} [prefix] @returns {string[]} */
 function filesUnder(dir, prefix = "") {
@@ -45,6 +45,20 @@ test("every panel state and the header mark has a recolourable icon", () => {
   }
 });
 
+test("every view exists and imports generated modules that do", () => {
+  const ui = new URL("contents/ui/", PACKAGE_DIR);
+  const views = readdirSync(ui);
+
+  assert.ok(views.includes("JobRow.qml") && views.includes("main.qml"));
+  for (const view of views) {
+    const text = readFileSync(new URL(view, ui), "utf8");
+    for (const [, module = ""] of text.matchAll(/^import "\.\.\/code\/(.+)" as /gm)) {
+      assert.ok(existsSync(new URL(module, CODE_DIR)), `${view} imports ${module}`);
+    }
+    assert.doesNotMatch(text, /[ \t]+$/m, `${view} has trailing whitespace`);
+  }
+});
+
 test("the generated widget module runs a poll", async () => {
   const { AllotWidget } = await import(new URL("widget.mjs", CODE_DIR).href);
   const timers = new FakeTimers();
@@ -61,6 +75,8 @@ test("the generated widget module runs a poll", async () => {
       ),
     requests: fakeRequests(() => ({ status: 200, body })),
     timers,
+    rows: new FakeRowModel(),
+    showRows: () => {},
     onChange: () => summaries.push(widget.model.snapshot.header.summary),
     log: () => {},
   });

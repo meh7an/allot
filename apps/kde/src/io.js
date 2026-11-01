@@ -1,4 +1,4 @@
-import { CancelledError } from "../../gnome/allot@mehran.tech/lib/client.js";
+import { CancelledError, TimeoutError } from "../../gnome/allot@mehran.tech/lib/client.js";
 
 /** @import { HttpRequest, HttpResponse } from "../../gnome/allot@mehran.tech/lib/client.js" */
 /** @import { Timers } from "../../gnome/allot@mehran.tech/lib/poller.js" */
@@ -186,7 +186,7 @@ export class XhrTransport {
       };
       timer = timers.setTimeout(() => {
         timer = null;
-        abort(new Error(`no answer within ${request.timeoutSecs} s`));
+        abort(new TimeoutError());
       }, request.timeoutSecs * 1000);
       inFlight.add(cancel);
 

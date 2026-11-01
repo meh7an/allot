@@ -20,6 +20,7 @@ export const CODE_DIR = new URL("tech.mehran.allot/contents/code/", KDE_DIR);
 
 /** The GNOME modules the widget shares, written to `code/shared/`. */
 export const SHARED_MODULES = [
+  "app-match",
   "benchmark-status",
   "client",
   "config",
@@ -47,7 +48,13 @@ export const SHARED_MODULES = [
  * The KDE modules and their names in `code/`. QML imports only `.mjs` files as modules; the
  * modules they import may keep `.js`.
  */
-const KDE_MODULES = { io: "io.js", widget: "widget.mjs" };
+const KDE_MODULES = {
+  "app-icons": "app-icons.js",
+  "card-view": "card-view.mjs",
+  io: "io.js",
+  rows: "rows.js",
+  widget: "widget.mjs",
+};
 
 /**
  * The generated files, keyed by their path under `code/`.

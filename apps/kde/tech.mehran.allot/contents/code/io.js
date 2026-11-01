@@ -20,7 +20,7 @@ var __classPrivateFieldGet = (this && this.__classPrivateFieldGet) || function (
     return kind === "m" ? f : kind === "a" ? f.call(receiver) : f ? f.value : state.get(receiver);
 };
 var _CommandRunner_connect, _CommandRunner_waiting, _XhrTransport_requests, _XhrTransport_timers, _XhrTransport_inFlight;
-import { CancelledError } from "./shared/client.js";
+import { CancelledError, TimeoutError } from "./shared/client.js";
 /** @import { HttpRequest, HttpResponse } from "./shared/client.js" */
 /** @import { Timers } from "./shared/poller.js" */
 // QML can neither read files nor time out a request on its own, so the widget reads them
@@ -191,7 +191,7 @@ export class XhrTransport {
             };
             timer = timers.setTimeout(() => {
                 timer = null;
-                abort(new Error(`no answer within ${request.timeoutSecs} s`));
+                abort(new TimeoutError());
             }, request.timeoutSecs * 1000);
             inFlight.add(cancel);
             xhr.open(request.method, request.url);

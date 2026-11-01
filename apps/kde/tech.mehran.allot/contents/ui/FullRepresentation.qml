@@ -8,13 +8,17 @@ import org.kde.plasma.extras as PlasmaExtras
 import "../code/widget.mjs" as Allot
 
 // The popup: a header with the summary and Keep Open, then the jobs grouped as Benchmark,
-// Running and Waiting, the idle sessions, or the empty line.
+// Running and Waiting, the idle sessions, then Recently finished or the empty line.
 PlasmaExtras.Representation {
     id: full
 
     property var snapshot: null
     property bool keepOpen: false
     property string iconDirectory: ""
+    property var rowModel: null
+    property var rowData: ({})
+    property bool animate: false
+    property var widget: null
 
     signal keepOpenToggled()
 
@@ -72,69 +76,23 @@ PlasmaExtras.Representation {
 
         PlasmaComponents.ScrollBar.horizontal.policy: PlasmaComponents.ScrollBar.AlwaysOff
 
-        ColumnLayout {
+        Column {
             id: list
 
             width: scroll.availableWidth
-            spacing: Kirigami.Units.smallSpacing
             opacity: full.hasSnapshot && full.snapshot.isLastKnown ? Allot.DIMMED : 1
 
+            // A ListModel keeps each row's view while its key is shown, so a tick updates the
+            // view in place and Kill? keeps its focus.
             Repeater {
-                model: full.hasSnapshot ? full.snapshot.groups : []
+                model: full.rowModel
 
-                ColumnLayout {
-                    id: group
-
-                    required property var modelData
-
-                    Layout.fillWidth: true
-                    Layout.leftMargin: Kirigami.Units.smallSpacing
-                    Layout.rightMargin: Kirigami.Units.smallSpacing
-                    spacing: Kirigami.Units.smallSpacing
-
-                    RowLayout {
-                        Layout.topMargin: Kirigami.Units.smallSpacing
-                        spacing: Kirigami.Units.smallSpacing * 1.5
-
-                        Kirigami.Icon {
-                            implicitWidth: Kirigami.Units.iconSizes.small
-                            implicitHeight: Kirigami.Units.iconSizes.small
-                            source: Allot.groupIcon(group.modelData.kind)
-                        }
-
-                        PlasmaComponents.Label {
-                            Layout.fillWidth: true
-                            text: group.modelData.heading
-                            font.weight: Font.DemiBold
-                            elide: Text.ElideRight
-                        }
-                    }
-
-                    Repeater {
-                        model: group.modelData.jobs
-
-                        JobRow {
-                            Layout.fillWidth: true
-                        }
-                    }
+                ListRow {
+                    width: list.width
+                    row: full.rowData[key]
+                    animate: full.animate
+                    widget: full.widget
                 }
-            }
-
-            PlasmaComponents.Label {
-                Layout.fillWidth: true
-                Layout.margins: Kirigami.Units.smallSpacing
-                visible: full.hasSnapshot && full.snapshot.idle !== null
-                text: visible ? Allot.idleText(full.snapshot.idle) : ""
-                font: Kirigami.Theme.smallFont
-                elide: Text.ElideRight
-            }
-
-            PlasmaComponents.Label {
-                Layout.fillWidth: true
-                Layout.margins: Kirigami.Units.smallSpacing
-                visible: full.hasSnapshot && full.snapshot.showNothing
-                text: Allot.NOTHING_TEXT
-                font: Kirigami.Theme.smallFont
             }
         }
     }

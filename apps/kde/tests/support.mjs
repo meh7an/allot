@@ -1,6 +1,8 @@
+import { DESKTOP_ENTRIES_COMMAND } from "../src/app-icons.js";
 import { AllotWidget } from "../src/widget.js";
 
 /** @import { Xhr, XhrFactory } from "../src/io.js" */
+/** @import { Row, RowModel } from "../src/rows.js" */
 /** @import { WidgetHost } from "../src/widget.js" */
 /** @import { FakeTimers } from "../../gnome/tests/support.mjs" */
 
@@ -94,6 +96,82 @@ export function fakeRequests(answer, made = []) {
 }
 
 /**
+ * QML's ListModel as the rows use it, with a count of the views it would have created.
+ *
+ * @implements {RowModel}
+ */
+export class FakeRowModel {
+  /** @type {{ key: string, kind: string, leaving: boolean, entering: boolean }[]} */
+  items = [];
+  inserted = 0;
+
+  /** @returns {number} */
+  get count() {
+    return this.items.length;
+  }
+
+  /** @returns {string[]} */
+  get keys() {
+    return this.items.map((item) => item.key);
+  }
+
+  /**
+   * @param {string} key
+   * @returns {boolean | undefined}
+   */
+  isLeaving(key) {
+    return this.items.find((item) => item.key === key)?.leaving;
+  }
+
+  /**
+   * @param {number} index
+   * @returns {{ key: string, kind: string, leaving: boolean, entering: boolean }}
+   */
+  get(index) {
+    const item = this.items[index];
+    if (item === undefined) {
+      throw new Error(`no row ${index}`);
+    }
+    return item;
+  }
+
+  /**
+   * @param {number} index
+   * @param {object} row
+   */
+  insert(index, row) {
+    this.inserted += 1;
+    this.items.splice(index, 0, /** @type {any} */ (row));
+  }
+
+  /**
+   * @param {number} from
+   * @param {number} to
+   * @param {number} count
+   */
+  move(from, to, count) {
+    this.items.splice(to, 0, ...this.items.splice(from, count));
+  }
+
+  /**
+   * @param {number} index
+   * @param {number} count
+   */
+  remove(index, count) {
+    this.items.splice(index, count);
+  }
+
+  /**
+   * @param {number} index
+   * @param {string} role
+   * @param {boolean} value
+   */
+  setProperty(index, role, value) {
+    /** @type {any} */ (this.get(index))[role] = value;
+  }
+}
+
+/**
  * A QML item stand-in: files for the executable engine to `cat`, a daemon for the requests, and
  * records of what the widget did.
  *
@@ -101,6 +179,8 @@ export function fakeRequests(answer, made = []) {
  * @param {FakeTimers} options.timers
  * @param {Record<string, string>} [options.files] Contents by absolute path.
  * @param {(request: SentRequest) => Answer | undefined} options.daemon
+ * @param {() => number} [options.now]
+ * @param {string} [options.desktopEntries] What the desktop entries command prints.
  */
 export function fakeHost(options) {
   /** @type {string[]} */
@@ -109,6 +189,9 @@ export function fakeHost(options) {
   const requests = [];
   /** @type {string[]} */
   const lines = [];
+  const rows = new FakeRowModel();
+  /** @type {{ data: Record<string, Row>, animate: boolean | null }} */
+  const shown = { data: {}, animate: null };
   let changes = 0;
   /** @type {AllotWidget | null} */
   let widget = null;
@@ -118,14 +201,26 @@ export function fakeHost(options) {
     homeUrl: "file:///home/user%20one",
     connectSource: (command) => {
       commands.push(command);
-      queueMicrotask(() => widget?.deliver(command, catAnswer(command, options.files ?? {})));
+      queueMicrotask(() => {
+        const answer =
+          command === DESKTOP_ENTRIES_COMMAND
+            ? { "exit code": 0, stdout: options.desktopEntries ?? "" }
+            : catAnswer(command, options.files ?? {});
+        widget?.deliver(command, answer);
+      });
     },
     requests: fakeRequests(options.daemon, requests),
     timers: options.timers,
+    rows,
+    showRows: (data, animate) => {
+      shown.data = data;
+      shown.animate = animate;
+    },
     onChange: () => {
       changes += 1;
     },
     log: (line) => lines.push(line),
+    ...(options.now === undefined ? {} : { now: options.now }),
   };
   widget = new AllotWidget(host);
   return {
@@ -134,6 +229,8 @@ export function fakeHost(options) {
     commands,
     requests,
     lines,
+    rows,
+    shown,
     get changes() {
       return changes;
     },

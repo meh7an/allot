@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { CancelledError } from "../../gnome/allot@mehran.tech/lib/client.js";
+import { CancelledError, TimeoutError } from "../../gnome/allot@mehran.tech/lib/client.js";
 import { FakeTimers, settle } from "../../gnome/tests/support.mjs";
 import {
   CommandRunner,
@@ -111,7 +111,7 @@ test("a request without an answer is aborted after its timeout", async () => {
   assert.deepEqual(timers.delays, [3000]);
   timers.fireAll();
 
-  await assert.rejects(sent, /no answer within 3 s/);
+  await assert.rejects(sent, TimeoutError);
   assert.equal(requests[0]?.aborted, true);
 });
 

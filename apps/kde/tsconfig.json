@@ -40,6 +40,7 @@
   // The GNOME modules the widget shares are checked here too, against the ES2016 library.
   "include": [
     "src/*.js",
+    "../gnome/allot@mehran.tech/lib/app-match.js",
     "../gnome/allot@mehran.tech/lib/benchmark-status.js",
     "../gnome/allot@mehran.tech/lib/client.js",
     "../gnome/allot@mehran.tech/lib/config.js",

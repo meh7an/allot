@@ -18,6 +18,8 @@ PlasmoidItem {
     property string iconSource: ""
     property string accessibleName: "Allot"
     property bool keepOpen: false
+    property var rowData: ({})
+    property bool animate: false
 
     readonly property string iconDirectory: Qt.resolvedUrl("../icons/").toString()
 
@@ -83,6 +85,10 @@ PlasmoidItem {
         snapshot: root.snapshot
         keepOpen: root.keepOpen
         iconDirectory: root.iconDirectory
+        rowModel: listRows
+        rowData: root.rowData
+        animate: root.animate
+        widget: root.widget
         onKeepOpenToggled: {
             root.widget.toggleKeepOpen();
             root.refresh();
@@ -100,6 +106,10 @@ PlasmoidItem {
     Component {
         id: timerComponent
         Timer {}
+    }
+
+    ListModel {
+        id: listRows
     }
 
     P5Support.DataSource {
@@ -124,6 +134,11 @@ PlasmoidItem {
                 send: (xhr) => xhr.send(),
             },
             timers: root.timers,
+            rows: listRows,
+            showRows: (data, animate) => {
+                root.animate = animate;
+                root.rowData = data;
+            },
             onChange: () => root.refresh(),
             log: (line) => console.log(line),
         });
