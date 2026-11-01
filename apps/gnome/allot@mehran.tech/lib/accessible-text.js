@@ -1,0 +1,133 @@
+/** @import { DriveRow, MeterRow } from "./resources-view.js" */
+/** @import { JobRow, PanelSnapshot } from "./snapshot.js" */
+
+// The Resources card's width for its label, bar and value columns, in CSS pixels: the popup's 360
+// less the card's margins, border, padding and the two gaps between the columns.
+const METER_COLUMNS_PX = 310;
+const METER_LABEL_PX = 58;
+const METER_VALUE_PX = 108;
+const METER_BAR_MIN_PX = 48;
+
+/**
+ * The widths of a Resources row's outer columns, alike in every row so the bars line up.
+ *
+ * @typedef {object} MeterColumns
+ * @property {number} label
+ * @property {number} value
+ */
+
+/**
+ * What a screen reader reads after a card's action: the rest of the card, which Orca reaches only
+ * through flat review because the action is the card's one tab stop.
+ *
+ * @param {JobRow} row
+ * @returns {string}
+ */
+export function cardDescription(row) {
+  const { card, session } = row;
+  return [
+    session.shortId,
+    session.project,
+    session.usage,
+    row.command,
+    card.chip,
+    detailText(row),
+    card.time,
+  ]
+    .filter((part) => part !== "")
+    .join(", ");
+}
+
+/**
+ * The detail line in full, with its bold start.
+ *
+ * @param {JobRow} row
+ * @returns {string}
+ */
+export function detailText(row) {
+  return row.card.detailTooltip || row.card.strong + row.card.detail;
+}
+
+/**
+ * @param {MeterRow} row
+ * @returns {string} For example `CPU 64%`.
+ */
+export function meterName(row) {
+  return `${row.label} ${row.value}`;
+}
+
+/**
+ * @param {DriveRow} row
+ * @returns {string} For example `home 612 / 953 GB`.
+ */
+export function driveName(row) {
+  return `${row.label} ${row.value}`;
+}
+
+/**
+ * The drive's hover label and its activity, which the bar otherwise only shows.
+ *
+ * @param {DriveRow} row
+ * @returns {string} For example `/home, R 42 · W 8 MB/s`.
+ */
+export function driveDescription(row) {
+  return row.activity === "" ? row.id : `${row.id}, ${row.activity}`;
+}
+
+/**
+ * Column widths for a text size, growing with the text. The value gives way first, so the bar
+ * always keeps its minimum.
+ *
+ * @param {number} textScale The desktop's text scaling factor, 1 at the default size.
+ * @returns {MeterColumns}
+ */
+export function meterColumns(textScale) {
+  const scale = Math.max(1, textScale);
+  const label = Math.round(METER_LABEL_PX * scale);
+  const room = METER_COLUMNS_PX - METER_BAR_MIN_PX - label;
+  return { label, value: Math.max(0, Math.min(Math.round(METER_VALUE_PX * scale), room)) };
+}
+
+/**
+ * Decides what a screen reader announces as snapshots go by while the popup is open: the summary
+ * when it changes, and each card's stop outcome once.
+ */
+export class Announcer {
+  /** @type {string | null} */
+  #summary = null;
+  /** @type {Map<number, string>} */
+  #spoken = new Map();
+
+  /** The popup opened: what it shows now is read by focus, not announced. */
+  reset() {
+    this.#summary = null;
+    this.#spoken.clear();
+  }
+
+  /**
+   * @param {PanelSnapshot} snapshot
+   * @returns {string[]} What to announce now, in order.
+   */
+  observe(snapshot) {
+    const isFirst = this.#summary === null;
+    /** @type {string[]} */
+    const texts = [];
+    /** @type {Map<number, string>} */
+    const spoken = new Map();
+    for (const group of snapshot.groups) {
+      for (const { id, card } of group.jobs) {
+        spoken.set(id, card.announcement);
+        if (!isFirst && card.announcement !== "" && card.announcement !== this.#spoken.get(id)) {
+          texts.push(card.announcement);
+        }
+      }
+    }
+    const { summary } = snapshot.header;
+    if (!isFirst && summary !== this.#summary) {
+      texts.push(summary);
+    }
+    this.#summary = summary;
+    this.#spoken = spoken;
+    return texts;
+  }
+}

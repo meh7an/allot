@@ -1,0 +1,118 @@
+/* Loaded by the popup while high contrast is on. The shell has no high-contrast variant for
+   extensions, and its own high-contrast theme is dark whichever colour scheme is set. A sheet of
+   its own, because stylesheet.css is imported and its rules lose to stylesheet-dark.css and
+   stylesheet-light.css whatever their selectors. */
+
+.allot-high-contrast .allot-group-heading,
+.allot-high-contrast .allot-idle-line,
+.allot-high-contrast .allot-nothing,
+.allot-high-contrast .allot-detail-line,
+.allot-high-contrast .allot-recent-meta,
+.allot-high-contrast .allot-strip,
+.allot-high-contrast .allot-strip-id,
+.allot-high-contrast .allot-action,
+.allot-high-contrast .allot-step-current .allot-step-label,
+.allot-high-contrast .allot-step-past .allot-step-label,
+.allot-high-contrast .allot-step-upcoming .allot-step-label,
+.allot-high-contrast .allot-banner,
+.allot-high-contrast .allot-banner-caption,
+.allot-high-contrast .allot-welcome-body,
+.allot-high-contrast .allot-welcome-note,
+.allot-high-contrast .allot-resources-summary,
+.allot-high-contrast .allot-resources-off,
+.allot-high-contrast .allot-drive-activity,
+.allot-high-contrast .allot-legend-label {
+  color: #ffffff;
+}
+
+.allot-high-contrast .allot-card,
+.allot-high-contrast .allot-banner,
+.allot-high-contrast .allot-strip,
+.allot-high-contrast .allot-tile {
+  background-color: #000000;
+  border-color: #ffffff;
+}
+
+.allot-high-contrast .allot-chip {
+  border-width: 1px;
+  background-color: #000000;
+  border-color: #ffffff;
+  color: #ffffff;
+}
+
+.allot-high-contrast .allot-chip-benchmark {
+  background-color: #ffffff;
+  color: #000000;
+}
+
+.allot-high-contrast .allot-danger {
+  color: #ff9d8a;
+}
+
+.allot-high-contrast .allot-warning {
+  color: #ffef6e;
+}
+
+.allot-high-contrast .allot-action-kill:hover,
+.allot-high-contrast .allot-action-kill:focus,
+.allot-high-contrast .allot-action-remove:hover,
+.allot-high-contrast .allot-action-remove:focus,
+.allot-high-contrast .allot-resources-header:hover,
+.allot-high-contrast .allot-resources-header:focus {
+  background-color: #000000;
+  box-shadow: inset 0 0 0 2px #ffffff;
+}
+
+.allot-high-contrast .allot-action-confirm {
+  background-color: #c01c28;
+  box-shadow: inset 0 0 0 2px #ffffff;
+  color: #ffffff;
+}
+
+.allot-high-contrast .allot-bar,
+.allot-high-contrast .allot-meter-bar,
+.allot-high-contrast .allot-legend-hatch,
+.allot-high-contrast .allot-drive-bar {
+  -allot-track-color: rgba(255, 255, 255, 0.35);
+  -allot-hatch-color: #ffffff;
+  -allot-tick-color: #ffffff;
+  -allot-ring-color: #000000;
+  -allot-shared-color: rgba(255, 255, 255, 0.7);
+}
+
+.allot-high-contrast .allot-drive-bar,
+.allot-high-contrast .allot-bar-frozen {
+  color: #ffffff;
+}
+
+/* The stepper's three states differ by brightness alone here, as its colour says nothing. */
+
+.allot-high-contrast .allot-step-bar,
+.allot-high-contrast .allot-step-tick {
+  background-color: rgba(255, 255, 255, 0.3);
+}
+
+.allot-high-contrast .allot-step-past .allot-step-solid,
+.allot-high-contrast .allot-step-past .allot-step-on,
+.allot-high-contrast .allot-step-past .allot-step-run-fill {
+  background-color: rgba(255, 255, 255, 0.65);
+}
+
+.allot-high-contrast .allot-step-current .allot-step-solid,
+.allot-high-contrast .allot-step-current .allot-step-on,
+.allot-high-contrast .allot-step-current .allot-step-run-fill {
+  background-color: #ffffff;
+}
+
+.allot-high-contrast .allot-step-current .allot-step-label {
+  font-weight: bold;
+}
+
+.allot-high-contrast .allot-resources-separator,
+.allot-high-contrast .allot-legend-reserved {
+  background-color: #ffffff;
+}
+
+.allot-high-contrast .allot-legend-shared {
+  background-color: rgba(255, 255, 255, 0.7);
+}

@@ -1,3 +1,4 @@
+import Atk from "gi://Atk";
 import Clutter from "gi://Clutter";
 import Gio from "gi://Gio";
 import GLib from "gi://GLib";
@@ -5,6 +6,7 @@ import Pango from "gi://Pango";
 import Shell from "gi://Shell";
 import St from "gi://St";
 
+import { ensureActorVisibleInScrollView } from "resource:///org/gnome/shell/misc/animationUtils.js";
 import * as BoxPointer from "resource:///org/gnome/shell/ui/boxpointer.js";
 import * as Main from "resource:///org/gnome/shell/ui/main.js";
 import * as PopupMenu from "resource:///org/gnome/shell/ui/popupMenu.js";
@@ -17,9 +19,13 @@ import {
   ServiceBannerView,
   WelcomeView,
   collapse,
+  dimmedOpacity,
   fadeIn,
   label,
+  setClass,
 } from "./cards.js";
+import { Announcer } from "./lib/accessible-text.js";
+import { APP_NAME } from "./lib/indicator-status.js";
 import { anchoredPosition, clampInto, maxHeight } from "./lib/placement.js";
 import { MoreOptionsMenu } from "./menus.js";
 import { ResourcesCard } from "./resources-card.js";
@@ -46,6 +52,13 @@ const LAST_KNOWN_OPACITY = 140;
 const CHROME_HEIGHT = 28;
 // The popup's spacing above a banner or the Resources card, in CSS pixels.
 const BLOCK_GAP = 8;
+// Ctrl+Alt+Tab lists the open popup under this icon, the one way a keyboard reaches it while
+// Stay open has given up the modal grab.
+const SWITCHER_ICON = "view-pin-symbolic";
+const TAB_DIRECTIONS = {
+  [Clutter.KEY_Tab]: St.DirectionType.TAB_FORWARD,
+  [Clutter.KEY_ISO_Left_Tab]: St.DirectionType.TAB_BACKWARD,
+};
 
 /**
  * The Allot popup: a header with the summary and the Stay open, Pin and More options buttons,
@@ -60,6 +73,7 @@ export class AllotPopup {
   #logsPath;
   #onOpenChanged;
   #onChanged;
+  #announcer = new Announcer();
   #appIcons = new AppIcons();
   /** @type {Map<string, { actor: Clutter.Actor, update: Function }>} */
   #views = new Map();
@@ -89,12 +103,16 @@ export class AllotPopup {
   /** @type {{ grab: Clutter.Grab, dx: number, dy: number } | null} */
   #drag = null;
   #monitorsChangedId;
+  #highContrastId;
+  #contrastSheet;
+  #contrastLoaded = false;
 
   /**
    * @param {object} options
    * @param {PopupModel} options.model
    * @param {InstanceType<typeof import("./indicator.js").AllotIndicator>} options.indicator
    * @param {Gio.File} options.iconDirectory
+   * @param {Gio.File} options.contrastSheet The stylesheet to add while high contrast is on.
    * @param {string} options.logsPath
    * @param {(open: boolean) => void} options.onOpenChanged
    * @param {() => void} options.onChanged A press or Esc changed the model's stops.
@@ -106,6 +124,7 @@ export class AllotPopup {
     this.#markIcon = new Gio.FileIcon({
       file: options.iconDirectory.get_child("allot-mark-symbolic.svg"),
     });
+    this.#contrastSheet = options.contrastSheet;
     this.#logsPath = options.logsPath;
     this.#onOpenChanged = options.onOpenChanged;
     this.#onChanged = options.onChanged;
@@ -117,6 +136,7 @@ export class AllotPopup {
           this.#onChanged();
         }
       },
+      focused: (actor) => ensureActorVisibleInScrollView(this.#scroll, actor),
       appIcon: this.#appIcons.icon,
     };
 
@@ -125,6 +145,8 @@ export class AllotPopup {
       orientation: Clutter.Orientation.VERTICAL,
       reactive: true,
       visible: false,
+      accessible_name: APP_NAME,
+      accessible_role: Atk.Role.DIALOG,
     });
     this.#actor.connect("captured-event", (_actor, event) => this.#onCapturedEvent(event));
 
@@ -135,15 +157,21 @@ export class AllotPopup {
       y_align: Clutter.ActorAlign.CENTER,
     });
     this.#summary.clutter_text.ellipsize = Pango.EllipsizeMode.END;
-    this.#pinButton = headerButton("Pin", new St.Icon({ icon_name: "view-pin-symbolic" }));
+    this.#pinButton = headerButton(
+      "Pin",
+      new St.Icon({ icon_name: "view-pin-symbolic" }),
+      Atk.Role.TOGGLE_BUTTON,
+    );
     this.#pinButton.connect("clicked", () => this.#togglePinned());
     this.#stayOpenIcon = new St.Icon();
-    this.#stayOpenButton = headerButton("Stay open", this.#stayOpenIcon);
+    this.#stayOpenButton = headerButton("Stay open", this.#stayOpenIcon, Atk.Role.TOGGLE_BUTTON);
     this.#stayOpenButton.connect("clicked", () => this.#toggleStayOpen());
     this.#moreButton = headerButton(
       "More options",
       new St.Icon({ icon_name: "view-more-horizontal-symbolic" }),
+      Atk.Role.PUSH_BUTTON,
     );
+    this.#moreButton.add_accessible_state(Atk.StateType.EXPANDABLE);
 
     // Empty header space is the drag handle while pinned; the buttons keep their own presses.
     this.#header = new St.BoxLayout({ style_class: "allot-header", reactive: true });
@@ -197,10 +225,21 @@ export class AllotPopup {
     this.#more.menu.actor.hide();
     this.#menuManager.addMenu(this.#more.menu);
     this.#moreButton.connect("clicked", () => this.#more.menu.toggle());
+    this.#more.menu.connect("open-state-changed", (_menu, open) => {
+      if (open) {
+        this.#moreButton.add_accessible_state(Atk.StateType.EXPANDED);
+      } else {
+        this.#moreButton.remove_accessible_state(Atk.StateType.EXPANDED);
+      }
+    });
 
     this.#monitorsChangedId = Main.layoutManager.connect("monitors-changed", () =>
       this.#keepOnScreen(),
     );
+    this.#highContrastId = St.Settings.get().connect("notify::high-contrast", () =>
+      this.#showContrast(),
+    );
+    this.#showContrast();
     this.#showMode();
   }
 
@@ -209,20 +248,32 @@ export class AllotPopup {
     return this.#actor.visible;
   }
 
-  toggle() {
+  /** @param {boolean} [byKeyboard] */
+  toggle(byKeyboard = false) {
     if (this.isOpen) {
       this.close();
     } else {
-      this.open();
+      this.open(byKeyboard);
     }
   }
 
-  /** Opens under the panel button, always in light-dismiss mode. */
-  open() {
+  /**
+   * Opens under the panel button, always in light-dismiss mode. A keyboard user lands on the first
+   * control; a pointer user does not get a focus ring they did not ask for, and Tab still starts
+   * there.
+   *
+   * @param {boolean} [byKeyboard]
+   */
+  open(byKeyboard = false) {
     this.#model.resetForOpen();
+    this.#announcer.reset();
     this.#actor.show();
     this.render(false);
     this.#applyMode();
+    Main.ctrlAltTabManager.addGroup(this.#actor, APP_NAME, SWITCHER_ICON);
+    if (byKeyboard) {
+      this.#stayOpenButton.grab_key_focus();
+    }
     this.#indicator.setOpen(true);
     this.#onOpenChanged(true);
   }
@@ -260,6 +311,7 @@ export class AllotPopup {
     this.#more.menu.close(BoxPointer.PopupAnimation.NONE);
     this.#endDrag();
     this.#releaseModal();
+    Main.ctrlAltTabManager.removeGroup(this.#actor);
     this.#actor.hide();
     this.#cancelConfirms();
     this.#indicator.setOpen(false);
@@ -322,11 +374,15 @@ export class AllotPopup {
       items.push(textItem("nothing", "allot-nothing", NOTHING_TEXT));
     }
     this.#showItems(items, animate);
-    this.#list.opacity = isLastKnown ? LAST_KNOWN_OPACITY : OPAQUE;
+    this.#list.opacity = isLastKnown ? dimmedOpacity(LAST_KNOWN_OPACITY) : OPAQUE;
     this.#scroll.visible = items.length > 0;
 
     if (this.isOpen && !this.#model.isPinned) {
       this.#placeAnchored();
+    }
+    this.#moveFocusOffDeadControl();
+    for (const text of this.#announcer.observe(this.#model.snapshot)) {
+      this.#actor.get_accessible()?.emit("notification", text, Atk.Live.POLITE);
     }
   }
 
@@ -334,6 +390,11 @@ export class AllotPopup {
     this.close();
     this.#appIcons.destroy();
     Main.layoutManager.disconnect(this.#monitorsChangedId);
+    St.Settings.get().disconnect(this.#highContrastId);
+    if (this.#contrastLoaded) {
+      const theme = St.ThemeContext.get_for_stage(global.stage).get_theme();
+      theme.unload_stylesheet(this.#contrastSheet);
+    }
     this.#more.menu.destroy();
     this.#resources.destroy();
     Main.layoutManager.removeChrome(this.#actor);
@@ -353,10 +414,29 @@ export class AllotPopup {
     this.#glyph.opacity = glyph === "idle" ? DIMMED : OPAQUE;
   }
 
+  #showContrast() {
+    const on = St.Settings.get().high_contrast;
+    if (on !== this.#contrastLoaded) {
+      const theme = St.ThemeContext.get_for_stage(global.stage).get_theme();
+      if (on) {
+        theme.load_stylesheet(this.#contrastSheet);
+      } else {
+        theme.unload_stylesheet(this.#contrastSheet);
+      }
+      this.#contrastLoaded = on;
+    }
+    setClass(this.#actor, "allot-high-contrast", on);
+  }
+
   #toggleStayOpen() {
     const wasPinned = this.#model.isPinned;
+    const hadFocus = this.#stayOpenButton.has_key_focus();
     this.#model.toggleStayOpen();
     this.#applyMode();
+    // Releasing the modal grab hands focus back to where it came from, out of the popup.
+    if (hadFocus) {
+      this.#stayOpenButton.grab_key_focus();
+    }
     if (wasPinned) {
       this.#placeAnchored();
     }
@@ -412,17 +492,30 @@ export class AllotPopup {
 
   /** @param {Clutter.Event} event */
   #onCapturedEvent(event) {
-    if (this.#modal === null) {
-      return Clutter.EVENT_PROPAGATE;
-    }
     const type = event.type();
-    // Esc first takes back a Kill? confirm, then closes.
+    // Esc first takes back a Kill? confirm, then closes a light-dismiss popup.
     if (type === Clutter.EventType.KEY_PRESS && event.get_key_symbol() === Clutter.KEY_Escape) {
       if (this.#model.isConfirming) {
         this.#cancelConfirms();
-      } else {
-        this.close();
+        return Clutter.EVENT_STOP;
       }
+      if (this.#modal !== null) {
+        this.close();
+        return Clutter.EVENT_STOP;
+      }
+      return Clutter.EVENT_PROPAGATE;
+    }
+    if (this.#modal === null) {
+      return Clutter.EVENT_PROPAGATE;
+    }
+    // The grab keeps key presses from the stage, where St's focus manager handles Tab.
+    if (type === Clutter.EventType.KEY_PRESS && event.get_key_symbol() in TAB_DIRECTIONS) {
+      const focus = global.stage.key_focus;
+      this.#actor.navigate_focus(
+        focus !== null && this.#inPopup(focus) ? focus : null,
+        TAB_DIRECTIONS[event.get_key_symbol()],
+        true,
+      );
       return Clutter.EVENT_STOP;
     }
     const isPress =
@@ -581,12 +674,41 @@ export class AllotPopup {
         continue;
       }
       this.#views.delete(key);
+      this.#moveFocusOutOf(view.actor);
       if (animate) {
         collapse(view.actor);
       } else {
         view.actor.destroy();
       }
     }
+  }
+
+  /**
+   * A Kill just sent, or the Remove of a request that started, is no control any more. Without
+   * this the keyboard would be stranded on it, and Tab would start over from the popup.
+   */
+  #moveFocusOffDeadControl() {
+    const focus = global.stage.key_focus;
+    if (focus instanceof St.Widget && !focus.can_focus && this.#inPopup(focus)) {
+      this.#actor.navigate_focus(focus, St.DirectionType.TAB_FORWARD, true);
+    }
+  }
+
+  /** @param {Clutter.Actor} leaving */
+  #moveFocusOutOf(leaving) {
+    const focus = global.stage.key_focus;
+    if (focus instanceof St.Widget && leaving.contains(focus)) {
+      focus.can_focus = false;
+      this.#actor.navigate_focus(focus, St.DirectionType.TAB_FORWARD, true);
+    }
+  }
+
+  /**
+   * @param {Clutter.Actor} actor
+   * @returns {boolean} A control of the popup, rather than the popup itself.
+   */
+  #inPopup(actor) {
+    return actor !== this.#actor && this.#actor.contains(actor);
   }
 
   /** @param {number} lease */
@@ -631,12 +753,14 @@ export class AllotPopup {
 /**
  * @param {string} name The tooltip-free accessible name.
  * @param {St.Icon} icon
+ * @param {Atk.Role} role
  * @returns {St.Button}
  */
-function headerButton(name, icon) {
+function headerButton(name, icon, role) {
   return new St.Button({
     style_class: "icon-button allot-header-button",
     accessible_name: name,
+    accessible_role: role,
     can_focus: true,
     child: icon,
   });

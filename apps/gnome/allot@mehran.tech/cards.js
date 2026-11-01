@@ -3,6 +3,7 @@ import GLib from "gi://GLib";
 import Pango from "gi://Pango";
 import St from "gi://St";
 
+import { cardDescription, detailText } from "./lib/accessible-text.js";
 import { QUIET_TICKS } from "./lib/benchmark-status.js";
 import { DO_NOT_DISTURB_TEXT, WELCOME_BODY, WELCOME_TITLE } from "./lib/snapshot.js";
 
@@ -30,8 +31,21 @@ const DASH_PX = 6;
  * @property {(lease: number) => void} remove
  * @property {(lease: number) => void} cancel
  *   Focus left a Kill? confirm.
+ * @property {(actor: Clutter.Actor) => void} focused
+ *   The keyboard reached this card, which may be scrolled out of sight.
  * @property {(exe: string | null) => import("gi://Gio").Icon | null} appIcon
  */
+
+/**
+ * How opaque a dimmed part stays: dimming says nothing in high contrast, where the word beside it
+ * does the work and the text must keep its full contrast.
+ *
+ * @param {number} dimmed
+ * @returns {number}
+ */
+export function dimmedOpacity(dimmed) {
+  return St.Settings.get().high_contrast ? 255 : dimmed;
+}
 
 /**
  * @param {string} styleClass
@@ -152,6 +166,10 @@ export class JobCardView {
       y_align: Clutter.ActorAlign.CENTER,
     });
     this.#action.connect("clicked", () => this.#pressed());
+    this.#action.connect("key-focus-in", () => {
+      this.#describeAction();
+      this.#actions.focused(this.actor);
+    });
     this.#action.connect("key-focus-out", () => {
       if (this.#row?.card.action === "confirm") {
         this.#actions.cancel(this.#row.id);
@@ -216,7 +234,7 @@ export class JobCardView {
     this.#chipIcon.visible = card.isBenchmark;
     setClass(this.#chip, "allot-chip-benchmark", card.isBenchmark);
     for (const actor of [this.#tile, this.#command, this.#chip]) {
-      actor.opacity = card.isEnded ? ENDED_OPACITY : 255;
+      actor.opacity = card.isEnded ? dimmedOpacity(ENDED_OPACITY) : 255;
     }
 
     this.#showAction(card, before?.card.action ?? "none");
@@ -251,6 +269,9 @@ export class JobCardView {
     button.can_focus = card.action !== "none";
     if (card.action === previous && button.get_child() !== null) {
       return;
+    }
+    if (button.has_key_focus()) {
+      this.#describeAction();
     }
     switch (card.action) {
       case "kill":
@@ -292,11 +313,21 @@ export class JobCardView {
     this.#detail.clutter_text.ellipsize = wraps
       ? Pango.EllipsizeMode.NONE
       : Pango.EllipsizeMode.END;
-    this.#detail.accessible_name = card.detailTooltip || card.strong + card.detail;
+    if (this.#row !== null) {
+      this.#detail.accessible_name = detailText(this.#row);
+    }
     setClass(this.#detail, "allot-danger", card.detailIsDanger);
     this.#time.text = card.time;
     this.#time.visible = card.time !== "";
     setClass(this.#time, "allot-warning", card.timeIsWarning);
+  }
+
+  // Only when focus arrives or the action changes: the text holds the ticking time, and Orca
+  // reads out every change to the focused control's description.
+  #describeAction() {
+    if (this.#row !== null) {
+      this.#action.get_accessible()?.set_description(cardDescription(this.#row));
+    }
   }
 
   #pressed() {
@@ -378,8 +409,9 @@ class EdgeBar {
     }
     setSource(context, node.get_foreground_color());
     if (this.#isDashed) {
-      for (let x = 0; x < width; x += DASH_PX * 2) {
-        context.rectangle(x, 0, DASH_PX, height);
+      const dash = DASH_PX * St.ThemeContext.get_for_stage(global.stage).scale_factor;
+      for (let x = 0; x < width; x += dash * 2) {
+        context.rectangle(x, 0, dash, height);
       }
     } else {
       context.rectangle(0, 0, width * this.#share.value, height);

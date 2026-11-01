@@ -58,13 +58,14 @@ export default class AllotExtension extends Extension {
     this._transport = new SoupTransport();
     this._indicator = new AllotIndicator(
       iconDirectory,
-      () => this._popup?.toggle(),
+      (byKeyboard) => this._popup?.toggle(byKeyboard),
       () => this._openContextMenu(),
     );
     this._popup = new AllotPopup({
       model: this._model,
       indicator: this._indicator,
       iconDirectory,
+      contrastSheet: this.dir.get_child("high-contrast.css"),
       logsPath: paths.logs,
       onOpenChanged: (open) => {
         this._poller?.setPopupOpen(open);

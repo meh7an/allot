@@ -1,10 +1,13 @@
+import Atk from "gi://Atk";
 import Clutter from "gi://Clutter";
+import Gio from "gi://Gio";
 import GLib from "gi://GLib";
 import St from "gi://St";
 
 import * as Main from "resource:///org/gnome/shell/ui/main.js";
 
-import { label, setClass, setSource } from "./cards.js";
+import { label, setSource } from "./cards.js";
+import { driveDescription, driveName, meterColumns, meterName } from "./lib/accessible-text.js";
 
 /** @import { DriveRow, MeterRow, ResourcesView } from "./lib/resources-view.js" */
 
@@ -22,6 +25,8 @@ const TICK_HEIGHT_PX = 14;
 const SPARK_STROKE_PX = 1.4;
 // One line: the fold measures its rows without a width, so a wrapped line would be cut.
 const ALL_OFF_TEXT = "All meters are off. Turn them on from ⋯ › Meters.";
+const INTERFACE_SCHEMA = "org.gnome.desktop.interface";
+const TEXT_SCALE = "text-scaling-factor";
 
 /**
  * The docked Resources card: a header that folds the rows open and shut, and the rows themselves.
@@ -50,6 +55,10 @@ export class ResourcesCard {
   #driveViews = new Map();
   /** @type {boolean | null} */
   #isExpanded = null;
+  #interfaceSettings = new Gio.Settings({ schema_id: INTERFACE_SCHEMA });
+  #textScaleId;
+  /** @type {import("./lib/accessible-text.js").MeterColumns} */
+  #columns;
 
   /**
    * @param {object} options
@@ -59,6 +68,13 @@ export class ResourcesCard {
   constructor(options) {
     this.#onToggle = options.onToggle;
     this.#onHeightChanged = options.onHeightChanged;
+    this.#columns = this.#readColumns();
+    this.#textScaleId = this.#interfaceSettings.connect(`changed::${TEXT_SCALE}`, () => {
+      this.#columns = this.#readColumns();
+      for (const view of [...this.#meterViews.values(), ...this.#driveViews.values()]) {
+        view.setColumns(this.#columns);
+      }
+    });
 
     this.#summary = label("allot-resources-summary");
     this.#summary.x_expand = true;
@@ -73,6 +89,7 @@ export class ResourcesCard {
       x_expand: true,
       child: headerBox,
     });
+    this.#header.add_accessible_state(Atk.StateType.EXPANDABLE);
     this.#header.connect("clicked", () => this.#onToggle());
 
     this.#meters = new St.BoxLayout({ orientation: Clutter.Orientation.VERTICAL });
@@ -146,8 +163,14 @@ export class ResourcesCard {
   }
 
   destroy() {
+    this.#interfaceSettings.disconnect(this.#textScaleId);
     this.#hover.destroy();
     this.actor.destroy();
+  }
+
+  /** @returns {import("./lib/accessible-text.js").MeterColumns} */
+  #readColumns() {
+    return meterColumns(this.#interfaceSettings.get_double(TEXT_SCALE));
   }
 
   /** @param {ResourcesView} view */
@@ -158,6 +181,11 @@ export class ResourcesCard {
     }
     this.#chevron.icon_name = view.isExpanded ? "pan-down-symbolic" : "pan-up-symbolic";
     this.#header.accessible_name = view.isExpanded ? "Collapse resources" : "Expand resources";
+    if (view.isExpanded) {
+      this.#header.add_accessible_state(Atk.StateType.EXPANDED);
+    } else {
+      this.#header.remove_accessible_state(Atk.StateType.EXPANDED);
+    }
   }
 
   /**
@@ -227,7 +255,7 @@ export class ResourcesCard {
    * Keeps one view per row id, in the rows' order.
    *
    * @template {{ id: string }} Row
-   * @template {{ actor: Clutter.Actor, update: (row: Row, animate: boolean) => void }} View
+   * @template {RowView<Row>} View
    * @param {Row[]} rows
    * @param {Map<string, View>} views
    * @param {St.BoxLayout} box
@@ -247,6 +275,7 @@ export class ResourcesCard {
       const isNew = view === undefined;
       if (view === undefined) {
         view = make();
+        view.setColumns(this.#columns);
         views.set(row.id, view);
         box.add_child(view.actor);
       }
@@ -256,6 +285,42 @@ export class ResourcesCard {
   }
 }
 
+/**
+ * The name and description a row gives assistive tech. The description is set only when it
+ * changes, since each set tells every listening screen reader.
+ *
+ * @param {St.Widget} actor
+ * @param {string} name
+ * @param {string} description
+ */
+function describeRow(actor, name, description) {
+  actor.accessible_name = name;
+  if (actor.allotDescription !== description) {
+    actor.allotDescription = description;
+    actor.get_accessible()?.set_description(description);
+  }
+}
+
+/**
+ * One row's view, kept by row id.
+ *
+ * @template Row
+ * @typedef {object} RowView
+ * @property {Clutter.Actor} actor
+ * @property {(row: Row, animate: boolean) => void} update
+ * @property {(columns: import("./lib/accessible-text.js").MeterColumns) => void} setColumns
+ */
+
+/**
+ * @param {St.Widget} label
+ * @param {St.Widget} value
+ * @param {import("./lib/accessible-text.js").MeterColumns} columns
+ */
+function showColumns(label, value, columns) {
+  label.style = `width: ${columns.label}px;`;
+  value.style = `width: ${columns.value}px;`;
+}
+
 /** One bullet-bar row: label, bar and value, with the detail in a hover label. */
 class MeterRowView {
   actor;
@@ -263,6 +328,7 @@ class MeterRowView {
   #bar;
   #spark;
   #value;
+  #valueBox;
 
   /** @param {HoverLabel} hover */
   constructor(hover) {
@@ -272,13 +338,18 @@ class MeterRowView {
     this.#value = label("allot-meter-value");
     this.#value.x_expand = true;
     this.#value.x_align = Clutter.ActorAlign.END;
-    const valueBox = new St.BoxLayout({ style_class: "allot-meter-value-box" });
-    valueBox.add_child(this.#spark.actor);
-    valueBox.add_child(this.#value);
+    this.#valueBox = new St.BoxLayout({ style_class: "allot-meter-value-box" });
+    this.#valueBox.add_child(this.#spark.actor);
+    this.#valueBox.add_child(this.#value);
     this.actor = hover.attach(new St.BoxLayout({ style_class: "allot-meter-row" }));
     this.actor.add_child(this.#label);
     this.actor.add_child(this.#bar.actor);
-    this.actor.add_child(valueBox);
+    this.actor.add_child(this.#valueBox);
+  }
+
+  /** @param {import("./lib/accessible-text.js").MeterColumns} columns */
+  setColumns(columns) {
+    showColumns(this.#label, this.#valueBox, columns);
   }
 
   /**
@@ -289,6 +360,7 @@ class MeterRowView {
     this.#label.text = row.label;
     this.#value.text = row.value;
     this.actor.allotHover = row.detail;
+    describeRow(this.actor, meterName(row), row.detail);
     this.#bar.update(row, animate);
     this.#spark.update(row.spark);
   }
@@ -301,6 +373,7 @@ class DriveRowView {
   #bar;
   #activity;
   #value;
+  #valueBox;
 
   /** @param {HoverLabel} hover */
   constructor(hover) {
@@ -310,8 +383,8 @@ class DriveRowView {
     this.#value = label("allot-meter-value");
     this.#value.x_expand = true;
     this.#value.x_align = Clutter.ActorAlign.END;
-    const valueBox = new St.BoxLayout({ style_class: "allot-meter-value-box" });
-    valueBox.add_child(this.#value);
+    this.#valueBox = new St.BoxLayout({ style_class: "allot-meter-value-box" });
+    this.#valueBox.add_child(this.#value);
     const middle = new St.BoxLayout({
       style_class: "allot-drive-middle",
       orientation: Clutter.Orientation.VERTICAL,
@@ -323,7 +396,12 @@ class DriveRowView {
     this.actor = hover.attach(new St.BoxLayout({ style_class: "allot-meter-row" }));
     this.actor.add_child(this.#label);
     this.actor.add_child(middle);
-    this.actor.add_child(valueBox);
+    this.actor.add_child(this.#valueBox);
+  }
+
+  /** @param {import("./lib/accessible-text.js").MeterColumns} columns */
+  setColumns(columns) {
+    showColumns(this.#label, this.#valueBox, columns);
   }
 
   /**
@@ -336,6 +414,7 @@ class DriveRowView {
     this.#activity.text = row.activity;
     this.#activity.visible = row.activity !== "";
     this.actor.allotHover = row.id;
+    describeRow(this.actor, driveName(row), driveDescription(row));
     this.#bar.update(row.used, animate);
   }
 }
@@ -412,36 +491,41 @@ class BulletBar {
       return;
     }
 
-    const top = (height - BAR_HEIGHT_PX) / 2;
+    // The surface is in device pixels, so at 200% these sizes must double like the CSS ones do.
+    const scale = St.ThemeContext.get_for_stage(global.stage).scale_factor;
+    const barHeight = BAR_HEIGHT_PX * scale;
+    const top = (height - barHeight) / 2;
     const headroomX = width * row.headroom;
 
     context.save();
-    roundedRectangle(context, 0, top, width, BAR_HEIGHT_PX, BAR_RADIUS_PX);
+    roundedRectangle(context, 0, top, width, barHeight, BAR_RADIUS_PX * scale);
     context.clip();
     setSource(context, track);
-    context.rectangle(0, top, headroomX, BAR_HEIGHT_PX);
+    context.rectangle(0, top, headroomX, barHeight);
     context.fill();
-    paintHatch(context, hatch, headroomX, top, width - headroomX, BAR_HEIGHT_PX);
+    paintHatch(context, hatch, headroomX, top, width - headroomX, barHeight);
     const usedWidth = width * this.#used.value;
     setSource(context, node.get_foreground_color());
-    context.rectangle(0, top, usedWidth, BAR_HEIGHT_PX);
+    context.rectangle(0, top, usedWidth, barHeight);
     context.fill();
     if (this.#shared.value > 0) {
       const sharedWidth = Math.min(usedWidth, width * this.#shared.value);
       setSource(context, tint);
-      context.rectangle(usedWidth - sharedWidth, top, sharedWidth, BAR_HEIGHT_PX);
+      context.rectangle(usedWidth - sharedWidth, top, sharedWidth, barHeight);
       context.fill();
     }
     context.restore();
 
     if (row.reserved !== null) {
-      const x = Math.min(width - TICK_WIDTH_PX, width * row.reserved - TICK_WIDTH_PX / 2);
-      const tickTop = (height - TICK_HEIGHT_PX) / 2;
+      const tickWidth = TICK_WIDTH_PX * scale;
+      const tickHeight = TICK_HEIGHT_PX * scale;
+      const x = Math.min(width - tickWidth, width * row.reserved - tickWidth / 2);
+      const tickTop = (height - tickHeight) / 2;
       setSource(context, ring);
-      context.rectangle(x - 1, tickTop - 1, TICK_WIDTH_PX + 2, TICK_HEIGHT_PX + 2);
+      context.rectangle(x - scale, tickTop - scale, tickWidth + 2 * scale, tickHeight + 2 * scale);
       context.fill();
       setSource(context, tick);
-      context.rectangle(x, tickTop, TICK_WIDTH_PX, TICK_HEIGHT_PX);
+      context.rectangle(x, tickTop, tickWidth, tickHeight);
       context.fill();
     }
     context.$dispose();
@@ -472,7 +556,8 @@ class DriveBar {
     const context = this.actor.get_context();
     const [width, height] = this.actor.get_surface_size();
     const node = this.actor.get_theme_node();
-    roundedRectangle(context, 0, 0, width, height, BAR_RADIUS_PX);
+    const scale = St.ThemeContext.get_for_stage(global.stage).scale_factor;
+    roundedRectangle(context, 0, 0, width, height, BAR_RADIUS_PX * scale);
     context.clip();
     const [hasTrack, track] = node.lookup_color("-allot-track-color", false);
     if (hasTrack) {

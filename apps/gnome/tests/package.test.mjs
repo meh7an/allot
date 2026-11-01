@@ -20,3 +20,16 @@ test("metadata names the folder's UUID and GNOME Shell 48 to 51", () => {
   assert.equal(metadata.uuid, "allot@mehran.tech");
   assert.deepEqual(metadata["shell-version"], ["48", "49", "50", "51"]);
 });
+
+test("the high-contrast sheet styles only classes the popup has", () => {
+  const css = (name) => readFileSync(new URL(name, EXTENSION_DIR), "utf8");
+  const known = css("stylesheet.css") + css("stylesheet-dark.css");
+  const sources = ["cards.js", "popup.js", "resources-card.js"].map(css).join("");
+  const classes = new Set(css("high-contrast.css").match(/\.allot-[a-z-]+/g));
+
+  assert.ok(classes.size > 0);
+  for (const name of classes) {
+    const bare = name.slice(1);
+    assert.ok(known.includes(name) || sources.includes(bare), `nothing has ${name}`);
+  }
+});

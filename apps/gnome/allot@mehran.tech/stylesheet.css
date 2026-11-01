@@ -109,7 +109,7 @@
 
 .allot-chip {
   spacing: 4px;
-  height: 18px;
+  min-height: 18px;
   padding: 0 8px;
   border-radius: 9px;
   font-size: 0.8em;
@@ -125,7 +125,7 @@
 
 .allot-action {
   min-width: 32px;
-  height: 32px;
+  min-height: 32px;
   border-radius: 6px;
   font-size: 0.85em;
 }
@@ -270,7 +270,7 @@
 }
 
 .allot-resources-header {
-  height: 40px;
+  min-height: 40px;
   padding: 0 8px 0 12px;
   border-radius: 10px;
 }
@@ -420,4 +420,11 @@
 .allot-recent-meta {
   font-size: 0.85em;
   font-feature-settings: "tnum";
+}
+
+/* The keyboard's place, which a hover tint alone would not show. */
+
+.allot-action:focus,
+.allot-resources-header:focus {
+  box-shadow: inset 0 0 0 2px -st-accent-color;
 }

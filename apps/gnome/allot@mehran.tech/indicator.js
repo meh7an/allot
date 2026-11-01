@@ -20,7 +20,7 @@ export const AllotIndicator = GObject.registerClass(
   class AllotIndicator extends PanelMenu.Button {
     /**
      * @param {Gio.File} iconDirectory
-     * @param {() => void} onActivate
+     * @param {(byKeyboard: boolean) => void} onActivate
      * @param {() => void} onContextMenu
      */
     _init(iconDirectory, onActivate, onContextMenu) {
@@ -62,7 +62,7 @@ export const AllotIndicator = GObject.registerClass(
         return Clutter.EVENT_STOP;
       }
       if (isPress || type === Clutter.EventType.TOUCH_BEGIN) {
-        this._onActivate();
+        this._onActivate(false);
         return Clutter.EVENT_STOP;
       }
       return Clutter.EVENT_PROPAGATE;
@@ -70,7 +70,7 @@ export const AllotIndicator = GObject.registerClass(
 
     vfunc_key_press_event(event) {
       if (ACTIVATING_KEYS.includes(event.get_key_symbol())) {
-        this._onActivate();
+        this._onActivate(true);
         return Clutter.EVENT_STOP;
       }
       if (event.get_key_symbol() === Clutter.KEY_Menu) {
