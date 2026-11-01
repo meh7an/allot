@@ -59,6 +59,21 @@ import Testing
         #expect(saved.map(\.firstRunDone) == [true])
     }
 
+    @Test func notificationsOffShowOnTheCardAndInTheMenuCount() throws {
+        let model = PanelModel()
+        let state = try Fixtures.state("first-run")
+        model.apply(PollResult(status: .running, state: state), lastKnown: state)
+
+        model.setNotificationPermission(.off)
+        let off = model.snapshot.welcome
+        model.setNotificationPermission(.allowed)
+
+        #expect(off?.notificationsOff == true)
+        #expect(model.snapshot.welcome?.notificationsOff == false)
+        #expect(MenuCounts.notifications(NotificationToggles(), off: true) == "Off")
+        #expect(MenuCounts.notifications(NotificationToggles(), off: false) == "3 of 5")
+    }
+
     @Test func translocatedLoginItemCannotBeTurnedOn() throws {
         let model = PanelModel()
         model.loginItem = MemoryLoginItem(.translocated)

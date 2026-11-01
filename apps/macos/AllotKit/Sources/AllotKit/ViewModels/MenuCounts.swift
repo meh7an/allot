@@ -9,7 +9,12 @@ public enum MenuCounts {
         return "\(on.filter { $0 }.count) of \(meterItems)"
     }
 
-    public static func notifications(_ toggles: NotificationToggles) -> String {
+    /// For example `3 of 5`, or `Off` while macOS has notifications off for the app, since then
+    /// none of them shows.
+    public static func notifications(_ toggles: NotificationToggles, off: Bool = false) -> String {
+        if off {
+            return "Off"
+        }
         let on = [
             toggles.serviceStopped,
             toggles.runningLong,

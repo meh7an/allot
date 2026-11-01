@@ -41,6 +41,9 @@ public final class PanelModel {
     /// The login item as last read; ``refreshLogin()`` reads it again.
     public private(set) var login = LoginItemStatus.off
 
+    /// Whether macOS lets the app notify, as last read; the app reads it when the panel opens.
+    public private(set) var notificationPermission = NotificationPermission.notAsked
+
     /// The row a notification's Show asked for (`job:<lease>` or `recent`), until the panel
     /// has scrolled to it; empty for the top.
     public var scrollTarget: String?
@@ -127,7 +130,9 @@ public final class PanelModel {
             jobs: jobs,
             stops: frozenStops.isEmpty ? stops.views : frozenStops,
             nowMs: clock.nowMs,
-            firstRun: FirstRunState(isDone: settings.firstRunDone, login: login))
+            firstRun: FirstRunState(
+                isDone: settings.firstRunDone, login: login,
+                notificationsOff: notificationPermission.isOff))
         // Observation reports every assignment, so equal values are skipped.
         if next != snapshot {
             snapshot = next
@@ -174,6 +179,15 @@ public final class PanelModel {
             login = status
             refresh()
         }
+    }
+
+    /// Shows the notification permission macOS reports, in the menu and the first-run card.
+    public func setNotificationPermission(_ permission: NotificationPermission) {
+        guard permission != notificationPermission else {
+            return
+        }
+        notificationPermission = permission
+        refresh()
     }
 
     /// The first-run card's switch and the menus' Launch at Login.

@@ -13,6 +13,9 @@ struct PanelActions {
     let setLaunchAtLogin: (Bool) -> Void
     let openLoginItems: () -> Void
 
+    /// System Settings › Notifications › Allot, while notifications are off there.
+    let openNotificationSettings: () -> Void
+
     /// Debug builds: the handoff scenarios More options lists, and showing one.
     let scenarios: [String]
     let showScenario: (String) -> Void
@@ -209,6 +212,7 @@ struct PanelView: View {
             startService: actions.startService,
             setLaunchAtLogin: actions.setLaunchAtLogin,
             openLoginItems: actions.openLoginItems,
+            openNotificationSettings: actions.openNotificationSettings,
             finishFirstRun: { model.finishFirstRun() })
     }
 

@@ -59,6 +59,7 @@ struct WelcomeCardView: View {
     let card: WelcomeCard
     let setLaunchAtLogin: (Bool) -> Void
     let openLoginItems: () -> Void
+    let openNotificationSettings: () -> Void
     let done: () -> Void
 
     var body: some View {
@@ -106,6 +107,15 @@ struct WelcomeCardView: View {
             .frame(minHeight: 40)
             .overlay(alignment: .top) {
                 Rectangle().fill(Tokens.separator).frame(height: 1)
+            }
+            if card.notificationsOff {
+                HStack(spacing: 4) {
+                    Text("Notifications are \(NotificationPermission.offHint.lowercased())")
+                    Button("Open Notification Settings", action: openNotificationSettings)
+                        .buttonStyle(.link)
+                }
+                .font(Tokens.Font.small)
+                .foregroundStyle(.secondary)
             }
             HStack {
                 Spacer()

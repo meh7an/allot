@@ -1,5 +1,5 @@
 import AllotKit
-import Foundation
+import AppKit
 import UserNotifications
 import os
 
@@ -22,17 +22,41 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         center.setNotificationCategories(Set(Category.allCases.map(\.category)))
     }
 
+    /// Called whenever the permission has been read, so the menu and the first-run card can
+    /// say when notifications are off.
+    var onPermission: ((NotificationPermission) -> Void)?
+
     /// Asks once; macOS remembers the answer, and later calls return it without a prompt.
     func requestPermission() {
         Task {
             do {
                 let granted = try await UNUserNotificationCenter.current()
                     .requestAuthorization(options: [.alert, .sound])
-                Self.log.info("notifications allowed: \(granted)")
+                Self.log.notice("notifications allowed: \(granted)")
             } catch {
                 let reason = String(describing: error)
                 Self.log.error("notification permission: \(reason, privacy: .public)")
             }
+            await refreshPermission()
+        }
+    }
+
+    /// Reads the permission again: it changes in System Settings at any time.
+    func refreshPermission() async {
+        let permission: NotificationPermission = switch await Self.authorization() {
+        case .denied: .off
+        case .notDetermined: .notAsked
+        default: .allowed
+        }
+        onPermission?(permission)
+    }
+
+    /// System Settings › Notifications › Allot.
+    static func openSettings() {
+        let id = Bundle.main.bundleIdentifier ?? "tech.mehran.allot"
+        let page = "x-apple.systempreferences:com.apple.Notifications-Settings.extension?id=\(id)"
+        if let url = URL(string: page) {
+            NSWorkspace.shared.open(url)
         }
     }
 
@@ -53,13 +77,23 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         Task {
             let center = UNUserNotificationCenter.current()
             // Posting before permission fails, so a first notification asks for it.
-            if await Self.authorization() == .notDetermined {
+            var status = await Self.authorization()
+            if status == .notDetermined {
                 _ = try? await center.requestAuthorization(options: [.alert, .sound])
+                status = await Self.authorization()
+            }
+            // Notice level, so the log keeps it: macOS drops info messages.
+            if status == .denied {
+                let count = requests.count
+                Self.log.notice(
+                    "\(count) not shown: off for Allot in System Settings › Notifications")
+                onPermission?(.off)
+                return
             }
             for request in requests {
                 do {
                     try await center.add(request)
-                    Self.log.info("notified \(request.identifier, privacy: .public)")
+                    Self.log.notice("notified \(request.identifier, privacy: .public)")
                 } catch {
                     let tag = request.identifier
                     let reason = String(describing: error)

@@ -41,7 +41,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let model = makeModel(settingsFile: data.settingsFile)
         let notifier = Notifier()
         notifier.install()
+        notifier.onPermission = { [weak model] in model?.setNotificationPermission($0) }
         self.notifier = notifier
+        Task {
+            await notifier.refreshPermission()
+        }
         let client = DaemonClient.forInstall(data)
         let poller = DaemonPoller(
             client: client,
@@ -57,9 +61,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let panel = PanelController(model: model, logDirectory: data.logDirectory)
         #endif
         self.panel = panel
-        panel.onOpenChanged = { [weak self, weak poller] open in
+        panel.onOpenChanged = { [weak self, weak poller, weak notifier] open in
             poller?.setPanelOpen(open)
             self?.ticker?.isOpen = open
+            // System Settings may have turned notifications on or off meanwhile.
+            if open, let notifier {
+                Task {
+                    await notifier.refreshPermission()
+                }
+            }
         }
         panel.onStartService = { [weak self] in self?.startService() }
         panel.onSetLaunchAtLogin = { [weak self] in self?.setLaunchAtLogin($0) }

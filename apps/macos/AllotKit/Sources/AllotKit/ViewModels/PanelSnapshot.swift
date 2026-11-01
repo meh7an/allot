@@ -117,9 +117,13 @@ public struct FirstRunState: Sendable, Equatable {
     /// The login item, for the card's Launch at login switch.
     public let login: LoginItemStatus
 
-    public init(isDone: Bool, login: LoginItemStatus) {
+    /// macOS has notifications off for the app, so the card says where to turn them on.
+    public let notificationsOff: Bool
+
+    public init(isDone: Bool, login: LoginItemStatus, notificationsOff: Bool = false) {
         self.isDone = isDone
         self.login = login
+        self.notificationsOff = notificationsOff
     }
 }
 
@@ -132,6 +136,14 @@ public struct WelcomeCard: Sendable, Equatable {
 
     /// The state of its Launch at login switch.
     public let login: LoginItemStatus
+
+    /// Notifications are off in System Settings; the card offers to open them.
+    public let notificationsOff: Bool
+
+    public init(login: LoginItemStatus, notificationsOff: Bool = false) {
+        self.login = login
+        self.notificationsOff = notificationsOff
+    }
 }
 
 /// Everything the panel header and job list show for one poll, built by a pure function so
@@ -265,7 +277,8 @@ public struct PanelSnapshot: Sendable, Equatable {
         let recent = groups.isEmpty ? recentLines(state, now: now) : []
         let welcome = !lastKnown && state != nil && state?.firstSessionAtMs == nil
             && firstRun?.isDone == false
-            ? firstRun.map { WelcomeCard(login: $0.login) } : nil
+            ? firstRun.map { WelcomeCard(login: $0.login, notificationsOff: $0.notificationsOff) }
+            : nil
         return PanelSnapshot(
             header: header(
                 status, running: alive(running), waiting: alive(waiting), phase: benchmarkPhase),

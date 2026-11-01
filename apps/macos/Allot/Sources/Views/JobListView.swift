@@ -9,6 +9,7 @@ struct CardActions {
     let startService: () -> Void
     let setLaunchAtLogin: (Bool) -> Void
     let openLoginItems: () -> Void
+    let openNotificationSettings: () -> Void
     let finishFirstRun: () -> Void
 }
 
@@ -48,7 +49,9 @@ struct JobListView: View {
             if let welcome = snapshot.welcome {
                 WelcomeCardView(
                     card: welcome, setLaunchAtLogin: actions.setLaunchAtLogin,
-                    openLoginItems: actions.openLoginItems, done: actions.finishFirstRun)
+                    openLoginItems: actions.openLoginItems,
+                    openNotificationSettings: actions.openNotificationSettings,
+                    done: actions.finishFirstRun)
                     .listRow(rowTransition)
             }
             if !snapshot.recent.isEmpty {

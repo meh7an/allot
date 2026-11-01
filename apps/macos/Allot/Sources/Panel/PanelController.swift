@@ -361,6 +361,7 @@ final class PanelController: NSObject, NSWindowDelegate {
             startService: { [weak self] in self?.onStartService?() },
             setLaunchAtLogin: { [weak self] in self?.onSetLaunchAtLogin?($0) },
             openLoginItems: { [weak self] in self?.onOpenLoginItems?() },
+            openNotificationSettings: { Notifier.openSettings() },
             scenarios: scenarios,
             showScenario: { [weak self] in self?.onShowScenario?($0) },
             testNotifications: offersTestNotifications

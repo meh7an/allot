@@ -38,7 +38,12 @@ struct HeaderView: View {
                     label: "Stay open",
                     isOn: mode.isStayOpen,
                     action: actions.toggleStayOpen)
-                MoreOptionsMenu(model: model, actions: actions)
+                MoreOptionsMenu(
+                    model: model, actions: actions, settings: model.settings,
+                    login: model.login, sharesMemory: model.resources.sharesMemory,
+                    notificationsOff: model.notificationPermission.isOff,
+                    scenarios: actions.scenarios)
+                    .equatable()
                     .padding(.leading, Tokens.buttonGap)
             }
             .animation(Tokens.reveal, value: mode.isStayOpen)
@@ -98,18 +103,31 @@ private struct HeaderButton: View {
 /// More options: the Meters and Notifications check items with their counts, Launch at Login,
 /// Open Logs and Quit; Debug builds add the handoff scenarios and Test Notifications. A check
 /// item closes the menu, as every macOS menu does.
-private struct MoreOptionsMenu: View {
+///
+/// It is rebuilt only when what it shows changes: every rebuild replaces the native menu and
+/// closes an open submenu, and the header around it updates with every poll and every second.
+private struct MoreOptionsMenu: View, Equatable {
     let model: PanelModel
     let actions: PanelActions
+    let settings: TraySettings
+    let login: LoginItemStatus
+    let sharesMemory: Bool
+    let notificationsOff: Bool
+    let scenarios: [String]
+
+    nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.settings == rhs.settings && lhs.login == rhs.login
+            && lhs.sharesMemory == rhs.sharesMemory
+            && lhs.notificationsOff == rhs.notificationsOff && lhs.scenarios == rhs.scenarios
+    }
 
     var body: some View {
-        let settings = model.settings
         Menu {
             Menu {
                 check("CPU", \.meters.cpu)
                 check("RAM", \.meters.ram)
                 check("GPU", \.meters.gpu)
-                check(model.resources.sharesMemory ? "GPU Memory" : "VRAM", \.meters.vram)
+                check(sharesMemory ? "GPU Memory" : "VRAM", \.meters.vram)
                 check("Drives", \.meters.drives)
                 check("Drive Activity", \.meters.driveActivity)
                     .disabled(!settings.meters.drives)
@@ -118,6 +136,12 @@ private struct MoreOptionsMenu: View {
             }
             .badge(Text(MenuCounts.meters(settings.meters)))
             Menu {
+                // With notifications off in System Settings none of the items below can show.
+                if notificationsOff {
+                    Text(NotificationPermission.offHint)
+                    Button("Open Notification Settings…", action: actions.openNotificationSettings)
+                    Divider()
+                }
                 check("Service Stopped", \.notifications.serviceStopped)
                 check("Running Long", \.notifications.runningLong)
                 check("Benchmark Finished", \.notifications.benchmarkFinished)
@@ -126,16 +150,16 @@ private struct MoreOptionsMenu: View {
             } label: {
                 Label("Notifications", systemImage: "bell")
             }
-            .badge(Text(MenuCounts.notifications(settings.notifications)))
+            .badge(Text(MenuCounts.notifications(settings.notifications, off: notificationsOff)))
             Divider()
             Toggle("Launch at Login", isOn: Binding(
-                get: { model.login.isOn },
+                get: { login.isOn },
                 set: { actions.setLaunchAtLogin($0) }))
-                .disabled(!model.login.canToggle)
+                .disabled(!login.canToggle)
             Button("Open Logs", systemImage: "doc.text", action: actions.openLogs)
-            if !actions.scenarios.isEmpty {
+            if !scenarios.isEmpty {
                 Menu("Scenario") {
-                    ForEach(actions.scenarios, id: \.self) { name in
+                    ForEach(scenarios, id: \.self) { name in
                         Button(name) { actions.showScenario(name) }
                     }
                 }
@@ -159,7 +183,7 @@ private struct MoreOptionsMenu: View {
 
     private func check(_ title: String, _ key: WritableKeyPath<TraySettings, Bool>) -> some View {
         Toggle(title, isOn: Binding(
-            get: { model.settings[keyPath: key] },
+            get: { settings[keyPath: key] },
             set: { on in model.updateSettings { $0[keyPath: key] = on } }))
     }
 }
