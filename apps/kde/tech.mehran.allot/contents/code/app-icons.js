@@ -31,10 +31,11 @@ import { matchingApp, sandboxedAppId } from "./shared/app-match.js";
 /**
  * Prints the keys that matter of every desktop entry, one `./<path>.desktop:<key>=<value>` per
  * line, with `--` before each data directory. Directories come in XDG order, so an entry in an
- * earlier one hides the same ID in a later one.
+ * earlier one hides the same ID in a later one. The list goes through a variable because a shell
+ * splits only what an expansion produced, never a `:` written between two expansions.
  */
-export const DESKTOP_ENTRIES_COMMAND = "IFS=:; for d in ${XDG_DATA_HOME:-$HOME/.local/share}:" +
-    "${XDG_DATA_DIRS:-/usr/local/share:/usr/share}; " +
+export const DESKTOP_ENTRIES_COMMAND = "dirs=${XDG_DATA_HOME:-$HOME/.local/share}:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}; " +
+    "IFS=:; for d in $dirs; " +
     'do echo --; (cd "$d/applications" 2>/dev/null && ' +
     "find . -name '*.desktop' -exec grep -HE '^(Type|NoDisplay|Hidden|Exec|TryExec|Icon)=' {} +); " +
     "done";
