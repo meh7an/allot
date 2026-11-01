@@ -7,6 +7,8 @@ struct HeaderView: View {
     let model: PanelModel
     let actions: PanelActions
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     var body: some View {
         let mode = model.mode
         HStack(spacing: 10) {
@@ -46,7 +48,7 @@ struct HeaderView: View {
                     .equatable()
                     .padding(.leading, Tokens.buttonGap)
             }
-            .animation(Tokens.reveal, value: mode.isStayOpen)
+            .animation(reduceMotion ? nil : Tokens.reveal, value: mode.isStayOpen)
         }
         .padding(EdgeInsets(top: 8, leading: 14, bottom: 6, trailing: 8))
         .background(DragHandle(isEnabled: mode.isPinned))
@@ -96,7 +98,8 @@ private struct HeaderButton: View {
         .buttonStyle(.plain)
         .help(label)
         .accessibilityLabel(label)
-        .accessibilityAddTraits(isOn ? .isSelected : [])
+        .accessibilityValue(isOn ? "On" : "Off")
+        .accessibilityAddTraits(.isToggle)
     }
 }
 
@@ -151,6 +154,17 @@ private struct MoreOptionsMenu: View, Equatable {
                 Label("Notifications", systemImage: "bell")
             }
             .badge(Text(MenuCounts.notifications(settings.notifications, off: notificationsOff)))
+            Picker(selection: Binding(
+                get: { settings.textSize },
+                set: { size in model.updateSettings { $0.textSize = size } })
+            ) {
+                ForEach(TextSize.allCases) { size in
+                    Text(size.title).tag(size)
+                }
+            } label: {
+                Label("Text Size", systemImage: "textformat.size")
+            }
+            .pickerStyle(.menu)
             Divider()
             Toggle("Launch at Login", isOn: Binding(
                 get: { login.isOn },

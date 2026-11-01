@@ -108,11 +108,14 @@ final class PanelController: NSObject, NSWindowDelegate {
         let frame = anchoredFrame()
         showGeneration += 1
         isShown = true
-        let reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         panel.setFrame(reduceMotion ? frame : frame.offsetBy(dx: 0, dy: 8), display: false)
         panel.alphaValue = 0
         panel.orderFrontRegardless()
         panel.makeKey()
+        // The handoff starts on the first control, which only keyboard navigation can focus.
+        if NSApp.isFullKeyboardAccessEnabled {
+            panel.selectNextKeyView(nil)
+        }
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0.167
             context.timingFunction = CAMediaTimingFunction(name: .easeOut)
@@ -120,6 +123,7 @@ final class PanelController: NSObject, NSWindowDelegate {
             panel.animator().setFrame(frame, display: true)
         }
         installDismissMonitors()
+        model.setPanelOpen(true)
         onOpenChanged?(true)
     }
 
@@ -129,6 +133,7 @@ final class PanelController: NSObject, NSWindowDelegate {
         }
         isShown = false
         model.cancelConfirms()
+        model.setPanelOpen(false)
         removeDismissMonitors()
         lastOutsideClose = outsideClick ? ContinuousClock.now : nil
         onOpenChanged?(false)
@@ -190,7 +195,11 @@ final class PanelController: NSObject, NSWindowDelegate {
     }
 
     private func returnUnderStatusItem() {
-        panel.setFrame(anchoredFrame(), display: true, animate: true)
+        panel.setFrame(anchoredFrame(), display: true, animate: !reduceMotion)
+    }
+
+    private var reduceMotion: Bool {
+        NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
     }
 
     // MARK: - Size and position
@@ -242,7 +251,7 @@ final class PanelController: NSObject, NSWindowDelegate {
         let frame = panel.frame
         let newHeight = min(height, layout.maxHeight)
         NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.1
+            context.duration = reduceMotion ? 0 : 0.1
             context.timingFunction = CAMediaTimingFunction(name: .easeOut)
             panel.animator().setFrame(
                 NSRect(x: frame.minX, y: frame.maxY - newHeight, width: frame.width,
@@ -347,6 +356,7 @@ final class PanelController: NSObject, NSWindowDelegate {
     private func installContent() {
         panel.delegate = self
         panel.onCancel = { [weak self] in self?.cancel() }
+        model.onAnnounce = { AccessibilityNotification.Announcement($0).post() }
 
         effectView.material = .popover
         effectView.blendingMode = .behindWindow

@@ -78,6 +78,14 @@ APP_SIZES = [16, 20, 24, 32, 40, 48, 64, 256]
 # Points of the macOS app icon set, each at 1x and 2x.
 MACOS_ICON_POINTS = [16, 32, 128, 256, 512]
 MENU_BAR_POINTS = 16
+# The menu bar's badges at 1x, with the glyph cut out: busy a play triangle, benchmark a stopwatch
+# needle, queued clock hands and down a cross, as at every other size.
+BADGE_1X = {
+    "busy": [".###.", "#.###", "#..##", "#.###", ".###."],
+    "benchmark": [".###.", "###.#", "##.##", "#####", ".###."],
+    "queued": [".###.", "##.##", "##..#", "#####", ".###."],
+    "down": [".###.", "#.#.#", "##.##", "#.#.#", ".###."],
+}
 FAVICON_SIZES = [16, 32, 48]
 HICOLOR_SIZES = [16, 22, 24, 32, 48, 64, 128, 256, 512]
 
@@ -291,7 +299,26 @@ def template_icon(size, state):
     """A macOS template image: black with alpha, which the menu bar tints. The badge carries
     the state by its glyph's shape, cut out of the badge, since a template has no colour."""
     black = (0.0, 0.0, 0.0)
+    if size == MENU_BAR_POINTS:
+        return template_icon_1x(state)
     return state_icon(size, state, black, black, None)
+
+
+def template_icon_1x(state):
+    """The menu bar at 1x. A sampled glyph blurs to a smudge in a 5 px badge, so the badge is drawn
+    pixel by pixel, in the same corner and with the same one-pixel ring."""
+    black = (0.0, 0.0, 0.0)
+    ops = [("paint", rect, black, STATE_ALPHA[state]) for rect, _ in bar_rects(1, 0, 0)]
+    if state != "idle":
+        ops.append(("clear", Circle(BADGE["cx"], BADGE["cy"], BADGE["r"] + BADGE["ring"])))
+    pixels = render(MENU_BAR_POINTS, ops)
+    left = round(BADGE["cx"] - BADGE["r"])
+    top = round(BADGE["cy"] - BADGE["r"])
+    for y, row in enumerate(BADGE_1X.get(state, [])):
+        for x, cell in enumerate(row):
+            alpha = 1.0 if cell == "#" else 0.0
+            pixels[(top + y) * MENU_BAR_POINTS + left + x] = [*black, alpha]
+    return pixels
 
 
 def tile_ops(size, body, scale):

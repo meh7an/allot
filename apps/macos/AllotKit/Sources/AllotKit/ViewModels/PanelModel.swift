@@ -73,6 +73,9 @@ public final class PanelModel {
     /// Called when allotd has answered a Kill or Remove, so the caller can poll at once.
     @ObservationIgnored public var onStopAnswered: ((Int64, StopKind, StopResult) -> Void)?
 
+    /// Says something to VoiceOver; called only while the panel is open.
+    @ObservationIgnored public var onAnnounce: ((String) -> Void)?
+
     /// Debug scenarios: stops shown as they are until the first press.
     @ObservationIgnored public var frozenStops: [Int64: StopView] = [:]
 
@@ -82,6 +85,8 @@ public final class PanelModel {
     @ObservationIgnored private var shown: UiState?
     @ObservationIgnored private var lastKnown: UiState?
     @ObservationIgnored private var startProblem: String?
+    @ObservationIgnored private var announcer = PanelAnnouncer()
+    @ObservationIgnored private var isPanelOpen = false
 
     /// Until the first poll answers, the service is assumed to be starting.
     ///
@@ -152,7 +157,19 @@ public final class PanelModel {
         if banner != self.banner {
             self.banner = banner
         }
+        if isPanelOpen {
+            announcer.observe(snapshot).forEach { onAnnounce?($0) }
+        }
         onRefresh?()
+    }
+
+    /// The panel opened or closed. It announces only while open, starting from what it opens on.
+    public func setPanelOpen(_ open: Bool) {
+        isPanelOpen = open
+        if open {
+            announcer.reset()
+            _ = announcer.observe(snapshot)
+        }
     }
 
     /// Changes `tray.json`'s settings, shows the change and hands them to be saved.
@@ -246,6 +263,14 @@ public final class PanelModel {
         }
         refresh()
         return true
+    }
+
+    /// Focus left a card's Kill?: only that card goes back to Kill, since the press that moved
+    /// the focus may be another card's.
+    public func cancelConfirm(_ lease: Int64) {
+        if stops.cancel(lease) {
+            refresh()
+        }
     }
 
     /// Opening from the menu bar always starts in light-dismiss mode.

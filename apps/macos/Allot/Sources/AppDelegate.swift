@@ -122,7 +122,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         model.loginItem = AppLoginItem()
         #endif
         model.volumeName = { VolumeNames.name(mountedAt: $0) }
+        TextScale.shared.size = model.settings.textSize
         model.onSettingsChanged = { settings in
+            TextScale.shared.size = settings.textSize
             do {
                 try store.save(settings)
             } catch {

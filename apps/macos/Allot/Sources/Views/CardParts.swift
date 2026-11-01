@@ -66,6 +66,9 @@ struct CardActionView: View {
 
     @State private var isHovered = false
     @State private var widths: [CardAction: CGFloat] = [:]
+    // Plain buttons take focus only with Keyboard navigation on in System Settings. With it off
+    // this stays empty, and Esc, the countdown and the panel closing still cancel a Kill?.
+    @FocusState private var focused: CardAction?
 
     /// The Windows morph: Kill? fades in over 167 ms, the others over 120 ms.
     static func morph(to action: CardAction) -> Animation {
@@ -83,8 +86,9 @@ struct CardActionView: View {
                 button(for: action)
                     .fixedSize()
                     .onGeometryChange(for: CGFloat.self, of: \.size.width) { widths[action] = $0 }
+                    .focused($focused, equals: action)
                     .opacity(isShown ? 1 : 0)
-                    .allowsHitTesting(isShown)
+                    .disabled(!isShown)
                     .accessibilityHidden(!isShown)
             }
         }
@@ -94,6 +98,40 @@ struct CardActionView: View {
         .buttonStyle(.plain)
         .help(card.actionName)
         .onHover { isHovered = $0 }
+        .onKeyPress(.return) {
+            press()
+            return .handled
+        }
+        .onChange(of: card.action) { previous, action in
+            followFocus(from: previous, to: action)
+        }
+        .onChange(of: focused) { previous, now in
+            if previous == .confirm && now != .confirm && card.action == .confirm {
+                actions.cancelConfirm(id)
+            }
+        }
+    }
+
+    // The buttons are separate views, so the focus has to follow the one that is shown. A Kill just
+    // sent is no control any more, so the keyboard goes on to the next one.
+    private func followFocus(from previous: CardAction, to action: CardAction) {
+        if action == .confirm {
+            focused = .confirm
+        } else if focused == previous {
+            if action == .none {
+                NSApp.keyWindow?.selectNextKeyView(nil)
+            } else {
+                focused = action
+            }
+        }
+    }
+
+    private func press() {
+        switch card.action {
+        case .kill, .confirm: actions.kill(id)
+        case .remove: actions.remove(id)
+        case .none: break
+        }
     }
 
     // Once a Kill or Remove is sent, the button's place goes at once, so the chip slides right
@@ -168,6 +206,8 @@ struct EdgeBar: View {
     let fraction: Double
     let tone: EdgeBarTone
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     var body: some View {
         GeometryReader { geometry in
             ZStack(alignment: .leading) {
@@ -180,7 +220,7 @@ struct EdgeBar: View {
                 default:
                     colour
                         .frame(width: geometry.size.width * fraction)
-                        .animation(Tokens.barMotion, value: fraction)
+                        .animation(reduceMotion ? nil : Tokens.barMotion, value: fraction)
                 }
             }
         }
@@ -222,6 +262,8 @@ private struct Dashes: View {
 struct BenchmarkStepper: View {
     let steps: BenchmarkSteps
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     var body: some View {
         GeometryReader { geometry in
             let unit = (geometry.size.width - 12) / 3.4
@@ -237,13 +279,16 @@ struct BenchmarkStepper: View {
                         bar(fill(for: .run), width: unit)
                         if steps.current == .run {
                             bar(Tokens.benchmark, width: unit * steps.runFraction)
-                                .animation(Tokens.stepMotion, value: steps.runFraction)
+                                .animation(
+                                    reduceMotion ? nil : Tokens.stepMotion,
+                                    value: steps.runFraction)
                         }
                     }
                 }
             }
         }
-        .frame(height: 3 + 2 + 14)
+        // A GeometryReader takes no height from its content, so the label's is set here.
+        .frame(height: 3 + 2 + 14 * CGFloat(TextScale.shared.size.scale))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityText)
     }

@@ -19,6 +19,10 @@ final class AllotPanel: NSPanel {
         hasShadow = true
         isReleasedWhenClosed = false
         animationBehavior = .none
+        // The header and the body are two hosting views; Tab has to run through both.
+        autorecalculatesKeyViewLoop = true
+        // What VoiceOver calls the window; a borderless panel never shows it.
+        title = "Allot"
     }
 
     override var canBecomeKey: Bool {

@@ -35,7 +35,7 @@ struct ResourcesCard: View {
                 }
                 .padding(.leading, 12)
                 .padding(.trailing, 4)
-                .frame(height: 40)
+                .frame(minHeight: 40)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -89,7 +89,8 @@ private struct ResourceRows: View {
     }
 }
 
-/// The row grid of the handoff: a 48 pt label, the bar, and a 108 pt value.
+/// The row grid of the handoff: a 48 pt label, the bar, and a 108 pt value, growing with the text
+/// alike in every row.
 private struct RowGrid<Middle: View, Value: View>: View {
     let label: String
     let middle: Middle
@@ -102,19 +103,20 @@ private struct RowGrid<Middle: View, Value: View>: View {
     }
 
     var body: some View {
+        let columns = MeterColumns(scale: TextScale.shared.size.scale)
         HStack(spacing: 8) {
             Text(label)
                 .font(Tokens.Font.heading)
                 .lineLimit(1)
                 .truncationMode(.tail)
-                .frame(width: 48, alignment: .leading)
+                .frame(width: columns.label, alignment: .leading)
             middle
                 .frame(maxWidth: .infinity)
             value
-                .frame(width: 108, alignment: .trailing)
+                .frame(width: columns.value, alignment: .trailing)
         }
         .padding(.horizontal, 12)
-        .frame(height: 28)
+        .frame(minHeight: 28)
     }
 }
 
@@ -142,7 +144,7 @@ private struct MeterRowView: View {
         .help(row.tooltip)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(row.label)
-        .accessibilityValue("\(row.value), \(row.tooltip)")
+        .accessibilityValue(row.spokenValue)
     }
 }
 
@@ -179,8 +181,7 @@ private struct DriveRowView: View {
         .help(drive.id)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(drive.label)
-        .accessibilityValue([drive.value, drive.activity].filter { !$0.isEmpty }
-            .joined(separator: ", "))
+        .accessibilityValue(drive.spokenValue)
     }
 }
 
@@ -193,6 +194,8 @@ private struct BulletBar: View {
     private static let glide = Animation.easeOut(duration: 0.6)
 
     let row: MeterRow
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         let shared = row.shared ?? 0
@@ -207,8 +210,8 @@ private struct BulletBar: View {
             BarSpan(start: row.used - shared, end: row.used)
                 .fill(Color.accentColor.opacity(Tokens.sharedOpacity))
         }
-        .animation(Self.glide, value: row.used)
-        .animation(Self.glide, value: row.shared)
+        .animation(reduceMotion ? nil : Self.glide, value: row.used)
+        .animation(reduceMotion ? nil : Self.glide, value: row.shared)
         .frame(height: Self.barHeight)
         .clipShape(RoundedRectangle(cornerRadius: 2))
         .overlay {

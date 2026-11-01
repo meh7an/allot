@@ -6,6 +6,7 @@ import SwiftUI
 struct CardActions {
     let kill: (Int64) -> Void
     let remove: (Int64) -> Void
+    let cancelConfirm: (Int64) -> Void
     let startService: () -> Void
     let setLaunchAtLogin: (Bool) -> Void
     let openLoginItems: () -> Void
@@ -23,6 +24,7 @@ struct JobListView: View {
     let actions: CardActions
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorSchemeContrast) private var contrast
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -100,9 +102,10 @@ struct JobListView: View {
         return keys
     }
 
-    // Last known jobs show dimmed under the banner, which keeps its full colour.
+    // Last known jobs show dimmed under the banner, which keeps its full colour. With Increase
+    // Contrast they stay at full strength: the caption says what they are.
     private var dimming: Double {
-        snapshot.isLastKnown ? Tokens.lastKnownOpacity : 1
+        snapshot.isLastKnown && contrast != .increased ? Tokens.lastKnownOpacity : 1
     }
 }
 
@@ -260,7 +263,7 @@ private struct RecentView: View {
                         .lineLimit(1)
                 }
                 .padding(.horizontal, 12)
-                .frame(height: 36)
+                .frame(minHeight: 36)
                 .overlay(alignment: .top) {
                     if line.id > 0 {
                         Rectangle()
@@ -282,6 +285,12 @@ private struct JobCardView: View {
     let actions: CardActions
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorSchemeContrast) private var contrast
+
+    // An ended card's words say it has ended, so Increase Contrast keeps it at full strength.
+    private var endedOpacity: Double {
+        job.card.isEnded && contrast != .increased ? Tokens.endedOpacity : 1
+    }
 
     var body: some View {
         let card = job.card
@@ -290,7 +299,7 @@ private struct JobCardView: View {
             VStack(alignment: .leading, spacing: 0) {
                 HStack(spacing: 8) {
                     ProcessTile(card: card)
-                        .opacity(card.isEnded ? Tokens.endedOpacity : 1)
+                        .opacity(endedOpacity)
                     Text(job.command)
                         .font(Tokens.Font.command)
                         .strikethrough(card.isStruck)
@@ -298,9 +307,9 @@ private struct JobCardView: View {
                         .truncationMode(.tail)
                         .help(job.command)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .opacity(card.isEnded ? Tokens.endedOpacity : 1)
+                        .opacity(endedOpacity)
                     ClassChip(card: card)
-                        .opacity(card.isEnded ? Tokens.endedOpacity : 1)
+                        .opacity(endedOpacity)
                     CardActionView(id: job.id, card: card, actions: actions)
                 }
                 .frame(minHeight: 32)
@@ -326,11 +335,7 @@ private struct JobCardView: View {
         }
         .cardFrame()
         .accessibilityElement(children: .contain)
-        .onChange(of: card.announcement) { _, announcement in
-            if !announcement.isEmpty {
-                AccessibilityNotification.Announcement(announcement).post()
-            }
-        }
+        .accessibilityLabel(job.command)
     }
 }
 
@@ -348,7 +353,7 @@ private struct ClassChip: View {
         }
         .foregroundStyle(card.isBenchmark ? Tokens.onBenchmark : Tokens.chipText)
         .padding(EdgeInsets(top: 0, leading: card.isBenchmark ? 5 : 8, bottom: 0, trailing: 8))
-        .frame(height: 18)
+        .frame(minHeight: 18)
         .background(
             Capsule().fill(card.isBenchmark ? Tokens.benchmark : Tokens.chip))
         .fixedSize()

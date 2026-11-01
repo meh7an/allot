@@ -209,6 +209,7 @@ struct PanelView: View {
         CardActions(
             kill: { _ = model.pressKill($0) },
             remove: { _ = model.pressRemove($0) },
+            cancelConfirm: { model.cancelConfirm($0) },
             startService: actions.startService,
             setLaunchAtLogin: actions.setLaunchAtLogin,
             openLoginItems: actions.openLoginItems,

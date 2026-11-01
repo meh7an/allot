@@ -17,6 +17,10 @@ public struct TraySettings: Codable, Sendable, Equatable {
     /// turned on, which neither does again.
     public var firstRunShown = false
 
+    /// How large the panel's text is; only the Mac has this, as its system setting cannot reach
+    /// the app.
+    public var textSize = TextSize.standard
+
     public init() {}
 
     public init(from decoder: any Decoder) throws {
@@ -32,6 +36,8 @@ public struct TraySettings: Codable, Sendable, Equatable {
             ?? defaults.firstRunDone
         firstRunShown = try container.decodeIfPresent(Bool.self, forKey: .firstRunShown)
             ?? defaults.firstRunShown
+        textSize = (try? container.decodeIfPresent(TextSize.self, forKey: .textSize))
+            ?? defaults.textSize
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -40,6 +46,7 @@ public struct TraySettings: Codable, Sendable, Equatable {
         case resourcesExpanded = "resources_expanded"
         case firstRunDone = "first_run_done"
         case firstRunShown = "first_run_shown"
+        case textSize = "text_size"
     }
 }
 

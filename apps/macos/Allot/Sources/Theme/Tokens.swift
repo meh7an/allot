@@ -1,4 +1,6 @@
+import AllotKit
 import AppKit
+import Observation
 import SwiftUI
 
 /// The design handoff's tokens on macOS. Text uses the system's label colours, which keep their
@@ -17,17 +19,30 @@ enum Tokens {
     static let buttonGap: CGFloat = 4
 
     static let card = Color(light: .white.opacity(0.72), dark: .white.opacity(0.055))
-    static let cardBorder = Color(light: .black.opacity(0.14), dark: .black.opacity(0.40))
+    static let cardBorder = Color(
+        light: .black.opacity(0.14), dark: .black.opacity(0.40),
+        lightContrast: .black.opacity(0.7), darkContrast: .white.opacity(0.7))
     static let strip = Color(light: .black.opacity(0.075), dark: .white.opacity(0.09))
 
-    static let separator = Color(light: .black.opacity(0.08), dark: .white.opacity(0.08))
+    static let separator = Color(
+        light: .black.opacity(0.08), dark: .white.opacity(0.08),
+        lightContrast: .black.opacity(0.5), darkContrast: .white.opacity(0.5))
     static let chip = Color(light: .black.opacity(0.07), dark: .white.opacity(0.10))
-    static let chipText = Color(light: hex(0x3A3A3A), dark: hex(0xDEDEDE))
+    static let chipText = Color(
+        light: hex(0x3A3A3A), dark: hex(0xDEDEDE), lightContrast: .black, darkContrast: .white)
     static let tile = Color(light: .black.opacity(0.06), dark: .white.opacity(0.07))
-    static let queueTileBorder = Color(light: .black.opacity(0.30), dark: .white.opacity(0.30))
-    static let track = Color(light: .black.opacity(0.07), dark: .white.opacity(0.08))
-    static let stepUpcoming = Color(light: .black.opacity(0.10), dark: .white.opacity(0.12))
-    static let subtle = Color(light: hex(0x8A8A8A), dark: hex(0x9A9A9A))
+    static let queueTileBorder = Color(
+        light: .black.opacity(0.30), dark: .white.opacity(0.30),
+        lightContrast: .black.opacity(0.7), darkContrast: .white.opacity(0.7))
+    static let track = Color(
+        light: .black.opacity(0.07), dark: .white.opacity(0.08),
+        lightContrast: .black.opacity(0.3), darkContrast: .white.opacity(0.3))
+    static let stepUpcoming = Color(
+        light: .black.opacity(0.10), dark: .white.opacity(0.12),
+        lightContrast: .black.opacity(0.3), darkContrast: .white.opacity(0.3))
+    static let subtle = Color(
+        light: hex(0x8A8A8A), dark: hex(0x9A9A9A),
+        lightContrast: hex(0x4A4A4A), darkContrast: hex(0xC8C8C8))
 
     /// Stopped and removed bars, and frozen last known ones.
     static let frozen = hex(0x8A8A8A)
@@ -66,7 +81,9 @@ enum Tokens {
     /// The Resources card's bars: the hatched headroom leases can't take, the reserved tick's
     /// ring in the surface colour, and the drive bars.
     static let hatchBack = Color(light: .black.opacity(0.05), dark: .white.opacity(0.05))
-    static let hatchLine = Color(light: .black.opacity(0.20), dark: .white.opacity(0.22))
+    static let hatchLine = Color(
+        light: .black.opacity(0.20), dark: .white.opacity(0.22),
+        lightContrast: .black.opacity(0.6), darkContrast: .white.opacity(0.6))
     static let tickRing = Color(light: .white, dark: hex(0x2C2C2C))
     static let driveBar = Color(light: hex(0x6B6B6B), dark: hex(0xA8A8A8))
 
@@ -91,16 +108,24 @@ enum Tokens {
     static let barMotion = Animation.linear(duration: 0.9)
     static let stepMotion = Animation.linear(duration: 0.7)
 
+    /// The handoff's sizes at More options › Text Size. Reading one in a view's body subscribes
+    /// the view to ``TextScale``, so a change redraws the panel. The tile's initials stay, since
+    /// they must fit their 20 pt tile.
+    @MainActor
     enum Font {
-        static let summary = SwiftUI.Font.system(size: 14, weight: .semibold)
-        static let heading = SwiftUI.Font.system(size: 12, weight: .semibold)
-        static let body = SwiftUI.Font.system(size: 12)
-        static let command = SwiftUI.Font.system(size: 13, design: .monospaced)
-        static let id = SwiftUI.Font.system(size: 12, design: .monospaced)
-        static let idInLine = SwiftUI.Font.system(size: 11, design: .monospaced)
-        static let small = SwiftUI.Font.system(size: 11)
+        static var summary: SwiftUI.Font { .system(size: sized(14), weight: .semibold) }
+        static var heading: SwiftUI.Font { .system(size: sized(12), weight: .semibold) }
+        static var body: SwiftUI.Font { .system(size: sized(12)) }
+        static var command: SwiftUI.Font { .system(size: sized(13), design: .monospaced) }
+        static var id: SwiftUI.Font { .system(size: sized(12), design: .monospaced) }
+        static var idInLine: SwiftUI.Font { .system(size: sized(11), design: .monospaced) }
+        static var small: SwiftUI.Font { .system(size: sized(11)) }
         static let initials = SwiftUI.Font.system(size: 9, weight: .semibold, design: .monospaced)
-        static let action = SwiftUI.Font.system(size: 12, weight: .semibold)
+        static var action: SwiftUI.Font { .system(size: sized(12), weight: .semibold) }
+
+        private static func sized(_ points: CGFloat) -> CGFloat {
+            points * CGFloat(TextScale.shared.size.scale)
+        }
     }
 
     private static func hex(_ value: UInt32) -> Color {
@@ -111,13 +136,29 @@ enum Tokens {
     }
 }
 
+/// The current More options › Text Size, which every text token and the row sizes read.
+@MainActor
+@Observable
+final class TextScale {
+    static let shared = TextScale()
+
+    var size = TextSize.standard
+}
+
 extension Color {
     /// A colour that follows the appearance it is drawn in, as the handoff's light and dark
-    /// tables do.
-    init(light: Color, dark: Color) {
+    /// tables do. Increase Contrast picks the contrast pair; without one it changes nothing.
+    init(light: Color, dark: Color, lightContrast: Color? = nil, darkContrast: Color? = nil) {
         self.init(nsColor: NSColor(name: nil) { appearance in
-            let isDark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
-            return NSColor(isDark ? dark : light)
+            switch appearance.bestMatch(from: [
+                .aqua, .darkAqua, .accessibilityHighContrastAqua,
+                .accessibilityHighContrastDarkAqua,
+            ]) {
+            case .accessibilityHighContrastAqua: NSColor(lightContrast ?? light)
+            case .accessibilityHighContrastDarkAqua: NSColor(darkContrast ?? dark)
+            case .darkAqua: NSColor(dark)
+            default: NSColor(light)
+            }
         })
     }
 }
