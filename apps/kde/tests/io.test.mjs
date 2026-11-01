@@ -7,9 +7,13 @@ import {
   CommandRunner,
   XhrTransport,
   catCommand,
+  copyFile,
+  detachedCommand,
   localPath,
   readTextFile,
+  serviceSystem,
   shellQuote,
+  writeTextFile,
 } from "../src/io.js";
 import { catAnswer, fakeRequests } from "./support.mjs";
 
@@ -36,6 +40,61 @@ function transport(answer) {
   const subject = new XhrTransport(fakeRequests(answer, requests), timers);
   return { subject, timers, requests };
 }
+
+/** @param {(command: string) => number} exitCode */
+function exitsWith(exitCode) {
+  /** @type {string[]} */
+  const commands = [];
+  const subject = new CommandRunner((command) => {
+    commands.push(command);
+    queueMicrotask(() => subject.deliver(command, { "exit code": exitCode(command), stdout: "" }));
+  });
+  return { subject, commands };
+}
+
+test("a write goes through a temporary file, quoting every word", async () => {
+  const { subject, commands } = exitsWith(() => 0);
+
+  const written = await writeTextFile(subject, "/home/u s/.allot/tray.json", "it's\n");
+
+  assert.equal(written, true);
+  assert.deepEqual(commands, [
+    "mkdir -p -- '/home/u s/.allot' && printf %s 'it'\\''s\n' > " +
+      "'/home/u s/.allot/tray.json.tmp' && " +
+      "mv -f -- '/home/u s/.allot/tray.json.tmp' '/home/u s/.allot/tray.json'",
+  ]);
+});
+
+test("a failed write and a failed copy say so", async () => {
+  const { subject } = exitsWith(() => 1);
+
+  assert.equal(await writeTextFile(subject, "/a/b", "x"), false);
+  assert.equal(await copyFile(subject, "/a/b", "/c/d"), false);
+});
+
+test("a copy skips an identical target and makes the folder", async () => {
+  const { subject, commands } = exitsWith(() => 0);
+
+  assert.equal(await copyFile(subject, "/pkg/a", "/data/k/a"), true);
+  assert.deepEqual(commands, [
+    "cmp -s -- '/pkg/a' '/data/k/a' || { mkdir -p -- '/data/k' && cp -f -- '/pkg/a' '/data/k/a'; }",
+  ]);
+});
+
+test("the service system answers from exit codes, and a spawn does not wait", async () => {
+  const { subject, commands } = exitsWith((command) =>
+    command.startsWith("test -x '/ok'") || command.includes("'true'") ? 0 : 1,
+  );
+  const system = serviceSystem(subject);
+
+  assert.equal(await system.isExecutable("/ok"), true);
+  assert.equal(await system.isExecutable("/no"), false);
+  assert.equal(await system.run(["true"]), true);
+  assert.equal(await system.run(["false"]), false);
+  system.spawn("/bin/allot d");
+  assert.equal(commands.at(-1), detachedCommand(["/bin/allot d"]));
+  assert.equal(commands.at(-1), "cd / && setsid -f '/bin/allot d' < /dev/null > /dev/null 2>&1");
+});
 
 const REQUEST = { method: /** @type {const} */ ("GET"), url: "http://127.0.0.1:1/ui/state" };
 

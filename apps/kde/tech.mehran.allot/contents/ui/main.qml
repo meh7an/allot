@@ -15,13 +15,26 @@ PlasmoidItem {
 
     property var widget: null
     property var snapshot: null
+    property var resources: ({ isVisible: false, isExpanded: false, summary: "", meters: [],
+        drives: [], showsSeparator: false, allOff: false, showsLegend: false,
+        showsSharedLegend: false, sharesMemory: false })
+    property var banner: null
+    property var settings: ({ meters: {}, notifications: {} })
+    property var serviceItem: ({ title: "", action: "none" })
+    property string stopQuestion: ""
+    property bool doNotDisturb: false
+    property bool notificationsOff: false
+    property string meterCount: ""
+    property string notificationCount: ""
     property string iconSource: ""
     property string accessibleName: "Allot"
     property bool keepOpen: false
     property var rowData: ({})
     property bool animate: false
+    property var scrollRequest: null
 
     readonly property string iconDirectory: Qt.resolvedUrl("../icons/").toString()
+    readonly property string iconFolder: decodeURIComponent(iconDirectory.replace(/^file:\/\//, ""))
 
     // The poller's timers. It clears only timers that have not fired, so a timer is destroyed
     // exactly once.
@@ -42,7 +55,17 @@ PlasmoidItem {
     })
 
     function refresh() {
-        root.snapshot = root.widget.model.snapshot;
+        const model = root.widget.model;
+        root.snapshot = model.snapshot;
+        root.resources = model.resources;
+        root.banner = model.banner;
+        root.settings = model.settings;
+        root.doNotDisturb = model.doNotDisturb;
+        root.serviceItem = root.widget.serviceItem;
+        root.stopQuestion = root.widget.stopQuestion;
+        root.notificationsOff = root.widget.notificationsOff;
+        root.meterCount = root.widget.meterCount;
+        root.notificationCount = root.widget.notificationCount;
         root.iconSource = root.iconDirectory + root.widget.iconFile;
         root.accessibleName = root.widget.accessibleName;
         root.keepOpen = root.widget.keepOpen;
@@ -83,29 +106,60 @@ PlasmoidItem {
 
     fullRepresentation: FullRepresentation {
         snapshot: root.snapshot
+        resources: root.resources
+        banner: root.banner
+        settings: root.settings
+        stopQuestion: root.stopQuestion
+        doNotDisturb: root.doNotDisturb
+        notificationsOff: root.notificationsOff
+        meterCount: root.meterCount
+        notificationCount: root.notificationCount
         keepOpen: root.keepOpen
         iconDirectory: root.iconDirectory
         rowModel: listRows
         rowData: root.rowData
         animate: root.animate
         widget: root.widget
+        scrollRequest: root.scrollRequest
         onKeepOpenToggled: {
             root.widget.toggleKeepOpen();
             root.refresh();
         }
     }
 
+    // The summary, Stop Service or Start Service, and Open Logs. There is no Quit, because a widget
+    // is removed from the panel, which Plasma adds to this menu.
     Plasmoid.contextualActions: [
+        PlasmaCore.Action {
+            text: root.snapshot === null ? "" : root.snapshot.header.summary
+            enabled: false
+        },
+        PlasmaCore.Action {
+            isSeparator: true
+        },
+        PlasmaCore.Action {
+            text: root.serviceItem.title
+            icon.name: root.serviceItem.action === "start" ? "media-playback-start"
+                : "media-playback-stop"
+            enabled: root.serviceItem.action !== "none"
+            onTriggered: root.widget.pressServiceItem()
+        },
         PlasmaCore.Action {
             text: "Open Logs"
             icon.name: "document-open-folder"
-            onTriggered: Qt.openUrlExternally("file://" + root.widget.paths.logs)
+            onTriggered: root.widget.openLogs()
         }
     ]
 
     Component {
         id: timerComponent
         Timer {}
+    }
+
+    NotificationSender {
+        id: notifications
+
+        iconDirectory: root.iconFolder
     }
 
     ListModel {
@@ -127,6 +181,9 @@ PlasmoidItem {
     Component.onCompleted: {
         root.widget = new Allot.AllotWidget({
             homeUrl: StandardPaths.writableLocation(StandardPaths.HomeLocation).toString(),
+            configUrl: StandardPaths.writableLocation(StandardPaths.ConfigLocation).toString(),
+            dataUrl: StandardPaths.writableLocation(StandardPaths.GenericDataLocation).toString(),
+            notifyRcUrl: Qt.resolvedUrl("../notifications/allot.notifyrc").toString(),
             connectSource: (command) => executable.connectSource(command),
             // XMLHttpRequest calls back only when send() runs in QML code, so it runs here.
             requests: {
@@ -140,6 +197,16 @@ PlasmoidItem {
                 root.rowData = data;
             },
             onChange: () => root.refresh(),
+            sendNotification: (fields) => notifications.send(fields),
+            expand: () => {
+                root.expanded = true;
+            },
+            scrollTo: (key) => {
+                root.scrollRequest = { key: key };
+            },
+            openUrl: (url) => Qt.openUrlExternally(url),
+            timeOfDay: (ms) => Qt.formatTime(new Date(ms),
+                Qt.locale().timeFormat(Locale.ShortFormat)),
             log: (line) => console.log(line),
         });
         root.refresh();

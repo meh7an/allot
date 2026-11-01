@@ -4,6 +4,11 @@ import { test } from "node:test";
 
 import { INDICATOR_ICONS, iconFile } from "../../gnome/allot@mehran.tech/lib/indicator-status.js";
 import { FakeTimers, fixtureText, settle } from "../../gnome/tests/support.mjs";
+import {
+  NOTIFY_COMPONENT,
+  NOTIFY_EVENT,
+  NOTIFY_RC_FILE,
+} from "../src/notification-state.js";
 import { CODE_DIR, emit } from "../tools/emit.mjs";
 import { FakeRowModel, PACKAGE_DIR, catAnswer, fakeRequests } from "./support.mjs";
 
@@ -54,9 +59,20 @@ test("every view exists and imports generated modules that do", () => {
     const text = readFileSync(new URL(view, ui), "utf8");
     for (const [, module = ""] of text.matchAll(/^import "\.\.\/code\/(.+)" as /gm)) {
       assert.ok(existsSync(new URL(module, CODE_DIR)), `${view} imports ${module}`);
+      // Qt reads a .js import as a plain script; export syntax in one crashes plasmashell.
+      assert.ok(module.endsWith(".mjs"), `${view} must import ${module} as a .mjs module`);
     }
     assert.doesNotMatch(text, /[ \t]+$/m, `${view} has trailing whitespace`);
   }
+});
+
+test("the notifyrc names the component and the event the notifications use", () => {
+  const url = new URL(`contents/notifications/${NOTIFY_RC_FILE}`, PACKAGE_DIR);
+  const text = readFileSync(url, "utf8");
+
+  assert.equal(NOTIFY_RC_FILE, `${NOTIFY_COMPONENT}.notifyrc`);
+  assert.match(text, /^\[Global\]\n(.*\n)*Name=Allot\n/m);
+  assert.match(text, new RegExp(`^\\[Event/${NOTIFY_EVENT}\\]\\n(.*\\n)*Action=Popup\\n`, "m"));
 });
 
 test("the generated widget module runs a poll", async () => {
@@ -69,6 +85,9 @@ test("the generated widget module runs a poll", async () => {
   let widget = null;
   widget = new AllotWidget({
     homeUrl: "file:///home/u",
+    configUrl: "file:///home/u/.config",
+    dataUrl: "file:///home/u/.local/share",
+    notifyRcUrl: "file:///package/allot.notifyrc",
     connectSource: (/** @type {string} */ command) =>
       queueMicrotask(() =>
         widget.deliver(command, catAnswer(command, { "/home/u/.allot/token": "t" })),
@@ -78,6 +97,10 @@ test("the generated widget module runs a poll", async () => {
     rows: new FakeRowModel(),
     showRows: () => {},
     onChange: () => summaries.push(widget.model.snapshot.header.summary),
+    sendNotification: () => ({ close: () => {} }),
+    expand: () => {},
+    scrollTo: () => {},
+    openUrl: () => {},
     log: () => {},
   });
 
@@ -85,5 +108,5 @@ test("the generated widget module runs a poll", async () => {
   await settle();
   widget.stop();
 
-  assert.deepEqual(summaries, ["Idle"]);
+  assert.equal(summaries.at(-1), "Idle");
 });

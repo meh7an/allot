@@ -1,7 +1,9 @@
 import { DESKTOP_ENTRIES_COMMAND } from "../src/app-icons.js";
+import { INHIBITED_COMMAND } from "../src/notification-state.js";
 import { AllotWidget } from "../src/widget.js";
 
 /** @import { Xhr, XhrFactory } from "../src/io.js" */
+/** @import { NotificationFields } from "../src/notifier.js" */
 /** @import { Row, RowModel } from "../src/rows.js" */
 /** @import { WidgetHost } from "../src/widget.js" */
 /** @import { FakeTimers } from "../../gnome/tests/support.mjs" */
@@ -181,6 +183,11 @@ export class FakeRowModel {
  * @param {(request: SentRequest) => Answer | undefined} options.daemon
  * @param {() => number} [options.now]
  * @param {string} [options.desktopEntries] What the desktop entries command prints.
+ * @param {string} [options.inhibited] What the Do Not Disturb command prints; it fails without.
+ * @param {Record<string, { "exit code": number, stdout: string }>} [options.answers]
+ *   Answers to other commands by the command; a command with no answer exits 1.
+ * @param {boolean} [options.copyFails] The notifyrc cannot be copied.
+ * @param {boolean} [options.writeFails] The settings file cannot be written.
  */
 export function fakeHost(options) {
   /** @type {string[]} */
@@ -192,21 +199,46 @@ export function fakeHost(options) {
   const rows = new FakeRowModel();
   /** @type {{ data: Record<string, Row>, animate: boolean | null }} */
   const shown = { data: {}, animate: null };
+  /** @type {FakeNotification[]} */
+  const notifications = [];
+  /** @type {(string | null)[]} */
+  const scrolls = [];
+  /** @type {string[]} */
+  const opened = [];
+  let expands = 0;
   let changes = 0;
   /** @type {AllotWidget | null} */
   let widget = null;
 
+  /** @param {string} command */
+  const answerTo = (command) => {
+    if (command === DESKTOP_ENTRIES_COMMAND) {
+      return { "exit code": 0, stdout: options.desktopEntries ?? "" };
+    }
+    if (command === INHIBITED_COMMAND) {
+      return options.inhibited === undefined
+        ? { "exit code": 1, stdout: "" }
+        : { "exit code": 0, stdout: options.inhibited };
+    }
+    if (command.startsWith("cmp -s")) {
+      return { "exit code": options.copyFails === true ? 1 : 0, stdout: "" };
+    }
+    if (command.startsWith("mkdir -p")) {
+      return { "exit code": options.writeFails === true ? 1 : 0, stdout: "" };
+    }
+    return options.answers?.[command] ?? catAnswer(command, options.files ?? {});
+  };
+
   /** @type {WidgetHost} */
   const host = {
     homeUrl: "file:///home/user%20one",
+    configUrl: "file:///home/user%20one/.config",
+    dataUrl: "file:///home/user%20one/.local/share",
+    notifyRcUrl: "file:///package/contents/notifications/allot.notifyrc",
     connectSource: (command) => {
       commands.push(command);
       queueMicrotask(() => {
-        const answer =
-          command === DESKTOP_ENTRIES_COMMAND
-            ? { "exit code": 0, stdout: options.desktopEntries ?? "" }
-            : catAnswer(command, options.files ?? {});
-        widget?.deliver(command, answer);
+        widget?.deliver(command, answerTo(command));
       });
     },
     requests: fakeRequests(options.daemon, requests),
@@ -219,6 +251,18 @@ export function fakeHost(options) {
     onChange: () => {
       changes += 1;
     },
+    sendNotification: (fields) => {
+      const sent = new FakeNotification(fields);
+      notifications.push(sent);
+      return sent;
+    },
+    expand: () => {
+      expands += 1;
+      widget?.setExpanded(true);
+    },
+    scrollTo: (key) => scrolls.push(key),
+    openUrl: (url) => opened.push(url),
+    timeOfDay: (ms) => `t${ms}`,
     log: (line) => lines.push(line),
     ...(options.now === undefined ? {} : { now: options.now }),
   };
@@ -231,10 +275,38 @@ export function fakeHost(options) {
     lines,
     rows,
     shown,
+    notifications,
+    scrolls,
+    opened,
+    get expands() {
+      return expands;
+    },
     get changes() {
       return changes;
     },
   };
+}
+
+/** A notification the widget sent, which a test can press or time out. */
+export class FakeNotification {
+  closedByWidget = false;
+  fields;
+
+  /** @param {NotificationFields} fields */
+  constructor(fields) {
+    this.fields = fields;
+  }
+
+  // Like Plasma's, closing one tells the sender asynchronously.
+  close() {
+    this.closedByWidget = true;
+    queueMicrotask(() => this.fields.closed());
+  }
+
+  /** @param {string} label */
+  press(label) {
+    this.fields.buttons.find((button) => button.label === label)?.pressed();
+  }
 }
 
 /**

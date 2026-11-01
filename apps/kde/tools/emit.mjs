@@ -52,6 +52,8 @@ const KDE_MODULES = {
   "app-icons": "app-icons.js",
   "card-view": "card-view.mjs",
   io: "io.js",
+  "notification-state": "notification-state.js",
+  notifier: "notifier.js",
   rows: "rows.js",
   widget: "widget.mjs",
 };

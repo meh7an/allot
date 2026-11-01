@@ -67,6 +67,21 @@ test("Recently finished replaces the empty line", () => {
   );
 });
 
+test("the first-run card follows the idle line and replaces the empty line", () => {
+  const { status, state } = scenario("first-run");
+  const options = { firstRun: { isDone: false, doNotDisturb: true } };
+
+  const rows = listRows(panelSnapshot(status, state, options), () => null, TEXT, true);
+
+  assert.deepEqual(rows.at(-1), {
+    key: "welcome",
+    kind: "welcome",
+    doNotDisturb: true,
+    notificationsOff: true,
+  });
+  assert.ok(!rows.some((row) => row.kind === "nothing"));
+});
+
 test("a queued card asks for no app icon, a running one for its executable's", () => {
   /** @type {(string | null)[]} */
   const asked = [];

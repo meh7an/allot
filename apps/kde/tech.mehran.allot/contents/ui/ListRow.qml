@@ -91,6 +91,8 @@ Item {
                 return jobRow;
             case "recent":
                 return recentRow;
+            case "welcome":
+                return welcomeRow;
             default:
                 return lineRow;
             }
@@ -123,6 +125,16 @@ Item {
 
         RecentCard {
             lines: listRow.row.lines
+        }
+    }
+
+    Component {
+        id: welcomeRow
+
+        WelcomeCard {
+            doNotDisturb: listRow.row.doNotDisturb
+            notificationsOff: listRow.row.notificationsOff
+            widget: listRow.widget
         }
     }
 

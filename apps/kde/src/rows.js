@@ -15,6 +15,7 @@
  *   | { key: string, kind: "heading", group: JobGroup }
  *   | { key: string, kind: "job", job: JobRow, icon: string | null }
  *   | { key: string, kind: "idle", text: string }
+ *   | { key: string, kind: "welcome", doNotDisturb: boolean, notificationsOff: boolean }
  *   | { key: string, kind: "recent", lines: RecentLine[] }
  *   | { key: string, kind: "nothing", text: string }
  * )} Row
@@ -33,14 +34,15 @@
  */
 
 /**
- * The popup's rows for a snapshot, top to bottom. The first-run card comes with M5.6.
+ * The popup's rows for a snapshot, top to bottom.
  *
  * @param {PanelSnapshot} snapshot
  * @param {(exe: string | null) => string | null} appIcon
  * @param {{ idle: string, nothing: string }} text The idle line's text and the empty line's.
+ * @param {boolean} [notificationsOff] The first-run card says they are off in System Settings.
  * @returns {Row[]}
  */
-export function listRows(snapshot, appIcon, text) {
+export function listRows(snapshot, appIcon, text, notificationsOff = false) {
   /** @type {Row[]} */
   const rows = [];
   for (const group of snapshot.groups) {
@@ -53,9 +55,13 @@ export function listRows(snapshot, appIcon, text) {
   if (snapshot.idle !== null) {
     rows.push({ key: "idle", kind: "idle", text: text.idle });
   }
+  if (snapshot.welcome !== null) {
+    const { doNotDisturb } = snapshot.welcome;
+    rows.push({ key: "welcome", kind: "welcome", doNotDisturb, notificationsOff });
+  }
   if (snapshot.recent.length > 0) {
     rows.push({ key: "recent", kind: "recent", lines: snapshot.recent });
-  } else if (snapshot.showNothing) {
+  } else if (snapshot.showNothing && snapshot.welcome === null) {
     rows.push({ key: "nothing", kind: "nothing", text: text.nothing });
   }
   return rows;

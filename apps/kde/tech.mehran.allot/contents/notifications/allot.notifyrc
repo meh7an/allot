@@ -1,0 +1,9 @@
+[Global]
+IconName=utilities-system-monitor
+Name=Allot
+Comment=Coordinates heavy jobs between your Claude Code sessions
+
+[Event/notification]
+Name=Allot notification
+Comment=A job or the service needs your attention
+Action=Popup

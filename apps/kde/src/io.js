@@ -2,9 +2,11 @@ import { CancelledError, TimeoutError } from "../../gnome/allot@mehran.tech/lib/
 
 /** @import { HttpRequest, HttpResponse } from "../../gnome/allot@mehran.tech/lib/client.js" */
 /** @import { Timers } from "../../gnome/allot@mehran.tech/lib/poller.js" */
+/** @import { ServiceSystem } from "../../gnome/allot@mehran.tech/lib/service-launcher.js" */
 
-// QML can neither read files nor time out a request on its own, so the widget reads them
-// through Plasma's executable data engine and times requests with QML timers.
+// QML can neither read or write files, nor start programs, nor time out a request on its own, so
+// the widget does those through Plasma's executable data engine and times requests with QML
+// timers.
 
 /**
  * What the executable data engine hands back for one command.
@@ -106,6 +108,78 @@ export async function readTextFile(runner, path) {
  */
 export function catCommand(path) {
   return `cat -- ${shellQuote(path)}`;
+}
+
+/**
+ * Replaces a small text file through a temporary file and a rename, so a crash never leaves half
+ * a file.
+ *
+ * @param {CommandRunner} runner
+ * @param {string} path
+ * @param {string} text
+ * @returns {Promise<boolean>} True when the file was written.
+ */
+export async function writeTextFile(runner, path, text) {
+  const temporary = shellQuote(`${path}.tmp`);
+  const folder = shellQuote(path.slice(0, path.lastIndexOf("/")));
+  const output = await runner.run(
+    `mkdir -p -- ${folder} && printf %s ${shellQuote(text)} > ${temporary} && ` +
+      `mv -f -- ${temporary} ${shellQuote(path)}`,
+  );
+  return output.exitCode === 0;
+}
+
+/**
+ * Copies a file unless the target has the same contents already.
+ *
+ * @param {CommandRunner} runner
+ * @param {string} source
+ * @param {string} target
+ * @returns {Promise<boolean>} True when the target is in place.
+ */
+export async function copyFile(runner, source, target) {
+  const from = shellQuote(source);
+  const to = shellQuote(target);
+  const folder = shellQuote(target.slice(0, target.lastIndexOf("/")));
+  const output = await runner.run(
+    `cmp -s -- ${from} ${to} || { mkdir -p -- ${folder} && cp -f -- ${from} ${to}; }`,
+  );
+  return output.exitCode === 0;
+}
+
+/**
+ * A program that outlives the widget's call: its own session, so plasmashell's process group never
+ * signals it, and from `/` with silent streams, as `allot-client` starts allotd.
+ *
+ * @param {string[]} argv
+ * @returns {string}
+ */
+export function detachedCommand(argv) {
+  return `cd / && setsid -f ${argv.map(shellQuote).join(" ")} < /dev/null > /dev/null 2>&1`;
+}
+
+/**
+ * Start Service through the executable engine.
+ *
+ * @param {CommandRunner} runner
+ * @returns {ServiceSystem}
+ */
+export function serviceSystem(runner) {
+  return {
+    readText: (path) => readTextFile(runner, path),
+    isExecutable: async (path) => {
+      const output = await runner.run(`test -x ${shellQuote(path)}`);
+      return output.exitCode === 0;
+    },
+    run: async (argv) => {
+      const command = argv.map(shellQuote).join(" ");
+      const output = await runner.run(`cd / && ${command} < /dev/null > /dev/null 2>&1`);
+      return output.exitCode === 0;
+    },
+    spawn: (path) => {
+      runner.run(detachedCommand([path]));
+    },
+  };
 }
 
 /**

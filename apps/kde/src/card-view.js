@@ -4,6 +4,7 @@ import { QUIET_TICKS } from "../../gnome/allot@mehran.tech/lib/benchmark-status.
 
 /** @import { BenchmarkStep } from "../../gnome/allot@mehran.tech/lib/benchmark-status.js" */
 /** @import { JobCard } from "../../gnome/allot@mehran.tech/lib/job-card.js" */
+/** @import { DriveRow, MeterRow } from "../../gnome/allot@mehran.tech/lib/resources-view.js" */
 
 /**
  * @typedef {object} Color
@@ -25,6 +26,34 @@ export const BAR_MS = 900;
 export const STEP_RUN_MS = 700;
 export const ACTION_GROW_MS = 167;
 export const ACTION_SHRINK_MS = 120;
+export const FOLD_MS = 240;
+export const SUMMARY_MS = 150;
+export const GLIDE_MS = 600;
+
+/** The Resources card's header arrow: up opens the card, which is docked at the popup's bottom. */
+export const FOLD_UP_ICON = "arrow-up";
+export const FOLD_DOWN_ICON = "arrow-down";
+
+/** One line, as the handoff has it: the fold is as tall as its rows. */
+export const ALL_OFF_TEXT = "All meters are off. Turn them on from ⋯ › Meters.";
+
+/**
+ * A row that has just left the Resources card, for the moment before its view does.
+ *
+ * @type {MeterRow & DriveRow}
+ */
+const GONE_ROW = {
+  id: "",
+  label: "",
+  used: 0,
+  shared: null,
+  reserved: null,
+  headroom: 1,
+  value: "",
+  detail: "",
+  spark: [],
+  activity: "",
+};
 
 export { QUIET_TICKS };
 
@@ -123,6 +152,53 @@ export function stepState(step, current) {
     return "current";
   }
   return index < reached ? "past" : "upcoming";
+}
+
+/**
+ * The Resources card's row ids as one string. QML rebuilds a Repeater whenever its model is
+ * assigned, and a new array comes with every poll; a string binding fires only when it changes.
+ *
+ * @param {{ id: string }[]} rows
+ * @returns {string}
+ */
+export function rowIds(rows) {
+  return rows.map((row) => row.id).join("\n");
+}
+
+/**
+ * The views' model for `rowIds`.
+ *
+ * @param {string} ids
+ * @returns {string[]}
+ */
+export function splitIds(ids) {
+  return ids === "" ? [] : ids.split("\n");
+}
+
+/**
+ * @param {(MeterRow | DriveRow)[]} rows
+ * @param {string} id
+ * @returns {MeterRow & DriveRow} A view reads the fields of its own kind of row.
+ */
+export function rowById(rows, id) {
+  const found = rows.find((row) => row.id === id);
+  return /** @type {MeterRow & DriveRow} */ (found ?? GONE_ROW);
+}
+
+/**
+ * The sparkline's points, oldest at the left, with the bottom for 0.
+ *
+ * @param {number[]} samples Fractions.
+ * @param {number} width
+ * @param {number} height
+ * @returns {{ x: number, y: number }[]}
+ */
+export function sparkPoints(samples, width, height) {
+  const steps = Math.max(1, samples.length - 1);
+  return samples.map((sample, index) => ({
+    x: (index * width) / steps,
+    y: (1 - sample) * height,
+  }));
 }
 
 /**

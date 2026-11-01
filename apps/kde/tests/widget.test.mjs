@@ -45,12 +45,10 @@ test("starting reads the config, then the token, and shows the first poll", asyn
   const subject = started();
   await settle();
 
-  assert.deepEqual(subject.commands, [
-    `cat -- '${CONFIG_FILE}'`,
-    `cat -- '${TOKEN_FILE}'`,
-  ]);
+  const config = subject.commands.indexOf(`cat -- '${CONFIG_FILE}'`);
+  const token = subject.commands.indexOf(`cat -- '${TOKEN_FILE}'`);
+  assert.ok(config >= 0 && config < token, "the port comes from the config before any request");
   assert.equal(subject.requests[0]?.sent.url, "http://127.0.0.1:47823/ui/state");
-  assert.equal(subject.changes, 1);
   assert.equal(subject.widget.model.snapshot.header.summary, "2 running · 2 waiting");
   assert.equal(subject.widget.iconFile, "allot-queued-symbolic.svg");
   assert.equal(subject.widget.accessibleName, "Allot · 2 running · 2 waiting");
@@ -82,11 +80,12 @@ test("without a token the service reads as stopped and nothing is requested", as
 test("an unchanged state calls onChange and logs only once", async () => {
   const subject = started();
   await settle();
+  const changes = subject.changes;
   subject.timers.fireAll();
   await settle();
 
   assert.equal(subject.requests.length, 2);
-  assert.equal(subject.changes, 1);
+  assert.equal(subject.changes, changes);
   assert.equal(subject.lines.length, 1);
 });
 
@@ -132,7 +131,11 @@ test("stop ends polling and cancels the request in flight", async () => {
 
   assert.equal(subject.requests[0]?.aborted, true);
   assert.equal(timers.pending.size, 0);
-  assert.equal(subject.changes, 0, "a cancelled poll never reads as a stopped service");
+  assert.notEqual(
+    subject.widget.model.snapshot.header.summary,
+    "Service stopped",
+    "a cancelled poll never reads as a stopped service",
+  );
 });
 
 test("stopping while the config is read never starts polling", async () => {
@@ -142,7 +145,7 @@ test("stopping while the config is read never starts polling", async () => {
   subject.widget.stop();
   await running;
 
-  assert.deepEqual(subject.commands, [`cat -- '${CONFIG_FILE}'`]);
+  assert.ok(!subject.commands.includes(`cat -- '${TOKEN_FILE}'`));
   assert.equal(subject.requests.length, 0);
 });
 
@@ -411,5 +414,21 @@ test("the desktop entries are read once per opening and give the card its icon",
   subject.widget.setExpanded(true);
   await settle();
   assert.equal(reads(), 2);
+});
+
+test("a Kill from the popup is not a kill from outside", async () => {
+  const subject = await opened("several");
+  const lease = leaseId("cargo");
+
+  subject.widget.pressKill(lease);
+  subject.advance(1000);
+  subject.widget.pressKill(lease);
+  await settle();
+  subject.widget.setExpanded(false);
+  await settle();
+  subject.timers.fireAll();
+  await settle();
+
+  assert.deepEqual(subject.notifications, []);
 });
 
