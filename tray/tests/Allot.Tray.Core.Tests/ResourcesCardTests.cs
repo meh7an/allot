@@ -351,6 +351,21 @@ public sealed class ResourcesCardTests
     }
 
     [TestMethod]
+    public void NotificationsCountReadsOffWhileWindowsHasToastsOff()
+    {
+        Assert.AreEqual("Off", MenuCounts.Notifications(new NotificationToggles(), off: true));
+
+        var model = new FlyoutModel();
+        model.ApplyMenu(new TraySettings(), notificationsOff: true);
+        Assert.AreEqual("Off", model.NotificationsCount);
+        Assert.IsTrue(model.NotificationsOff);
+
+        model.ApplyMenu(new TraySettings(), notificationsOff: false);
+        Assert.AreEqual("3 of 5", model.NotificationsCount);
+        Assert.IsFalse(model.NotificationsOff);
+    }
+
+    [TestMethod]
     public void ModelUpdatesRowsInPlaceAndRebuildsOnAToggle()
     {
         var model = new ResourcesModel();

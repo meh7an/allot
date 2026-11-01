@@ -70,6 +70,33 @@ public sealed class FirstRunTests
     }
 
     [TestMethod]
+    public void CardSaysWhenWindowsHasToastsOff()
+    {
+        var (status, state) = Handoff.Scenario("first-run");
+
+        var off = FlyoutSnapshot.From(status, state, firstRun: new(false, true, true));
+        var on = FlyoutSnapshot.From(status, state, firstRun: new(false, true, false));
+
+        Assert.AreEqual(new WelcomeCard(LaunchAtLogon: true, NotificationsOff: true), off.Welcome);
+        Assert.AreEqual(new WelcomeCard(LaunchAtLogon: true, NotificationsOff: false), on.Welcome);
+    }
+
+    [TestMethod]
+    public void TurningToastsBackOnClearsTheCardLineInPlace()
+    {
+        var (status, state) = Handoff.Scenario("first-run");
+        var model = new FlyoutModel();
+        model.Apply(FlyoutSnapshot.From(status, state, firstRun: new(false, true, true)));
+        var row = model.Rows.OfType<WelcomeRow>().Single();
+        Assert.IsTrue(row.NotificationsOff);
+
+        model.Apply(FlyoutSnapshot.From(status, state, firstRun: new(false, true, false)));
+
+        Assert.AreSame(row, model.Rows.OfType<WelcomeRow>().Single());
+        Assert.IsFalse(row.NotificationsOff);
+    }
+
+    [TestMethod]
     public void CardSitsAfterTheIdleLineAndUpdatesInPlace()
     {
         var (status, state) = Handoff.Scenario("first-run");

@@ -498,6 +498,14 @@
                 IsOn="{x:Bind LaunchAtLogon, Mode=OneWay}"
                 Toggled="OnLaunchAtLogonToggled" />
             </Grid>
+            <TextBlock
+              Style="{StaticResource AllotBodyTextStyle}"
+              Foreground="{ThemeResource AllotTextSecondaryBrush}"
+              TextWrapping="WrapWholeWords"
+              Visibility="{x:Bind NotificationsOff, Mode=OneWay}">
+              <Run Text="Notifications are turned off in Windows Settings." />
+              <Hyperlink Click="OnNotificationSettingsClick">Open notification settings</Hyperlink>
+            </TextBlock>
             <Button
               HorizontalAlignment="Right"
               MinHeight="{StaticResource AllotButtonSize}"
@@ -956,6 +964,7 @@
               <MenuFlyout
                 x:Name="MoreMenu"
                 Placement="BottomEdgeAlignedRight"
+                Opening="OnMenuOpening"
                 Opened="OnMenuOpened"
                 Closing="OnMenuClosing"
                 Closed="OnMenuClosed">
@@ -985,6 +994,16 @@
                   <MenuFlyoutSubItem.Icon>
                     <FontIcon FontFamily="{StaticResource AllotIconRegularFontFamily}" Glyph="{StaticResource AllotGlyphAlertRegular}" />
                   </MenuFlyoutSubItem.Icon>
+                  <!-- While Windows has Allot's toasts turned off, none show whatever the items say. -->
+                  <MenuFlyoutItem
+                    Text="Turned off in Windows Settings"
+                    IsEnabled="False"
+                    Visibility="{x:Bind Model.NotificationsOff, Mode=OneWay}" />
+                  <MenuFlyoutItem
+                    Text="Open notification settings…"
+                    Visibility="{x:Bind Model.NotificationsOff, Mode=OneWay}"
+                    Click="OnNotificationSettingsClick" />
+                  <MenuFlyoutSeparator Visibility="{x:Bind Model.NotificationsOff, Mode=OneWay}" />
                   <ToggleMenuFlyoutItem x:Name="ServiceStoppedItem" Text="Service stopped" Click="OnNotificationClick" />
                   <ToggleMenuFlyoutItem x:Name="RunningLongItem" Text="Running long" Click="OnNotificationClick" />
                   <ToggleMenuFlyoutItem x:Name="BenchmarkFinishedItem" Text="Benchmark finished" Click="OnNotificationClick" />

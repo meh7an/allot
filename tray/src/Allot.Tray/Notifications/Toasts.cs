@@ -33,6 +33,9 @@ internal static class Toasts
     // Every toast of the app, so a withdrawal names only ours.
     private const string Group = "allot";
 
+    // Settings › System › Notifications, where Allot's switch and the global one live.
+    private static readonly Uri SettingsPage = new("ms-settings:notifications");
+
     /// <param name="dispatcher">The UI thread's queue; clicks arrive on a background thread.</param>
     /// <param name="onAction">Runs on the UI thread with the click.</param>
     public static void Register(DispatcherQueue dispatcher, Action<ToastAction> onAction)
@@ -61,6 +64,37 @@ internal static class Toasts
     }
 
     public static void Unregister() => AppNotificationManager.Default.Unregister();
+
+    /// <summary>
+    /// Windows has Allot's toasts turned off, for Allot or for every app; both switches are on
+    /// the page <see cref="OpenSettingsAsync"/> opens. A group policy block counts as on, since
+    /// that page can't lift it.
+    /// </summary>
+    public static bool AreTurnedOff()
+    {
+        try
+        {
+            return AppNotificationManager.Default.Setting
+                is AppNotificationSetting.DisabledForApplication
+                or AppNotificationSetting.DisabledForUser;
+        }
+        catch (COMException e)
+        {
+            AppLog.Write($"toast setting read failed: 0x{e.HResult:X8} {e.Message}");
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Opens Settings › System › Notifications.
+    /// </summary>
+    public static async Task OpenSettingsAsync()
+    {
+        if (!await Windows.System.Launcher.LaunchUriAsync(SettingsPage))
+        {
+            AppLog.Write($"opening {SettingsPage} failed");
+        }
+    }
 
     /// <param name="toast">The toast to show.</param>
     /// <param name="logo">The PNG of the tray icon's current state.</param>

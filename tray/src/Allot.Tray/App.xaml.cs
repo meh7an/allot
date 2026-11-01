@@ -62,6 +62,7 @@ public sealed partial class App : Application
     private TraySettings _settings = new();
     private Autostart? _autostart;
     private bool _launchAtLogon;
+    private bool _notificationsOff;
     private bool _flyoutOpen;
 
     public App()
@@ -107,7 +108,8 @@ public sealed partial class App : Application
 
         _settingsStore = new SettingsStore(SettingsFile(_data));
         _settings = _settingsStore.Load();
-        _model.ApplyMenu(_settings);
+        _ = ReadNotificationsOff();
+        _model.ApplyMenu(_settings, _notificationsOff);
         _autostart = new Autostart(new RegistryAutostartStore(), Environment.ProcessPath ?? "");
         _ = ReadLaunchAtLogon();
 
@@ -151,6 +153,14 @@ public sealed partial class App : Application
         shell.StartServicePressed += StartService;
         shell.LaunchAtLogonChanged += SetLaunchAtLogon;
         shell.FirstRunDonePressed += () => ChangeSettings(settings => settings.FirstRunDone = true);
+        shell.NotificationSettingsPressed += () => _ = Toasts.OpenSettingsAsync();
+        shell.MenuOpening += () =>
+        {
+            if (ReadNotificationsOff())
+            {
+                _ = Show();
+            }
+        };
 #if DEBUG
         if (_toasts)
         {
@@ -311,7 +321,7 @@ public sealed partial class App : Application
             stops = _scenarioStops;
         }
 #endif
-        var firstRun = new FirstRunState(_settings.FirstRunDone, _launchAtLogon);
+        var firstRun = new FirstRunState(_settings.FirstRunDone, _launchAtLogon, _notificationsOff);
         var snapshot = FlyoutSnapshot.From(_status, state, stops, _clock.NowMs, firstRun);
 
         // Closed, the snapshot only drives the tray icon and the first-run open, and values
@@ -372,6 +382,25 @@ public sealed partial class App : Application
         return _launchAtLogon;
     }
 
+    /// <summary>
+    /// Reads again whether Windows has Allot's toasts turned off, so a change made in Settings
+    /// shows; the ⋯ menu follows at once, the first-run card with the next <see cref="Show"/>.
+    /// </summary>
+    /// <returns>True when it changed.</returns>
+    private bool ReadNotificationsOff()
+    {
+        var off = _toasts && Toasts.AreTurnedOff();
+        if (off == _notificationsOff)
+        {
+            return false;
+        }
+
+        _notificationsOff = off;
+        AppLog.Write($"toasts {(off ? "turned off" : "back on")} in Windows Settings");
+        _model.ApplyMenu(_settings, off);
+        return true;
+    }
+
     private void SetLaunchAtLogon(bool on)
     {
         try
@@ -398,7 +427,7 @@ public sealed partial class App : Application
     private void ChangeSettings(Action<TraySettings> change)
     {
         change(_settings);
-        _model.ApplyMenu(_settings);
+        _model.ApplyMenu(_settings, _notificationsOff);
         SaveSettings();
         _ = Show();
     }
@@ -506,6 +535,7 @@ public sealed partial class App : Application
     // Before the window measures its content, so it opens at the size it keeps.
     private void OnOpening()
     {
+        _ = ReadNotificationsOff();
         _ = ReadLaunchAtLogon();
         _ = Show();
     }
@@ -558,7 +588,7 @@ public sealed partial class App : Application
         {
             _settings.ResourcesExpanded = preset.Expanded;
             _settings.Meters = preset.Meters ?? _settings.Meters;
-            _model.ApplyMenu(_settings);
+            _model.ApplyMenu(_settings, _notificationsOff);
             _shell?.ShowToggles(_settings);
             SaveSettings();
         }

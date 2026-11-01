@@ -276,6 +276,7 @@ public sealed class RecentRow(IReadOnlyList<RecentLine> lines) : FlyoutRow
 public sealed class WelcomeRow(WelcomeCard card) : FlyoutRow
 {
     private bool _launchAtLogon = card.LaunchAtLogon;
+    private bool _notificationsOff = card.NotificationsOff;
 
     public bool LaunchAtLogon
     {
@@ -283,10 +284,23 @@ public sealed class WelcomeRow(WelcomeCard card) : FlyoutRow
         private set => Set(ref _launchAtLogon, value);
     }
 
+    /// <summary>
+    /// Windows has Allot's toasts turned off; the card says so, with a link to Settings.
+    /// </summary>
+    public bool NotificationsOff
+    {
+        get => _notificationsOff;
+        private set => Set(ref _notificationsOff, value);
+    }
+
     public override string Key => "welcome";
 
-    public override void Update(FlyoutRow fresh) =>
-        LaunchAtLogon = ((WelcomeRow)fresh).LaunchAtLogon;
+    public override void Update(FlyoutRow fresh)
+    {
+        var welcome = (WelcomeRow)fresh;
+        LaunchAtLogon = welcome.LaunchAtLogon;
+        NotificationsOff = welcome.NotificationsOff;
+    }
 }
 
 /// <summary>

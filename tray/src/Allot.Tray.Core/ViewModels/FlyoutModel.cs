@@ -17,6 +17,7 @@ public sealed class FlyoutModel : Observable
     private ServiceBanner _banner = ServiceBanner.Hidden;
     private string _metersCount = MenuCounts.Meters(new MeterToggles());
     private string _notificationsCount = MenuCounts.Notifications(new NotificationToggles());
+    private bool _notificationsOff;
 
     public HeaderGlyph Glyph
     {
@@ -59,12 +60,23 @@ public sealed class FlyoutModel : Observable
     }
 
     /// <summary>
-    /// The trailing count of ⋯ › Notifications.
+    /// The trailing count of ⋯ › Notifications, or <c>Off</c> while Windows has Allot's toasts
+    /// turned off.
     /// </summary>
     public string NotificationsCount
     {
         get => _notificationsCount;
         private set => Set(ref _notificationsCount, value);
+    }
+
+    /// <summary>
+    /// Windows has Allot's toasts turned off; ⋯ › Notifications starts with a line saying so and
+    /// an item that opens Settings.
+    /// </summary>
+    public bool NotificationsOff
+    {
+        get => _notificationsOff;
+        private set => Set(ref _notificationsOff, value);
     }
 
     public ObservableCollection<FlyoutRow> Rows { get; } = [];
@@ -124,10 +136,13 @@ public sealed class FlyoutModel : Observable
 
     public void ApplyBanner(ServiceBanner? banner) => Banner = banner ?? ServiceBanner.Hidden;
 
-    public void ApplyMenu(TraySettings settings)
+    /// <param name="settings">The saved menu toggles.</param>
+    /// <param name="notificationsOff">Windows has Allot's toasts turned off.</param>
+    public void ApplyMenu(TraySettings settings, bool notificationsOff)
     {
         MetersCount = MenuCounts.Meters(settings.Meters);
-        NotificationsCount = MenuCounts.Notifications(settings.Notifications);
+        NotificationsCount = MenuCounts.Notifications(settings.Notifications, notificationsOff);
+        NotificationsOff = notificationsOff;
     }
 
     /// <summary>

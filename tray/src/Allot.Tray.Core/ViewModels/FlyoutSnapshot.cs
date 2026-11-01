@@ -108,13 +108,15 @@ public sealed record RecentLine(string Command, string ShortId, string Meta, boo
 /// </summary>
 /// <param name="Done">Done was pressed (<c>tray.json</c>).</param>
 /// <param name="LaunchAtLogon">The autostart entry is on.</param>
-public sealed record FirstRunState(bool Done, bool LaunchAtLogon);
+/// <param name="NotificationsOff">Windows has Allot's toasts turned off.</param>
+public sealed record FirstRunState(bool Done, bool LaunchAtLogon, bool NotificationsOff = false);
 
 /// <summary>
 /// The first-run card (handoff section 4).
 /// </summary>
 /// <param name="LaunchAtLogon">The state of its Launch at logon switch.</param>
-public sealed record WelcomeCard(bool LaunchAtLogon);
+/// <param name="NotificationsOff">It shows the "Turned off in Windows Settings" line.</param>
+public sealed record WelcomeCard(bool LaunchAtLogon, bool NotificationsOff = false);
 
 /// <summary>
 /// Everything the flyout header and job list show for one poll, built by a pure function so that
@@ -224,7 +226,9 @@ public sealed record FlyoutSnapshot(
         var idle = IdleOf(state, sessions);
         var recent = groups.Count == 0 ? RecentOf(state, now) : [];
         var welcome = !lastKnown && state is { FirstSessionAtMs: null }
-            && firstRun is { Done: false } ? new WelcomeCard(firstRun.LaunchAtLogon) : null;
+            && firstRun is { Done: false }
+                ? new WelcomeCard(firstRun.LaunchAtLogon, firstRun.NotificationsOff)
+                : null;
         var nothing = !lastKnown && groups.Count == 0 && recent.Count == 0 && welcome is null;
         return new FlyoutSnapshot(header, groups, idle, recent, nothing, phase, lastKnown, welcome);
 

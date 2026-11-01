@@ -165,6 +165,16 @@ public sealed partial class FlyoutShell : UserControl, IFlyoutContent
     /// </summary>
     public event Action? FirstRunDonePressed;
 
+    /// <summary>
+    /// The ⋯ menu is about to open; its items can still change.
+    /// </summary>
+    public event Action? MenuOpening;
+
+    /// <summary>
+    /// A press of Open notification settings, in ⋯ › Notifications or on the first-run card.
+    /// </summary>
+    public event Action? NotificationSettingsPressed;
+
     public FlyoutModel Model { get; }
 
     public double DesiredHeight =>
@@ -481,6 +491,8 @@ public sealed partial class FlyoutShell : UserControl, IFlyoutContent
     private void OnPinClick(object sender, RoutedEventArgs e) =>
         _window.SetPinned(PinButton.IsChecked == true);
 
+    private void OnMenuOpening(object? sender, object e) => MenuOpening?.Invoke();
+
     private void OnMenuOpened(object? sender, object e)
     {
         MorePressed.Opacity = 1;
@@ -576,6 +588,9 @@ public sealed partial class FlyoutShell : UserControl, IFlyoutContent
     }
 
     private void OnOpenLogsClick(object sender, RoutedEventArgs e) => _openLogs();
+
+    private void OnNotificationSettingsClick(object sender, object e) =>
+        NotificationSettingsPressed?.Invoke();
 
     private IEnumerable<ToggleMenuFlyoutItem> CheckItems() =>
     [

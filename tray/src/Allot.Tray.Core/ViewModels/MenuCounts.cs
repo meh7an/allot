@@ -19,8 +19,16 @@ public static class MenuCounts
         return $"{on.Count(item => item)} of {MeterItems}";
     }
 
-    public static string Notifications(NotificationToggles toggles)
+    /// <param name="toggles">The ⋯ › Notifications items.</param>
+    /// <param name="off">Windows has Allot's toasts turned off, so none show whatever the items
+    /// say.</param>
+    public static string Notifications(NotificationToggles toggles, bool off = false)
     {
+        if (off)
+        {
+            return "Off";
+        }
+
         bool[] on =
         [
             toggles.ServiceStopped,
