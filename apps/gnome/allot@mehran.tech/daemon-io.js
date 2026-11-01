@@ -9,6 +9,9 @@ import { CancelledError, TimeoutError } from "./lib/client.js";
 
 Gio._promisify(Soup.Session.prototype, "send_and_read_async");
 Gio._promisify(Gio.File.prototype, "load_contents_async");
+Gio._promisify(Gio.File.prototype, "replace_contents_bytes_async", "replace_contents_finish");
+Gio._promisify(Gio.File.prototype, "query_info_async");
+Gio._promisify(Gio.Subprocess.prototype, "wait_check_async");
 
 /** Sends the client's requests with libsoup; `cancel` ends every one in flight. */
 export class SoupTransport {
@@ -87,6 +90,66 @@ export async function readTextFile(path) {
   } catch {
     return null;
   }
+}
+
+/**
+ * Replaces a small text file through a temporary file and a rename, so a crash never leaves half
+ * a file.
+ *
+ * @param {string} path
+ * @param {string} text
+ * @returns {Promise<void>}
+ */
+export async function writeTextFile(path, text) {
+  await Gio.File.new_for_path(path).replace_contents_bytes_async(
+    new GLib.Bytes(new TextEncoder().encode(text)),
+    null,
+    false,
+    Gio.FileCreateFlags.REPLACE_DESTINATION,
+    null,
+  );
+}
+
+/**
+ * Starts programs for Start Service, from `/` with no standard streams, as `allot-client` does.
+ *
+ * @type {import("./lib/service-launcher.js").ServiceSystem}
+ */
+export const serviceSystem = {
+  readText: readTextFile,
+  isExecutable: async (path) => {
+    try {
+      const info = await Gio.File.new_for_path(path).query_info_async(
+        "access::can-execute",
+        Gio.FileQueryInfoFlags.NONE,
+        GLib.PRIORITY_DEFAULT,
+        null,
+      );
+      return info.get_attribute_boolean("access::can-execute");
+    } catch {
+      return false;
+    }
+  },
+  run: async (argv) => {
+    try {
+      return await silentLauncher().spawnv(argv).wait_check_async(null);
+    } catch {
+      return false;
+    }
+  },
+  spawn: (path) => {
+    // Its own session, so the shell's process group never signals allotd.
+    silentLauncher().spawnv(["setsid", path]);
+  },
+};
+
+/** @returns {Gio.SubprocessLauncher} */
+function silentLauncher() {
+  const launcher = new Gio.SubprocessLauncher({
+    flags: Gio.SubprocessFlags.STDOUT_SILENCE | Gio.SubprocessFlags.STDERR_SILENCE,
+  });
+  launcher.set_cwd("/");
+  return launcher;
 }
 
 /**

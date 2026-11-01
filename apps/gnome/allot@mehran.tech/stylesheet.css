@@ -203,6 +203,200 @@
   font-size: 0.75em;
 }
 
+/* Service banner */
+
+.allot-banner-view {
+  spacing: 6px;
+  margin: 0 4px;
+}
+
+.allot-banner {
+  spacing: 8px;
+  padding: 6px 6px 6px 10px;
+  border-radius: 10px;
+  border-width: 1px;
+  font-size: 0.85em;
+}
+
+.allot-banner-text {
+  font-weight: bold;
+}
+
+.allot-banner-problem {
+  margin-top: 2px;
+}
+
+.allot-banner-button {
+  min-height: 0;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background-color: -st-accent-color;
+  color: -st-accent-fg-color;
+  font-size: 1em;
+}
+
+.allot-banner-caption {
+  padding: 0 6px;
+  font-size: 0.85em;
+}
+
+/* First run */
+
+.allot-welcome {
+  spacing: 8px;
+  padding: 12px;
+}
+
+.allot-welcome-title {
+  font-weight: bold;
+}
+
+.allot-welcome-body,
+.allot-welcome-note {
+  font-size: 0.85em;
+}
+
+.allot-welcome-done {
+  min-height: 0;
+  padding: 5px 16px;
+  border-radius: 6px;
+  font-size: 0.85em;
+}
+
+/* Resources card */
+
+.allot-resources {
+  margin: 0 4px;
+}
+
+.allot-resources-header {
+  height: 40px;
+  padding: 0 8px 0 12px;
+  border-radius: 10px;
+}
+
+.allot-resources-title {
+  font-weight: bold;
+  font-size: 0.95em;
+}
+
+.allot-resources-summary {
+  margin-left: 8px;
+  margin-right: 4px;
+  font-size: 0.75em;
+  font-feature-settings: "tnum";
+}
+
+.allot-resources-chevron {
+  icon-size: 16px;
+}
+
+.allot-resources-body {
+  padding-bottom: 8px;
+}
+
+.allot-meter-row {
+  spacing: 8px;
+  min-height: 28px;
+  padding: 0 12px;
+}
+
+.allot-meter-label {
+  width: 58px;
+  font-size: 0.85em;
+  font-weight: bold;
+}
+
+.allot-meter-bar {
+  height: 16px;
+  color: -st-accent-color;
+}
+
+.allot-meter-value-box {
+  spacing: 6px;
+  width: 108px;
+}
+
+.allot-meter-value {
+  font-size: 0.85em;
+  font-feature-settings: "tnum";
+}
+
+.allot-sparkline {
+  width: 36px;
+  height: 14px;
+  color: -st-accent-color;
+}
+
+.allot-resources-separator {
+  height: 1px;
+  margin: 4px 12px;
+}
+
+.allot-drive-middle {
+  spacing: 2px;
+}
+
+.allot-drive-bar {
+  height: 4px;
+}
+
+.allot-drive-activity {
+  font-size: 0.75em;
+  font-feature-settings: "tnum";
+}
+
+.allot-resources-off {
+  padding: 8px 12px 2px;
+  font-size: 0.85em;
+}
+
+.allot-legend {
+  spacing: 12px;
+  padding: 6px 12px 0;
+}
+
+.allot-legend-entry {
+  spacing: 4px;
+}
+
+.allot-legend-label {
+  font-size: 0.75em;
+}
+
+.allot-legend-swatch {
+  width: 10px;
+  height: 6px;
+  border-radius: 2px;
+}
+
+.allot-legend-used {
+  background-color: -st-accent-color;
+}
+
+.allot-legend-reserved {
+  width: 2px;
+  height: 10px;
+  border-radius: 0;
+}
+
+.allot-hover-label {
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 0.85em;
+}
+
+/* Menus */
+
+.allot-menu-count {
+  margin-right: 8px;
+  font-size: 0.85em;
+}
+
+.allot-menu-indented {
+  padding-left: 28px;
+}
+
 /* Recently finished */
 
 .allot-recent-view {

@@ -13,8 +13,20 @@ import { PollSchedule } from "./schedule.js";
  */
 
 /**
+ * Starts allotd for Start Service.
+ *
+ * @typedef {object} ServiceLauncher
+ * @property {() => Promise<string | null>} start
+ *   Starts allotd without waiting for it to answer; resolves with why not, or `null`.
+ */
+
+/** How long Start Service reports `starting` before giving up. */
+export const START_TIMEOUT_MS = 10_000;
+
+/**
  * Polls the daemon on the `PollSchedule` and keeps the last state it served, which the
- * service-down view shows dimmed.
+ * service-down view shows dimmed. Start Service launches allotd and reports it as starting until
+ * it answers or `START_TIMEOUT_MS` passes.
  */
 export class DaemonPoller {
   /**
@@ -34,8 +46,20 @@ export class DaemonPoller {
    */
   lastKnown = null;
 
+  /**
+   * Why the last Start Service failed: the launch itself, or allotd not answering in time.
+   * Cleared by the next start and once allotd answers.
+   *
+   * @type {string | null}
+   */
+  startProblem = null;
+
   #client;
   #timers;
+  #launcher;
+  #now;
+  /** @type {number | null} */
+  #startingUntil = null;
   #schedule = new PollSchedule();
   #popupOpen = false;
   #looping = false;
@@ -49,10 +73,43 @@ export class DaemonPoller {
   /**
    * @param {DaemonClient} client
    * @param {Timers} timers
+   * @param {object} [options]
+   * @param {ServiceLauncher | null} [options.launcher] Starts allotd for Start Service; without
+   *   one, Start Service only polls.
+   * @param {() => number} [options.now] The local clock of the starting window, in milliseconds.
    */
-  constructor(client, timers) {
+  constructor(client, timers, options = {}) {
     this.#client = client;
     this.#timers = timers;
+    this.#launcher = options.launcher ?? null;
+    this.#now = options.now ?? (() => Date.now());
+  }
+
+  /**
+   * Launches allotd and polls quickly until it answers or `START_TIMEOUT_MS` passes.
+   *
+   * @returns {Promise<string | null>} `null` when allotd was launched, else why not.
+   */
+  async startService() {
+    const problem = (await this.#launcher?.start()) ?? null;
+    // A failed launch polls too, so whoever shows the poll shows the problem at once.
+    this.startProblem = problem;
+    if (problem === null) {
+      this.#startingUntil = this.#now() + START_TIMEOUT_MS;
+    }
+    this.pollNow();
+    return problem;
+  }
+
+  /**
+   * Asks allotd to stop, then polls at once so the icon and popup show it stopped.
+   *
+   * @returns {Promise<string | null>} `null` when allotd accepted, else why not.
+   */
+  async stopService() {
+    const problem = await this.#client.shutdown();
+    this.pollNow();
+    return problem;
   }
 
   /**
@@ -115,10 +172,11 @@ export class DaemonPoller {
    * @returns {Promise<number>} Milliseconds to wait before the next poll.
    */
   async pollOnce() {
-    const result = await this.#client.poll();
+    const polled = await this.#client.poll();
     if (this.#stopped) {
       throw new CancelledError();
     }
+    const result = this.#whileStarting(polled);
     const delay = this.#schedule.next(this.#popupOpen, result.status);
     if (result.state !== null) {
       this.lastKnown = result.state;
@@ -126,6 +184,31 @@ export class DaemonPoller {
     this.latest = result;
     this.onUpdate?.(result);
     return delay;
+  }
+
+  /**
+   * A launched allotd takes a moment to bind its port; until then it looks stopped.
+   *
+   * @param {PollResult} result
+   * @returns {PollResult}
+   */
+  #whileStarting(result) {
+    if (result.status !== "stopped") {
+      this.#startingUntil = null;
+      this.startProblem = null;
+      return result;
+    }
+    if (this.#startingUntil === null) {
+      return result;
+    }
+    if (this.#now() < this.#startingUntil) {
+      return { ...result, status: "starting" };
+    }
+    this.#startingUntil = null;
+    const detail =
+      `allotd did not answer within ${START_TIMEOUT_MS / 1000} s; ` + "see logs/allotd.log";
+    this.startProblem = detail;
+    return { ...result, status: "stopped", detail };
   }
 
   /**

@@ -53,6 +53,8 @@ test("every scenario's summary matches the handoff", () => {
     ["c-killed", "Idle", "idle"],
     ["c-removed", "Idle", "idle"],
     ["c-refused", "1 running", "busy"],
+    ["first-run", "Idle", "idle"],
+    ["res-shared", "1 running", "busy"],
   ];
   assert.deepEqual(
     cases.map(([name]) => name),

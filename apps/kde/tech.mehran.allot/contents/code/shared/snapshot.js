@@ -88,9 +88,25 @@ import * as jobCard from "./job-card.js";
  *   Run time and age, for example `4:52 · 4 min ago`.
  */
 /**
+ * What the first-run card needs to know about the user's settings.
+ *
+ * @typedef {object} FirstRunState
+ * @property {boolean} isDone
+ *   Done was pressed (`tray.json`).
+ * @property {boolean} doNotDisturb
+ *   GNOME's Do Not Disturb is on, so notifications show no banners.
+ */
+/**
+ * The first-run card, shown until Done or until the first session connects. GNOME has no Launch
+ * at login switch: the shell starts the extension and `allot install` enables allotd's unit.
+ *
+ * @typedef {object} WelcomeCard
+ * @property {boolean} doNotDisturb
+ *   The card says that banners are hidden.
+ */
+/**
  * Everything the popup header and job list show for one moment, built by a pure function so
- * that every string is testable. The Windows tray app's `FlyoutSnapshot` without the first-run
- * card.
+ * that every string is testable. The Windows tray app's `FlyoutSnapshot`.
  *
  * @typedef {object} PanelSnapshot
  * @property {PanelHeader} header
@@ -101,13 +117,15 @@ import * as jobCard from "./job-card.js";
  * @property {RecentLine[]} recent
  *   Recently finished runs, newest first; only while no job runs or waits.
  * @property {boolean} showNothing
- *   The service runs and has no jobs. The popup shows Recently finished instead of the
- *   "No jobs running or waiting." line when there are recent runs.
+ *   The service runs and has no jobs. The popup shows the first-run card or Recently finished
+ *   instead of the "No jobs running or waiting." line when it has them.
  * @property {BenchmarkPhase | null} benchmark
  *   The live benchmark's phase, or `null` without one.
  * @property {boolean} isLastKnown
  *   The jobs come from the last state allotd served before it went away; they show dimmed and
  *   without actions.
+ * @property {WelcomeCard | null} welcome
+ *   The first-run card, after the idle line; `null` once it is done or a session has connected.
  */
 /**
  * @typedef {object} SnapshotOptions
@@ -119,7 +137,14 @@ import * as jobCard from "./job-card.js";
  * @property {number | null} [nowMs]
  *   The moment times are shown for, in the daemon's clock; the state's own time when absent.
  *   Last known state always shows its own time.
+ * @property {FirstRunState} [firstRun]
+ *   Done and Do Not Disturb, for the first-run card; no card without it.
  */
+export const WELCOME_TITLE = "Welcome to Allot";
+export const WELCOME_BODY = "When a Claude Code session runs a build, test suite or training job, it reserves cores, RAM " +
+    "or GPU here first. Jobs that don't fit wait their turn. You'll see each one here and can " +
+    "stop it.";
+export const DO_NOT_DISTURB_TEXT = "Do Not Disturb is on · banners are hidden";
 // How long a benchmark that finished on its own keeps its card.
 const FINISHED_HOLD_MS = 60000;
 /**
@@ -130,20 +155,21 @@ const FINISHED_HOLD_MS = 60000;
  * @returns {PanelSnapshot}
  */
 export function panelSnapshot(status, state, options = {}) {
-    var _a, _b, _c, _d, _e, _f, _g;
+    var _a, _b;
+    var _c, _d, _e, _f, _g, _h, _j, _k;
     const lastKnown = status !== "running";
     /** @type {Map<number, StopView>} */
-    const stops = lastKnown ? new Map() : ((_a = options.stops) !== null && _a !== void 0 ? _a : new Map());
-    const generated = (_b = state === null || state === void 0 ? void 0 : state.generated_at_ms) !== null && _b !== void 0 ? _b : 0;
-    const now = lastKnown ? generated : ((_c = options.nowMs) !== null && _c !== void 0 ? _c : generated);
+    const stops = lastKnown ? new Map() : ((_c = options.stops) !== null && _c !== void 0 ? _c : new Map());
+    const generated = (_d = state === null || state === void 0 ? void 0 : state.generated_at_ms) !== null && _d !== void 0 ? _d : 0;
+    const now = lastKnown ? generated : ((_e = options.nowMs) !== null && _e !== void 0 ? _e : generated);
     /** @type {Map<string, UiSession>} */
     const sessions = new Map();
-    for (const session of (_d = state === null || state === void 0 ? void 0 : state.sessions) !== null && _d !== void 0 ? _d : []) {
+    for (const session of (_f = state === null || state === void 0 ? void 0 : state.sessions) !== null && _f !== void 0 ? _f : []) {
         if (!sessions.has(session.session)) {
             sessions.set(session.session, session);
         }
     }
-    const shown = (_e = options.jobs) !== null && _e !== void 0 ? _e : { active: (_f = state === null || state === void 0 ? void 0 : state.active) !== null && _f !== void 0 ? _f : [], queue: (_g = state === null || state === void 0 ? void 0 : state.queue) !== null && _g !== void 0 ? _g : [] };
+    const shown = (_g = options.jobs) !== null && _g !== void 0 ? _g : { active: (_h = state === null || state === void 0 ? void 0 : state.active) !== null && _h !== void 0 ? _h : [], queue: (_j = state === null || state === void 0 ? void 0 : state.queue) !== null && _j !== void 0 ? _j : [] };
     /** @param {Lease} lease */
     const isEnding = (lease) => { var _a; return ((_a = stops.get(lease.id)) === null || _a === void 0 ? void 0 : _a.phase) === "ended"; };
     const stopOf = (/** @type {Lease} */ lease) => { var _a; return (_a = stops.get(lease.id)) !== null && _a !== void 0 ? _a : null; };
@@ -202,6 +228,10 @@ export function panelSnapshot(status, state, options = {}) {
         groups.push({ kind: "waiting", heading: counted("Waiting", waiting), jobs: waiting });
     }
     const phase = phaseOf(benchmark, shown);
+    const showsWelcome = !lastKnown &&
+        state !== null &&
+        state.first_session_at_ms === null &&
+        ((_a = options.firstRun) === null || _a === void 0 ? void 0 : _a.isDone) === false;
     return {
         header: header(status, alive(running), alive(waiting), phase),
         groups,
@@ -210,6 +240,7 @@ export function panelSnapshot(status, state, options = {}) {
         showNothing: !lastKnown && groups.length === 0,
         benchmark: phase,
         isLastKnown: lastKnown,
+        welcome: showsWelcome ? { doNotDisturb: (_k = (_b = options.firstRun) === null || _b === void 0 ? void 0 : _b.doNotDisturb) !== null && _k !== void 0 ? _k : false } : null,
     };
 }
 /**

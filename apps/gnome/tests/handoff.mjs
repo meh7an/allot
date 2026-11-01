@@ -37,6 +37,8 @@ export const SCENARIO_NAMES = [
   "c-killed",
   "c-removed",
   "c-refused",
+  "first-run",
+  "res-shared",
 ];
 
 /** The scenario whose Kill the fixture server refuses, to show the inline error. */
@@ -243,7 +245,24 @@ export function sessionOf(name) {
  * @returns {{ status: ServiceStatus, json: Record<string, unknown> }}
  */
 export function scenarioJson(name) {
+  const scenario = jobsOf(name);
+  scenario.json.meters = metersOf(name);
+  if (name === "first-run") {
+    scenario.json.first_session_at_ms = null;
+  }
+  return scenario;
+}
+
+/**
+ * @param {string} name
+ * @returns {{ status: ServiceStatus, json: Record<string, unknown> }}
+ */
+function jobsOf(name) {
   switch (name) {
+    case "first-run":
+      return running(stateJson({}));
+    case "res-shared":
+      return running(stateJson({ run: ["cargo"] }));
     case "empty":
       return running(stateJson({ recent: true }));
     case "one":
@@ -477,6 +496,134 @@ const METERS = {
   gpus: [],
   drives: [],
 };
+
+const MB = 1024 * 1024;
+const GB_IN_MB = 1024;
+const TB_IN_MB = 1024 * 1024;
+
+/**
+ * A once-a-second load history that wanders around `pct`, as the sparkline shows it.
+ *
+ * @param {number} pct
+ * @returns {number[]}
+ */
+function history(pct) {
+  return Array.from({ length: 24 }, (_, index) =>
+    Math.max(0, Math.min(100, pct + 12 * Math.sin(index / 2) - 6)),
+  );
+}
+
+/**
+ * @param {string} name
+ * @param {number} busiest
+ * @param {number} reservedPct
+ * @param {number} usedMb
+ * @param {number} reservedMb
+ * @returns {object}
+ */
+function nvidia(name, busiest, reservedPct, usedMb, reservedMb) {
+  return {
+    name,
+    busiest_pct: busiest,
+    reserved_pct: reservedPct,
+    process_load: "exact",
+    vram_used_mb: Math.round(usedMb),
+    reserved_vram_mb: Math.round(reservedMb),
+    vram_total_mb: 11 * GB_IN_MB,
+    unified_memory: false,
+  };
+}
+
+/**
+ * The machine's meters in a scenario, on a Linux desktop: 16 cores, 32 GB, an 11 GB GPU, the root
+ * drive and two more by mount point.
+ *
+ * @param {string} name
+ * @returns {object}
+ */
+function metersOf(name) {
+  const drives = [
+    drive("/", 612 * GB_IN_MB, 953 * GB_IN_MB, 42 * MB, 8 * MB),
+    drive("/home", 1.21 * TB_IN_MB, 1.82 * TB_IN_MB, 0, 0),
+  ];
+  const meters = (
+    /** @type {number} */ cpu,
+    /** @type {number} */ cores,
+    /** @type {number} */ ramMb,
+    /** @type {number} */ reservedMb,
+    /** @type {object[]} */ gpus,
+    /** @type {object[]} */ shown = drives,
+  ) => ({
+    headroom_pct: 15.0,
+    cpu: { logical_cores: 16, usage_pct: cpu, history_pct: history(cpu), reserved_cores: cores },
+    ram: {
+      total_mb: 32 * GB_IN_MB,
+      used_mb: Math.round(ramMb),
+      reserved_mb: Math.round(reservedMb),
+    },
+    gpus,
+    drives: shown,
+  });
+  switch (name) {
+    case "empty":
+    case "first-run":
+      return meters(6, 0, 6.4 * GB_IN_MB, 0, [nvidia("NVIDIA RTX 2080 Ti", 0, 0, 512, 0)]);
+    case "several":
+    case "kill-confirm":
+    case "killed":
+      return meters(64, 10, 22.4 * GB_IN_MB, 8 * GB_IN_MB, [
+        nvidia("NVIDIA RTX 2080 Ti", 78, 80, 7.2 * GB_IN_MB, 4 * GB_IN_MB),
+      ]);
+    case "max":
+    case "icons":
+      return meters(
+        92,
+        16,
+        29 * GB_IN_MB,
+        14 * GB_IN_MB,
+        [
+          nvidia("NVIDIA RTX 2080 Ti", 88, 90, 9 * GB_IN_MB, 5 * GB_IN_MB),
+          nvidia("Intel UHD Graphics", 12, 0, 256, 0),
+        ],
+        [...drives, drive("/mnt/backup", 400 * GB_IN_MB, 1863 * GB_IN_MB, 0, 120 * MB)],
+      );
+    case "res-shared":
+      return meters(52, 8, 18.2 * GB_IN_MB, 4 * GB_IN_MB, [
+        {
+          name: "AMD Radeon 780M",
+          busiest_pct: 40,
+          reserved_pct: 0,
+          process_load: "exact",
+          vram_used_mb: Math.round(1.2 * GB_IN_MB),
+          reserved_vram_mb: 512,
+          vram_total_mb: null,
+          unified_memory: true,
+        },
+      ]);
+    default:
+      return meters(52, 8, 18.2 * GB_IN_MB, 4 * GB_IN_MB, [
+        nvidia("NVIDIA RTX 2080 Ti", 40, 0, 2.5 * GB_IN_MB, 0),
+      ]);
+  }
+}
+
+/**
+ * @param {string} name
+ * @param {number} usedMb
+ * @param {number} totalMb
+ * @param {number} read
+ * @param {number} write
+ * @returns {object}
+ */
+function drive(name, usedMb, totalMb, read, write) {
+  return {
+    name,
+    used_mb: Math.round(usedMb),
+    total_mb: Math.round(totalMb),
+    read_bytes_per_sec: read,
+    write_bytes_per_sec: write,
+  };
+}
 
 /**
  * @param {string} name

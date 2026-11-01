@@ -4,9 +4,11 @@ import Pango from "gi://Pango";
 import St from "gi://St";
 
 import { QUIET_TICKS } from "./lib/benchmark-status.js";
+import { DO_NOT_DISTURB_TEXT, WELCOME_BODY, WELCOME_TITLE } from "./lib/snapshot.js";
 
 /** @import { JobCard } from "./lib/job-card.js" */
-/** @import { JobGroup, JobRow, RecentLine } from "./lib/snapshot.js" */
+/** @import { ServiceBanner } from "./lib/service-banner.js" */
+/** @import { JobGroup, JobRow, RecentLine, WelcomeCard } from "./lib/snapshot.js" */
 
 const GROUP_ICONS = {
   benchmark: "alarm-symbolic",
@@ -330,7 +332,8 @@ class EdgeBar {
     this.actor.connect("repaint", () => this.#paint());
     // The share eases through an adjustment, since a drawing has no animatable property for it.
     this.#share = new St.Adjustment({ actor: this.actor, lower: 0, upper: 1, value: 0 });
-    this.#share.connect("notify::value", () => this.actor.queue_repaint());
+    // Tied to the drawing: a bar still easing when it is destroyed must not repaint.
+    this.#share.connectObject("notify::value", () => this.actor.queue_repaint(), this.actor);
   }
 
   /**
@@ -499,6 +502,102 @@ export class RecentView {
   }
 }
 
+/** The first-run card: what Allot does, whether banners are hidden, and Done. */
+export class WelcomeView {
+  actor;
+  #doNotDisturb;
+
+  /** @param {() => void} onDone */
+  constructor(onDone) {
+    this.actor = new St.BoxLayout({
+      style_class: "allot-card allot-welcome",
+      orientation: Clutter.Orientation.VERTICAL,
+      x_expand: true,
+    });
+    this.actor.add_child(label("allot-welcome-title", WELCOME_TITLE));
+    this.actor.add_child(wrapped("allot-welcome-body", WELCOME_BODY));
+    this.#doNotDisturb = wrapped("allot-welcome-note", DO_NOT_DISTURB_TEXT);
+    this.actor.add_child(this.#doNotDisturb);
+    const done = new St.Button({
+      style_class: "button allot-welcome-done",
+      label: "Done",
+      can_focus: true,
+      x_align: Clutter.ActorAlign.END,
+    });
+    done.connect("clicked", () => onDone());
+    this.actor.add_child(done);
+  }
+
+  /** @param {WelcomeCard} welcome */
+  update(welcome) {
+    this.#doNotDisturb.visible = welcome.doNotDisturb;
+  }
+}
+
+/**
+ * The red banner and the caption above the last known cards. The banner stays undimmed, so it
+ * lives above the list.
+ */
+export class ServiceBannerView {
+  actor;
+  #text;
+  #problem;
+  #button;
+  #caption;
+  #banner;
+
+  /** @param {() => void} onStart Start Service was pressed. */
+  constructor(onStart) {
+    this.#text = wrapped("allot-banner-text", "");
+    this.#problem = wrapped("allot-banner-problem", "");
+    const lines = new St.BoxLayout({
+      orientation: Clutter.Orientation.VERTICAL,
+      x_expand: true,
+      y_align: Clutter.ActorAlign.CENTER,
+    });
+    lines.add_child(this.#text);
+    lines.add_child(this.#problem);
+    this.#button = new St.Button({
+      style_class: "button allot-banner-button",
+      can_focus: true,
+      y_align: Clutter.ActorAlign.CENTER,
+    });
+    this.#button.connect("clicked", () => onStart());
+    this.#banner = new St.BoxLayout({ style_class: "allot-banner" });
+    this.#banner.add_child(lines);
+    this.#banner.add_child(this.#button);
+    this.#caption = label("allot-banner-caption");
+    this.actor = new St.BoxLayout({
+      style_class: "allot-banner-view",
+      orientation: Clutter.Orientation.VERTICAL,
+      clip_to_allocation: true,
+      visible: false,
+    });
+    this.actor.add_child(this.#banner);
+    this.actor.add_child(this.#caption);
+  }
+
+  /**
+   * @param {ServiceBanner | null} banner
+   * @param {boolean} animate
+   */
+  update(banner, animate) {
+    if (banner !== null) {
+      this.#text.text = banner.text;
+      this.#problem.text = banner.problem;
+      this.#problem.visible = banner.problem !== "";
+      this.#button.visible = banner.button !== "none";
+      this.#button.reactive = banner.button === "start";
+      this.#button.can_focus = banner.button === "start";
+      this.#button.label = banner.button === "starting" ? "Starting…" : "Start Service";
+      setClass(this.#button, "allot-banner-button-muted", banner.button === "starting");
+      this.#caption.text = banner.caption;
+      this.#caption.visible = banner.caption !== "";
+    }
+    reveal(this.actor, banner !== null, animate);
+  }
+}
+
 /**
  * Fades a new row in.
  *
@@ -524,6 +623,70 @@ export function collapse(actor) {
     mode: Clutter.AnimationMode.EASE_OUT_QUAD,
     onStopped: () => actor.destroy(),
   });
+}
+
+/**
+ * Shows or hides a block that takes its own height, easing that height and its opacity. The block
+ * clips its children, so they are cut rather than squeezed on the way.
+ *
+ * @param {St.Widget} actor
+ * @param {boolean} show
+ * @param {boolean} animate
+ */
+export function reveal(actor, show, animate) {
+  if (actor.allotRevealed === show) {
+    return;
+  }
+  actor.allotRevealed = show;
+  actor.remove_all_transitions();
+  if (!animate) {
+    actor.visible = show;
+    actor.opacity = 255;
+    actor.height = -1;
+    return;
+  }
+  const mode = Clutter.AnimationMode.EASE_OUT_QUAD;
+  if (show) {
+    actor.show();
+    const width = actor.get_parent()?.width ?? -1;
+    const [, natural] = actor.get_preferred_height(width);
+    actor.opacity = 0;
+    actor.height = 0;
+    actor.ease({
+      opacity: 255,
+      height: natural,
+      duration: FADE_MS,
+      mode,
+      onComplete: () => {
+        actor.height = -1;
+      },
+    });
+  } else {
+    actor.set_height(actor.height);
+    actor.ease({
+      opacity: 0,
+      height: 0,
+      duration: FADE_MS,
+      mode,
+      onComplete: () => {
+        actor.hide();
+        actor.height = -1;
+        actor.opacity = 255;
+      },
+    });
+  }
+}
+
+/**
+ * @param {string} styleClass
+ * @param {string} text
+ * @returns {St.Label} A label that wraps instead of truncating.
+ */
+function wrapped(styleClass, text) {
+  const result = new St.Label({ style_class: styleClass, text });
+  result.clutter_text.line_wrap = true;
+  result.clutter_text.ellipsize = Pango.EllipsizeMode.NONE;
+  return result;
 }
 
 /**
@@ -559,7 +722,7 @@ function fillTo(fill, fraction, duration) {
  * @param {import("gi://cairo").Context} context
  * @param {import("gi://Cogl").Color} color
  */
-function setSource(context, color) {
+export function setSource(context, color) {
   context.setSourceRGBA(color.red / 255, color.green / 255, color.blue / 255, color.alpha / 255);
 }
 
@@ -568,7 +731,7 @@ function setSource(context, color) {
  * @param {string} name
  * @param {boolean} on
  */
-function setClass(actor, name, on) {
+export function setClass(actor, name, on) {
   if (on) {
     actor.add_style_class_name(name);
   } else {

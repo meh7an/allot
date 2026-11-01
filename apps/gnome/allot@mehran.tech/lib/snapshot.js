@@ -98,9 +98,27 @@ import * as jobCard from "./job-card.js";
  */
 
 /**
+ * What the first-run card needs to know about the user's settings.
+ *
+ * @typedef {object} FirstRunState
+ * @property {boolean} isDone
+ *   Done was pressed (`tray.json`).
+ * @property {boolean} doNotDisturb
+ *   GNOME's Do Not Disturb is on, so notifications show no banners.
+ */
+
+/**
+ * The first-run card, shown until Done or until the first session connects. GNOME has no Launch
+ * at login switch: the shell starts the extension and `allot install` enables allotd's unit.
+ *
+ * @typedef {object} WelcomeCard
+ * @property {boolean} doNotDisturb
+ *   The card says that banners are hidden.
+ */
+
+/**
  * Everything the popup header and job list show for one moment, built by a pure function so
- * that every string is testable. The Windows tray app's `FlyoutSnapshot` without the first-run
- * card.
+ * that every string is testable. The Windows tray app's `FlyoutSnapshot`.
  *
  * @typedef {object} PanelSnapshot
  * @property {PanelHeader} header
@@ -111,13 +129,15 @@ import * as jobCard from "./job-card.js";
  * @property {RecentLine[]} recent
  *   Recently finished runs, newest first; only while no job runs or waits.
  * @property {boolean} showNothing
- *   The service runs and has no jobs. The popup shows Recently finished instead of the
- *   "No jobs running or waiting." line when there are recent runs.
+ *   The service runs and has no jobs. The popup shows the first-run card or Recently finished
+ *   instead of the "No jobs running or waiting." line when it has them.
  * @property {BenchmarkPhase | null} benchmark
  *   The live benchmark's phase, or `null` without one.
  * @property {boolean} isLastKnown
  *   The jobs come from the last state allotd served before it went away; they show dimmed and
  *   without actions.
+ * @property {WelcomeCard | null} welcome
+ *   The first-run card, after the idle line; `null` once it is done or a session has connected.
  */
 
 /**
@@ -130,7 +150,16 @@ import * as jobCard from "./job-card.js";
  * @property {number | null} [nowMs]
  *   The moment times are shown for, in the daemon's clock; the state's own time when absent.
  *   Last known state always shows its own time.
+ * @property {FirstRunState} [firstRun]
+ *   Done and Do Not Disturb, for the first-run card; no card without it.
  */
+
+export const WELCOME_TITLE = "Welcome to Allot";
+export const WELCOME_BODY =
+  "When a Claude Code session runs a build, test suite or training job, it reserves cores, RAM " +
+  "or GPU here first. Jobs that don't fit wait their turn. You'll see each one here and can " +
+  "stop it.";
+export const DO_NOT_DISTURB_TEXT = "Do Not Disturb is on · banners are hidden";
 
 // How long a benchmark that finished on its own keeps its card.
 const FINISHED_HOLD_MS = 60_000;
@@ -223,6 +252,11 @@ export function panelSnapshot(status, state, options = {}) {
   }
 
   const phase = phaseOf(benchmark, shown);
+  const showsWelcome =
+    !lastKnown &&
+    state !== null &&
+    state.first_session_at_ms === null &&
+    options.firstRun?.isDone === false;
   return {
     header: header(status, alive(running), alive(waiting), phase),
     groups,
@@ -231,6 +265,7 @@ export function panelSnapshot(status, state, options = {}) {
     showNothing: !lastKnown && groups.length === 0,
     benchmark: phase,
     isLastKnown: lastKnown,
+    welcome: showsWelcome ? { doNotDisturb: options.firstRun?.doNotDisturb ?? false } : null,
   };
 }
 

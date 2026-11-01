@@ -138,3 +138,67 @@
 .allot-step-upcoming .allot-step-label {
   color: #9a9a9a;
 }
+
+.allot-banner {
+  background-color: rgba(255, 123, 99, 0.1);
+  border-color: rgba(255, 123, 99, 0.3);
+  color: #ffb3a7;
+}
+
+.allot-banner-button:hover,
+.allot-banner-button:focus {
+  background-color: -st-accent-color;
+  color: -st-accent-fg-color;
+}
+
+.allot-banner-button-muted {
+  background-color: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.allot-banner-caption,
+.allot-welcome-body,
+.allot-welcome-note,
+.allot-resources-summary,
+.allot-resources-off,
+.allot-drive-activity,
+.allot-legend-label,
+.allot-menu-count {
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.allot-resources-header:hover,
+.allot-resources-header:focus {
+  background-color: rgba(255, 255, 255, 0.06);
+}
+
+.allot-meter-bar,
+.allot-legend-hatch {
+  -allot-track-color: rgba(255, 255, 255, 0.08);
+  -allot-hatch-color: rgba(255, 255, 255, 0.22);
+  -allot-tick-color: #ffffff;
+  -allot-ring-color: #353535;
+  -allot-shared-color: rgba(255, 255, 255, 0.45);
+}
+
+.allot-drive-bar {
+  color: #a8a8a8;
+  -allot-track-color: rgba(255, 255, 255, 0.08);
+}
+
+.allot-resources-separator {
+  background-color: rgba(255, 255, 255, 0.08);
+}
+
+.allot-legend-shared {
+  background-color: rgba(255, 255, 255, 0.45);
+}
+
+.allot-legend-reserved {
+  background-color: #ffffff;
+}
+
+.allot-hover-label {
+  background-color: #1e1e1e;
+  color: #ffffff;
+}

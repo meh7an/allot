@@ -175,9 +175,18 @@ export function oneDecimal(value) {
  * @param {number} value
  * @returns {string}
  */
-function upToOneDecimal(value) {
+export function upToOneDecimal(value) {
     const rounded = roundAway(value * 10) / 10;
     return rounded.toFixed(Number.isInteger(rounded) ? 0 : 1);
+}
+/**
+ * .NET's `0.##`: up to two decimals, without trailing zeros.
+ *
+ * @param {number} value
+ * @returns {string}
+ */
+export function upToTwoDecimals(value) {
+    return String(roundAway(value * 100) / 100);
 }
 /**
  * @param {number} value

@@ -19,7 +19,7 @@ var __classPrivateFieldGet = (this && this.__classPrivateFieldGet) || function (
     if (typeof state === "function" ? receiver !== state || !f : !state.has(receiver)) throw new TypeError("Cannot read private member from an object whose class did not declare it");
     return kind === "m" ? f : kind === "a" ? f.call(receiver) : f ? f.value : state.get(receiver);
 };
-var _DaemonPoller_instances, _DaemonPoller_client, _DaemonPoller_timers, _DaemonPoller_schedule, _DaemonPoller_popupOpen, _DaemonPoller_looping, _DaemonPoller_stopped, _DaemonPoller_wakePending, _DaemonPoller_timer, _DaemonPoller_wake, _DaemonPoller_wait, _DaemonPoller_endWait;
+var _DaemonPoller_instances, _DaemonPoller_client, _DaemonPoller_timers, _DaemonPoller_launcher, _DaemonPoller_now, _DaemonPoller_startingUntil, _DaemonPoller_schedule, _DaemonPoller_popupOpen, _DaemonPoller_looping, _DaemonPoller_stopped, _DaemonPoller_wakePending, _DaemonPoller_timer, _DaemonPoller_wake, _DaemonPoller_whileStarting, _DaemonPoller_wait, _DaemonPoller_endWait;
 import { CancelledError } from "./client.js";
 import { PollSchedule } from "./schedule.js";
 /** @import { DaemonClient, PollResult } from "./client.js" */
@@ -32,15 +32,30 @@ import { PollSchedule } from "./schedule.js";
  * @property {(id: unknown) => void} clearTimeout
  */
 /**
+ * Starts allotd for Start Service.
+ *
+ * @typedef {object} ServiceLauncher
+ * @property {() => Promise<string | null>} start
+ *   Starts allotd without waiting for it to answer; resolves with why not, or `null`.
+ */
+/** How long Start Service reports `starting` before giving up. */
+export const START_TIMEOUT_MS = 10000;
+/**
  * Polls the daemon on the `PollSchedule` and keeps the last state it served, which the
- * service-down view shows dimmed.
+ * service-down view shows dimmed. Start Service launches allotd and reports it as starting until
+ * it answers or `START_TIMEOUT_MS` passes.
  */
 export class DaemonPoller {
     /**
      * @param {DaemonClient} client
      * @param {Timers} timers
+     * @param {object} [options]
+     * @param {ServiceLauncher | null} [options.launcher] Starts allotd for Start Service; without
+     *   one, Start Service only polls.
+     * @param {() => number} [options.now] The local clock of the starting window, in milliseconds.
      */
-    constructor(client, timers) {
+    constructor(client, timers, options = {}) {
+        var _a, _b;
         _DaemonPoller_instances.add(this);
         /**
          * Called after every poll.
@@ -56,8 +71,19 @@ export class DaemonPoller {
          * @type {UiState | null}
          */
         this.lastKnown = null;
+        /**
+         * Why the last Start Service failed: the launch itself, or allotd not answering in time.
+         * Cleared by the next start and once allotd answers.
+         *
+         * @type {string | null}
+         */
+        this.startProblem = null;
         _DaemonPoller_client.set(this, void 0);
         _DaemonPoller_timers.set(this, void 0);
+        _DaemonPoller_launcher.set(this, void 0);
+        _DaemonPoller_now.set(this, void 0);
+        /** @type {number | null} */
+        _DaemonPoller_startingUntil.set(this, null);
         _DaemonPoller_schedule.set(this, new PollSchedule());
         _DaemonPoller_popupOpen.set(this, false);
         _DaemonPoller_looping.set(this, false);
@@ -69,6 +95,39 @@ export class DaemonPoller {
         _DaemonPoller_wake.set(this, null);
         __classPrivateFieldSet(this, _DaemonPoller_client, client, "f");
         __classPrivateFieldSet(this, _DaemonPoller_timers, timers, "f");
+        __classPrivateFieldSet(this, _DaemonPoller_launcher, (_a = options.launcher) !== null && _a !== void 0 ? _a : null, "f");
+        __classPrivateFieldSet(this, _DaemonPoller_now, (_b = options.now) !== null && _b !== void 0 ? _b : (() => Date.now()), "f");
+    }
+    /**
+     * Launches allotd and polls quickly until it answers or `START_TIMEOUT_MS` passes.
+     *
+     * @returns {Promise<string | null>} `null` when allotd was launched, else why not.
+     */
+    startService() {
+        return __awaiter(this, void 0, void 0, function* () {
+            var _a;
+            var _b;
+            const problem = (_b = (yield (_a = __classPrivateFieldGet(this, _DaemonPoller_launcher, "f")) === null || _a === void 0 ? void 0 : _a.start())) !== null && _b !== void 0 ? _b : null;
+            // A failed launch polls too, so whoever shows the poll shows the problem at once.
+            this.startProblem = problem;
+            if (problem === null) {
+                __classPrivateFieldSet(this, _DaemonPoller_startingUntil, __classPrivateFieldGet(this, _DaemonPoller_now, "f").call(this) + START_TIMEOUT_MS, "f");
+            }
+            this.pollNow();
+            return problem;
+        });
+    }
+    /**
+     * Asks allotd to stop, then polls at once so the icon and popup show it stopped.
+     *
+     * @returns {Promise<string | null>} `null` when allotd accepted, else why not.
+     */
+    stopService() {
+        return __awaiter(this, void 0, void 0, function* () {
+            const problem = yield __classPrivateFieldGet(this, _DaemonPoller_client, "f").shutdown();
+            this.pollNow();
+            return problem;
+        });
     }
     /**
      * Switches between the open and closed cadence; opening also polls at once.
@@ -132,10 +191,11 @@ export class DaemonPoller {
     pollOnce() {
         return __awaiter(this, void 0, void 0, function* () {
             var _a;
-            const result = yield __classPrivateFieldGet(this, _DaemonPoller_client, "f").poll();
+            const polled = yield __classPrivateFieldGet(this, _DaemonPoller_client, "f").poll();
             if (__classPrivateFieldGet(this, _DaemonPoller_stopped, "f")) {
                 throw new CancelledError();
             }
+            const result = __classPrivateFieldGet(this, _DaemonPoller_instances, "m", _DaemonPoller_whileStarting).call(this, polled);
             const delay = __classPrivateFieldGet(this, _DaemonPoller_schedule, "f").next(__classPrivateFieldGet(this, _DaemonPoller_popupOpen, "f"), result.status);
             if (result.state !== null) {
                 this.lastKnown = result.state;
@@ -146,7 +206,23 @@ export class DaemonPoller {
         });
     }
 }
-_DaemonPoller_client = new WeakMap(), _DaemonPoller_timers = new WeakMap(), _DaemonPoller_schedule = new WeakMap(), _DaemonPoller_popupOpen = new WeakMap(), _DaemonPoller_looping = new WeakMap(), _DaemonPoller_stopped = new WeakMap(), _DaemonPoller_wakePending = new WeakMap(), _DaemonPoller_timer = new WeakMap(), _DaemonPoller_wake = new WeakMap(), _DaemonPoller_instances = new WeakSet(), _DaemonPoller_wait = function _DaemonPoller_wait(ms) {
+_DaemonPoller_client = new WeakMap(), _DaemonPoller_timers = new WeakMap(), _DaemonPoller_launcher = new WeakMap(), _DaemonPoller_now = new WeakMap(), _DaemonPoller_startingUntil = new WeakMap(), _DaemonPoller_schedule = new WeakMap(), _DaemonPoller_popupOpen = new WeakMap(), _DaemonPoller_looping = new WeakMap(), _DaemonPoller_stopped = new WeakMap(), _DaemonPoller_wakePending = new WeakMap(), _DaemonPoller_timer = new WeakMap(), _DaemonPoller_wake = new WeakMap(), _DaemonPoller_instances = new WeakSet(), _DaemonPoller_whileStarting = function _DaemonPoller_whileStarting(result) {
+    if (result.status !== "stopped") {
+        __classPrivateFieldSet(this, _DaemonPoller_startingUntil, null, "f");
+        this.startProblem = null;
+        return result;
+    }
+    if (__classPrivateFieldGet(this, _DaemonPoller_startingUntil, "f") === null) {
+        return result;
+    }
+    if (__classPrivateFieldGet(this, _DaemonPoller_now, "f").call(this) < __classPrivateFieldGet(this, _DaemonPoller_startingUntil, "f")) {
+        return Object.assign(Object.assign({}, result), { status: "starting" });
+    }
+    __classPrivateFieldSet(this, _DaemonPoller_startingUntil, null, "f");
+    const detail = `allotd did not answer within ${START_TIMEOUT_MS / 1000} s; ` + "see logs/allotd.log";
+    this.startProblem = detail;
+    return Object.assign(Object.assign({}, result), { status: "stopped", detail });
+}, _DaemonPoller_wait = function _DaemonPoller_wait(ms) {
     if (__classPrivateFieldGet(this, _DaemonPoller_wakePending, "f") || __classPrivateFieldGet(this, _DaemonPoller_stopped, "f")) {
         __classPrivateFieldSet(this, _DaemonPoller_wakePending, false, "f");
         return Promise.resolve();

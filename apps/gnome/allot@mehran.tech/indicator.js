@@ -13,18 +13,21 @@ const ACTIVATING_KEYS = [Clutter.KEY_Return, Clutter.KEY_KP_Enter, Clutter.KEY_s
 
 /**
  * The panel button. It has no menu of its own: a press opens or closes the Allot popup, which
- * the extension places and dismisses itself so it can stay open.
+ * the extension places and dismisses itself so it can stay open. A right-click or the Menu key
+ * asks for the context menu.
  */
 export const AllotIndicator = GObject.registerClass(
   class AllotIndicator extends PanelMenu.Button {
     /**
      * @param {Gio.File} iconDirectory
      * @param {() => void} onActivate
+     * @param {() => void} onContextMenu
      */
-    _init(iconDirectory, onActivate) {
+    _init(iconDirectory, onActivate, onContextMenu) {
       super._init(0.5, APP_NAME, true);
       this._iconDirectory = iconDirectory;
       this._onActivate = onActivate;
+      this._onContextMenu = onContextMenu;
       this._icon = new St.Icon({ style_class: "system-status-icon" });
       this.add_child(this._icon);
     }
@@ -35,6 +38,11 @@ export const AllotIndicator = GObject.registerClass(
         file: this._iconDirectory.get_child(iconFile(status.icon)),
       });
       this.accessible_name = accessibleName(status);
+    }
+
+    /** @returns {Gio.Icon} The icon showing now, which notifications use as their logo. */
+    get currentIcon() {
+      return this._icon.gicon;
     }
 
     /** @param {boolean} open */
@@ -48,7 +56,12 @@ export const AllotIndicator = GObject.registerClass(
 
     vfunc_event(event) {
       const type = event.type();
-      if (type === Clutter.EventType.BUTTON_PRESS || type === Clutter.EventType.TOUCH_BEGIN) {
+      const isPress = type === Clutter.EventType.BUTTON_PRESS;
+      if (isPress && event.get_button() === Clutter.BUTTON_SECONDARY) {
+        this._onContextMenu();
+        return Clutter.EVENT_STOP;
+      }
+      if (isPress || type === Clutter.EventType.TOUCH_BEGIN) {
         this._onActivate();
         return Clutter.EVENT_STOP;
       }
@@ -58,6 +71,10 @@ export const AllotIndicator = GObject.registerClass(
     vfunc_key_press_event(event) {
       if (ACTIVATING_KEYS.includes(event.get_key_symbol())) {
         this._onActivate();
+        return Clutter.EVENT_STOP;
+      }
+      if (event.get_key_symbol() === Clutter.KEY_Menu) {
+        this._onContextMenu();
         return Clutter.EVENT_STOP;
       }
       return super.vfunc_key_press_event(event);

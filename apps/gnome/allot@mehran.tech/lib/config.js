@@ -12,6 +12,8 @@ const MAX_PORT = 65535;
  * @property {string} config
  *   The daemon config, which holds the port. Optional; allotd runs on defaults without it.
  * @property {string} logs
+ * @property {string} settings
+ *   `tray.json`, what the popup remembers, in the other apps' format.
  */
 
 /**
@@ -27,6 +29,7 @@ export function dataPaths(home) {
     token: `${root}/token`,
     config: `${root}/config.toml`,
     logs: `${root}/logs`,
+    settings: `${root}/tray.json`,
   };
 }
 

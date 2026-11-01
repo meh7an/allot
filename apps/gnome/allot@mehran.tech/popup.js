@@ -10,8 +10,19 @@ import * as Main from "resource:///org/gnome/shell/ui/main.js";
 import * as PopupMenu from "resource:///org/gnome/shell/ui/popupMenu.js";
 
 import { AppIcons } from "./app-icons.js";
-import { GroupHeading, JobCardView, RecentView, collapse, fadeIn, label } from "./cards.js";
+import {
+  GroupHeading,
+  JobCardView,
+  RecentView,
+  ServiceBannerView,
+  WelcomeView,
+  collapse,
+  fadeIn,
+  label,
+} from "./cards.js";
 import { anchoredPosition, clampInto, maxHeight } from "./lib/placement.js";
+import { MoreOptionsMenu } from "./menus.js";
+import { ResourcesCard } from "./resources-card.js";
 
 /** @import { PopupModel } from "./lib/popup-model.js" */
 /** @import { HeaderGlyph } from "./lib/snapshot.js" */
@@ -29,14 +40,18 @@ import { anchoredPosition, clampInto, maxHeight } from "./lib/placement.js";
 const NOTHING_TEXT = "No jobs running or waiting.";
 const OPAQUE = 255;
 const DIMMED = 128;
+const LAST_KNOWN_OPACITY = 140;
 // The popup's padding and the header's bottom gap, in CSS pixels, which the list's height cap
 // leaves room for.
 const CHROME_HEIGHT = 28;
+// The popup's spacing above a banner or the Resources card, in CSS pixels.
+const BLOCK_GAP = 8;
 
 /**
  * The Allot popup: a header with the summary and the Stay open, Pin and More options buttons,
- * and the job list. It is shell chrome rather than a panel menu, because a panel menu always
- * holds the pointer and closes on a click elsewhere, which rules out Stay open and Pin.
+ * the service banner, the job list and the docked Resources card. It is shell chrome rather than
+ * a panel menu, because a panel menu always holds the pointer and closes on a click elsewhere,
+ * which rules out Stay open and Pin.
  */
 export class AllotPopup {
   #model;
@@ -59,10 +74,15 @@ export class AllotPopup {
   #stayOpenButton;
   #stayOpenIcon;
   #moreButton;
+  #banner;
   #scroll;
   #list;
+  #resources;
   #menuManager;
-  #moreMenu;
+  #more;
+  /** @type {string | null} */
+  #listCap = null;
+  #scrollWait = 0;
 
   /** @type {Clutter.Grab | null} */
   #modal = null;
@@ -78,6 +98,7 @@ export class AllotPopup {
    * @param {string} options.logsPath
    * @param {(open: boolean) => void} options.onOpenChanged
    * @param {() => void} options.onChanged A press or Esc changed the model's stops.
+   * @param {() => void} options.onStartService The banner's Start Service was pressed.
    */
   constructor(options) {
     this.#model = options.model;
@@ -139,6 +160,15 @@ export class AllotPopup {
       this.#header.add_child(child);
     }
 
+    this.#banner = new ServiceBannerView(options.onStartService);
+    this.#resources = new ResourcesCard({
+      onToggle: () => {
+        this.#model.toggleResources();
+        this.#onChanged();
+      },
+      onHeightChanged: () => this.#followHeight(),
+    });
+
     this.#list = new St.BoxLayout({
       style_class: "allot-list",
       orientation: Clutter.Orientation.VERTICAL,
@@ -151,16 +181,22 @@ export class AllotPopup {
       child: this.#list,
     });
     this.#actor.add_child(this.#header);
+    this.#actor.add_child(this.#banner.actor);
     this.#actor.add_child(this.#scroll);
+    this.#actor.add_child(this.#resources.actor);
     Main.layoutManager.addTopChrome(this.#actor);
 
     this.#menuManager = new PopupMenu.PopupMenuManager(this.#actor);
-    this.#moreMenu = new PopupMenu.PopupMenu(this.#moreButton, 0.5, St.Side.TOP);
-    this.#moreMenu.addAction("Open Logs", () => this.#openLogs());
-    Main.uiGroup.add_child(this.#moreMenu.actor);
-    this.#moreMenu.actor.hide();
-    this.#menuManager.addMenu(this.#moreMenu);
-    this.#moreButton.connect("clicked", () => this.#moreMenu.toggle());
+    this.#more = new MoreOptionsMenu({
+      source: this.#moreButton,
+      model: this.#model,
+      onOpenLogs: () => this.openLogs(),
+      onChanged: () => this.#onChanged(),
+    });
+    Main.uiGroup.add_child(this.#more.menu.actor);
+    this.#more.menu.actor.hide();
+    this.#menuManager.addMenu(this.#more.menu);
+    this.#moreButton.connect("clicked", () => this.#more.menu.toggle());
 
     this.#monitorsChangedId = Main.layoutManager.connect("monitors-changed", () =>
       this.#keepOnScreen(),
@@ -191,11 +227,37 @@ export class AllotPopup {
     this.#onOpenChanged(true);
   }
 
+  /**
+   * Opens if needed and scrolls to a row, for a notification's Show.
+   *
+   * @param {string | null} target A row's key (`job:<lease>` or `recent`), or `null` for the top.
+   */
+  show(target) {
+    if (!this.isOpen) {
+      this.open();
+    }
+    // The row has no position, and the scroll range no size, until a frame has laid them out.
+    this.#clearScrollWait();
+    this.#actor.queue_redraw();
+    this.#scrollWait = global.stage.connect("after-paint", () => {
+      this.#clearScrollWait();
+      const row = target === null ? undefined : this.#views.get(target);
+      this.#scroll.vadjustment.value = row?.actor.y ?? 0;
+    });
+  }
+
+  /** Shows the settings' current state in the menu, for a change from outside it. */
+  syncMenu() {
+    this.#more.sync();
+  }
+
   close() {
     if (!this.isOpen) {
       return;
     }
-    this.#moreMenu.close(BoxPointer.PopupAnimation.NONE);
+    this.#clearScrollWait();
+    this.#resources.hideHover();
+    this.#more.menu.close(BoxPointer.PopupAnimation.NONE);
     this.#endDrag();
     this.#releaseModal();
     this.#actor.hide();
@@ -211,7 +273,11 @@ export class AllotPopup {
    * @param {boolean} [animate] Fade rows in and out and ease the bars; off when the popup opens.
    */
   render(animate = true) {
-    const { header, groups, idle, recent, showNothing, isLastKnown } = this.#model.snapshot;
+    const { header, groups, idle, recent, showNothing, isLastKnown, welcome } =
+      this.#model.snapshot;
+    this.#banner.update(this.#model.banner, animate);
+    this.#resources.update(this.#model.resources, animate);
+    this.#more.sync();
     this.#summary.text = header.summary;
     this.#showGlyph(header.glyph);
 
@@ -235,17 +301,28 @@ export class AllotPopup {
       const line = [idle.label, idle.ids, idle.usage].filter((part) => part !== "").join("  ");
       items.push(textItem("idle", "allot-idle-line", line));
     }
+    if (welcome !== null) {
+      items.push({
+        key: "welcome",
+        make: () =>
+          new WelcomeView(() => {
+            this.#model.finishFirstRun();
+            this.#onChanged();
+          }),
+        update: (view) => view.update(welcome),
+      });
+    }
     if (recent.length > 0) {
       items.push({
         key: "recent",
         make: () => new RecentView(),
         update: (view) => view.update(recent),
       });
-    } else if (showNothing) {
+    } else if (showNothing && welcome === null) {
       items.push(textItem("nothing", "allot-nothing", NOTHING_TEXT));
     }
     this.#showItems(items, animate);
-    this.#list.opacity = isLastKnown ? DIMMED : OPAQUE;
+    this.#list.opacity = isLastKnown ? LAST_KNOWN_OPACITY : OPAQUE;
     this.#scroll.visible = items.length > 0;
 
     if (this.isOpen && !this.#model.isPinned) {
@@ -257,7 +334,8 @@ export class AllotPopup {
     this.close();
     this.#appIcons.destroy();
     Main.layoutManager.disconnect(this.#monitorsChangedId);
-    this.#moreMenu.destroy();
+    this.#more.menu.destroy();
+    this.#resources.destroy();
     Main.layoutManager.removeChrome(this.#actor);
     this.#actor.destroy();
   }
@@ -380,12 +458,34 @@ export class AllotPopup {
     this.#actor.set_position(position.x, position.y);
   }
 
+  /**
+   * The Resources card folded a step: the list makes room for it frame by frame, and a pinned
+   * popup that grew stays on screen.
+   */
+  #followHeight() {
+    if (this.isOpen) {
+      this.#keepOnScreen();
+    }
+  }
+
   /** @param {{ height: number }} workArea */
   #capHeight(workArea) {
     const scale = St.ThemeContext.get_for_stage(global.stage).scale_factor;
-    const [, headerHeight] = this.#header.get_preferred_height(-1);
-    const listHeight = (maxHeight(workArea) - headerHeight) / scale - CHROME_HEIGHT;
-    this.#scroll.style = `max-height: ${Math.max(0, Math.floor(listHeight))}px;`;
+    const [, width] = this.#actor.get_preferred_width(-1);
+    let taken = this.#header.get_preferred_height(-1)[1];
+    for (const block of [this.#banner.actor, this.#resources.actor]) {
+      if (block.visible) {
+        taken += block.get_preferred_height(width)[1] + BLOCK_GAP * scale;
+      }
+    }
+    const listHeight = (maxHeight(workArea) - taken) / scale - CHROME_HEIGHT;
+    const cap = `max-height: ${Math.max(0, Math.floor(listHeight))}px;`;
+    // Setting a style restyles the list, which a frame of folding should not pay for when nothing
+    // changed.
+    if (cap !== this.#listCap) {
+      this.#listCap = cap;
+      this.#scroll.style = cap;
+    }
   }
 
   /** @returns {{ width: number, height: number }} */
@@ -507,7 +607,15 @@ export class AllotPopup {
     }
   }
 
-  #openLogs() {
+  #clearScrollWait() {
+    if (this.#scrollWait !== 0) {
+      global.stage.disconnect(this.#scrollWait);
+      this.#scrollWait = 0;
+    }
+  }
+
+  /** Opens the log folder, from a menu or a notification. */
+  openLogs() {
     const uri = GLib.filename_to_uri(this.#logsPath, null);
     try {
       Gio.AppInfo.launch_default_for_uri(uri, global.create_app_launch_context(0, -1));

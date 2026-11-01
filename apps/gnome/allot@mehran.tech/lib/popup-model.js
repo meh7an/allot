@@ -1,11 +1,17 @@
 import { indicatorStatus } from "./indicator-status.js";
 import { JobStops } from "./job-stops.js";
+import { resourcesView } from "./resources-view.js";
+import { serviceBanner } from "./service-banner.js";
+import { defaultSettings } from "./settings.js";
 import { panelSnapshot } from "./snapshot.js";
 import { StateClock } from "./state-clock.js";
 
 /** @import { PollResult, ServiceStatus } from "./client.js" */
 /** @import { IndicatorStatus } from "./indicator-status.js" */
 /** @import { StopKind } from "./job-stops.js" */
+/** @import { ResourcesView } from "./resources-view.js" */
+/** @import { ServiceBanner } from "./service-banner.js" */
+/** @import { TraySettings } from "./settings.js" */
 /** @import { PanelSnapshot } from "./snapshot.js" */
 /** @import { StopResult } from "./stop-result.js" */
 /** @import { UiState } from "../contract.g.mjs" */
@@ -26,6 +32,7 @@ import { StateClock } from "./state-clock.js";
  *
  * @typedef {object} ModelChange
  * @property {boolean} snapshot
+ *   Anything the popup shows: the snapshot, the Resources card or the service banner.
  * @property {boolean} indicator
  */
 
@@ -39,8 +46,8 @@ import { StateClock } from "./state-clock.js";
  */
 
 /**
- * The state the popup and the panel button render: the latest snapshot, the popup's mode, and
- * the Kill and Remove of each card.
+ * The state the popup and the panel button render: the latest snapshot, the Resources card, the
+ * service banner, the settings, the popup's mode, and the Kill and Remove of each card.
  */
 export class PopupModel {
   /** @type {PanelSnapshot} */
@@ -49,8 +56,49 @@ export class PopupModel {
   /** @type {IndicatorStatus} */
   indicator;
 
+  /** @type {ResourcesView} */
+  resources;
+
+  /**
+   * The banner while the service is down, else `null`.
+   *
+   * @type {ServiceBanner | null}
+   */
+  banner = null;
+
+  /** @type {TraySettings} */
+  settings = defaultSettings();
+
   /** @type {PopupMode} */
   mode = "light-dismiss";
+
+  /**
+   * GNOME's Do Not Disturb hides banners, which the menu and the first-run card say.
+   *
+   * @type {boolean}
+   */
+  doNotDisturb = false;
+
+  /**
+   * A daemon time as the user's short time of day, for the banner's caption.
+   *
+   * @type {(ms: number) => string}
+   */
+  timeOfDay = (ms) => new Date(ms).toLocaleTimeString();
+
+  /**
+   * Called after every change of `settings`, so the caller can save them.
+   *
+   * @type {((settings: TraySettings) => void) | null}
+   */
+  onSettingsChanged = null;
+
+  /**
+   * Called right before a Kill goes to allotd, so the notification rules know it is ours.
+   *
+   * @type {((lease: number) => void) | null}
+   */
+  onKillSent = null;
 
   /**
    * Sends Kill and Remove; without one, presses only change the cards.
@@ -79,6 +127,10 @@ export class PopupModel {
   #status = "starting";
   /** @type {UiState | null} */
   #shown = null;
+  /** @type {UiState | null} */
+  #lastKnown = null;
+  /** @type {string | null} */
+  #startProblem = null;
   #snapshotKey;
   #indicatorKey;
 
@@ -93,7 +145,8 @@ export class PopupModel {
     this.#clock = new StateClock(now);
     this.snapshot = panelSnapshot("starting", null);
     this.indicator = indicatorStatus(this.snapshot);
-    this.#snapshotKey = JSON.stringify(this.snapshot);
+    this.resources = resourcesView("starting", null, this.settings.meters, false);
+    this.#snapshotKey = this.#shownKey();
     this.#indicatorKey = JSON.stringify(this.indicator);
   }
 
@@ -102,11 +155,14 @@ export class PopupModel {
    *
    * @param {PollResult} result
    * @param {UiState | null} lastKnown
+   * @param {string | null} [startProblem] Why the last Start Service failed, for the banner.
    * @returns {ModelChange}
    */
-  apply(result, lastKnown) {
+  apply(result, lastKnown, startProblem = null) {
     this.#status = result.status;
     this.#shown = result.state ?? lastKnown;
+    this.#lastKnown = lastKnown;
+    this.#startProblem = startProblem;
     this.#clock.received(result.state);
     if (result.state === null) {
       this.#stops.cancelConfirms();
@@ -129,13 +185,26 @@ export class PopupModel {
       ...(live ? { jobs: this.#stops.merge(shown) } : {}),
       stops: this.#stops.views,
       nowMs: this.#clock.nowMs,
+      firstRun: { isDone: this.settings.first_run_done, doNotDisturb: this.doNotDisturb },
     });
-    // Rebuilding St actors for an unchanged state would churn for nothing.
-    const snapshotKey = JSON.stringify(next);
+    this.snapshot = next;
+    this.resources = resourcesView(
+      this.#status,
+      shown,
+      this.settings.meters,
+      this.settings.resources_expanded,
+    );
+    this.banner = serviceBanner(
+      this.#status,
+      this.#lastKnown,
+      this.#startProblem,
+      this.timeOfDay,
+    );
+    // Updating St actors for an unchanged state would churn for nothing.
+    const snapshotKey = this.#shownKey();
     if (snapshotKey === this.#snapshotKey) {
       return { snapshot: false, indicator: false };
     }
-    this.snapshot = next;
     this.#snapshotKey = snapshotKey;
 
     const indicator = indicatorStatus(next);
@@ -146,6 +215,109 @@ export class PopupModel {
     this.indicator = indicator;
     this.#indicatorKey = indicatorKey;
     return { snapshot: true, indicator: true };
+  }
+
+  /**
+   * The status of the latest poll, or `starting` after a press of Start Service.
+   *
+   * @returns {ServiceStatus}
+   */
+  get status() {
+    return this.#status;
+  }
+
+  /**
+   * Replaces the settings as read at startup, without saving them again.
+   *
+   * @param {TraySettings} settings
+   * @returns {ModelChange}
+   */
+  loadSettings(settings) {
+    this.settings = settings;
+    return this.refresh();
+  }
+
+  /**
+   * Changes the settings, shows the change and hands them to be saved.
+   *
+   * @param {(settings: TraySettings) => void} change
+   * @returns {ModelChange}
+   */
+  updateSettings(change) {
+    const next = JSON.parse(JSON.stringify(this.settings));
+    change(next);
+    if (JSON.stringify(next) === JSON.stringify(this.settings)) {
+      return { snapshot: false, indicator: false };
+    }
+    this.settings = next;
+    const shown = this.refresh();
+    this.onSettingsChanged?.(next);
+    return shown;
+  }
+
+  /**
+   * The Resources card's header: expanded shows the rows, collapsed the summary.
+   *
+   * @returns {ModelChange}
+   */
+  toggleResources() {
+    return this.updateSettings((settings) => {
+      settings.resources_expanded = !settings.resources_expanded;
+    });
+  }
+
+  /**
+   * The first-run card's Done.
+   *
+   * @returns {ModelChange}
+   */
+  finishFirstRun() {
+    return this.updateSettings((settings) => {
+      settings.first_run_done = true;
+    });
+  }
+
+  /**
+   * The first-run card shows for the first time ever: the popup should open by itself, once.
+   *
+   * @returns {boolean}
+   */
+  get wantsFirstOpen() {
+    return this.snapshot.welcome !== null && !this.settings.first_run_shown;
+  }
+
+  /**
+   * The popup opened by itself, which it does not do again. Noted at the opening itself, so a
+   * shell that stops before it can open tries again next time.
+   *
+   * @returns {ModelChange}
+   */
+  noteFirstOpened() {
+    return this.updateSettings((settings) => {
+      settings.first_run_shown = true;
+    });
+  }
+
+  /**
+   * Shows whether GNOME's Do Not Disturb is on, in the menu and the first-run card.
+   *
+   * @param {boolean} on
+   * @returns {ModelChange}
+   */
+  setDoNotDisturb(on) {
+    this.doNotDisturb = on;
+    return this.refresh();
+  }
+
+  /**
+   * Start Service was pressed: the banner shows Starting… until the next poll says otherwise.
+   *
+   * @returns {ModelChange}
+   */
+  noteStarting() {
+    this.#status = "starting";
+    this.#startProblem = null;
+    return this.refresh();
   }
 
   /**
@@ -254,6 +426,15 @@ export class PopupModel {
   }
 
   /**
+   * Everything the popup shows, to compare with the last time.
+   *
+   * @returns {string}
+   */
+  #shownKey() {
+    return JSON.stringify([this.snapshot, this.resources, this.banner]);
+  }
+
+  /**
    * @param {number} lease
    * @param {"kill" | "remove"} kind
    * @returns {Promise<void> | null}
@@ -262,6 +443,9 @@ export class PopupModel {
     const stopper = this.stopper;
     if (stopper === null) {
       return null;
+    }
+    if (kind === "kill") {
+      this.onKillSent?.(lease);
     }
     const request = kind === "kill" ? stopper.kill(lease) : stopper.remove(lease);
     // The second handler ignores a rejection: only the extension being disabled cancels a stop.

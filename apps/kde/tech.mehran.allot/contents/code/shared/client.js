@@ -176,6 +176,28 @@ export class DaemonClient {
         });
     }
     /**
+     * `POST /shutdown`, which allotd accepts before it stops.
+     *
+     * @returns {Promise<string | null>} `null` when allotd accepted, else why not. Rejects only
+     *   with `CancelledError`.
+     */
+    shutdown() {
+        return __awaiter(this, void 0, void 0, function* () {
+            let response;
+            try {
+                response = yield __classPrivateFieldGet(this, _DaemonClient_instances, "m", _DaemonClient_sendWithToken).call(this, "shutdown", "POST");
+            }
+            catch (error) {
+                rethrowCancelled(error);
+                return error instanceof Error ? error.message : String(error);
+            }
+            if (response === null) {
+                return "no token in ~/.allot/token";
+            }
+            return response.status === 202 ? null : `POST /shutdown answered ${response.status}`;
+        });
+    }
+    /**
      * `POST /leases/{id}/kill`.
      *
      * @param {number} lease

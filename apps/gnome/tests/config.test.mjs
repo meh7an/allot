@@ -28,5 +28,6 @@ test("data paths sit under ~/.allot", () => {
     token: "/home/user/.allot/token",
     config: "/home/user/.allot/config.toml",
     logs: "/home/user/.allot/logs",
+    settings: "/home/user/.allot/tray.json",
   });
 });
