@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { CancelledError, DaemonClient } from "../allot@mehran.tech/lib/client.js";
+import {
+  CancelledError,
+  DaemonClient,
+  TimeoutError,
+  conflictReason,
+} from "../allot@mehran.tech/lib/client.js";
 import { FakeTransport, fixtureText } from "./support.mjs";
 
 /** @import { HttpRequest, HttpResponse } from "../allot@mehran.tech/lib/client.js" */
@@ -127,4 +132,121 @@ test("a cancelled request rejects instead of reporting stopped", async () => {
   });
 
   await assert.rejects(daemon.poll(), CancelledError);
+});
+
+/** The lease of a stop answer, ended at the handoff's moment. */
+const ENDED_LEASE = {
+  id: 7,
+  holder: { session: "s", pid: 100, pid_start_time: 1 },
+  kind: "normal",
+  state: "expired",
+  class: "cpu_heavy",
+  profile: { cores: 4, ram_mb: 2048, gpu_pct: 0, vram_mb: 0, est_secs: 60 },
+  label: "cargo build",
+  cwd: "/home/user/work/app",
+  requested_at_ms: 1_792_824_700_000,
+  granted_at_ms: 1_792_824_710_000,
+  ended_at_ms: 1_792_824_720_000,
+  end_cause: "killed",
+  expires_at_ms: 1_792_824_765_000,
+};
+
+/**
+ * @param {number} failed
+ * @param {string | null} untouched
+ */
+function killBody(failed = 0, untouched = null) {
+  const process = { name: "cargo", pid: 18244, reason: "access denied" };
+  return JSON.stringify({
+    failed: Array.from({ length: failed }, () => process),
+    lease: ENDED_LEASE,
+    spared: [],
+    terminated: [],
+    untouched_reason: untouched,
+  });
+}
+
+test("kill posts with the token and a ten second limit", async () => {
+  const { daemon, transport } = client(() => ({ status: 200, body: killBody() }));
+
+  const result = await daemon.kill(7);
+
+  assert.deepEqual(result, { ended: true, text: "", endedAtMs: 1_792_824_720_000 });
+  assert.deepEqual(transport.requests, [
+    { method: "POST", url: "http://127.0.0.1:47999/leases/7/kill", token: "t", timeoutSecs: 10 },
+  ]);
+});
+
+test("a kill notes what was left running", async () => {
+  const cases = [
+    [0, null, ""],
+    [1, null, "1 process still running"],
+    [3, null, "3 processes still running"],
+    [0, "no bound process", "nothing was running"],
+  ];
+  for (const [failed, untouched, note] of cases) {
+    const body = killBody(Number(failed), untouched === null ? null : String(untouched));
+    const { daemon } = client(() => ({ status: 200, body }));
+
+    assert.equal((await daemon.kill(7)).text, note);
+  }
+});
+
+test("remove posts to the remove route", async () => {
+  const body = JSON.stringify({ lease: { ...ENDED_LEASE, end_cause: "removed" } });
+  const { daemon, transport } = client(() => ({ status: 200, body }));
+
+  const result = await daemon.remove(7);
+
+  assert.ok(result.ended);
+  assert.equal(transport.requests[0]?.url, "http://127.0.0.1:47999/leases/7/remove");
+});
+
+test("refusals say why", async () => {
+  const cases = [
+    [
+      409,
+      "lease 7 was not killed: the bound process 1 (systemd) is protected",
+      "the bound process 1 (systemd) is protected",
+    ],
+    [409, "lease 7 has already ended", "the job has already ended"],
+    [409, "", "the service refused"],
+    [404, "no such lease", "the job no longer exists"],
+    [503, "", "the service has just started; try again"],
+    [401, "", "the service refused the token"],
+    [500, "boom", "the service answered 500"],
+  ];
+  for (const [status, body, reason] of cases) {
+    const { daemon } = client(() => ({ status: Number(status), body: String(body) }));
+
+    assert.deepEqual(await daemon.kill(7), { ended: false, text: reason, endedAtMs: null });
+  }
+  assert.equal(conflictReason(" lease 7 has already ended "), "the job has already ended");
+});
+
+test("an unreachable service says so", async () => {
+  const timedOut = client(() => Promise.reject(new TimeoutError())).daemon;
+  const refused = client(() => Promise.reject(new Error("connection refused"))).daemon;
+
+  assert.equal((await timedOut.remove(7)).text, "the service did not answer within 10 s");
+  assert.equal((await refused.remove(7)).text, "the service is not running");
+});
+
+test("an unreadable answer is refused", async () => {
+  const { daemon } = client(() => ({ status: 200, body: "{}" }));
+
+  assert.equal((await daemon.kill(7)).text, "the service's answer could not be read");
+});
+
+test("a missing token sends nothing", async () => {
+  const { daemon, transport } = client(() => ({ status: 200, body: "" }), { value: null });
+
+  assert.equal((await daemon.kill(7)).text, "the service's token file is missing");
+  assert.deepEqual(transport.requests, []);
+});
+
+test("a cancelled stop rejects", async () => {
+  const { daemon } = client(() => Promise.reject(new CancelledError()));
+
+  await assert.rejects(daemon.kill(7), CancelledError);
 });

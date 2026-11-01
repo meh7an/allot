@@ -20,14 +20,19 @@ export const CODE_DIR = new URL("tech.mehran.allot/contents/code/", KDE_DIR);
 
 /** The GNOME modules the widget shares, written to `code/shared/`. */
 export const SHARED_MODULES = [
+  "benchmark-status",
   "client",
   "config",
   "format",
   "indicator-status",
+  "job-card",
+  "job-stops",
   "poller",
   "popup-model",
   "schedule",
   "snapshot",
+  "state-clock",
+  "stop-result",
 ];
 
 /**

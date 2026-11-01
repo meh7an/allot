@@ -19,9 +19,11 @@ var __classPrivateFieldGet = (this && this.__classPrivateFieldGet) || function (
     if (typeof state === "function" ? receiver !== state || !f : !state.has(receiver)) throw new TypeError("Cannot read private member from an object whose class did not declare it");
     return kind === "m" ? f : kind === "a" ? f.call(receiver) : f ? f.value : state.get(receiver);
 };
-var _DaemonClient_instances, _DaemonClient_base, _DaemonClient_send, _DaemonClient_readToken, _DaemonClient_token, _DaemonClient_withoutUiState, _DaemonClient_sendWithToken, _DaemonClient_request, _DaemonClient_currentToken;
-import { decodeUiState } from "../contract.g.mjs";
+var _DaemonClient_instances, _DaemonClient_base, _DaemonClient_send, _DaemonClient_readToken, _DaemonClient_token, _DaemonClient_stop, _DaemonClient_withoutUiState, _DaemonClient_sendWithToken, _DaemonClient_request, _DaemonClient_currentToken;
+import { decodeKillResponse, decodeRemoveResponse, decodeUiState } from "../contract.g.mjs";
+import * as stopResult from "./stop-result.js";
 /** @import { UiState } from "../contract.g.mjs" */
+/** @import { StopResult } from "./stop-result.js" */
 /**
  * - `running`: allotd answered with UI state.
  * - `starting`: allotd answers but has no first sample yet.
@@ -46,7 +48,7 @@ import { decodeUiState } from "../contract.g.mjs";
  */
 /**
  * @typedef {object} HttpRequest
- * @property {"GET"} method
+ * @property {"GET" | "POST"} method
  * @property {string} url
  * @property {string | null} token
  *   Sent as a bearer token when set.
@@ -58,8 +60,8 @@ import { decodeUiState } from "../contract.g.mjs";
  * @property {string} body
  */
 /**
- * Sends one request. Rejects with `CancelledError` when the extension is being disabled, and
- * with any other error when nothing answers.
+ * Sends one request. Rejects with `CancelledError` when the extension is being disabled, with
+ * `TimeoutError` when nothing answers in time, and with any other error when nothing answers.
  *
  * @callback SendRequest
  * @param {HttpRequest} request
@@ -78,7 +80,18 @@ export class CancelledError extends Error {
         this.name = "CancelledError";
     }
 }
+/** No answer came within the request's timeout. */
+export class TimeoutError extends Error {
+    constructor() {
+        super("timed out");
+        this.name = "TimeoutError";
+    }
+}
 const REQUEST_TIMEOUT_SECS = 3;
+// allotd answers a kill after up to three sweeps over the tree, each waiting out the grace
+// period of the processes that ignore SIGTERM.
+const STOP_TIMEOUT_SECS = 10;
+const NOT_KILLED = " was not killed: ";
 /**
  * HTTP client for the daemon routes the extension uses. It never starts allotd by itself; that
  * is the user's Start service.
@@ -162,8 +175,51 @@ export class DaemonClient {
             }
         });
     }
+    /**
+     * `POST /leases/{id}/kill`.
+     *
+     * @param {number} lease
+     * @returns {Promise<StopResult>} Rejects only with `CancelledError`.
+     */
+    kill(lease) {
+        return __classPrivateFieldGet(this, _DaemonClient_instances, "m", _DaemonClient_stop).call(this, `leases/${lease}/kill`, (body) => stopResult.killed(decodeKillResponse(body)));
+    }
+    /**
+     * `POST /leases/{id}/remove`.
+     *
+     * @param {number} lease
+     * @returns {Promise<StopResult>} Rejects only with `CancelledError`.
+     */
+    remove(lease) {
+        return __classPrivateFieldGet(this, _DaemonClient_instances, "m", _DaemonClient_stop).call(this, `leases/${lease}/remove`, (body) => stopResult.removed(decodeRemoveResponse(body)));
+    }
 }
-_DaemonClient_base = new WeakMap(), _DaemonClient_send = new WeakMap(), _DaemonClient_readToken = new WeakMap(), _DaemonClient_token = new WeakMap(), _DaemonClient_instances = new WeakSet(), _DaemonClient_withoutUiState = function _DaemonClient_withoutUiState() {
+_DaemonClient_base = new WeakMap(), _DaemonClient_send = new WeakMap(), _DaemonClient_readToken = new WeakMap(), _DaemonClient_token = new WeakMap(), _DaemonClient_instances = new WeakSet(), _DaemonClient_stop = function _DaemonClient_stop(path, ended) {
+    return __awaiter(this, void 0, void 0, function* () {
+        let response;
+        try {
+            response = yield __classPrivateFieldGet(this, _DaemonClient_instances, "m", _DaemonClient_sendWithToken).call(this, path, "POST", STOP_TIMEOUT_SECS);
+        }
+        catch (error) {
+            rethrowCancelled(error);
+            return stopResult.refused(error instanceof TimeoutError
+                ? `the service did not answer within ${STOP_TIMEOUT_SECS} s`
+                : "the service is not running");
+        }
+        if (response === null) {
+            return stopResult.refused("the service's token file is missing");
+        }
+        if (response.status !== 200) {
+            return stopResult.refused(stopRefusal(response.status, response.body.trim()));
+        }
+        try {
+            return ended(JSON.parse(response.body));
+        }
+        catch (_a) {
+            return stopResult.refused("the service's answer could not be read");
+        }
+    });
+}, _DaemonClient_withoutUiState = function _DaemonClient_withoutUiState() {
     return __awaiter(this, void 0, void 0, function* () {
         const version = yield this.healthVersion();
         if (version === null) {
@@ -171,13 +227,13 @@ _DaemonClient_base = new WeakMap(), _DaemonClient_send = new WeakMap(), _DaemonC
         }
         return result("incompatible", { version, detail: `allotd ${version} has no /ui/state` });
     });
-}, _DaemonClient_sendWithToken = function _DaemonClient_sendWithToken(path) {
-    return __awaiter(this, void 0, void 0, function* () {
+}, _DaemonClient_sendWithToken = function _DaemonClient_sendWithToken(path_1) {
+    return __awaiter(this, arguments, void 0, function* (path, method = "GET", timeoutSecs = REQUEST_TIMEOUT_SECS) {
         const token = yield __classPrivateFieldGet(this, _DaemonClient_instances, "m", _DaemonClient_currentToken).call(this);
         if (token === null) {
             return null;
         }
-        const response = yield __classPrivateFieldGet(this, _DaemonClient_instances, "m", _DaemonClient_request).call(this, path, token);
+        const response = yield __classPrivateFieldGet(this, _DaemonClient_instances, "m", _DaemonClient_request).call(this, path, token, method, timeoutSecs);
         if (response.status !== 401) {
             return response;
         }
@@ -185,15 +241,10 @@ _DaemonClient_base = new WeakMap(), _DaemonClient_send = new WeakMap(), _DaemonC
         // the old one.
         __classPrivateFieldSet(this, _DaemonClient_token, null, "f");
         const fresh = yield __classPrivateFieldGet(this, _DaemonClient_instances, "m", _DaemonClient_currentToken).call(this);
-        return fresh === null ? null : __classPrivateFieldGet(this, _DaemonClient_instances, "m", _DaemonClient_request).call(this, path, fresh);
+        return fresh === null ? null : __classPrivateFieldGet(this, _DaemonClient_instances, "m", _DaemonClient_request).call(this, path, fresh, method, timeoutSecs);
     });
-}, _DaemonClient_request = function _DaemonClient_request(path, token) {
-    return __classPrivateFieldGet(this, _DaemonClient_send, "f").call(this, {
-        method: "GET",
-        url: __classPrivateFieldGet(this, _DaemonClient_base, "f") + path,
-        token,
-        timeoutSecs: REQUEST_TIMEOUT_SECS,
-    });
+}, _DaemonClient_request = function _DaemonClient_request(path, token, method = "GET", timeoutSecs = REQUEST_TIMEOUT_SECS) {
+    return __classPrivateFieldGet(this, _DaemonClient_send, "f").call(this, { method, url: __classPrivateFieldGet(this, _DaemonClient_base, "f") + path, token, timeoutSecs });
 }, _DaemonClient_currentToken = function _DaemonClient_currentToken() {
     return __awaiter(this, void 0, void 0, function* () {
         var _a;
@@ -206,6 +257,42 @@ _DaemonClient_base = new WeakMap(), _DaemonClient_send = new WeakMap(), _DaemonC
         return __classPrivateFieldGet(this, _DaemonClient_token, "f");
     });
 };
+/**
+ * The reason in an error body of the kill or remove route, for a card that already names the
+ * job: allotd's text starts with the lease.
+ *
+ * @param {string} body
+ * @returns {string}
+ */
+export function conflictReason(body) {
+    const cut = body.indexOf(NOT_KILLED);
+    if (cut >= 0) {
+        return body.slice(cut + NOT_KILLED.length);
+    }
+    if (body.includes(" has already ended")) {
+        return "the job has already ended";
+    }
+    return body === "" ? "the service refused" : body;
+}
+/**
+ * @param {number} status
+ * @param {string} body
+ * @returns {string}
+ */
+function stopRefusal(status, body) {
+    switch (status) {
+        case 409:
+            return conflictReason(body);
+        case 404:
+            return "the job no longer exists";
+        case 503:
+            return "the service has just started; try again";
+        case 401:
+            return "the service refused the token";
+        default:
+            return `the service answered ${status}`;
+    }
+}
 /**
  * @param {string} body
  * @returns {PollResult}

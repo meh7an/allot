@@ -1,6 +1,8 @@
-import { decodeUiState } from "../contract.g.mjs";
+import { decodeKillResponse, decodeRemoveResponse, decodeUiState } from "../contract.g.mjs";
+import * as stopResult from "./stop-result.js";
 
 /** @import { UiState } from "../contract.g.mjs" */
+/** @import { StopResult } from "./stop-result.js" */
 
 /**
  * - `running`: allotd answered with UI state.
@@ -28,7 +30,7 @@ import { decodeUiState } from "../contract.g.mjs";
 
 /**
  * @typedef {object} HttpRequest
- * @property {"GET"} method
+ * @property {"GET" | "POST"} method
  * @property {string} url
  * @property {string | null} token
  *   Sent as a bearer token when set.
@@ -42,8 +44,8 @@ import { decodeUiState } from "../contract.g.mjs";
  */
 
 /**
- * Sends one request. Rejects with `CancelledError` when the extension is being disabled, and
- * with any other error when nothing answers.
+ * Sends one request. Rejects with `CancelledError` when the extension is being disabled, with
+ * `TimeoutError` when nothing answers in time, and with any other error when nothing answers.
  *
  * @callback SendRequest
  * @param {HttpRequest} request
@@ -65,7 +67,21 @@ export class CancelledError extends Error {
   }
 }
 
+/** No answer came within the request's timeout. */
+export class TimeoutError extends Error {
+  constructor() {
+    super("timed out");
+    this.name = "TimeoutError";
+  }
+}
+
 const REQUEST_TIMEOUT_SECS = 3;
+
+// allotd answers a kill after up to three sweeps over the tree, each waiting out the grace
+// period of the processes that ignore SIGTERM.
+const STOP_TIMEOUT_SECS = 10;
+
+const NOT_KILLED = " was not killed: ";
 
 /**
  * HTTP client for the daemon routes the extension uses. It never starts allotd by itself; that
@@ -146,6 +162,60 @@ export class DaemonClient {
     }
   }
 
+  /**
+   * `POST /leases/{id}/kill`.
+   *
+   * @param {number} lease
+   * @returns {Promise<StopResult>} Rejects only with `CancelledError`.
+   */
+  kill(lease) {
+    return this.#stop(`leases/${lease}/kill`, (body) =>
+      stopResult.killed(decodeKillResponse(body)),
+    );
+  }
+
+  /**
+   * `POST /leases/{id}/remove`.
+   *
+   * @param {number} lease
+   * @returns {Promise<StopResult>} Rejects only with `CancelledError`.
+   */
+  remove(lease) {
+    return this.#stop(`leases/${lease}/remove`, (body) =>
+      stopResult.removed(decodeRemoveResponse(body)),
+    );
+  }
+
+  /**
+   * @param {string} path
+   * @param {(body: unknown) => StopResult} ended Reads allotd's answer; throws when it cannot.
+   * @returns {Promise<StopResult>}
+   */
+  async #stop(path, ended) {
+    let response;
+    try {
+      response = await this.#sendWithToken(path, "POST", STOP_TIMEOUT_SECS);
+    } catch (error) {
+      rethrowCancelled(error);
+      return stopResult.refused(
+        error instanceof TimeoutError
+          ? `the service did not answer within ${STOP_TIMEOUT_SECS} s`
+          : "the service is not running",
+      );
+    }
+    if (response === null) {
+      return stopResult.refused("the service's token file is missing");
+    }
+    if (response.status !== 200) {
+      return stopResult.refused(stopRefusal(response.status, response.body.trim()));
+    }
+    try {
+      return ended(JSON.parse(response.body));
+    } catch {
+      return stopResult.refused("the service's answer could not be read");
+    }
+  }
+
   // allotd v0.1 has no /ui/state, and answers 404 for it.
   async #withoutUiState() {
     const version = await this.healthVersion();
@@ -157,14 +227,16 @@ export class DaemonClient {
 
   /**
    * @param {string} path
+   * @param {"GET" | "POST"} [method]
+   * @param {number} [timeoutSecs]
    * @returns {Promise<HttpResponse | null>} `null` when there is no token to send.
    */
-  async #sendWithToken(path) {
+  async #sendWithToken(path, method = "GET", timeoutSecs = REQUEST_TIMEOUT_SECS) {
     const token = await this.#currentToken();
     if (token === null) {
       return null;
     }
-    const response = await this.#request(path, token);
+    const response = await this.#request(path, token, method, timeoutSecs);
     if (response.status !== 401) {
       return response;
     }
@@ -173,21 +245,18 @@ export class DaemonClient {
     // the old one.
     this.#token = null;
     const fresh = await this.#currentToken();
-    return fresh === null ? null : this.#request(path, fresh);
+    return fresh === null ? null : this.#request(path, fresh, method, timeoutSecs);
   }
 
   /**
    * @param {string} path
    * @param {string | null} token
+   * @param {"GET" | "POST"} [method]
+   * @param {number} [timeoutSecs]
    * @returns {Promise<HttpResponse>}
    */
-  #request(path, token) {
-    return this.#send({
-      method: "GET",
-      url: this.#base + path,
-      token,
-      timeoutSecs: REQUEST_TIMEOUT_SECS,
-    });
+  #request(path, token, method = "GET", timeoutSecs = REQUEST_TIMEOUT_SECS) {
+    return this.#send({ method, url: this.#base + path, token, timeoutSecs });
   }
 
   /** @returns {Promise<string | null>} */
@@ -198,6 +267,44 @@ export class DaemonClient {
     const read = (await this.#readToken())?.trim() ?? "";
     this.#token = read === "" ? null : read;
     return this.#token;
+  }
+}
+
+/**
+ * The reason in an error body of the kill or remove route, for a card that already names the
+ * job: allotd's text starts with the lease.
+ *
+ * @param {string} body
+ * @returns {string}
+ */
+export function conflictReason(body) {
+  const cut = body.indexOf(NOT_KILLED);
+  if (cut >= 0) {
+    return body.slice(cut + NOT_KILLED.length);
+  }
+  if (body.includes(" has already ended")) {
+    return "the job has already ended";
+  }
+  return body === "" ? "the service refused" : body;
+}
+
+/**
+ * @param {number} status
+ * @param {string} body
+ * @returns {string}
+ */
+function stopRefusal(status, body) {
+  switch (status) {
+    case 409:
+      return conflictReason(body);
+    case 404:
+      return "the job no longer exists";
+    case 503:
+      return "the service has just started; try again";
+    case 401:
+      return "the service refused the token";
+    default:
+      return `the service answered ${status}`;
   }
 }
 

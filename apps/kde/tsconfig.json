@@ -40,13 +40,18 @@
   // The GNOME modules the widget shares are checked here too, against the ES2016 library.
   "include": [
     "src/*.js",
+    "../gnome/allot@mehran.tech/lib/benchmark-status.js",
     "../gnome/allot@mehran.tech/lib/client.js",
     "../gnome/allot@mehran.tech/lib/config.js",
     "../gnome/allot@mehran.tech/lib/format.js",
     "../gnome/allot@mehran.tech/lib/indicator-status.js",
+    "../gnome/allot@mehran.tech/lib/job-card.js",
+    "../gnome/allot@mehran.tech/lib/job-stops.js",
     "../gnome/allot@mehran.tech/lib/poller.js",
     "../gnome/allot@mehran.tech/lib/popup-model.js",
     "../gnome/allot@mehran.tech/lib/schedule.js",
     "../gnome/allot@mehran.tech/lib/snapshot.js",
+    "../gnome/allot@mehran.tech/lib/state-clock.js",
+    "../gnome/allot@mehran.tech/lib/stop-result.js",
   ],
 }

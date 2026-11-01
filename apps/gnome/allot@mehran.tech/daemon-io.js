@@ -2,7 +2,7 @@ import Gio from "gi://Gio";
 import GLib from "gi://GLib";
 import Soup from "gi://Soup?version=3.0";
 
-import { CancelledError } from "./lib/client.js";
+import { CancelledError, TimeoutError } from "./lib/client.js";
 
 /** @import { HttpRequest, HttpResponse } from "./lib/client.js" */
 /** @import { Timers } from "./lib/poller.js" */
@@ -10,10 +10,12 @@ import { CancelledError } from "./lib/client.js";
 Gio._promisify(Soup.Session.prototype, "send_and_read_async");
 Gio._promisify(Gio.File.prototype, "load_contents_async");
 
-/** Sends the client's requests with libsoup; `cancel` ends the one in flight. */
+/** Sends the client's requests with libsoup; `cancel` ends every one in flight. */
 export class SoupTransport {
-  // allotd only listens on loopback, which a system proxy must never see.
-  #session = new Soup.Session({ proxy_resolver: Gio.SimpleProxyResolver.new(null, null) });
+  // One session per timeout: a session's timeout applies to all its requests, and a poll must
+  // not shorten the wait of a kill in flight.
+  /** @type {Map<number, Soup.Session>} */
+  #sessions = new Map();
   #cancellable = new Gio.Cancellable();
 
   /**
@@ -25,9 +27,8 @@ export class SoupTransport {
     if (request.token !== null) {
       message.request_headers.append("Authorization", `Bearer ${request.token}`);
     }
-    this.#session.timeout = request.timeoutSecs;
     try {
-      const bytes = await this.#session.send_and_read_async(
+      const bytes = await this.#session(request.timeoutSecs).send_and_read_async(
         message,
         GLib.PRIORITY_DEFAULT,
         this.#cancellable,
@@ -38,13 +39,38 @@ export class SoupTransport {
       if (this.#cancellable.is_cancelled()) {
         throw new CancelledError();
       }
+      if (
+        error instanceof GLib.Error &&
+        error.matches(Gio.IOErrorEnum, Gio.IOErrorEnum.TIMED_OUT)
+      ) {
+        throw new TimeoutError();
+      }
       throw error;
     }
   };
 
   cancel() {
     this.#cancellable.cancel();
-    this.#session.abort();
+    for (const session of this.#sessions.values()) {
+      session.abort();
+    }
+  }
+
+  /**
+   * @param {number} timeoutSecs
+   * @returns {Soup.Session}
+   */
+  #session(timeoutSecs) {
+    let session = this.#sessions.get(timeoutSecs);
+    if (session === undefined) {
+      // allotd only listens on loopback, which a system proxy must never see.
+      session = new Soup.Session({
+        proxy_resolver: Gio.SimpleProxyResolver.new(null, null),
+        timeout: timeoutSecs,
+      });
+      this.#sessions.set(timeoutSecs, session);
+    }
+    return session;
   }
 }
 

@@ -1,0 +1,140 @@
+/* The dark shell, in GNOME's dark palette. stylesheet-light.css has the same rules. */
+
+@import url("stylesheet.css");
+
+.allot-header-glyph-error,
+.allot-danger {
+  color: #ff7b63;
+}
+
+.allot-group-heading,
+.allot-idle-line,
+.allot-nothing,
+.allot-detail-line,
+.allot-recent-meta {
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.allot-group-benchmark .allot-group-icon {
+  color: #c061cb;
+}
+
+.allot-group-running .allot-group-icon,
+.allot-group-recent .allot-group-icon,
+.allot-detail-icon-check {
+  color: #57e389;
+}
+
+.allot-group-waiting .allot-group-icon,
+.allot-warning {
+  color: #f8e45c;
+}
+
+.allot-card {
+  background-color: rgba(255, 255, 255, 0.055);
+  border-color: rgba(0, 0, 0, 0.4);
+}
+
+.allot-strip {
+  background-color: rgba(255, 255, 255, 0.09);
+  border-color: rgba(0, 0, 0, 0.4);
+  color: rgba(255, 255, 255, 0.78);
+}
+
+.allot-strip-id {
+  color: #ffffff;
+}
+
+.allot-tile {
+  background-color: rgba(255, 255, 255, 0.08);
+}
+
+.allot-tile-queued {
+  background-color: transparent;
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.allot-chip {
+  background-color: rgba(255, 255, 255, 0.1);
+  color: #dedede;
+}
+
+.allot-chip-benchmark {
+  background-color: #dc8add;
+  color: #1a1a1a;
+}
+
+.allot-action {
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.allot-action-kill:hover,
+.allot-action-kill:focus {
+  background-color: rgba(224, 27, 36, 0.22);
+}
+
+.allot-action-remove:hover,
+.allot-action-remove:focus {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.allot-action-confirm {
+  background-color: #c01c28;
+  color: #ffffff;
+}
+
+.allot-action-confirm:hover,
+.allot-action-confirm:focus {
+  background-color: #a51d2d;
+}
+
+.allot-detail-icon {
+  color: #c061cb;
+}
+
+.allot-bar {
+  -allot-track-color: rgba(255, 255, 255, 0.08);
+}
+
+.allot-bar-running {
+  color: #57e389;
+}
+
+.allot-bar-over,
+.allot-bar-waiting,
+.allot-bar-waiting-dashed {
+  color: #f8e45c;
+}
+
+.allot-bar-frozen {
+  color: #9a9a9a;
+}
+
+.allot-step-bar,
+.allot-step-tick {
+  background-color: rgba(255, 255, 255, 0.12);
+}
+
+.allot-step-current .allot-step-solid,
+.allot-step-current .allot-step-on,
+.allot-step-current .allot-step-run-fill {
+  background-color: #c061cb;
+}
+
+.allot-step-past .allot-step-solid,
+.allot-step-past .allot-step-on,
+.allot-step-past .allot-step-run-fill {
+  background-color: rgba(192, 97, 203, 0.35);
+}
+
+.allot-step-current .allot-step-label {
+  color: #ffffff;
+}
+
+.allot-step-past .allot-step-label {
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.allot-step-upcoming .allot-step-label {
+  color: #9a9a9a;
+}

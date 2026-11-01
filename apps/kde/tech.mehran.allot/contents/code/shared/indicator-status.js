@@ -42,7 +42,7 @@ export function accessibleName(status) {
  * @returns {IndicatorStatus}
  */
 export function indicatorStatus(snapshot) {
-    const isWaiting = snapshot.groups.some((group) => group.jobs.some((job) => job.isQueued));
+    const isWaiting = snapshot.groups.some((group) => group.jobs.some((job) => job.isQueued && !job.isEnding));
     /** @type {IndicatorIcon} */
     let icon = "idle";
     if (snapshot.isLastKnown) {

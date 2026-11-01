@@ -1,4 +1,5 @@
-/* The popup takes the shell's popup-menu-content background, radius and padding. */
+/* The popup takes the shell's popup-menu-content background, radius and padding. The shell loads
+   stylesheet-dark.css or stylesheet-light.css, which import this file and add the colours. */
 
 .allot-popup {
   width: 360px;
@@ -12,11 +13,6 @@
 
 .allot-header-glyph {
   icon-size: 16px;
-}
-
-/* GNOME's destructive colour on the dark shell. */
-.allot-header-glyph-error {
-  color: #ff7b63;
 }
 
 .allot-summary {
@@ -38,31 +34,196 @@
 }
 
 .allot-list {
-  spacing: 4px;
+  spacing: 6px;
   padding: 0 4px;
 }
 
 .allot-group-heading {
   spacing: 6px;
-  padding-top: 4px;
+  padding: 6px 6px 0;
+  font-size: 0.85em;
   font-weight: bold;
 }
 
-.allot-group-heading StIcon {
+.allot-group-icon {
   icon-size: 14px;
 }
 
-.allot-job {
-  padding: 2px 0 4px 20px;
-}
-
-.allot-job-strip,
 .allot-idle-line,
 .allot-nothing {
+  padding: 4px 6px 2px;
   font-size: 0.85em;
 }
 
-.allot-idle-line,
-.allot-nothing {
-  padding-top: 4px;
+/* Cards */
+
+.allot-card {
+  border-radius: 10px;
+  border-width: 1px;
+}
+
+.allot-strip {
+  spacing: 8px;
+  padding: 5px 12px;
+  border-radius: 10px 10px 0 0;
+  border-bottom-width: 1px;
+  font-size: 0.85em;
+  font-feature-settings: "tnum";
+}
+
+.allot-strip-id {
+  font-family: monospace;
+}
+
+.allot-row {
+  padding: 4px 4px 10px 12px;
+}
+
+.allot-row-top {
+  spacing: 8px;
+  min-height: 32px;
+}
+
+.allot-tile {
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  border-width: 1px;
+  border-color: transparent;
+}
+
+.allot-tile-label {
+  font-family: monospace;
+  font-size: 9px;
+  font-weight: bold;
+}
+
+.allot-tile-icon {
+  icon-size: 16px;
+}
+
+.allot-command {
+  font-family: monospace;
+  font-size: 0.95em;
+}
+
+.allot-chip {
+  spacing: 4px;
+  height: 18px;
+  padding: 0 8px;
+  border-radius: 9px;
+  font-size: 0.8em;
+}
+
+.allot-chip-benchmark {
+  padding-left: 5px;
+}
+
+.allot-chip-icon {
+  icon-size: 12px;
+}
+
+.allot-action {
+  min-width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  font-size: 0.85em;
+}
+
+.allot-action StIcon {
+  icon-size: 16px;
+}
+
+.allot-action-remove {
+  padding: 0 8px;
+}
+
+.allot-action-confirm {
+  padding: 0 10px 0 8px;
+  font-weight: bold;
+}
+
+.allot-confirm {
+  spacing: 4px;
+}
+
+.allot-detail-line {
+  spacing: 6px;
+  padding: 0 8px 0 28px;
+  font-size: 0.85em;
+  font-feature-settings: "tnum";
+}
+
+.allot-detail-icon {
+  icon-size: 14px;
+}
+
+/* The card's radius, less its border. */
+.allot-bar {
+  height: 2px;
+  -allot-bar-radius: 9px;
+}
+
+/* Benchmark stepper: Drain, Quiet and Run share the width 1 : 1.4 : 1. */
+
+.allot-stepper {
+  spacing: 6px;
+  padding: 8px 8px 0 28px;
+}
+
+.allot-step {
+  spacing: 3px;
+}
+
+.allot-step-drain,
+.allot-step-run {
+  width: 84px;
+}
+
+.allot-step-quiet {
+  width: 118px;
+}
+
+.allot-step-bar {
+  height: 3px;
+  border-radius: 2px;
+}
+
+.allot-step-ticks {
+  spacing: 2px;
+  height: 3px;
+}
+
+.allot-step-run-fill {
+  height: 3px;
+  border-radius: 2px;
+}
+
+.allot-step-label {
+  font-size: 0.75em;
+}
+
+/* Recently finished */
+
+.allot-recent-view {
+  spacing: 6px;
+}
+
+.allot-recent {
+  padding: 0 12px;
+}
+
+.allot-recent-row {
+  spacing: 8px;
+  min-height: 36px;
+}
+
+.allot-recent-id {
+  font-family: monospace;
+  font-size: 0.75em;
+}
+
+.allot-recent-meta {
+  font-size: 0.85em;
+  font-feature-settings: "tnum";
 }

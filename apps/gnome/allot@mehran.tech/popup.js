@@ -9,16 +9,23 @@ import * as BoxPointer from "resource:///org/gnome/shell/ui/boxpointer.js";
 import * as Main from "resource:///org/gnome/shell/ui/main.js";
 import * as PopupMenu from "resource:///org/gnome/shell/ui/popupMenu.js";
 
+import { AppIcons } from "./app-icons.js";
+import { GroupHeading, JobCardView, RecentView, collapse, fadeIn, label } from "./cards.js";
 import { anchoredPosition, clampInto, maxHeight } from "./lib/placement.js";
 
 /** @import { PopupModel } from "./lib/popup-model.js" */
-/** @import { HeaderGlyph, JobGroup, JobRow } from "./lib/snapshot.js" */
+/** @import { HeaderGlyph } from "./lib/snapshot.js" */
 
-const GROUP_ICONS = {
-  benchmark: "alarm-symbolic",
-  running: "media-playback-start-symbolic",
-  waiting: "appointment-soon-symbolic",
-};
+/**
+ * A row of the job list: a key that stays the same while the row is shown, how to make its
+ * view, and how to show the current snapshot in it.
+ *
+ * @typedef {object} ListItem
+ * @property {string} key
+ * @property {() => { actor: Clutter.Actor, update: Function }} make
+ * @property {(view: any) => void} update
+ */
+
 const NOTHING_TEXT = "No jobs running or waiting.";
 const OPAQUE = 255;
 const DIMMED = 128;
@@ -37,6 +44,12 @@ export class AllotPopup {
   #markIcon;
   #logsPath;
   #onOpenChanged;
+  #onChanged;
+  #appIcons = new AppIcons();
+  /** @type {Map<string, { actor: Clutter.Actor, update: Function }>} */
+  #views = new Map();
+  /** @type {import("./cards.js").CardActions} */
+  #cardActions;
 
   #actor;
   #header;
@@ -64,6 +77,7 @@ export class AllotPopup {
    * @param {Gio.File} options.iconDirectory
    * @param {string} options.logsPath
    * @param {(open: boolean) => void} options.onOpenChanged
+   * @param {() => void} options.onChanged A press or Esc changed the model's stops.
    */
   constructor(options) {
     this.#model = options.model;
@@ -73,6 +87,17 @@ export class AllotPopup {
     });
     this.#logsPath = options.logsPath;
     this.#onOpenChanged = options.onOpenChanged;
+    this.#onChanged = options.onChanged;
+    this.#cardActions = {
+      kill: (lease) => this.#pressKill(lease),
+      remove: (lease) => this.#pressRemove(lease),
+      cancel: (lease) => {
+        if (this.#model.cancelConfirm(lease)) {
+          this.#onChanged();
+        }
+      },
+      appIcon: this.#appIcons.icon,
+    };
 
     this.#actor = new St.BoxLayout({
       style_class: "popup-menu-content allot-popup",
@@ -160,7 +185,7 @@ export class AllotPopup {
   open() {
     this.#model.resetForOpen();
     this.#actor.show();
-    this.render();
+    this.render(false);
     this.#applyMode();
     this.#indicator.setOpen(true);
     this.#onOpenChanged(true);
@@ -174,32 +199,54 @@ export class AllotPopup {
     this.#endDrag();
     this.#releaseModal();
     this.#actor.hide();
+    this.#cancelConfirms();
     this.#indicator.setOpen(false);
     this.#onOpenChanged(false);
   }
 
-  /** Shows the model's snapshot; the panel button is updated separately. */
-  render() {
-    const { header, groups, idle, showNothing, isLastKnown } = this.#model.snapshot;
+  /**
+   * Shows the model's snapshot; the panel button is updated separately. Rows are updated in
+   * place by key, so a ticking time or a countdown keeps the Kill? button and its focus.
+   *
+   * @param {boolean} [animate] Fade rows in and out and ease the bars; off when the popup opens.
+   */
+  render(animate = true) {
+    const { header, groups, idle, recent, showNothing, isLastKnown } = this.#model.snapshot;
     this.#summary.text = header.summary;
     this.#showGlyph(header.glyph);
 
-    this.#list.destroy_all_children();
+    /** @type {ListItem[]} */
+    const items = [];
     for (const group of groups) {
-      this.#list.add_child(groupHeading(group));
+      items.push({
+        key: `group:${group.kind}`,
+        make: () => new GroupHeading(group),
+        update: (view) => view.update(group),
+      });
       for (const job of group.jobs) {
-        this.#list.add_child(jobRow(job));
+        items.push({
+          key: `job:${job.id}`,
+          make: () => new JobCardView(this.#cardActions),
+          update: (view) => view.update(job, animate),
+        });
       }
     }
     if (idle !== null) {
       const line = [idle.label, idle.ids, idle.usage].filter((part) => part !== "").join("  ");
-      this.#list.add_child(label("allot-idle-line", line));
+      items.push(textItem("idle", "allot-idle-line", line));
     }
-    if (showNothing) {
-      this.#list.add_child(label("allot-nothing", NOTHING_TEXT));
+    if (recent.length > 0) {
+      items.push({
+        key: "recent",
+        make: () => new RecentView(),
+        update: (view) => view.update(recent),
+      });
+    } else if (showNothing) {
+      items.push(textItem("nothing", "allot-nothing", NOTHING_TEXT));
     }
+    this.#showItems(items, animate);
     this.#list.opacity = isLastKnown ? DIMMED : OPAQUE;
-    this.#scroll.visible = this.#list.get_n_children() > 0;
+    this.#scroll.visible = items.length > 0;
 
     if (this.isOpen && !this.#model.isPinned) {
       this.#placeAnchored();
@@ -208,6 +255,7 @@ export class AllotPopup {
 
   destroy() {
     this.close();
+    this.#appIcons.destroy();
     Main.layoutManager.disconnect(this.#monitorsChangedId);
     this.#moreMenu.destroy();
     Main.layoutManager.removeChrome(this.#actor);
@@ -290,8 +338,13 @@ export class AllotPopup {
       return Clutter.EVENT_PROPAGATE;
     }
     const type = event.type();
+    // Esc first takes back a Kill? confirm, then closes.
     if (type === Clutter.EventType.KEY_PRESS && event.get_key_symbol() === Clutter.KEY_Escape) {
-      this.close();
+      if (this.#model.isConfirming) {
+        this.#cancelConfirms();
+      } else {
+        this.close();
+      }
       return Clutter.EVENT_STOP;
     }
     const isPress =
@@ -393,6 +446,67 @@ export class AllotPopup {
     return Clutter.EVENT_STOP;
   }
 
+  /**
+   * Puts the rows in order, reusing the view of every key shown before. A row whose key is
+   * gone collapses where it was, so the rows around it do not jump.
+   *
+   * @param {ListItem[]} items
+   * @param {boolean} animate
+   */
+  #showItems(items, animate) {
+    const shown = new Set();
+    /** @type {Clutter.Actor | null} */
+    let previous = null;
+    for (const item of items) {
+      let view = this.#views.get(item.key);
+      if (view === undefined) {
+        view = item.make();
+        this.#views.set(item.key, view);
+        this.#list.add_child(view.actor);
+        if (animate) {
+          fadeIn(view.actor);
+        }
+      }
+      if (previous === null) {
+        this.#list.set_child_at_index(view.actor, 0);
+      } else {
+        this.#list.set_child_above_sibling(view.actor, previous);
+      }
+      item.update(view);
+      shown.add(item.key);
+      previous = view.actor;
+    }
+    for (const [key, view] of [...this.#views]) {
+      if (shown.has(key)) {
+        continue;
+      }
+      this.#views.delete(key);
+      if (animate) {
+        collapse(view.actor);
+      } else {
+        view.actor.destroy();
+      }
+    }
+  }
+
+  /** @param {number} lease */
+  #pressKill(lease) {
+    this.#model.pressKill(lease);
+    this.#onChanged();
+  }
+
+  /** @param {number} lease */
+  #pressRemove(lease) {
+    this.#model.pressRemove(lease);
+    this.#onChanged();
+  }
+
+  #cancelConfirms() {
+    if (this.#model.cancelConfirms()) {
+      this.#onChanged();
+    }
+  }
+
   #openLogs() {
     const uri = GLib.filename_to_uri(this.#logsPath, null);
     try {
@@ -421,39 +535,26 @@ function headerButton(name, icon) {
 }
 
 /**
+ * A plain line, such as the idle line.
+ *
+ * @param {string} key
  * @param {string} styleClass
  * @param {string} text
- * @returns {St.Label}
+ * @returns {ListItem}
  */
-function label(styleClass, text) {
-  const result = new St.Label({ style_class: styleClass, text, x_expand: true });
-  result.clutter_text.ellipsize = Pango.EllipsizeMode.END;
-  return result;
-}
-
-/**
- * @param {JobGroup} group
- * @returns {St.BoxLayout}
- */
-function groupHeading(group) {
-  const row = new St.BoxLayout({ style_class: "allot-group-heading" });
-  row.add_child(new St.Icon({ icon_name: GROUP_ICONS[group.kind] }));
-  row.add_child(label("allot-group-label", group.heading));
-  return row;
-}
-
-/**
- * @param {JobRow} job
- * @returns {St.BoxLayout}
- */
-function jobRow(job) {
-  const row = new St.BoxLayout({
-    style_class: job.isQueued ? "allot-job allot-job-queued" : "allot-job",
-    orientation: Clutter.Orientation.VERTICAL,
-  });
-  const { shortId, project, usage } = job.session;
-  const strip = [shortId, project, usage].filter((part) => part !== "").join(" · ");
-  row.add_child(label("allot-job-strip", strip));
-  row.add_child(label("allot-job-command", job.command));
-  return row;
+function textItem(key, styleClass, text) {
+  return {
+    key,
+    make: () => {
+      const line = label(styleClass, text);
+      line.x_expand = true;
+      return {
+        actor: line,
+        update: () => {
+          line.text = text;
+        },
+      };
+    },
+    update: (view) => view.update(),
+  };
 }

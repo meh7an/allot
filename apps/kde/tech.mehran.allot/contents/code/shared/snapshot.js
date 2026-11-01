@@ -1,7 +1,10 @@
 // Generated from apps/gnome/allot@mehran.tech/lib/snapshot.js by apps/kde/tools/emit.mjs (pnpm build); do not edit.
 import * as format from "./format.js";
-/** @import { Lease, QueuedJob, UiSession, UiState } from "../contract.g.mjs" */
+import * as jobCard from "./job-card.js";
+/** @import { Lease, UiSession, UiState } from "../contract.g.mjs" */
 /** @import { ServiceStatus } from "./client.js" */
+/** @import { JobCard } from "./job-card.js" */
+/** @import { ShownJobs, StopView } from "./job-stops.js" */
 /**
  * - `idle`: the dimmed mark.
  * - `busy`: the solid mark; a job runs, or a benchmark runs alone.
@@ -39,16 +42,22 @@ import * as format from "./format.js";
  *   empty when the session is not registered.
  */
 /**
- * One job row: an active lease or a queued request.
+ * One card: an active lease, a queued request, or a benchmark that finished a moment ago.
  *
  * @typedef {object} JobRow
  * @property {number} id
- *   The lease ID.
+ *   The lease ID; a finished benchmark keeps its lease's, so its card replaces the running one
+ *   in place.
  * @property {string} command
  *   The command, from the lease's label.
  * @property {SessionStrip} session
  * @property {boolean} isQueued
  *   Waiting in the queue rather than running.
+ * @property {JobCard} card
+ *   The job row's text and state at the snapshot's moment.
+ * @property {boolean} isEnding
+ *   Stopped or removed in this popup and still showing its final state, or a finished
+ *   benchmark; it no longer counts in the summary.
  */
 /**
  * @typedef {object} JobGroup
@@ -68,9 +77,20 @@ import * as format from "./format.js";
  *   Live usage, shown only when exactly one session is idle.
  */
 /**
- * Everything the popup header and job list show for one poll, built by a pure function so that
- * every string is testable. The Windows tray app's `FlyoutSnapshot` without what later
- * milestones add: card details, stops, recent runs and the first-run card.
+ * One row of the Recently finished card.
+ *
+ * @typedef {object} RecentLine
+ * @property {string} command
+ *   The command as it ran.
+ * @property {string} shortId
+ *   The session's short ID, or empty for runs recorded before sessions were.
+ * @property {string} meta
+ *   Run time and age, for example `4:52 · 4 min ago`.
+ */
+/**
+ * Everything the popup header and job list show for one moment, built by a pure function so
+ * that every string is testable. The Windows tray app's `FlyoutSnapshot` without the first-run
+ * card.
  *
  * @typedef {object} PanelSnapshot
  * @property {PanelHeader} header
@@ -78,90 +98,115 @@ import * as format from "./format.js";
  *   Benchmark, Running and Waiting, in that order, each only when it has jobs.
  * @property {IdleLine | null} idle
  *   The idle line, or `null` when no session is idle.
+ * @property {RecentLine[]} recent
+ *   Recently finished runs, newest first; only while no job runs or waits.
  * @property {boolean} showNothing
- *   The "No jobs running or waiting." line: the service runs and has no jobs.
+ *   The service runs and has no jobs. The popup shows Recently finished instead of the
+ *   "No jobs running or waiting." line when there are recent runs.
  * @property {BenchmarkPhase | null} benchmark
  *   The live benchmark's phase, or `null` without one.
  * @property {boolean} isLastKnown
- *   The jobs come from the last state allotd served before it went away; they show dimmed.
+ *   The jobs come from the last state allotd served before it went away; they show dimmed and
+ *   without actions.
  */
+/**
+ * @typedef {object} SnapshotOptions
+ * @property {ShownJobs} [jobs]
+ *   The jobs to show instead of the state's, with ended stops put back (`JobStops.merge`).
+ * @property {Map<number, StopView>} [stops]
+ *   Kills and removals of this popup by lease; ended ones show Stopped or Removed and no longer
+ *   count. Ignored for last known state.
+ * @property {number | null} [nowMs]
+ *   The moment times are shown for, in the daemon's clock; the state's own time when absent.
+ *   Last known state always shows its own time.
+ */
+// How long a benchmark that finished on its own keeps its card.
+const FINISHED_HOLD_MS = 60000;
 /**
  * @param {ServiceStatus} status The service status of the latest poll.
  * @param {UiState | null} state The latest state, or the last known one while allotd is not
  *   running.
+ * @param {SnapshotOptions} [options]
  * @returns {PanelSnapshot}
  */
-export function panelSnapshot(status, state) {
-    var _a, _b, _c;
+export function panelSnapshot(status, state, options = {}) {
+    var _a, _b, _c, _d, _e, _f, _g;
     const lastKnown = status !== "running";
+    /** @type {Map<number, StopView>} */
+    const stops = lastKnown ? new Map() : ((_a = options.stops) !== null && _a !== void 0 ? _a : new Map());
+    const generated = (_b = state === null || state === void 0 ? void 0 : state.generated_at_ms) !== null && _b !== void 0 ? _b : 0;
+    const now = lastKnown ? generated : ((_c = options.nowMs) !== null && _c !== void 0 ? _c : generated);
     /** @type {Map<string, UiSession>} */
     const sessions = new Map();
-    for (const session of (_a = state === null || state === void 0 ? void 0 : state.sessions) !== null && _a !== void 0 ? _a : []) {
+    for (const session of (_d = state === null || state === void 0 ? void 0 : state.sessions) !== null && _d !== void 0 ? _d : []) {
         if (!sessions.has(session.session)) {
             sessions.set(session.session, session);
         }
     }
-    const active = (_b = state === null || state === void 0 ? void 0 : state.active) !== null && _b !== void 0 ? _b : [];
-    const queue = (_c = state === null || state === void 0 ? void 0 : state.queue) !== null && _c !== void 0 ? _c : [];
-    const runningSessions = new Set(active.map((job) => job.lease.holder.session));
-    const busySessions = new Set([
-        ...runningSessions,
-        ...queue.map((job) => job.lease.holder.session),
-    ]);
+    const shown = (_e = options.jobs) !== null && _e !== void 0 ? _e : { active: (_f = state === null || state === void 0 ? void 0 : state.active) !== null && _f !== void 0 ? _f : [], queue: (_g = state === null || state === void 0 ? void 0 : state.queue) !== null && _g !== void 0 ? _g : [] };
+    /** @param {Lease} lease */
+    const isEnding = (lease) => { var _a; return ((_a = stops.get(lease.id)) === null || _a === void 0 ? void 0 : _a.phase) === "ended"; };
+    const stopOf = (/** @type {Lease} */ lease) => { var _a; return (_a = stops.get(lease.id)) !== null && _a !== void 0 ? _a : null; };
+    const runningSessions = new Set(shown.active.map((job) => job.lease.holder.session));
+    // A stopped or removed benchmark no longer holds anything back.
+    let benchmarkAhead = shown.active.some((job) => isBenchmark(job.lease) && !isEnding(job.lease));
+    const othersActive = shown.active.some((job) => !isEnding(job.lease));
     /** @type {JobRow[]} */
     const benchmark = [];
     /** @type {JobRow[]} */
     const running = [];
     /** @type {JobRow[]} */
     const waiting = [];
-    let benchmarkRuns = false;
-    for (const { lease } of active) {
-        const row = jobRow(lease, strip(lease, sessions, false), false);
-        if (isBenchmark(lease)) {
-            benchmark.push(row);
-            benchmarkRuns = true;
-        }
-        else {
-            running.push(row);
-        }
+    for (const job of shown.active) {
+        const { lease } = job;
+        const row = {
+            id: lease.id,
+            command: lease.label,
+            session: strip(lease.holder.session, lease.cwd, sessions, false),
+            isQueued: false,
+            card: jobCard.forActive(job, now, lastKnown, stopOf(lease)),
+            isEnding: isEnding(lease),
+        };
+        (isBenchmark(lease) ? benchmark : running).push(row);
     }
-    /** @type {QueuedJob | null} */
-    let firstQueuedBenchmark = null;
-    for (const job of queue) {
+    for (const job of shown.queue) {
         const { lease } = job;
         const alsoRunning = runningSessions.has(lease.holder.session);
-        const row = jobRow(lease, strip(lease, sessions, alsoRunning), true);
+        const card = jobCard.forQueued(job, now, benchmarkAhead && !isBenchmark(lease), lastKnown, stopOf(lease), othersActive);
+        const row = {
+            id: lease.id,
+            command: lease.label,
+            session: strip(lease.holder.session, lease.cwd, sessions, alsoRunning),
+            isQueued: true,
+            card,
+            isEnding: isEnding(lease),
+        };
         if (isBenchmark(lease)) {
             benchmark.push(row);
-            firstQueuedBenchmark !== null && firstQueuedBenchmark !== void 0 ? firstQueuedBenchmark : (firstQueuedBenchmark = job);
+            benchmarkAhead = benchmarkAhead || !row.isEnding;
         }
         else {
             waiting.push(row);
         }
     }
+    benchmark.push(...finished(state, shown, sessions, now));
     /** @type {JobGroup[]} */
     const groups = [];
     if (benchmark.length > 0) {
         groups.push({ kind: "benchmark", heading: "Benchmark", jobs: benchmark });
     }
     if (running.length > 0) {
-        groups.push({ kind: "running", heading: `Running · ${running.length}`, jobs: running });
+        groups.push({ kind: "running", heading: counted("Running", running), jobs: running });
     }
     if (waiting.length > 0) {
-        groups.push({ kind: "waiting", heading: `Waiting · ${waiting.length}`, jobs: waiting });
+        groups.push({ kind: "waiting", heading: counted("Waiting", waiting), jobs: waiting });
     }
-    /** @type {BenchmarkPhase | null} */
-    let phase = null;
-    if (benchmarkRuns) {
-        phase = "running-alone";
-    }
-    else if (firstQueuedBenchmark !== null) {
-        phase = queuedPhase(firstQueuedBenchmark);
-    }
+    const phase = phaseOf(benchmark, shown);
     return {
-        header: header(status, running.length, waiting.length, phase),
+        header: header(status, alive(running), alive(waiting), phase),
         groups,
-        idle: idleLine([...sessions.values()], busySessions),
+        idle: idleLine([...sessions.values()], state),
+        recent: groups.length === 0 ? recentLines(state, now) : [],
         showNothing: !lastKnown && groups.length === 0,
         benchmark: phase,
         isLastKnown: lastKnown,
@@ -222,15 +267,26 @@ function counts(running, waiting) {
     return parts.length === 0 ? "Idle" : parts.join(" · ");
 }
 /**
- * A queued benchmark either drains the machine or, once it is at the head and drained,
- * measures the background load.
+ * An active benchmark runs alone; a queued one either drains the machine or, once it is at
+ * the head and drained, measures the background load.
  *
- * @param {QueuedJob} job
- * @returns {BenchmarkPhase}
+ * @param {JobRow[]} rows
+ * @param {ShownJobs} shown
+ * @returns {BenchmarkPhase | null}
  */
-function queuedPhase(job) {
-    var _a;
-    switch ((_a = job.verdict.benchmark) === null || _a === void 0 ? void 0 : _a.phase) {
+function phaseOf(rows, shown) {
+    var _a, _b;
+    const live = rows.filter((row) => !row.isEnding);
+    const [first] = live;
+    if (first === undefined) {
+        return null;
+    }
+    const activeIds = new Set(shown.active.map((job) => job.lease.id));
+    if (live.some((row) => activeIds.has(row.id))) {
+        return "running-alone";
+    }
+    const verdict = (_a = shown.queue.find((job) => job.lease.id === first.id)) === null || _a === void 0 ? void 0 : _a.verdict;
+    switch ((_b = verdict === null || verdict === void 0 ? void 0 : verdict.benchmark) === null || _b === void 0 ? void 0 : _b.phase) {
         case "measuring":
         case "noisy":
             return "waiting-for-quiet";
@@ -240,10 +296,17 @@ function queuedPhase(job) {
 }
 /**
  * @param {UiSession[]} sessions
- * @param {Set<string>} busy
+ * @param {UiState | null} state
  * @returns {IdleLine | null}
  */
-function idleLine(sessions, busy) {
+function idleLine(sessions, state) {
+    if (state === null) {
+        return null;
+    }
+    const busy = new Set([
+        ...state.active.map((job) => job.lease.holder.session),
+        ...state.queue.map((job) => job.lease.holder.session),
+    ]);
     const idle = sessions.filter((session) => !busy.has(session.session));
     const [only] = idle;
     if (only === undefined) {
@@ -256,13 +319,78 @@ function idleLine(sessions, busy) {
     };
 }
 /**
- * @param {Lease} lease
- * @param {SessionStrip} session
- * @param {boolean} isQueued
- * @returns {JobRow}
+ * Benchmarks that finished on their own in the last `FINISHED_HOLD_MS`, from allotd's recent
+ * runs, so the card survives a restart of the shell. A killed one already showed Stopped.
+ *
+ * @param {UiState | null} state
+ * @param {ShownJobs} shown
+ * @param {Map<string, UiSession>} sessions
+ * @param {number} now
+ * @returns {JobRow[]}
  */
-function jobRow(lease, session, isQueued) {
-    return { id: lease.id, command: lease.label, session, isQueued };
+function finished(state, shown, sessions, now) {
+    var _a, _b;
+    const live = new Set([
+        ...shown.active.map((job) => job.lease.id),
+        ...shown.queue.map((job) => job.lease.id),
+    ]);
+    /** @type {JobRow[]} */
+    const rows = [];
+    for (const run of (_a = state === null || state === void 0 ? void 0 : state.recent) !== null && _a !== void 0 ? _a : []) {
+        const { noise, lease_id: id } = run;
+        if (noise === null ||
+            id === null ||
+            (run.end_cause !== null && run.end_cause !== "released") ||
+            now - run.ended_at_ms >= FINISHED_HOLD_MS ||
+            live.has(id)) {
+            continue;
+        }
+        rows.push({
+            id,
+            command: run.command,
+            session: strip((_b = run.session) !== null && _b !== void 0 ? _b : "", run.cwd, sessions, false),
+            isQueued: false,
+            card: jobCard.forFinished(run, noise),
+            isEnding: true,
+        });
+    }
+    return rows;
+}
+/**
+ * @param {UiState | null} state
+ * @param {number} now
+ * @returns {RecentLine[]}
+ */
+function recentLines(state, now) {
+    var _a;
+    return ((_a = state === null || state === void 0 ? void 0 : state.recent) !== null && _a !== void 0 ? _a : []).map((run) => {
+        const ran = format.duration((run.ended_at_ms - run.started_at_ms) / 1000);
+        const ago = format.ago(Math.floor(Math.max(0, now - run.ended_at_ms) / 1000));
+        return {
+            command: run.command,
+            shortId: run.session === null ? "" : format.shortId(run.session),
+            meta: `${ran} · ${ago}`,
+        };
+    });
+}
+/**
+ * While every card in a group shows Stopped or Removed, the heading keeps their number until
+ * they collapse, as the handoff prototype does.
+ *
+ * @param {string} label
+ * @param {JobRow[]} rows
+ * @returns {string}
+ */
+function counted(label, rows) {
+    const live = alive(rows);
+    return `${label} · ${live > 0 ? live : rows.length}`;
+}
+/**
+ * @param {JobRow[]} rows
+ * @returns {number}
+ */
+function alive(rows) {
+    return rows.filter((row) => !row.isEnding).length;
 }
 /**
  * @param {Lease} lease
@@ -275,15 +403,15 @@ function isBenchmark(lease) {
  * A queued card of a session that also runs a job says so instead of repeating the session's
  * usage, which its running card already shows.
  *
- * @param {Lease} lease
+ * @param {string} key
+ * @param {string} jobCwd
  * @param {Map<string, UiSession>} sessions
  * @param {boolean} alsoRunning
  * @returns {SessionStrip}
  */
-function strip(lease, sessions, alsoRunning) {
-    const key = lease.holder.session;
+function strip(key, jobCwd, sessions, alsoRunning) {
     const session = sessions.get(key);
-    const cwd = (session === null || session === void 0 ? void 0 : session.cwd) || lease.cwd;
+    const cwd = (session === null || session === void 0 ? void 0 : session.cwd) || jobCwd;
     let usage = "";
     if (alsoRunning) {
         usage = "also running";
