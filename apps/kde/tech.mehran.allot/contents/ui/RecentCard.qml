@@ -26,7 +26,8 @@ ColumnLayout {
         radius: Kirigami.Units.smallSpacing * 1.5
         color: CardView.withAlpha(Kirigami.Theme.textColor, 0.04)
         border.width: 1
-        border.color: CardView.withAlpha(Kirigami.Theme.textColor, 0.14)
+        border.color: CardView.edgeColor(Kirigami.Theme.textColor, Kirigami.Theme.backgroundColor,
+            0.14)
 
         ColumnLayout {
             id: rows

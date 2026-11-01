@@ -1,3 +1,4 @@
+import { Announcer } from "../../gnome/allot@mehran.tech/lib/accessible-text.js";
 import { DaemonClient } from "../../gnome/allot@mehran.tech/lib/client.js";
 import { DEFAULT_PORT, dataPaths, portFromToml } from "../../gnome/allot@mehran.tech/lib/config.js";
 import { accessibleName, iconFile } from "../../gnome/allot@mehran.tech/lib/indicator-status.js";
@@ -113,6 +114,7 @@ const TICK_MS = 1000;
  * @property {() => void} expand Opens the popup.
  * @property {(key: string | null) => void} scrollTo Scrolls the open popup to a row, or the top.
  * @property {(url: string) => void} openUrl
+ * @property {(text: string) => void} announce Says something to a screen reader.
  * @property {(line: string) => void} log
  * @property {(ms: number) => string} [timeOfDay] A daemon time as the user's short time of day.
  * @property {() => number} [now] The clock that ticks times and stops; the tests pass their own.
@@ -153,6 +155,7 @@ export class AllotWidget {
   #notifier;
   #configFolder;
   #dataFolder;
+  #announcer = new Announcer();
   /** @type {DaemonPoller | null} */
   #poller = null;
   /** @type {ServiceStatus | null} */
@@ -272,6 +275,7 @@ export class AllotWidget {
     if (expanded) {
       this.model.resetForOpen();
       this.model.refresh();
+      this.#announcer.reset();
       this.#render(false);
       this.refreshNotificationState();
     } else {
@@ -591,6 +595,9 @@ export class AllotWidget {
     };
     const rows = listRows(snapshot, this.#appIcons.icon, text, this.notificationsOff);
     this.#keeper.show(rows, animate, (data) => this.#host.showRows(data, animate));
+    for (const spoken of this.#announcer.observe(snapshot)) {
+      this.#host.announce(spoken);
+    }
   }
 
   /**

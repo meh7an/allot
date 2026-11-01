@@ -19,7 +19,8 @@ var __classPrivateFieldGet = (this && this.__classPrivateFieldGet) || function (
     if (typeof state === "function" ? receiver !== state || !f : !state.has(receiver)) throw new TypeError("Cannot read private member from an object whose class did not declare it");
     return kind === "m" ? f : kind === "a" ? f.call(receiver) : f ? f.value : state.get(receiver);
 };
-var _AllotWidget_instances, _AllotWidget_host, _AllotWidget_runner, _AllotWidget_transport, _AllotWidget_keeper, _AllotWidget_appIcons, _AllotWidget_rules, _AllotWidget_notifier, _AllotWidget_configFolder, _AllotWidget_dataFolder, _AllotWidget_poller, _AllotWidget_lastStatus, _AllotWidget_tick, _AllotWidget_saving, _AllotWidget_expanded, _AllotWidget_stopped, _AllotWidget_show, _AllotWidget_notify, _AllotWidget_pressNotificationButton, _AllotWidget_showRow, _AllotWidget_stopService, _AllotWidget_saveSettings, _AllotWidget_showPress, _AllotWidget_showChange, _AllotWidget_render, _AllotWidget_scheduleTick, _AllotWidget_clearTick;
+var _AllotWidget_instances, _AllotWidget_host, _AllotWidget_runner, _AllotWidget_transport, _AllotWidget_keeper, _AllotWidget_appIcons, _AllotWidget_rules, _AllotWidget_notifier, _AllotWidget_configFolder, _AllotWidget_dataFolder, _AllotWidget_announcer, _AllotWidget_poller, _AllotWidget_lastStatus, _AllotWidget_tick, _AllotWidget_saving, _AllotWidget_expanded, _AllotWidget_stopped, _AllotWidget_show, _AllotWidget_notify, _AllotWidget_pressNotificationButton, _AllotWidget_showRow, _AllotWidget_stopService, _AllotWidget_saveSettings, _AllotWidget_showPress, _AllotWidget_showChange, _AllotWidget_render, _AllotWidget_scheduleTick, _AllotWidget_clearTick;
+import { Announcer } from "./shared/accessible-text.js";
 import { DaemonClient } from "./shared/client.js";
 import { DEFAULT_PORT, dataPaths, portFromToml } from "./shared/config.js";
 import { accessibleName, iconFile } from "./shared/indicator-status.js";
@@ -91,6 +92,7 @@ const TICK_MS = 1000;
  * @property {() => void} expand Opens the popup.
  * @property {(key: string | null) => void} scrollTo Scrolls the open popup to a row, or the top.
  * @property {(url: string) => void} openUrl
+ * @property {(text: string) => void} announce Says something to a screen reader.
  * @property {(line: string) => void} log
  * @property {(ms: number) => string} [timeOfDay] A daemon time as the user's short time of day.
  * @property {() => number} [now] The clock that ticks times and stops; the tests pass their own.
@@ -125,6 +127,7 @@ export class AllotWidget {
         _AllotWidget_notifier.set(this, void 0);
         _AllotWidget_configFolder.set(this, void 0);
         _AllotWidget_dataFolder.set(this, void 0);
+        _AllotWidget_announcer.set(this, new Announcer());
         /** @type {DaemonPoller | null} */
         _AllotWidget_poller.set(this, null);
         /** @type {ServiceStatus | null} */
@@ -232,6 +235,7 @@ export class AllotWidget {
         if (expanded) {
             this.model.resetForOpen();
             this.model.refresh();
+            __classPrivateFieldGet(this, _AllotWidget_announcer, "f").reset();
             __classPrivateFieldGet(this, _AllotWidget_instances, "m", _AllotWidget_render).call(this, false);
             this.refreshNotificationState();
         }
@@ -426,7 +430,7 @@ export class AllotWidget {
             : notificationCount(this.model.settings.notifications);
     }
 }
-_AllotWidget_host = new WeakMap(), _AllotWidget_runner = new WeakMap(), _AllotWidget_transport = new WeakMap(), _AllotWidget_keeper = new WeakMap(), _AllotWidget_appIcons = new WeakMap(), _AllotWidget_rules = new WeakMap(), _AllotWidget_notifier = new WeakMap(), _AllotWidget_configFolder = new WeakMap(), _AllotWidget_dataFolder = new WeakMap(), _AllotWidget_poller = new WeakMap(), _AllotWidget_lastStatus = new WeakMap(), _AllotWidget_tick = new WeakMap(), _AllotWidget_saving = new WeakMap(), _AllotWidget_expanded = new WeakMap(), _AllotWidget_stopped = new WeakMap(), _AllotWidget_instances = new WeakSet(), _AllotWidget_show = function _AllotWidget_show(result) {
+_AllotWidget_host = new WeakMap(), _AllotWidget_runner = new WeakMap(), _AllotWidget_transport = new WeakMap(), _AllotWidget_keeper = new WeakMap(), _AllotWidget_appIcons = new WeakMap(), _AllotWidget_rules = new WeakMap(), _AllotWidget_notifier = new WeakMap(), _AllotWidget_configFolder = new WeakMap(), _AllotWidget_dataFolder = new WeakMap(), _AllotWidget_announcer = new WeakMap(), _AllotWidget_poller = new WeakMap(), _AllotWidget_lastStatus = new WeakMap(), _AllotWidget_tick = new WeakMap(), _AllotWidget_saving = new WeakMap(), _AllotWidget_expanded = new WeakMap(), _AllotWidget_stopped = new WeakMap(), _AllotWidget_instances = new WeakSet(), _AllotWidget_show = function _AllotWidget_show(result) {
     var _a, _b;
     var _c, _d, _e, _f;
     if (result.status !== __classPrivateFieldGet(this, _AllotWidget_lastStatus, "f")) {
@@ -517,6 +521,9 @@ _AllotWidget_host = new WeakMap(), _AllotWidget_runner = new WeakMap(), _AllotWi
     };
     const rows = listRows(snapshot, __classPrivateFieldGet(this, _AllotWidget_appIcons, "f").icon, text, this.notificationsOff);
     __classPrivateFieldGet(this, _AllotWidget_keeper, "f").show(rows, animate, (data) => __classPrivateFieldGet(this, _AllotWidget_host, "f").showRows(data, animate));
+    for (const spoken of __classPrivateFieldGet(this, _AllotWidget_announcer, "f").observe(snapshot)) {
+        __classPrivateFieldGet(this, _AllotWidget_host, "f").announce(spoken);
+    }
 }, _AllotWidget_scheduleTick = function _AllotWidget_scheduleTick() {
     __classPrivateFieldGet(this, _AllotWidget_instances, "m", _AllotWidget_clearTick).call(this);
     if (__classPrivateFieldGet(this, _AllotWidget_stopped, "f")) {

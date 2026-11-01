@@ -1,6 +1,8 @@
 import QtQuick
 import org.kde.kirigami as Kirigami
 
+import "../code/card-view.mjs" as CardView
+
 // A bar's track: plain up to `headroom`, then hatched, which leases cannot take. Painted once per
 // size, since a Rectangle has neither hatching nor per-corner radii on Qt 6.6.
 Canvas {
@@ -10,6 +12,7 @@ Canvas {
     property real radius: 0
 
     readonly property color ink: Kirigami.Theme.textColor
+    readonly property bool strong: CardView.isHighContrast(ink, Kirigami.Theme.backgroundColor)
 
     function inkAt(alpha) {
         return Qt.rgba(track.ink.r, track.ink.g, track.ink.b, alpha);
@@ -19,6 +22,7 @@ Canvas {
     onHeightChanged: requestPaint()
     onHeadroomChanged: requestPaint()
     onInkChanged: requestPaint()
+    onStrongChanged: requestPaint()
     onPaint: {
         const step = 4;
         const context = getContext("2d");
@@ -27,14 +31,14 @@ Canvas {
         context.beginPath();
         context.roundedRect(0, 0, width, height, radius, radius);
         context.clip();
-        context.fillStyle = inkAt(0.08);
+        context.fillStyle = inkAt(strong ? 0.35 : 0.08);
         context.fillRect(0, 0, start, height);
-        context.fillStyle = inkAt(0.05);
+        context.fillStyle = inkAt(strong ? 0.2 : 0.05);
         context.fillRect(start, 0, width - start, height);
         context.beginPath();
         context.rect(start, 0, width - start, height);
         context.clip();
-        context.strokeStyle = inkAt(0.22);
+        context.strokeStyle = inkAt(strong ? 1 : 0.22);
         context.lineWidth = 1.5;
         context.beginPath();
         for (let x = start - height; x < width; x += step) {

@@ -44,7 +44,7 @@ Item {
         width: parent.width
         height: bar.radius * 2
         radius: bar.radius
-        color: CardView.withAlpha(Kirigami.Theme.textColor, 0.08)
+        color: CardView.trackColor(Kirigami.Theme.textColor, Kirigami.Theme.backgroundColor, 0.08)
     }
 
     Item {

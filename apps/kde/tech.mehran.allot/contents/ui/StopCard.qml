@@ -16,6 +16,10 @@ Item {
 
     readonly property int margin: Kirigami.Units.smallSpacing
 
+    function focusCancel() {
+        cancel.forceActiveFocus(Qt.TabFocusReason);
+    }
+
     implicitHeight: question === "" ? 0 : card.implicitHeight + margin * 1.5
     visible: question !== ""
 
@@ -29,7 +33,8 @@ Item {
         radius: Kirigami.Units.smallSpacing * 1.5
         color: CardView.withAlpha(Kirigami.Theme.textColor, 0.04)
         border.width: 1
-        border.color: CardView.withAlpha(Kirigami.Theme.textColor, 0.14)
+        border.color: CardView.edgeColor(Kirigami.Theme.textColor, Kirigami.Theme.backgroundColor,
+            0.14)
 
         ColumnLayout {
             id: content
@@ -55,7 +60,10 @@ Item {
                 spacing: Kirigami.Units.smallSpacing * 2
 
                 PlasmaComponents.Button {
+                    id: cancel
+
                     text: "Cancel"
+                    Accessible.description: block.question
                     onClicked: block.widget.cancelStop()
                 }
 

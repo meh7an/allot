@@ -1,5 +1,6 @@
 // Generated from apps/kde/src/card-view.js by apps/kde/tools/emit.mjs (pnpm build); do not edit.
 // What the job cards' QML computes beyond its layout, as plain functions a test can reach.
+import { cardDescription, driveDescription, driveName, meterName, } from "./shared/accessible-text.js";
 import { QUIET_TICKS } from "./shared/benchmark-status.js";
 /** @import { BenchmarkStep } from "./shared/benchmark-status.js" */
 /** @import { JobCard } from "./shared/job-card.js" */
@@ -46,12 +47,16 @@ const GONE_ROW = {
     spark: [],
     activity: "",
 };
-export { QUIET_TICKS };
+export { QUIET_TICKS, cardDescription, driveDescription, driveName, meterName };
 /** The tile, command and chip of an ended job. */
 export const ENDED_OPACITY = 0.5;
 // Kirigami.Units.longDuration at Plasma's default animation speed.
 const DEFAULT_LONG_DURATION = 200;
 const STEP_ORDER = ["drain", "quiet", "run", "done"];
+// Plasma has no high-contrast switch, only colour schemes. Breeze's own reach about 18 : 1, and a
+// scheme of near-pure black and white about 20 or 21.
+const HIGH_CONTRAST_RATIO = 19;
+const HIGH_CONTRAST_TRACK_ALPHA = 0.35;
 /**
  * A handoff duration at Plasma's animation speed; 0 on its Instant setting.
  *
@@ -81,6 +86,49 @@ export function withAlpha(color, alpha) {
  */
 export function isDark(color) {
     return 0.299 * color.r + 0.587 * color.g + 0.114 * color.b < 0.5;
+}
+/**
+ * The WCAG contrast ratio between two colours.
+ *
+ * @param {Color} first
+ * @param {Color} second
+ * @returns {number} From 1 to 21.
+ */
+export function contrastRatio(first, second) {
+    const lighter = Math.max(luminance(first), luminance(second));
+    const darker = Math.min(luminance(first), luminance(second));
+    return (lighter + 0.05) / (darker + 0.05);
+}
+/**
+ * @param {Color} text
+ * @param {Color} background
+ * @returns {boolean} The colour scheme asks for high contrast.
+ */
+export function isHighContrast(text, background) {
+    return contrastRatio(text, background) >= HIGH_CONTRAST_RATIO;
+}
+/**
+ * A card's or tile's edge: faint normally, solid in high contrast, where nothing else shows the
+ * card's shape.
+ *
+ * @param {Color} text The theme's text colour.
+ * @param {Color} background
+ * @param {number} alpha The handoff's opacity.
+ * @returns {string} `#aarrggbb`
+ */
+export function edgeColor(text, background, alpha) {
+    return withAlpha(text, isHighContrast(text, background) ? 1 : alpha);
+}
+/**
+ * A bar's track: stronger in high contrast, but short of the fill's own colour.
+ *
+ * @param {Color} text The theme's text colour.
+ * @param {Color} background
+ * @param {number} alpha The handoff's opacity.
+ * @returns {string} `#aarrggbb`
+ */
+export function trackColor(text, background, alpha) {
+    return withAlpha(text, isHighContrast(text, background) ? HIGH_CONTRAST_TRACK_ALPHA : alpha);
 }
 /**
  * The Benchmark purple, which Plasma's colour schemes have no role for.
@@ -162,6 +210,24 @@ export function rowById(rows, id) {
     return /** @type {MeterRow & DriveRow} */ (found !== null && found !== void 0 ? found : GONE_ROW);
 }
 /**
+ * A Resources row's outer columns, alike in every row so the bars line up. They grow with the text
+ * from the handoff's widths, and the value gives way first, so the bar keeps its minimum.
+ *
+ * @param {object} sizes In pixels.
+ * @param {number} sizes.minLabel The handoff's label column.
+ * @param {number} sizes.minValue The handoff's value column.
+ * @param {number} sizes.minBar The narrowest bar.
+ * @param {number} sizes.labelText The widest label at the current font.
+ * @param {number} sizes.valueText The widest value at the current font.
+ * @param {number} sizes.room The row's width less the gaps between its columns.
+ * @returns {{ label: number, value: number }}
+ */
+export function meterColumns(sizes) {
+    const label = Math.max(sizes.minLabel, sizes.labelText);
+    const wanted = Math.max(sizes.minValue, sizes.valueText);
+    return { label, value: Math.max(0, Math.min(wanted, sizes.room - label - sizes.minBar)) };
+}
+/**
  * The sparkline's points, oldest at the left, with the bottom for 0.
  *
  * @param {number[]} samples Fractions.
@@ -175,6 +241,15 @@ export function sparkPoints(samples, width, height) {
         x: (index * width) / steps,
         y: (1 - sample) * height,
     }));
+}
+/**
+ * @param {Color} color
+ * @returns {number} WCAG relative luminance.
+ */
+function luminance(color) {
+    /** @param {number} part */
+    const linear = (part) => (part <= 0.03928 ? part / 12.92 : Math.pow((part + 0.055) / 1.055, 2.4));
+    return 0.2126 * linear(color.r) + 0.7152 * linear(color.g) + 0.0722 * linear(color.b);
 }
 /**
  * @param {string} text

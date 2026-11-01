@@ -4,17 +4,34 @@ import { test } from "node:test";
 import {
   benchmarkColor,
   benchmarkInk,
+  contrastRatio,
   detailMarkup,
   detailWraps,
+  edgeColor,
   isDark,
+  isHighContrast,
+  meterColumns,
   rowById,
   rowIds,
   scaledMs,
   sparkPoints,
   splitIds,
   stepState,
+  trackColor,
   withAlpha,
 } from "../src/card-view.js";
+
+const WHITE = { r: 1, g: 1, b: 1 };
+const BLACK = { r: 0, g: 0, b: 0 };
+// Breeze Dark's and Breeze Light's text on their view backgrounds.
+const BREEZE_DARK = {
+  text: { r: 0.988, g: 0.988, b: 0.988 },
+  back: { r: 0.078, g: 0.086, b: 0.094 },
+};
+const BREEZE_LIGHT = {
+  text: { r: 0.137, g: 0.149, b: 0.161 },
+  back: { r: 1, g: 1, b: 1 },
+};
 
 /**
  * @param {Record<string, unknown>} fields
@@ -62,6 +79,57 @@ test("a duration follows Plasma's animation speed and ends at Instant", () => {
 test("a colour with an opacity reads as #aarrggbb", () => {
   assert.equal(withAlpha({ r: 1, g: 0, b: 0.5 }, 0.5), "#80ff0080");
   assert.equal(withAlpha({ r: 0, g: 0, b: 0 }, 0.04), "#0a000000");
+});
+
+test("meter columns keep the handoff's widths until the text outgrows them", () => {
+  const base = { minLabel: 48, minValue: 108, minBar: 48, room: 310 };
+
+  assert.deepEqual(meterColumns({ ...base, labelText: 40, valueText: 90 }), {
+    label: 48,
+    value: 108,
+  });
+  assert.deepEqual(meterColumns({ ...base, labelText: 70, valueText: 130 }), {
+    label: 70,
+    value: 130,
+  });
+});
+
+test("the value column gives way before the bar", () => {
+  const base = { minLabel: 48, minValue: 108, minBar: 48, room: 310 };
+
+  assert.deepEqual(meterColumns({ ...base, labelText: 100, valueText: 200 }), {
+    label: 100,
+    value: 162,
+  });
+  assert.deepEqual(meterColumns({ ...base, labelText: 300, valueText: 200 }), {
+    label: 300,
+    value: 0,
+  });
+});
+
+test("contrast runs from 1 for equal colours to 21 for black on white", () => {
+  assert.equal(contrastRatio(WHITE, WHITE), 1);
+  assert.equal(Math.round(contrastRatio(WHITE, BLACK)), 21);
+});
+
+test("only a near-pure black and white scheme counts as high contrast", () => {
+  assert.equal(isHighContrast(WHITE, BLACK), true);
+  assert.equal(isHighContrast(BLACK, WHITE), true);
+  assert.equal(isHighContrast(BREEZE_DARK.text, BREEZE_DARK.back), false);
+  assert.equal(isHighContrast(BREEZE_LIGHT.text, BREEZE_LIGHT.back), false);
+});
+
+test("edges go solid and tracks stronger only in high contrast", () => {
+  assert.equal(edgeColor(WHITE, BLACK, 0.14), "#ffffffff");
+  assert.equal(trackColor(WHITE, BLACK, 0.08), "#59ffffff");
+  assert.equal(
+    edgeColor(BREEZE_LIGHT.text, BREEZE_LIGHT.back, 0.14),
+    withAlpha(BREEZE_LIGHT.text, 0.14),
+  );
+  assert.equal(
+    trackColor(BREEZE_DARK.text, BREEZE_DARK.back, 0.08),
+    withAlpha(BREEZE_DARK.text, 0.08),
+  );
 });
 
 test("the Benchmark purple and its ink follow the background's lightness", () => {

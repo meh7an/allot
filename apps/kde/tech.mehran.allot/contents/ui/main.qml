@@ -82,6 +82,10 @@ PlasmoidItem {
         }
         root.widget.setExpanded(root.expanded);
         root.refresh();
+        if (root.expanded) {
+            // The representation takes focus only once its window shows.
+            Qt.callLater(() => root.fullRepresentationItem?.focusFirst());
+        }
     }
 
     compactRepresentation: MouseArea {
@@ -91,7 +95,8 @@ PlasmoidItem {
         Accessible.name: root.accessibleName
         onClicked: root.expanded = !root.expanded
         Keys.onPressed: (event) => {
-            if (event.key === Qt.Key_Space || event.key === Qt.Key_Return) {
+            if (event.key === Qt.Key_Space || event.key === Qt.Key_Return
+                    || event.key === Qt.Key_Enter) {
                 root.expanded = !root.expanded;
                 event.accepted = true;
             }
@@ -205,6 +210,7 @@ PlasmoidItem {
                 root.scrollRequest = { key: key };
             },
             openUrl: (url) => Qt.openUrlExternally(url),
+            announce: (text) => root.fullRepresentationItem?.announce(text),
             timeOfDay: (ms) => Qt.formatTime(new Date(ms),
                 Qt.locale().timeFormat(Locale.ShortFormat)),
             log: (line) => console.log(line),

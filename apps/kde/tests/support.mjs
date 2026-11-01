@@ -205,6 +205,8 @@ export function fakeHost(options) {
   const scrolls = [];
   /** @type {string[]} */
   const opened = [];
+  /** @type {string[]} */
+  const announced = [];
   let expands = 0;
   let changes = 0;
   /** @type {AllotWidget | null} */
@@ -262,6 +264,7 @@ export function fakeHost(options) {
     },
     scrollTo: (key) => scrolls.push(key),
     openUrl: (url) => opened.push(url),
+    announce: (text) => announced.push(text),
     timeOfDay: (ms) => `t${ms}`,
     log: (line) => lines.push(line),
     ...(options.now === undefined ? {} : { now: options.now }),
@@ -278,6 +281,7 @@ export function fakeHost(options) {
     notifications,
     scrolls,
     opened,
+    announced,
     get expands() {
       return expands;
     },

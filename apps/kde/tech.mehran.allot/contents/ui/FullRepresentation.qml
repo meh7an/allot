@@ -30,6 +30,7 @@ PlasmaExtras.Representation {
     property var widget: null
     // A new object for every Show, so showing the same row twice scrolls twice.
     property var scrollRequest: null
+    property bool moreOpen: false
 
     signal keepOpenToggled()
 
@@ -60,6 +61,48 @@ PlasmaExtras.Representation {
         flickable.contentY = Math.max(0, Math.min(top, flickable.contentHeight - flickable.height));
     }
 
+    // A focused control has no ring to show on opening, as a pointer user did not ask for one, but
+    // a keyboard or screen-reader user starts from it.
+    function focusFirst() {
+        if (full.stopQuestion !== "") {
+            stopCard.focusCancel();
+        } else {
+            keepOpenButton.forceActiveFocus(Qt.PopupFocusReason);
+        }
+    }
+
+    function announce(text) {
+        // Qt 6.8; Plasma 6.0's Qt 6.6 stays silent.
+        if (typeof full.Accessible.announce === "function") {
+            full.Accessible.announce(text);
+        }
+    }
+
+    function isInList(item) {
+        for (let walker = item; walker !== null; walker = walker.parent) {
+            if (walker === list) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // Tab can land on a card scrolled out of sight. The margin keeps its strip above the action.
+    function scrollToFocus(item) {
+        if (item === null || !full.isInList(item)) {
+            return;
+        }
+        const flickable = scroll.contentItem;
+        const margin = Kirigami.Units.gridUnit * 3;
+        const top = item.mapToItem(list, 0, 0).y;
+        const bottom = top + item.height + margin;
+        if (top - margin < flickable.contentY) {
+            flickable.contentY = Math.max(0, top - margin);
+        } else if (bottom > flickable.contentY + flickable.height) {
+            flickable.contentY = Math.min(bottom, flickable.contentHeight) - flickable.height;
+        }
+    }
+
     Layout.preferredWidth: Kirigami.Units.gridUnit * 20
     Layout.minimumWidth: Kirigami.Units.gridUnit * 20
     // Plasma saves a popup's last size and, once it has one, no longer follows the preferred
@@ -70,6 +113,14 @@ PlasmaExtras.Representation {
     collapseMarginsHint: true
 
     onScrollRequestChanged: scrollTimer.restart()
+
+    Connections {
+        target: full.Window.window
+
+        function onActiveFocusItemChanged() {
+            full.scrollToFocus(full.Window.window.activeFocusItem);
+        }
+    }
 
     // The rows have no position until the popup that has just opened has laid them out.
     Timer {
@@ -89,6 +140,8 @@ PlasmaExtras.Representation {
         notificationsOff: full.notificationsOff
         meterCount: full.meterCount
         notificationCount: full.notificationCount
+        onAboutToShow: full.moreOpen = true
+        onAboutToHide: full.moreOpen = false
     }
 
     header: PlasmaExtras.PlasmoidHeading {
@@ -114,6 +167,8 @@ PlasmaExtras.Representation {
             }
 
             PlasmaComponents.ToolButton {
+                id: keepOpenButton
+
                 icon.name: "window-pin"
                 text: "Keep Open"
                 display: PlasmaComponents.AbstractButton.IconOnly
@@ -131,6 +186,8 @@ PlasmaExtras.Representation {
                 icon.name: "overflow-menu"
                 text: "More options"
                 display: PlasmaComponents.AbstractButton.IconOnly
+                Accessible.expandable: true
+                Accessible.expanded: full.moreOpen
                 PlasmaComponents.ToolTip.text: text
                 PlasmaComponents.ToolTip.visible: hovered
                 PlasmaComponents.ToolTip.delay: Kirigami.Units.toolTipDelay

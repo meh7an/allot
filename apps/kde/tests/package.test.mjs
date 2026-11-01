@@ -101,6 +101,7 @@ test("the generated widget module runs a poll", async () => {
     expand: () => {},
     scrollTo: () => {},
     openUrl: () => {},
+    announce: () => {},
     log: () => {},
   });
 

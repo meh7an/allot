@@ -16,6 +16,12 @@ QQC2.AbstractButton {
     required property string shownAction
     required property string actionName
     required property bool animate
+    // The rest of the card, read after the action's name.
+    required property var describe
+
+    // Only when focus arrives or the action changes: the text holds the ticking time, and Orca
+    // reads out every change to the focused control's description.
+    property string spokenCard: ""
 
     readonly property int side: Kirigami.Units.iconSizes.medium
     readonly property int shownWidth: {
@@ -38,24 +44,33 @@ QQC2.AbstractButton {
     Layout.preferredHeight: side
     implicitWidth: shownWidth
     implicitHeight: side
-    enabled: shownAction !== "none"
-    focusPolicy: Qt.StrongFocus
+    focusPolicy: shownAction === "none" ? Qt.NoFocus : Qt.StrongFocus
     hoverEnabled: true
     clip: true
     padding: 0
     Accessible.name: actionName
+    Accessible.description: spokenCard
+    Accessible.ignored: shownAction === "none"
     PlasmaComponents.ToolTip.text: actionName
     PlasmaComponents.ToolTip.visible: hovered && shownAction !== "confirm"
     PlasmaComponents.ToolTip.delay: Kirigami.Units.toolTipDelay
 
     // The handoff moves focus to the confirm, so Enter or Space can give the second press.
     onShownActionChanged: {
+        if (activeFocus) {
+            spokenCard = describe();
+        }
         if (shownAction === "confirm") {
             forceActiveFocus();
+        } else if (shownAction === "none" && activeFocus) {
+            // A Kill just sent is no control any more, so the keyboard goes on to the next one.
+            nextItemInFocusChain(true).forceActiveFocus(Qt.TabFocusReason);
         }
     }
     onActiveFocusChanged: {
-        if (!activeFocus && shownAction === "confirm") {
+        if (activeFocus) {
+            spokenCard = describe();
+        } else if (shownAction === "confirm") {
             focusLeftConfirm();
         }
     }
@@ -96,7 +111,7 @@ QQC2.AbstractButton {
                 return "transparent";
             }
         }
-        border.width: button.visualFocus ? 1 : 0
+        border.width: button.visualFocus ? 2 : 0
         border.color: Kirigami.Theme.focusColor
     }
 
@@ -135,6 +150,7 @@ QQC2.AbstractButton {
                 font.pointSize: Kirigami.Theme.smallFont.pointSize
                 font.weight: Font.DemiBold
                 color: "white"
+                Accessible.ignored: true
             }
         }
 
@@ -147,6 +163,7 @@ QQC2.AbstractButton {
             opacity: button.shownAction === "remove" ? 0.8 : 0
             text: "Remove"
             font: Kirigami.Theme.smallFont
+            Accessible.ignored: true
         }
     }
 }

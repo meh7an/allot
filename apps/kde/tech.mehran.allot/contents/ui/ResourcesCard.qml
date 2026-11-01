@@ -19,9 +19,33 @@ Item {
     readonly property int rowPadding: Kirigami.Units.largeSpacing * 1.5
     readonly property string meterIds: CardView.rowIds(view.meters)
     readonly property string driveIds: CardView.rowIds(view.drives)
+    // Kirigami's grid unit does not follow the font, so the columns measure the text.
+    readonly property var columns: CardView.meterColumns({
+        minLabel: Kirigami.Units.gridUnit * 2.7,
+        minValue: Kirigami.Units.gridUnit * 6,
+        minBar: Kirigami.Units.gridUnit * 2.7,
+        labelText: widestLabel.advanceWidth + Kirigami.Units.smallSpacing,
+        valueText: widestValue.advanceWidth + Kirigami.Units.smallSpacing,
+        room: fold.width - rowPadding * 2 - Kirigami.Units.largeSpacing * 2,
+    })
 
     implicitHeight: view.isVisible ? card.height + margin * 1.5 : 0
     visible: view.isVisible
+
+    TextMetrics {
+        id: widestLabel
+
+        font.pointSize: Kirigami.Theme.smallFont.pointSize
+        font.weight: Font.DemiBold
+        text: "VRAM 0"
+    }
+
+    TextMetrics {
+        id: widestValue
+
+        font: Kirigami.Theme.smallFont
+        text: "1.21 / 1.82 TB"
+    }
 
     Rectangle {
         id: card
@@ -33,7 +57,8 @@ Item {
         radius: Kirigami.Units.smallSpacing * 1.5
         color: CardView.withAlpha(Kirigami.Theme.textColor, 0.04)
         border.width: 1
-        border.color: CardView.withAlpha(Kirigami.Theme.textColor, 0.14)
+        border.color: CardView.edgeColor(Kirigami.Theme.textColor, Kirigami.Theme.backgroundColor,
+            0.14)
 
         QQC2.AbstractButton {
             id: header
@@ -41,10 +66,14 @@ Item {
             x: card.border.width
             y: card.border.width
             width: card.width - card.border.width * 2
-            height: Kirigami.Units.largeSpacing * 5
+            height: Math.max(Kirigami.Units.largeSpacing * 5,
+                contentItem.implicitHeight + Kirigami.Units.smallSpacing * 2)
             hoverEnabled: true
             focusPolicy: Qt.StrongFocus
             Accessible.name: dock.view.isExpanded ? "Collapse resources" : "Expand resources"
+            Accessible.description: dock.view.summary
+            Accessible.expandable: true
+            Accessible.expanded: dock.view.isExpanded
             onClicked: dock.widget.toggleResources()
             Keys.onReturnPressed: clicked()
             Keys.onEnterPressed: clicked()
@@ -53,7 +82,7 @@ Item {
                 radius: Kirigami.Units.smallSpacing
                 color: header.hovered ? CardView.withAlpha(Kirigami.Theme.textColor, 0.06)
                     : "transparent"
-                border.width: header.visualFocus ? 1 : 0
+                border.width: header.visualFocus ? 2 : 0
                 border.color: Kirigami.Theme.focusColor
             }
 
@@ -138,6 +167,8 @@ Item {
                         Layout.fillWidth: true
                         row: CardView.rowById(dock.view.meters, modelData)
                         animate: dock.animate
+                        labelWidth: dock.columns.label
+                        valueWidth: dock.columns.value
                     }
                 }
 
@@ -147,7 +178,8 @@ Item {
                     Layout.bottomMargin: Kirigami.Units.smallSpacing
                     visible: dock.view.showsSeparator
                     implicitHeight: 1
-                    color: CardView.withAlpha(Kirigami.Theme.textColor, 0.14)
+                    color: CardView.edgeColor(Kirigami.Theme.textColor,
+                        Kirigami.Theme.backgroundColor, 0.14)
                 }
 
                 Repeater {
@@ -159,6 +191,8 @@ Item {
                         Layout.fillWidth: true
                         row: CardView.rowById(dock.view.drives, modelData)
                         animate: dock.animate
+                        labelWidth: dock.columns.label
+                        valueWidth: dock.columns.value
                     }
                 }
 

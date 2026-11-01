@@ -106,6 +106,32 @@ test("opening polls at once on the 1 s cadence and starts without Keep Open", as
   assert.equal(subject.widget.keepOpen, false);
 });
 
+test("a screen reader hears what changes while the popup is open", async () => {
+  let body = fixtureText("ui-state-busy.json");
+  const subject = fakeHost({
+    timers: new FakeTimers(),
+    files: { [TOKEN_FILE]: "t\n" },
+    daemon: () => ({ status: 200, body }),
+  });
+  subject.widget.start();
+  await settle();
+  subject.widget.setExpanded(true);
+  await settle();
+  assert.deepEqual(subject.announced, []);
+
+  body = fixtureText("ui-state-idle.json");
+  subject.timers.fireAll();
+  await settle();
+  assert.deepEqual(subject.announced, [subject.widget.model.snapshot.header.summary]);
+
+  subject.widget.setExpanded(false);
+  body = fixtureText("ui-state-busy.json");
+  subject.timers.fireAll();
+  await settle();
+  assert.equal(subject.announced.length, 1, "a closed popup says nothing");
+  subject.widget.stop();
+});
+
 test("Keep Open toggles", () => {
   const { widget } = fakeHost({ timers: new FakeTimers(), daemon: () => null });
 

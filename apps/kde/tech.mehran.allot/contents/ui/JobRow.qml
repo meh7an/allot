@@ -39,7 +39,7 @@ Rectangle {
     radius: Kirigami.Units.smallSpacing * 1.5
     color: CardView.withAlpha(Kirigami.Theme.textColor, 0.04)
     border.width: 1
-    border.color: CardView.withAlpha(Kirigami.Theme.textColor, 0.14)
+    border.color: CardView.edgeColor(Kirigami.Theme.textColor, Kirigami.Theme.backgroundColor, 0.14)
 
     ColumnLayout {
         id: body
@@ -128,7 +128,8 @@ Rectangle {
                 color: cardView.card.isQueued ? "transparent"
                     : CardView.withAlpha(Kirigami.Theme.textColor, 0.07)
                 border.width: cardView.card.isQueued ? 1 : 0
-                border.color: CardView.withAlpha(Kirigami.Theme.textColor, 0.3)
+                border.color: CardView.edgeColor(Kirigami.Theme.textColor,
+                    Kirigami.Theme.backgroundColor, 0.3)
 
                 Kirigami.Icon {
                     anchors.centerIn: parent
@@ -145,6 +146,7 @@ Rectangle {
                     font.family: Kirigami.Theme.fixedWidthFont.family
                     font.pointSize: Math.max(6, Kirigami.Theme.smallFont.pointSize - 1)
                     font.weight: Font.DemiBold
+                    Accessible.ignored: true
                 }
             }
 
@@ -166,7 +168,8 @@ Rectangle {
 
             Rectangle {
                 implicitWidth: chipLine.implicitWidth + Kirigami.Units.largeSpacing * 2
-                implicitHeight: Kirigami.Units.iconSizes.small + Kirigami.Units.smallSpacing / 2
+                implicitHeight: Math.max(Kirigami.Units.iconSizes.small,
+                    chipLine.implicitHeight) + Kirigami.Units.smallSpacing / 2
                 radius: height / 2
                 opacity: cardView.endedOpacity
                 color: cardView.card.isBenchmark ? cardView.benchmarkColor
@@ -208,6 +211,7 @@ Rectangle {
                 shownAction: cardView.card.action
                 actionName: cardView.card.actionName
                 animate: cardView.animate
+                describe: () => CardView.cardDescription(cardView.job)
                 onClicked: cardView.press()
                 onFocusLeftConfirm: cardView.widget.cancelConfirm(cardView.job.id)
                 onEscapedConfirm: cardView.widget.cancelConfirms()
