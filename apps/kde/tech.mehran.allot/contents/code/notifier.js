@@ -5,18 +5,6 @@
  *   NotificationMessage,
  * } from "./shared/notification-text.js"
  */
-var __classPrivateFieldSet = (this && this.__classPrivateFieldSet) || function (receiver, state, value, kind, f) {
-    if (kind === "m") throw new TypeError("Private method is not writable");
-    if (kind === "a" && !f) throw new TypeError("Private accessor was defined without a setter");
-    if (typeof state === "function" ? receiver !== state || !f : !state.has(receiver)) throw new TypeError("Cannot write private member to an object whose class did not declare it");
-    return (kind === "a" ? f.call(receiver, value) : f ? f.value = value : state.set(receiver, value)), value;
-};
-var __classPrivateFieldGet = (this && this.__classPrivateFieldGet) || function (receiver, state, kind, f) {
-    if (kind === "a" && !f) throw new TypeError("Private accessor was defined without a getter");
-    if (typeof state === "function" ? receiver !== state || !f : !state.has(receiver)) throw new TypeError("Cannot read private member from an object whose class did not declare it");
-    return kind === "m" ? f : kind === "a" ? f.call(receiver) : f ? f.value : state.get(receiver);
-};
-var _Notifier_send, _Notifier_onButton, _Notifier_onActivate, _Notifier_shown;
 /** @type {Record<NotificationButton, string>} */
 export const BUTTON_LABELS = {
     "start-service": "Start Service",
@@ -53,14 +41,11 @@ export class Notifier {
      * @param {(target: string | null) => void} options.onActivate
      */
     constructor(options) {
-        _Notifier_send.set(this, void 0);
-        _Notifier_onButton.set(this, void 0);
-        _Notifier_onActivate.set(this, void 0);
         /** @type {Map<string, SentNotification>} */
-        _Notifier_shown.set(this, new Map());
-        __classPrivateFieldSet(this, _Notifier_send, options.send, "f");
-        __classPrivateFieldSet(this, _Notifier_onButton, options.onButton, "f");
-        __classPrivateFieldSet(this, _Notifier_onActivate, options.onActivate, "f");
+        this._shown = new Map();
+        this._send = options.send;
+        this._onButton = options.onButton;
+        this._onActivate = options.onActivate;
     }
     /**
      * @param {NotificationMessage} message
@@ -69,31 +54,30 @@ export class Notifier {
     show(message, icon) {
         this.withdraw(message.tag);
         /** @type {SentNotification} */
-        const sent = __classPrivateFieldGet(this, _Notifier_send, "f").call(this, {
+        const sent = this._send({
             title: message.title,
             body: message.body,
             icon,
             buttons: message.buttons.map((button) => ({
                 label: BUTTON_LABELS[button],
-                pressed: () => __classPrivateFieldGet(this, _Notifier_onButton, "f").call(this, button, message.target),
+                pressed: () => this._onButton(button, message.target),
             })),
-            activated: () => __classPrivateFieldGet(this, _Notifier_onActivate, "f").call(this, message.target),
+            activated: () => this._onActivate(message.target),
             // A replaced notification closes after its successor has taken the tag.
             closed: () => {
-                if (__classPrivateFieldGet(this, _Notifier_shown, "f").get(message.tag) === sent) {
-                    __classPrivateFieldGet(this, _Notifier_shown, "f").delete(message.tag);
+                if (this._shown.get(message.tag) === sent) {
+                    this._shown.delete(message.tag);
                 }
             },
         });
-        __classPrivateFieldGet(this, _Notifier_shown, "f").set(message.tag, sent);
+        this._shown.set(message.tag, sent);
     }
     /** @param {string} tag */
     withdraw(tag) {
-        const sent = __classPrivateFieldGet(this, _Notifier_shown, "f").get(tag);
+        const sent = this._shown.get(tag);
         if (sent !== undefined) {
-            __classPrivateFieldGet(this, _Notifier_shown, "f").delete(tag);
+            this._shown.delete(tag);
             sent.close();
         }
     }
 }
-_Notifier_send = new WeakMap(), _Notifier_onButton = new WeakMap(), _Notifier_onActivate = new WeakMap(), _Notifier_shown = new WeakMap();

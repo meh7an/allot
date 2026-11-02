@@ -6,9 +6,11 @@ import St from "gi://St";
 
 import * as Main from "resource:///org/gnome/shell/ui/main.js";
 
+import { BarShare } from "./bar-share.js";
 import { label, setSource } from "./cards.js";
 import { driveDescription, driveName, meterColumns, meterName } from "./lib/accessible-text.js";
 
+/** @import { BarGlide } from "./bar-share.js" */
 /** @import { DriveRow, MeterRow, ResourcesView } from "./lib/resources-view.js" */
 
 const FOLD_MS = 240;
@@ -420,30 +422,11 @@ class DriveRowView {
 }
 
 /**
- * A bar whose share eases through an adjustment, since a drawing has no animatable property. The
- * signal is tied to the drawing: a bar still easing when it is destroyed must not repaint.
- *
- * @param {St.DrawingArea} actor
- * @returns {St.Adjustment}
- */
-function shareOf(actor) {
-  const share = new St.Adjustment({ actor, lower: 0, upper: 1, value: 0 });
-  share.connectObject("notify::value", () => actor.queue_repaint(), actor);
-  return share;
-}
-
-/**
- * @param {St.Adjustment} share
- * @param {number} value
  * @param {boolean} animate
+ * @returns {BarGlide | null}
  */
-function glide(share, value, animate) {
-  if (animate) {
-    share.ease(value, { duration: GLIDE_MS, mode: Clutter.AnimationMode.EASE_OUT_QUAD });
-  } else {
-    share.remove_transition("value");
-    share.value = value;
-  }
+function glideIf(animate) {
+  return animate ? { duration: GLIDE_MS, mode: Clutter.AnimationMode.EASE_OUT_QUAD } : null;
 }
 
 /**
@@ -460,8 +443,8 @@ class BulletBar {
   constructor() {
     this.actor = new St.DrawingArea({ style_class: "allot-meter-bar", x_expand: true });
     this.actor.connect("repaint", () => this.#paint());
-    this.#used = shareOf(this.actor);
-    this.#shared = shareOf(this.actor);
+    this.#used = new BarShare(this.actor);
+    this.#shared = new BarShare(this.actor);
   }
 
   /**
@@ -469,10 +452,13 @@ class BulletBar {
    * @param {boolean} animate
    */
   update(row, animate) {
+    const before = this.#row;
     this.#row = row;
-    glide(this.#used, row.used, animate);
-    glide(this.#shared, row.shared ?? 0, animate);
-    this.actor.queue_repaint();
+    this.#used.moveTo(row.used, glideIf(animate));
+    this.#shared.moveTo(row.shared ?? 0, glideIf(animate));
+    if (before?.headroom !== row.headroom || before?.reserved !== row.reserved) {
+      this.actor.queue_repaint();
+    }
   }
 
   #paint() {
@@ -540,7 +526,7 @@ class DriveBar {
   constructor() {
     this.actor = new St.DrawingArea({ style_class: "allot-drive-bar", x_expand: true });
     this.actor.connect("repaint", () => this.#paint());
-    this.#used = shareOf(this.actor);
+    this.#used = new BarShare(this.actor);
   }
 
   /**
@@ -548,8 +534,7 @@ class DriveBar {
    * @param {boolean} animate
    */
   update(used, animate) {
-    glide(this.#used, used, animate);
-    this.actor.queue_repaint();
+    this.#used.moveTo(used, glideIf(animate));
   }
 
   #paint() {

@@ -24,20 +24,18 @@ Item {
         }
     }
     readonly property bool isDashed: tone === "waiting-dashed"
-    property real share: fraction
+    readonly property BarShare barShare: BarShare {
+        target: bar.fraction
+        barWidth: bar.width
+        animate: bar.animate && bar.tone !== "frozen"
+        duration: CardView.scaledMs(CardView.BAR_MS, Kirigami.Units.longDuration)
+        easingType: Easing.Linear
+    }
+    readonly property real share: barShare.value
 
     height: 2
     visible: tone !== "none"
     clip: true
-
-    Behavior on share {
-        enabled: bar.animate && bar.tone !== "frozen"
-
-        NumberAnimation {
-            duration: CardView.scaledMs(CardView.BAR_MS, Kirigami.Units.longDuration)
-            easing.type: Easing.Linear
-        }
-    }
 
     Rectangle {
         anchors.bottom: parent.bottom

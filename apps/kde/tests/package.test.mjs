@@ -9,7 +9,7 @@ import {
   NOTIFY_EVENT,
   NOTIFY_RC_FILE,
 } from "../src/notification-state.js";
-import { CODE_DIR, emit } from "../tools/emit.mjs";
+import { CODE_DIR, emit, withoutPrivateNames } from "../tools/emit.mjs";
 import { FakeRowModel, PACKAGE_DIR, catAnswer, fakeRequests } from "./support.mjs";
 
 /** @param {URL} dir @param {string} [prefix] @returns {string[]} */
@@ -28,6 +28,37 @@ test("the generated code is current: run pnpm build after changing its sources",
   for (const [path, contents] of expected) {
     assert.equal(readFileSync(new URL(path, CODE_DIR), "utf8"), contents, path);
   }
+});
+
+test("no generated code uses a WeakMap, which Qt 6.12's collector corrupts", () => {
+  for (const [path, contents] of emit()) {
+    assert.doesNotMatch(contents, /WeakMap|__classPrivateField/, path);
+  }
+});
+
+test("private members become plain ones, and colours and comments stay", () => {
+  const code = [
+    "class A {",
+    "  #count = 0;",
+    "  static #shared = 1;",
+    "  get #size() { return 1; }",
+    "  async #load() { await this.#read(other?.#count); }",
+    '  colour = "#aabbcc"; // `#N` stays',
+    "}",
+  ].join("\n");
+
+  assert.equal(
+    withoutPrivateNames(code),
+    [
+      "class A {",
+      "  _count = 0;",
+      "  static _shared = 1;",
+      "  get _size() { return 1; }",
+      "  async _load() { await this._read(other?._count); }",
+      '  colour = "#aabbcc"; // `#N` stays',
+      "}",
+    ].join("\n"),
+  );
 });
 
 test("metadata names the plugin id and the Plasma 6.0 API", () => {

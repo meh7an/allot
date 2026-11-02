@@ -1,18 +1,6 @@
 // Generated from apps/gnome/allot@mehran.tech/lib/job-stops.js by apps/kde/tools/emit.mjs (pnpm build); do not edit.
 /** @import { ActiveJob, QueuedJob, UiState } from "../contract.g.mjs" */
 /** @import { StopResult } from "./stop-result.js" */
-var __classPrivateFieldSet = (this && this.__classPrivateFieldSet) || function (receiver, state, value, kind, f) {
-    if (kind === "m") throw new TypeError("Private method is not writable");
-    if (kind === "a" && !f) throw new TypeError("Private accessor was defined without a setter");
-    if (typeof state === "function" ? receiver !== state || !f : !state.has(receiver)) throw new TypeError("Cannot write private member to an object whose class did not declare it");
-    return (kind === "a" ? f.call(receiver, value) : f ? f.value = value : state.set(receiver, value)), value;
-};
-var __classPrivateFieldGet = (this && this.__classPrivateFieldGet) || function (receiver, state, kind, f) {
-    if (kind === "a" && !f) throw new TypeError("Private accessor was defined without a getter");
-    if (typeof state === "function" ? receiver !== state || !f : !state.has(receiver)) throw new TypeError("Cannot read private member from an object whose class did not declare it");
-    return kind === "m" ? f : kind === "a" ? f.call(receiver) : f ? f.value : state.get(receiver);
-};
-var _JobStops_instances, _JobStops_now, _JobStops_stops, _JobStops_seen, _JobStops_holdOutsideEnds, _JobStops_drop, _JobStops_age, _JobStops_view;
 /**
  * - `kill`: kill a running job's process tree, after the two-step confirm.
  * - `remove`: remove a queued request, without a confirm because no work is lost.
@@ -99,13 +87,11 @@ const SECOND_MS = 1000;
 export class JobStops {
     /** @param {() => number} now The local clock in milliseconds; the tests pass their own. */
     constructor(now) {
-        _JobStops_instances.add(this);
-        _JobStops_now.set(this, void 0);
         /** @type {Map<number, Stop>} */
-        _JobStops_stops.set(this, new Map());
+        this._stops = new Map();
         /** @type {UiState | null} */
-        _JobStops_seen.set(this, null);
-        __classPrivateFieldSet(this, _JobStops_now, now, "f");
+        this._seen = null;
+        this._now = now;
     }
     /**
      * The cards with a stop, as they read now; call `expire` first.
@@ -115,7 +101,7 @@ export class JobStops {
     get views() {
         /** @type {Map<number, StopView>} */
         const views = new Map();
-        __classPrivateFieldGet(this, _JobStops_stops, "f").forEach((stop, lease) => views.set(lease, __classPrivateFieldGet(this, _JobStops_instances, "m", _JobStops_view).call(this, stop)));
+        this._stops.forEach((stop, lease) => views.set(lease, this._view(stop)));
         return views;
     }
     /**
@@ -124,7 +110,7 @@ export class JobStops {
      * @returns {boolean}
      */
     get isConfirming() {
-        return [...__classPrivateFieldGet(this, _JobStops_stops, "f").values()].some((stop) => stop.phase === "confirming");
+        return [...this._stops.values()].some((stop) => stop.phase === "confirming");
     }
     /**
      * The milliseconds until a card's text next changes by itself (a countdown second, or a hold
@@ -135,8 +121,8 @@ export class JobStops {
     get nextChangeMs() {
         /** @type {number | null} */
         let next = null;
-        for (const stop of __classPrivateFieldGet(this, _JobStops_stops, "f").values()) {
-            const held = __classPrivateFieldGet(this, _JobStops_instances, "m", _JobStops_age).call(this, stop);
+        for (const stop of this._stops.values()) {
+            const held = this._age(stop);
             /** @type {number | null} */
             let due = null;
             switch (stop.phase) {
@@ -165,19 +151,19 @@ export class JobStops {
      * @param {UiState} state
      */
     observe(state) {
-        const before = __classPrivateFieldGet(this, _JobStops_seen, "f");
-        __classPrivateFieldSet(this, _JobStops_seen, state, "f");
-        for (const [lease, stop] of [...__classPrivateFieldGet(this, _JobStops_stops, "f")]) {
+        const before = this._seen;
+        this._seen = state;
+        for (const [lease, stop] of [...this._stops]) {
             const held = find(state, lease);
             if (held !== null && heldKind(held) === stop.kind) {
                 stop.held = held;
             }
             else if (stop.phase === "confirming" || stop.phase === "failed") {
-                __classPrivateFieldGet(this, _JobStops_stops, "f").delete(lease);
+                this._stops.delete(lease);
             }
         }
         if (before !== null) {
-            __classPrivateFieldGet(this, _JobStops_instances, "m", _JobStops_holdOutsideEnds).call(this, before, state);
+            this._holdOutsideEnds(before, state);
         }
     }
     /**
@@ -188,15 +174,15 @@ export class JobStops {
      */
     pressKill(lease) {
         this.expire();
-        const stop = __classPrivateFieldGet(this, _JobStops_stops, "f").get(lease);
+        const stop = this._stops.get(lease);
         if (stop !== undefined) {
             switch (stop.phase) {
                 case "confirming":
-                    if (__classPrivateFieldGet(this, _JobStops_instances, "m", _JobStops_age).call(this, stop) <= DOUBLE_PRESS_MS) {
+                    if (this._age(stop) <= DOUBLE_PRESS_MS) {
                         return "ignored";
                     }
                     stop.phase = "sending";
-                    stop.since = __classPrivateFieldGet(this, _JobStops_now, "f").call(this);
+                    stop.since = this._now();
                     return "send";
                 case "sending":
                 case "ended":
@@ -205,11 +191,11 @@ export class JobStops {
                     break;
             }
         }
-        const held = find(__classPrivateFieldGet(this, _JobStops_seen, "f"), lease);
+        const held = find(this._seen, lease);
         if (held === null || held.active === null) {
             return "ignored";
         }
-        __classPrivateFieldGet(this, _JobStops_stops, "f").set(lease, newStop("kill", "confirming", __classPrivateFieldGet(this, _JobStops_now, "f").call(this), held));
+        this._stops.set(lease, newStop("kill", "confirming", this._now(), held));
         return "confirming";
     }
     /**
@@ -220,15 +206,15 @@ export class JobStops {
      */
     pressRemove(lease) {
         this.expire();
-        const stop = __classPrivateFieldGet(this, _JobStops_stops, "f").get(lease);
+        const stop = this._stops.get(lease);
         if (stop !== undefined && stop.phase !== "failed") {
             return false;
         }
-        const held = find(__classPrivateFieldGet(this, _JobStops_seen, "f"), lease);
+        const held = find(this._seen, lease);
         if (held === null || held.queued === null) {
             return false;
         }
-        __classPrivateFieldGet(this, _JobStops_stops, "f").set(lease, newStop("remove", "sending", __classPrivateFieldGet(this, _JobStops_now, "f").call(this), held));
+        this._stops.set(lease, newStop("remove", "sending", this._now(), held));
         return true;
     }
     /**
@@ -239,10 +225,10 @@ export class JobStops {
      */
     cancel(lease) {
         var _a;
-        if (((_a = __classPrivateFieldGet(this, _JobStops_stops, "f").get(lease)) === null || _a === void 0 ? void 0 : _a.phase) !== "confirming") {
+        if (((_a = this._stops.get(lease)) === null || _a === void 0 ? void 0 : _a.phase) !== "confirming") {
             return false;
         }
-        __classPrivateFieldGet(this, _JobStops_stops, "f").delete(lease);
+        this._stops.delete(lease);
         return true;
     }
     /**
@@ -251,7 +237,7 @@ export class JobStops {
      * @returns {boolean} True when any was cancelled.
      */
     cancelConfirms() {
-        return __classPrivateFieldGet(this, _JobStops_instances, "m", _JobStops_drop).call(this, (stop) => stop.phase === "confirming");
+        return this._drop((stop) => stop.phase === "confirming");
     }
     /**
      * allotd's answer to a request `pressKill` or `pressRemove` sent.
@@ -260,12 +246,12 @@ export class JobStops {
      * @param {StopResult} result
      */
     finished(lease, result) {
-        const stop = __classPrivateFieldGet(this, _JobStops_stops, "f").get(lease);
+        const stop = this._stops.get(lease);
         if (stop === undefined || stop.phase !== "sending") {
             return;
         }
         stop.phase = result.ended ? "ended" : "failed";
-        stop.since = __classPrivateFieldGet(this, _JobStops_now, "f").call(this);
+        stop.since = this._now();
         stop.message = result.text;
         if (result.ended) {
             stop.endedAtMs = result.endedAtMs;
@@ -277,8 +263,8 @@ export class JobStops {
      * @returns {boolean} True when any was dropped.
      */
     expire() {
-        return __classPrivateFieldGet(this, _JobStops_instances, "m", _JobStops_drop).call(this, (stop) => {
-            const age = __classPrivateFieldGet(this, _JobStops_instances, "m", _JobStops_age).call(this, stop);
+        return this._drop((stop) => {
+            const age = this._age(stop);
             switch (stop.phase) {
                 case "confirming":
                     return age >= CONFIRM_FOR_MS;
@@ -301,7 +287,7 @@ export class JobStops {
     merge(state) {
         const active = [...state.active];
         const queue = [...state.queue];
-        const missing = [...__classPrivateFieldGet(this, _JobStops_stops, "f").values()]
+        const missing = [...this._stops.values()]
             .filter((stop) => stop.phase === "sending" || stop.phase === "ended")
             .filter((stop) => find(state, stop.held.leaseId) === null)
             .sort((a, b) => a.held.index - b.held.index);
@@ -315,55 +301,79 @@ export class JobStops {
         }
         return { active, queue };
     }
-}
-_JobStops_now = new WeakMap(), _JobStops_stops = new WeakMap(), _JobStops_seen = new WeakMap(), _JobStops_instances = new WeakSet(), _JobStops_holdOutsideEnds = function _JobStops_holdOutsideEnds(before, state) {
-    before.active.forEach((job, index) => {
-        const { lease } = job;
-        if (__classPrivateFieldGet(this, _JobStops_stops, "f").has(lease.id) ||
-            lease.kind === "benchmark_exclusive" ||
-            find(state, lease.id) !== null) {
-            return;
-        }
-        const ended = state.ended.find((end) => end.lease_id === lease.id);
-        if (ended === undefined || ended.cause === "removed") {
-            return;
-        }
-        /** @type {StopKind} */
-        let kind = "ended-by-allotd";
-        if (ended.cause === "released") {
-            kind = "finished";
-        }
-        else if (ended.cause === "killed") {
-            kind = "killed-outside";
-        }
-        const held = { leaseId: lease.id, active: job, queued: null, index };
-        const stop = newStop(kind, "ended", __classPrivateFieldGet(this, _JobStops_now, "f").call(this), held);
-        stop.message = kind === "ended-by-allotd" ? ended.reason : "";
-        stop.endedAtMs = ended.ended_at_ms;
-        __classPrivateFieldGet(this, _JobStops_stops, "f").set(lease.id, stop);
-    });
-}, _JobStops_drop = function _JobStops_drop(predicate) {
-    let dropped = false;
-    for (const [lease, stop] of [...__classPrivateFieldGet(this, _JobStops_stops, "f")]) {
-        if (predicate(stop)) {
-            __classPrivateFieldGet(this, _JobStops_stops, "f").delete(lease);
-            dropped = true;
-        }
+    /**
+     * A running job allotd stopped listing without a stop of this popup holds its card too, read
+     * from allotd's ended list: released (Finished), killed elsewhere, or ended by allotd.
+     * Removals, queued requests and benchmarks (their Finished card comes from recent runs) are
+     * not held, and neither is anything the ended list does not explain.
+     *
+     * @param {UiState} before
+     * @param {UiState} state
+     */
+    _holdOutsideEnds(before, state) {
+        before.active.forEach((job, index) => {
+            const { lease } = job;
+            if (this._stops.has(lease.id) ||
+                lease.kind === "benchmark_exclusive" ||
+                find(state, lease.id) !== null) {
+                return;
+            }
+            const ended = state.ended.find((end) => end.lease_id === lease.id);
+            if (ended === undefined || ended.cause === "removed") {
+                return;
+            }
+            /** @type {StopKind} */
+            let kind = "ended-by-allotd";
+            if (ended.cause === "released") {
+                kind = "finished";
+            }
+            else if (ended.cause === "killed") {
+                kind = "killed-outside";
+            }
+            const held = { leaseId: lease.id, active: job, queued: null, index };
+            const stop = newStop(kind, "ended", this._now(), held);
+            stop.message = kind === "ended-by-allotd" ? ended.reason : "";
+            stop.endedAtMs = ended.ended_at_ms;
+            this._stops.set(lease.id, stop);
+        });
     }
-    return dropped;
-}, _JobStops_age = function _JobStops_age(stop) {
-    return __classPrivateFieldGet(this, _JobStops_now, "f").call(this) - stop.since;
-}, _JobStops_view = function _JobStops_view(stop) {
-    const elapsed = Math.floor(__classPrivateFieldGet(this, _JobStops_instances, "m", _JobStops_age).call(this, stop) / SECOND_MS);
-    const left = stop.phase === "confirming" ? Math.max(1, CONFIRM_FOR_MS / SECOND_MS - elapsed) : 0;
-    return {
-        kind: stop.kind,
-        phase: stop.phase,
-        secondsLeft: left,
-        message: stop.message,
-        endedAtMs: stop.endedAtMs,
-    };
-};
+    /**
+     * @param {(stop: Stop) => boolean} predicate
+     * @returns {boolean} True when any was dropped.
+     */
+    _drop(predicate) {
+        let dropped = false;
+        for (const [lease, stop] of [...this._stops]) {
+            if (predicate(stop)) {
+                this._stops.delete(lease);
+                dropped = true;
+            }
+        }
+        return dropped;
+    }
+    /**
+     * @param {Stop} stop
+     * @returns {number}
+     */
+    _age(stop) {
+        return this._now() - stop.since;
+    }
+    /**
+     * @param {Stop} stop
+     * @returns {StopView}
+     */
+    _view(stop) {
+        const elapsed = Math.floor(this._age(stop) / SECOND_MS);
+        const left = stop.phase === "confirming" ? Math.max(1, CONFIRM_FOR_MS / SECOND_MS - elapsed) : 0;
+        return {
+            kind: stop.kind,
+            phase: stop.phase,
+            secondsLeft: left,
+            message: stop.message,
+            endedAtMs: stop.endedAtMs,
+        };
+    }
+}
 /**
  * @param {StopKind} kind
  * @param {StopPhase} phase

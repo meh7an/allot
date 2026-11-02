@@ -191,7 +191,7 @@ private struct DriveRowView: View {
 private struct BulletBar: View {
     private static let barHeight: CGFloat = 6
     private static let tickSize = CGSize(width: 2, height: 14)
-    private static let glide = Animation.easeOut(duration: 0.6)
+    private static let glide = GlidingFillMotion.easeOut(0.6)
 
     let row: MeterRow
 
@@ -199,79 +199,84 @@ private struct BulletBar: View {
 
     var body: some View {
         let shared = row.shared ?? 0
+        let motion = reduceMotion ? nil : Self.glide
         ZStack {
-            Canvas { context, size in
-                let bar = CGRect(origin: .zero, size: size)
-                context.fill(Path(bar), with: .color(Tokens.track))
-                drawHatch(in: context, bar: bar)
-            }
-            BarSpan(start: 0, end: row.used - shared)
-                .fill(Color.accentColor)
-            BarSpan(start: row.used - shared, end: row.used)
-                .fill(Color.accentColor.opacity(Tokens.sharedOpacity))
+            BarTrack(headroom: row.headroom)
+                .equatable()
+            GlidingFill(
+                start: 0, end: row.used - shared, colour: .accentColor, motion: motion)
+            GlidingFill(
+                start: row.used - shared, end: row.used,
+                colour: .accentColor.opacity(Tokens.sharedOpacity), motion: motion)
         }
-        .animation(reduceMotion ? nil : Self.glide, value: row.used)
-        .animation(reduceMotion ? nil : Self.glide, value: row.shared)
         .frame(height: Self.barHeight)
         .clipShape(RoundedRectangle(cornerRadius: 2))
         .overlay {
-            tick.frame(height: Self.tickSize.height + 2)
+            ReservedTick(reserved: row.reserved, size: Self.tickSize)
+                .equatable()
+                .frame(height: Self.tickSize.height + 2)
         }
         .frame(height: Self.tickSize.height + 2)
     }
+}
 
-    private var tick: some View {
-        Canvas { context, size in
-            if let reserved = row.reserved {
-                let mid = size.width * CGFloat(reserved)
-                let x = min(max(mid - Self.tickSize.width / 2, 0),
-                            size.width - Self.tickSize.width)
-                let y = (size.height - Self.tickSize.height) / 2
-                let tick = CGRect(
-                    x: x, y: y, width: Self.tickSize.width, height: Self.tickSize.height)
-                context.fill(Path(tick.insetBy(dx: -1, dy: -1)), with: .color(Tokens.tickRing))
-                context.fill(Path(tick), with: .color(.primary))
-            }
+/// A bar's track and hatched headroom, redrawn only when the headroom moves.
+private struct BarTrack: View, Equatable {
+    let headroom: Double
+
+    var body: some View {
+        DrawingView { context, size, environment in
+            let bar = CGRect(origin: .zero, size: size)
+            context.setFillColor(Tokens.track.cgColor(in: environment))
+            context.fill(bar)
+            drawHatch(in: context, bar: bar, environment: environment)
         }
     }
 
     // 1.5 pt diagonal lines every 4·√2 pt, as the handoff's 135° repeating gradient.
-    private func drawHatch(in context: GraphicsContext, bar: CGRect) {
-        let start = bar.width * CGFloat(row.headroom)
+    private func drawHatch(in context: CGContext, bar: CGRect, environment: EnvironmentValues) {
+        let start = bar.width * CGFloat(headroom)
         guard start < bar.width else {
             return
         }
         let hatch = CGRect(x: start, y: bar.minY, width: bar.width - start, height: bar.height)
-        var layer = context
-        layer.clip(to: Path(hatch))
-        layer.fill(Path(hatch), with: .color(Tokens.hatchBack))
+        context.saveGState()
+        context.clip(to: hatch)
+        context.setFillColor(Tokens.hatchBack.cgColor(in: environment))
+        context.fill(hatch)
         let step = 4 * 2.0.squareRoot()
-        var lines = Path()
         var x = hatch.minX - bar.height
         while x < hatch.maxX {
-            lines.move(to: CGPoint(x: x, y: bar.maxY))
-            lines.addLine(to: CGPoint(x: x + bar.height, y: bar.minY))
+            context.move(to: CGPoint(x: x, y: bar.maxY))
+            context.addLine(to: CGPoint(x: x + bar.height, y: bar.minY))
             x += step
         }
-        layer.stroke(lines, with: .color(Tokens.hatchLine), lineWidth: 1.5)
+        context.setStrokeColor(Tokens.hatchLine.cgColor(in: environment))
+        context.setLineWidth(1.5)
+        context.strokePath()
+        context.restoreGState()
     }
 }
 
-/// The part of a bar from `start` to `end`, both fractions of its width, animatable so a fill
-/// glides between values.
-private struct BarSpan: Shape {
-    var start: Double
-    var end: Double
+/// The reserved tick across a bar, redrawn only when it moves.
+private struct ReservedTick: View, Equatable {
+    let reserved: Double?
+    let size: CGSize
 
-    var animatableData: AnimatablePair<Double, Double> {
-        get { AnimatablePair(start, end) }
-        set { (start, end) = (newValue.first, newValue.second) }
-    }
-
-    func path(in rect: CGRect) -> Path {
-        let from = rect.width * CGFloat(max(0, start))
-        let to = rect.width * CGFloat(max(start, end))
-        return Path(CGRect(x: from, y: 0, width: to - from, height: rect.height))
+    var body: some View {
+        DrawingView { context, canvas, environment in
+            guard let reserved else {
+                return
+            }
+            let mid = canvas.width * CGFloat(reserved)
+            let x = min(max(mid - size.width / 2, 0), canvas.width - size.width)
+            let y = (canvas.height - size.height) / 2
+            let tick = CGRect(x: x, y: y, width: size.width, height: size.height)
+            context.setFillColor(Tokens.tickRing.cgColor(in: environment))
+            context.fill(tick.insetBy(dx: -1, dy: -1))
+            context.setFillColor(Color.primary.cgColor(in: environment))
+            context.fill(tick)
+        }
     }
 }
 
@@ -282,26 +287,27 @@ private struct Sparkline: View {
     let samples: [Double]
 
     var body: some View {
-        Canvas { context, size in
+        DrawingView { context, size, environment in
             guard samples.count > 1 else {
                 return
             }
             let step = size.width / CGFloat(Self.slots - 1)
             let offset = Self.slots - samples.count
-            var line = Path()
             for (index, sample) in samples.enumerated() {
                 let point = CGPoint(
                     x: CGFloat(offset + index) * step,
                     y: size.height - 1 - CGFloat(sample) * (size.height - 2))
                 if index == 0 {
-                    line.move(to: point)
+                    context.move(to: point)
                 } else {
-                    line.addLine(to: point)
+                    context.addLine(to: point)
                 }
             }
-            context.stroke(
-                line, with: .color(.accentColor),
-                style: StrokeStyle(lineWidth: 1.4, lineCap: .round, lineJoin: .round))
+            context.setStrokeColor(Color.accentColor.cgColor(in: environment))
+            context.setLineWidth(1.4)
+            context.setLineCap(.round)
+            context.setLineJoin(.round)
+            context.strokePath()
         }
     }
 }

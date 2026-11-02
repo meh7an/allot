@@ -6,6 +6,7 @@
 //! their load went missing from every session. Deltas of cumulative CPU time count a process
 //! that appeared since the previous sample from its start instead.
 
+#[cfg(any(windows, test))]
 use std::{collections::HashMap, time::Instant};
 
 /// A process's cumulative CPU time at one refresh.
@@ -19,12 +20,14 @@ pub(crate) struct ProcessTime {
 }
 
 /// Remembers the previous refresh's CPU times to turn them into rates.
+#[cfg(any(windows, test))]
 #[derive(Debug, Default)]
 pub(crate) struct CpuTimes {
     previous: HashMap<u32, ProcessTime>,
     previous_at: Option<Instant>,
 }
 
+#[cfg(any(windows, test))]
 impl CpuTimes {
     /// Logical cores each process kept busy since the previous call, capped at `max_cores`.
     /// The first call only records a baseline and returns no rates.

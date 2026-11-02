@@ -105,8 +105,8 @@ enum Tokens {
     static let notchDepth: CGFloat = 6
 
     /// Bars follow the ticking time.
-    static let barMotion = Animation.linear(duration: 0.9)
-    static let stepMotion = Animation.linear(duration: 0.7)
+    static let barMotion = GlidingFillMotion.linear(0.9)
+    static let stepMotion = GlidingFillMotion.linear(0.7)
 
     /// The handoff's sizes at More options › Text Size. Reading one in a view's body subscribes
     /// the view to ``TextScale``, so a change redraws the panel. The tile's initials stay, since

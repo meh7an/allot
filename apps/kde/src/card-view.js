@@ -6,6 +6,7 @@ import {
   driveName,
   meterName,
 } from "../../gnome/allot@mehran.tech/lib/accessible-text.js";
+import { barMove } from "../../gnome/allot@mehran.tech/lib/bar-move.js";
 import { QUIET_TICKS } from "../../gnome/allot@mehran.tech/lib/benchmark-status.js";
 
 /** @import { BenchmarkStep } from "../../gnome/allot@mehran.tech/lib/benchmark-status.js" */
@@ -22,6 +23,8 @@ import { QUIET_TICKS } from "../../gnome/allot@mehran.tech/lib/benchmark-status.
 /** @typedef {"past" | "current" | "upcoming"} StepState */
 
 /** Breeze icons for the cards, the handoff's dismiss circle, timer and check. */
+export { barMove };
+
 export const KILL_ICON = "dialog-close";
 export const TIMER_ICON = "chronometer";
 export const CHECK_ICON = "dialog-ok-apply";

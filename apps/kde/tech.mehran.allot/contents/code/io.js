@@ -8,18 +8,6 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
         step((generator = generator.apply(thisArg, _arguments || [])).next());
     });
 };
-var __classPrivateFieldSet = (this && this.__classPrivateFieldSet) || function (receiver, state, value, kind, f) {
-    if (kind === "m") throw new TypeError("Private method is not writable");
-    if (kind === "a" && !f) throw new TypeError("Private accessor was defined without a setter");
-    if (typeof state === "function" ? receiver !== state || !f : !state.has(receiver)) throw new TypeError("Cannot write private member to an object whose class did not declare it");
-    return (kind === "a" ? f.call(receiver, value) : f ? f.value = value : state.set(receiver, value)), value;
-};
-var __classPrivateFieldGet = (this && this.__classPrivateFieldGet) || function (receiver, state, kind, f) {
-    if (kind === "a" && !f) throw new TypeError("Private accessor was defined without a getter");
-    if (typeof state === "function" ? receiver !== state || !f : !state.has(receiver)) throw new TypeError("Cannot read private member from an object whose class did not declare it");
-    return kind === "m" ? f : kind === "a" ? f.call(receiver) : f ? f.value : state.get(receiver);
-};
-var _CommandRunner_connect, _CommandRunner_waiting, _XhrTransport_requests, _XhrTransport_timers, _XhrTransport_inFlight;
 import { CancelledError, TimeoutError } from "./shared/client.js";
 /** @import { HttpRequest, HttpResponse } from "./shared/client.js" */
 /** @import { Timers } from "./shared/poller.js" */
@@ -63,10 +51,9 @@ const XHR_DONE = 4;
 export class CommandRunner {
     /** @param {(command: string) => void} connect Starts a command; `deliver` gets its answer. */
     constructor(connect) {
-        _CommandRunner_connect.set(this, void 0);
         /** @type {Map<string, ((output: CommandOutput) => void)[]>} */
-        _CommandRunner_waiting.set(this, new Map());
-        __classPrivateFieldSet(this, _CommandRunner_connect, connect, "f");
+        this._waiting = new Map();
+        this._connect = connect;
     }
     /**
      * @param {string} command
@@ -74,13 +61,13 @@ export class CommandRunner {
      */
     run(command) {
         return new Promise((resolve) => {
-            const waiting = __classPrivateFieldGet(this, _CommandRunner_waiting, "f").get(command);
+            const waiting = this._waiting.get(command);
             if (waiting !== undefined) {
                 waiting.push(resolve);
                 return;
             }
-            __classPrivateFieldGet(this, _CommandRunner_waiting, "f").set(command, [resolve]);
-            __classPrivateFieldGet(this, _CommandRunner_connect, "f").call(this, command);
+            this._waiting.set(command, [resolve]);
+            this._connect(command);
         });
     }
     /**
@@ -91,8 +78,8 @@ export class CommandRunner {
      */
     deliver(command, data) {
         var _a;
-        const waiting = (_a = __classPrivateFieldGet(this, _CommandRunner_waiting, "f").get(command)) !== null && _a !== void 0 ? _a : [];
-        __classPrivateFieldGet(this, _CommandRunner_waiting, "f").delete(command);
+        const waiting = (_a = this._waiting.get(command)) !== null && _a !== void 0 ? _a : [];
+        this._waiting.delete(command);
         const output = {
             exitCode: Number(data["exit code"]),
             stdout: typeof data.stdout === "string" ? data.stdout : "",
@@ -102,7 +89,6 @@ export class CommandRunner {
         }
     }
 }
-_CommandRunner_connect = new WeakMap(), _CommandRunner_waiting = new WeakMap();
 /**
  * Reads a small text file.
  *
@@ -216,18 +202,16 @@ export class XhrTransport {
      * @param {Timers} timers
      */
     constructor(requests, timers) {
-        _XhrTransport_requests.set(this, void 0);
-        _XhrTransport_timers.set(this, void 0);
         /** @type {Set<() => void>} */
-        _XhrTransport_inFlight.set(this, new Set());
+        this._inFlight = new Set();
         /**
          * @param {HttpRequest} request
          * @returns {Promise<HttpResponse>}
          */
         this.send = (request) => new Promise((resolve, reject) => {
-            const timers = __classPrivateFieldGet(this, _XhrTransport_timers, "f");
-            const inFlight = __classPrivateFieldGet(this, _XhrTransport_inFlight, "f");
-            const xhr = __classPrivateFieldGet(this, _XhrTransport_requests, "f").create();
+            const timers = this._timers;
+            const inFlight = this._inFlight;
+            const xhr = this._requests.create();
             /** @type {unknown} */
             let timer = null;
             function settle() {
@@ -268,15 +252,14 @@ export class XhrTransport {
             if (request.token !== null) {
                 xhr.setRequestHeader("Authorization", `Bearer ${request.token}`);
             }
-            __classPrivateFieldGet(this, _XhrTransport_requests, "f").send(xhr);
+            this._requests.send(xhr);
         });
-        __classPrivateFieldSet(this, _XhrTransport_requests, requests, "f");
-        __classPrivateFieldSet(this, _XhrTransport_timers, timers, "f");
+        this._requests = requests;
+        this._timers = timers;
     }
     cancel() {
-        for (const cancel of [...__classPrivateFieldGet(this, _XhrTransport_inFlight, "f")]) {
+        for (const cancel of [...this._inFlight]) {
             cancel();
         }
     }
 }
-_XhrTransport_requests = new WeakMap(), _XhrTransport_timers = new WeakMap(), _XhrTransport_inFlight = new WeakMap();

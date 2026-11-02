@@ -11,6 +11,8 @@ mod linux;
 mod macos;
 #[cfg(any(target_os = "linux", target_os = "macos", test))]
 mod rates;
+#[cfg(any(target_os = "linux", target_os = "macos", test))]
+mod reads;
 mod table;
 #[cfg(unix)]
 mod unix;

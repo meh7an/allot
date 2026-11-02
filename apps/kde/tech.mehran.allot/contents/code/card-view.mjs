@@ -1,6 +1,7 @@
 // Generated from apps/kde/src/card-view.js by apps/kde/tools/emit.mjs (pnpm build); do not edit.
 // What the job cards' QML computes beyond its layout, as plain functions a test can reach.
 import { cardDescription, driveDescription, driveName, meterName, } from "./shared/accessible-text.js";
+import { barMove } from "./shared/bar-move.js";
 import { QUIET_TICKS } from "./shared/benchmark-status.js";
 /** @import { BenchmarkStep } from "./shared/benchmark-status.js" */
 /** @import { JobCard } from "./shared/job-card.js" */
@@ -13,6 +14,7 @@ import { QUIET_TICKS } from "./shared/benchmark-status.js";
  */
 /** @typedef {"past" | "current" | "upcoming"} StepState */
 /** Breeze icons for the cards, the handoff's dismiss circle, timer and check. */
+export { barMove };
 export const KILL_ICON = "dialog-close";
 export const TIMER_ICON = "chronometer";
 export const CHECK_ICON = "dialog-ok-apply";

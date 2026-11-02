@@ -8,18 +8,6 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
         step((generator = generator.apply(thisArg, _arguments || [])).next());
     });
 };
-var __classPrivateFieldSet = (this && this.__classPrivateFieldSet) || function (receiver, state, value, kind, f) {
-    if (kind === "m") throw new TypeError("Private method is not writable");
-    if (kind === "a" && !f) throw new TypeError("Private accessor was defined without a setter");
-    if (typeof state === "function" ? receiver !== state || !f : !state.has(receiver)) throw new TypeError("Cannot write private member to an object whose class did not declare it");
-    return (kind === "a" ? f.call(receiver, value) : f ? f.value = value : state.set(receiver, value)), value;
-};
-var __classPrivateFieldGet = (this && this.__classPrivateFieldGet) || function (receiver, state, kind, f) {
-    if (kind === "a" && !f) throw new TypeError("Private accessor was defined without a getter");
-    if (typeof state === "function" ? receiver !== state || !f : !state.has(receiver)) throw new TypeError("Cannot read private member from an object whose class did not declare it");
-    return kind === "m" ? f : kind === "a" ? f.call(receiver) : f ? f.value : state.get(receiver);
-};
-var _DaemonClient_instances, _DaemonClient_base, _DaemonClient_send, _DaemonClient_readToken, _DaemonClient_token, _DaemonClient_stop, _DaemonClient_withoutUiState, _DaemonClient_sendWithToken, _DaemonClient_request, _DaemonClient_currentToken;
 import { decodeKillResponse, decodeRemoveResponse, decodeUiState } from "../contract.g.mjs";
 import * as stopResult from "./stop-result.js";
 /** @import { UiState } from "../contract.g.mjs" */
@@ -104,15 +92,11 @@ export class DaemonClient {
      * @param {ReadText} options.readToken Read on first use and after a 401.
      */
     constructor(options) {
-        _DaemonClient_instances.add(this);
-        _DaemonClient_base.set(this, void 0);
-        _DaemonClient_send.set(this, void 0);
-        _DaemonClient_readToken.set(this, void 0);
         /** @type {string | null} */
-        _DaemonClient_token.set(this, null);
-        __classPrivateFieldSet(this, _DaemonClient_base, `http://127.0.0.1:${options.port}/`, "f");
-        __classPrivateFieldSet(this, _DaemonClient_send, options.send, "f");
-        __classPrivateFieldSet(this, _DaemonClient_readToken, options.readToken, "f");
+        this._token = null;
+        this._base = `http://127.0.0.1:${options.port}/`;
+        this._send = options.send;
+        this._readToken = options.readToken;
     }
     /**
      * `GET /ui/state`, mapped to a service status.
@@ -123,7 +107,7 @@ export class DaemonClient {
         return __awaiter(this, void 0, void 0, function* () {
             let response;
             try {
-                response = yield __classPrivateFieldGet(this, _DaemonClient_instances, "m", _DaemonClient_sendWithToken).call(this, "ui/state");
+                response = yield this._sendWithToken("ui/state");
             }
             catch (error) {
                 return stoppedOrRethrow(error);
@@ -135,7 +119,7 @@ export class DaemonClient {
                 case 200:
                     return decode(response.body);
                 case 404:
-                    return __classPrivateFieldGet(this, _DaemonClient_instances, "m", _DaemonClient_withoutUiState).call(this);
+                    return this._withoutUiState();
                 case 503:
                     return result("starting", { detail: "the daemon has no first sample yet" });
                 case 401:
@@ -157,7 +141,7 @@ export class DaemonClient {
         return __awaiter(this, void 0, void 0, function* () {
             let response;
             try {
-                response = yield __classPrivateFieldGet(this, _DaemonClient_instances, "m", _DaemonClient_request).call(this, "health", null);
+                response = yield this._request("health", null);
             }
             catch (error) {
                 rethrowCancelled(error);
@@ -185,7 +169,7 @@ export class DaemonClient {
         return __awaiter(this, void 0, void 0, function* () {
             let response;
             try {
-                response = yield __classPrivateFieldGet(this, _DaemonClient_instances, "m", _DaemonClient_sendWithToken).call(this, "shutdown", "POST");
+                response = yield this._sendWithToken("shutdown", "POST");
             }
             catch (error) {
                 rethrowCancelled(error);
@@ -204,7 +188,7 @@ export class DaemonClient {
      * @returns {Promise<StopResult>} Rejects only with `CancelledError`.
      */
     kill(lease) {
-        return __classPrivateFieldGet(this, _DaemonClient_instances, "m", _DaemonClient_stop).call(this, `leases/${lease}/kill`, (body) => stopResult.killed(decodeKillResponse(body)));
+        return this._stop(`leases/${lease}/kill`, (body) => stopResult.killed(decodeKillResponse(body)));
     }
     /**
      * `POST /leases/{id}/remove`.
@@ -213,72 +197,96 @@ export class DaemonClient {
      * @returns {Promise<StopResult>} Rejects only with `CancelledError`.
      */
     remove(lease) {
-        return __classPrivateFieldGet(this, _DaemonClient_instances, "m", _DaemonClient_stop).call(this, `leases/${lease}/remove`, (body) => stopResult.removed(decodeRemoveResponse(body)));
+        return this._stop(`leases/${lease}/remove`, (body) => stopResult.removed(decodeRemoveResponse(body)));
+    }
+    /**
+     * @param {string} path
+     * @param {(body: unknown) => StopResult} ended Reads allotd's answer; throws when it cannot.
+     * @returns {Promise<StopResult>}
+     */
+    _stop(path, ended) {
+        return __awaiter(this, void 0, void 0, function* () {
+            let response;
+            try {
+                response = yield this._sendWithToken(path, "POST", STOP_TIMEOUT_SECS);
+            }
+            catch (error) {
+                rethrowCancelled(error);
+                return stopResult.refused(error instanceof TimeoutError
+                    ? `the service did not answer within ${STOP_TIMEOUT_SECS} s`
+                    : "the service is not running");
+            }
+            if (response === null) {
+                return stopResult.refused("the service's token file is missing");
+            }
+            if (response.status !== 200) {
+                return stopResult.refused(stopRefusal(response.status, response.body.trim()));
+            }
+            try {
+                return ended(JSON.parse(response.body));
+            }
+            catch (_a) {
+                return stopResult.refused("the service's answer could not be read");
+            }
+        });
+    }
+    // allotd v0.1 has no /ui/state, and answers 404 for it.
+    _withoutUiState() {
+        return __awaiter(this, void 0, void 0, function* () {
+            const version = yield this.healthVersion();
+            if (version === null) {
+                return result("stopped", { detail: "GET /ui/state answered 404" });
+            }
+            return result("incompatible", { version, detail: `allotd ${version} has no /ui/state` });
+        });
+    }
+    /**
+     * @param {string} path
+     * @param {"GET" | "POST"} [method]
+     * @param {number} [timeoutSecs]
+     * @returns {Promise<HttpResponse | null>} `null` when there is no token to send.
+     */
+    _sendWithToken(path_1) {
+        return __awaiter(this, arguments, void 0, function* (path, method = "GET", timeoutSecs = REQUEST_TIMEOUT_SECS) {
+            const token = yield this._currentToken();
+            if (token === null) {
+                return null;
+            }
+            const response = yield this._request(path, token, method, timeoutSecs);
+            if (response.status !== 401) {
+                return response;
+            }
+            // allotd writes a new token when its token file was deleted, and this client may still hold
+            // the old one.
+            this._token = null;
+            const fresh = yield this._currentToken();
+            return fresh === null ? null : this._request(path, fresh, method, timeoutSecs);
+        });
+    }
+    /**
+     * @param {string} path
+     * @param {string | null} token
+     * @param {"GET" | "POST"} [method]
+     * @param {number} [timeoutSecs]
+     * @returns {Promise<HttpResponse>}
+     */
+    _request(path, token, method = "GET", timeoutSecs = REQUEST_TIMEOUT_SECS) {
+        return this._send({ method, url: this._base + path, token, timeoutSecs });
+    }
+    /** @returns {Promise<string | null>} */
+    _currentToken() {
+        return __awaiter(this, void 0, void 0, function* () {
+            var _a;
+            var _b;
+            if (this._token !== null) {
+                return this._token;
+            }
+            const read = (_b = (_a = (yield this._readToken())) === null || _a === void 0 ? void 0 : _a.trim()) !== null && _b !== void 0 ? _b : "";
+            this._token = read === "" ? null : read;
+            return this._token;
+        });
     }
 }
-_DaemonClient_base = new WeakMap(), _DaemonClient_send = new WeakMap(), _DaemonClient_readToken = new WeakMap(), _DaemonClient_token = new WeakMap(), _DaemonClient_instances = new WeakSet(), _DaemonClient_stop = function _DaemonClient_stop(path, ended) {
-    return __awaiter(this, void 0, void 0, function* () {
-        let response;
-        try {
-            response = yield __classPrivateFieldGet(this, _DaemonClient_instances, "m", _DaemonClient_sendWithToken).call(this, path, "POST", STOP_TIMEOUT_SECS);
-        }
-        catch (error) {
-            rethrowCancelled(error);
-            return stopResult.refused(error instanceof TimeoutError
-                ? `the service did not answer within ${STOP_TIMEOUT_SECS} s`
-                : "the service is not running");
-        }
-        if (response === null) {
-            return stopResult.refused("the service's token file is missing");
-        }
-        if (response.status !== 200) {
-            return stopResult.refused(stopRefusal(response.status, response.body.trim()));
-        }
-        try {
-            return ended(JSON.parse(response.body));
-        }
-        catch (_a) {
-            return stopResult.refused("the service's answer could not be read");
-        }
-    });
-}, _DaemonClient_withoutUiState = function _DaemonClient_withoutUiState() {
-    return __awaiter(this, void 0, void 0, function* () {
-        const version = yield this.healthVersion();
-        if (version === null) {
-            return result("stopped", { detail: "GET /ui/state answered 404" });
-        }
-        return result("incompatible", { version, detail: `allotd ${version} has no /ui/state` });
-    });
-}, _DaemonClient_sendWithToken = function _DaemonClient_sendWithToken(path_1) {
-    return __awaiter(this, arguments, void 0, function* (path, method = "GET", timeoutSecs = REQUEST_TIMEOUT_SECS) {
-        const token = yield __classPrivateFieldGet(this, _DaemonClient_instances, "m", _DaemonClient_currentToken).call(this);
-        if (token === null) {
-            return null;
-        }
-        const response = yield __classPrivateFieldGet(this, _DaemonClient_instances, "m", _DaemonClient_request).call(this, path, token, method, timeoutSecs);
-        if (response.status !== 401) {
-            return response;
-        }
-        // allotd writes a new token when its token file was deleted, and this client may still hold
-        // the old one.
-        __classPrivateFieldSet(this, _DaemonClient_token, null, "f");
-        const fresh = yield __classPrivateFieldGet(this, _DaemonClient_instances, "m", _DaemonClient_currentToken).call(this);
-        return fresh === null ? null : __classPrivateFieldGet(this, _DaemonClient_instances, "m", _DaemonClient_request).call(this, path, fresh, method, timeoutSecs);
-    });
-}, _DaemonClient_request = function _DaemonClient_request(path, token, method = "GET", timeoutSecs = REQUEST_TIMEOUT_SECS) {
-    return __classPrivateFieldGet(this, _DaemonClient_send, "f").call(this, { method, url: __classPrivateFieldGet(this, _DaemonClient_base, "f") + path, token, timeoutSecs });
-}, _DaemonClient_currentToken = function _DaemonClient_currentToken() {
-    return __awaiter(this, void 0, void 0, function* () {
-        var _a;
-        var _b;
-        if (__classPrivateFieldGet(this, _DaemonClient_token, "f") !== null) {
-            return __classPrivateFieldGet(this, _DaemonClient_token, "f");
-        }
-        const read = (_b = (_a = (yield __classPrivateFieldGet(this, _DaemonClient_readToken, "f").call(this))) === null || _a === void 0 ? void 0 : _a.trim()) !== null && _b !== void 0 ? _b : "";
-        __classPrivateFieldSet(this, _DaemonClient_token, read === "" ? null : read, "f");
-        return __classPrivateFieldGet(this, _DaemonClient_token, "f");
-    });
-};
 /**
  * The reason in an error body of the kill or remove route, for a card that already names the
  * job: allotd's text starts with the lease.

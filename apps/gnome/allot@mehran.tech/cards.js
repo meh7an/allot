@@ -3,6 +3,7 @@ import GLib from "gi://GLib";
 import Pango from "gi://Pango";
 import St from "gi://St";
 
+import { BarShare } from "./bar-share.js";
 import { cardDescription, detailText } from "./lib/accessible-text.js";
 import { QUIET_TICKS } from "./lib/benchmark-status.js";
 import { DO_NOT_DISTURB_TEXT, WELCOME_BODY, WELCOME_TITLE } from "./lib/snapshot.js";
@@ -356,15 +357,14 @@ export class JobCardView {
 class EdgeBar {
   actor;
   #share;
+  /** @type {string | null} */
+  #tone = null;
   #isDashed = false;
 
   constructor() {
     this.actor = new St.DrawingArea({ style_class: "allot-bar", x_expand: true });
     this.actor.connect("repaint", () => this.#paint());
-    // The share eases through an adjustment, since a drawing has no animatable property for it.
-    this.#share = new St.Adjustment({ actor: this.actor, lower: 0, upper: 1, value: 0 });
-    // Tied to the drawing: a bar still easing when it is destroyed must not repaint.
-    this.#share.connectObject("notify::value", () => this.actor.queue_repaint(), this.actor);
+    this.#share = new BarShare(this.actor);
   }
 
   /**
@@ -373,18 +373,20 @@ class EdgeBar {
    */
   update(card, animate) {
     this.actor.visible = card.barTone !== "none";
-    for (const tone of ["running", "over", "waiting", "waiting-dashed", "frozen"]) {
-      setClass(this.actor, `allot-bar-${tone}`, card.barTone === tone);
+    if (card.barTone !== this.#tone) {
+      this.#tone = card.barTone;
+      for (const tone of ["running", "over", "waiting", "waiting-dashed", "frozen"]) {
+        setClass(this.actor, `allot-bar-${tone}`, card.barTone === tone);
+      }
+      this.#isDashed = card.barTone === "waiting-dashed";
+      this.actor.queue_repaint();
     }
-    this.#isDashed = card.barTone === "waiting-dashed";
-    const share = this.#isDashed ? 1 : card.barFraction;
-    if (animate && card.barTone !== "frozen") {
-      this.#share.ease(share, { duration: BAR_MS, mode: Clutter.AnimationMode.LINEAR });
-    } else {
-      this.#share.remove_transition("value");
-      this.#share.value = share;
-    }
-    this.actor.queue_repaint();
+    this.#share.moveTo(
+      this.#isDashed ? 1 : card.barFraction,
+      animate && card.barTone !== "frozen"
+        ? { duration: BAR_MS, mode: Clutter.AnimationMode.LINEAR }
+        : null,
+    );
   }
 
   #paint() {

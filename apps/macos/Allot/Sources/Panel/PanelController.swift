@@ -40,11 +40,13 @@ final class PanelController: NSObject, NSWindowDelegate {
     private let layout = PanelLayout()
     private let panel = AllotPanel()
     private let effectView = NSVisualEffectView()
+    private let container = TopAnchoredView()
     private var headerHosting: NSHostingView<PanelHeaderView>?
     private var bodyHosting: NSHostingView<PanelView>?
     private var headerHeight: CGFloat = 0
     private var bodyHeight: CGFloat = 0
     private var isShown = false
+    private var isPrepared = false
     private var showGeneration = 0
     private var contentHeight: CGFloat = 0
     private var clickMonitor: Any?
@@ -102,6 +104,7 @@ final class PanelController: NSObject, NSWindowDelegate {
         model.resetForOpen()
         model.refreshLogin()
         applyMode()
+        attachContent()
         layout.maxHeight = maxHeight(on: statusScreen)
         measureContent()
 
@@ -148,6 +151,7 @@ final class PanelController: NSObject, NSWindowDelegate {
                 // A reopen during the fade owns the panel now.
                 if generation == self.showGeneration {
                     self.panel.orderOut(nil)
+                    self.detachContent()
                 }
             }
         }
@@ -155,6 +159,19 @@ final class PanelController: NSObject, NSWindowDelegate {
 
     func openLogs() {
         NSWorkspace.shared.open(logDirectory)
+    }
+
+    /// The view a measuring run's display link follows.
+    var measuredView: NSView {
+        effectView
+    }
+
+    /// So that a measuring run's open phase survives clicks elsewhere, and no window covers the
+    /// panel: a covered panel draws nothing.
+    func pinForMeasuring() {
+        if !model.mode.isPinned {
+            togglePinned()
+        }
     }
 
     // MARK: - Modes
@@ -384,26 +401,56 @@ final class PanelController: NSObject, NSWindowDelegate {
         let header = NSHostingView(rootView: PanelHeaderView(model: model, actions: actions))
         let body = NSHostingView(
             rootView: PanelView(model: model, layout: layout, actions: actions))
-        let container = TopAnchoredView(frame: effectView.bounds)
+        container.frame = effectView.bounds
         container.autoresizingMask = [.width, .height]
         effectView.addSubview(container)
         for hosting in [header, body] as [NSView] {
             hosting.translatesAutoresizingMaskIntoConstraints = false
+        }
+        header.sizingOptions = [.intrinsicContentSize]
+        body.sizingOptions = [.intrinsicContentSize]
+        panel.contentView = effectView
+        headerHosting = header
+        bodyHosting = body
+    }
+
+    // SwiftUI keeps updating and animating views in a window nobody sees, so a closed panel
+    // holds none; they keep their state and catch up as it opens.
+    private func attachContent() {
+        guard let headerHosting, let bodyHosting, headerHosting.superview == nil else {
+            return
+        }
+        for hosting in [headerHosting, bodyHosting] as [NSView] {
             container.addSubview(hosting)
             NSLayoutConstraint.activate([
                 hosting.leadingAnchor.constraint(equalTo: container.leadingAnchor),
                 hosting.trailingAnchor.constraint(equalTo: container.trailingAnchor),
             ])
         }
-        header.sizingOptions = [.intrinsicContentSize]
-        body.sizingOptions = [.intrinsicContentSize]
         NSLayoutConstraint.activate([
-            header.topAnchor.constraint(equalTo: container.topAnchor),
-            body.topAnchor.constraint(equalTo: header.bottomAnchor),
+            headerHosting.topAnchor.constraint(equalTo: container.topAnchor),
+            bodyHosting.topAnchor.constraint(equalTo: headerHosting.bottomAnchor),
         ])
-        panel.contentView = effectView
-        headerHosting = header
-        bodyHosting = body
+    }
+
+    private func detachContent() {
+        headerHosting?.removeFromSuperview()
+        bodyHosting?.removeFromSuperview()
+    }
+
+    /// Lays the content out once with the first live data, since the first layout takes over
+    /// 100 ms and the first open should not.
+    func prepareOnce() {
+        guard !isPrepared else {
+            return
+        }
+        isPrepared = true
+        guard !isShown else {
+            return
+        }
+        attachContent()
+        measureContent()
+        detachContent()
     }
 
     private static func roundedMask(radius: CGFloat) -> NSImage {

@@ -209,19 +209,17 @@ struct EdgeBar: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        GeometryReader { geometry in
-            ZStack(alignment: .leading) {
-                Tokens.track
-                switch tone {
-                case .waitingDashed:
-                    Dashes(colour: Tokens.waiting)
-                case .none:
-                    EmptyView()
-                default:
-                    colour
-                        .frame(width: geometry.size.width * fraction)
-                        .animation(reduceMotion ? nil : Tokens.barMotion, value: fraction)
-                }
+        ZStack(alignment: .leading) {
+            Tokens.track
+            switch tone {
+            case .waitingDashed:
+                Dashes(colour: Tokens.waiting)
+            case .none:
+                EmptyView()
+            default:
+                GlidingFill(
+                    start: 0, end: fraction, colour: colour,
+                    motion: reduceMotion ? nil : Tokens.barMotion)
             }
         }
         .frame(height: 2)
@@ -243,14 +241,13 @@ private struct Dashes: View {
     let colour: Color
 
     var body: some View {
-        Canvas { context, size in
-            context.fill(
-                Path(CGRect(origin: .zero, size: size)), with: .color(colour.opacity(0.18)))
+        DrawingView { context, size, environment in
+            context.setFillColor(colour.opacity(0.18).cgColor(in: environment))
+            context.fill(CGRect(origin: .zero, size: size))
+            context.setFillColor(colour.cgColor(in: environment))
             var x: CGFloat = 0
             while x < size.width {
-                context.fill(
-                    Path(CGRect(x: x, y: 0, width: 6, height: size.height)),
-                    with: .color(colour))
+                context.fill(CGRect(x: x, y: 0, width: 6, height: size.height))
                 x += 12
             }
         }
@@ -278,10 +275,12 @@ struct BenchmarkStepper: View {
                     ZStack(alignment: .leading) {
                         bar(fill(for: .run), width: unit)
                         if steps.current == .run {
-                            bar(Tokens.benchmark, width: unit * steps.runFraction)
-                                .animation(
-                                    reduceMotion ? nil : Tokens.stepMotion,
-                                    value: steps.runFraction)
+                            GlidingFill(
+                                start: 0, end: steps.runFraction, colour: Tokens.benchmark,
+                                motion: reduceMotion ? nil : Tokens.stepMotion
+                            )
+                            .frame(width: max(0, unit), height: 3)
+                            .clipShape(RoundedRectangle(cornerRadius: 1))
                         }
                     }
                 }

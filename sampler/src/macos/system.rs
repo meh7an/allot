@@ -3,7 +3,7 @@
 use std::{
     collections::HashMap,
     mem::MaybeUninit,
-    time::{Instant, SystemTime, UNIX_EPOCH},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use allot_core::sampler::{RawProcess, RawSample, Sampler};
@@ -11,7 +11,8 @@ use allot_shared::{Error, Result, types::ResourceUsage};
 use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System, UpdateKind};
 
 use crate::{
-    cpu::{CpuTimes, ProcessTime},
+    cadence::Cadence,
+    cpu::ProcessTime,
     macos::{
         drives::Drives,
         gpu::{self, GpuReading, GpuTimes},
@@ -19,9 +20,14 @@ use crate::{
         memory::{self, PressureLevel},
         value::Entry,
     },
+    reads::ProcessReads,
 };
 
 const BYTES_PER_MB: u64 = 1024 * 1024;
+
+/// GPU use is read every other tick: it is a good part of what a tick costs, and it changes in
+/// the same few seconds a process does.
+const GPU_PERIOD: Duration = Duration::from_millis(1_500);
 
 /// Reads the local machine.
 ///
@@ -32,12 +38,13 @@ const BYTES_PER_MB: u64 = 1024 * 1024;
 #[derive(Debug)]
 pub struct SystemSampler {
     system: System,
-    cpu_times: CpuTimes,
-    /// Logical cores per PID since the previous refresh.
-    process_cores: HashMap<u32, f32>,
+    reads: ProcessReads,
+    /// Physical footprint per PID as of its last read, where macOS gives it.
+    footprints: HashMap<u32, u64>,
     drives: Drives,
     gpu_times: GpuTimes,
-    /// GPU use as of the last refresh.
+    gpu_reads: Cadence,
+    /// GPU use as of the last read.
     gpu: GpuReading,
 }
 
@@ -54,10 +61,11 @@ impl SystemSampler {
     pub fn new() -> Result<Self> {
         let mut sampler = Self {
             system: System::new(),
-            cpu_times: CpuTimes::default(),
-            process_cores: HashMap::new(),
+            reads: ProcessReads::default(),
+            footprints: HashMap::new(),
             drives: Drives::new(),
             gpu_times: GpuTimes::default(),
+            gpu_reads: Cadence::new(GPU_PERIOD),
             gpu: GpuReading::default(),
         };
         sampler.refresh();
@@ -73,29 +81,43 @@ impl SystemSampler {
 
     fn refresh(&mut self) {
         self.system.refresh_cpu_usage();
+        let due: Vec<Pid> = self
+            .reads
+            .due(&running_pids())
+            .into_iter()
+            .map(Pid::from_u32)
+            .collect();
         self.system.refresh_processes_specifics(
-            ProcessesToUpdate::All,
+            ProcessesToUpdate::Some(&due),
             true,
             ProcessRefreshKind::nothing()
                 .with_cpu()
                 .with_memory()
                 .with_exe(UpdateKind::OnlyIfNotSet),
         );
-        let times: Vec<ProcessTime> = self
-            .system
-            .processes()
-            .values()
+        let times: Vec<ProcessTime> = due
+            .iter()
+            .filter_map(|&pid| self.system.process(pid))
             .map(|process| ProcessTime {
                 pid: process.pid().as_u32(),
                 start_time: process.start_time(),
                 cpu_ms: process.accumulated_cpu_time(),
             })
             .collect();
+        for pid in &due {
+            let pid = pid.as_u32();
+            match footprint_bytes(pid) {
+                Some(bytes) => self.footprints.insert(pid, bytes),
+                None => self.footprints.remove(&pid),
+            };
+        }
         let now = Instant::now();
         let logical_cores = self.system.cpus().len().max(1) as f32;
-        self.process_cores = self.cpu_times.update(now, &times, logical_cores);
+        self.reads.record(now, &times, logical_cores);
         self.drives.refresh(now);
-        self.gpu = self.gpu_times.read(&accelerators(), now);
+        if self.gpu_reads.due(now) {
+            self.gpu = self.gpu_times.read(&accelerators(), now);
+        }
     }
 }
 
@@ -104,14 +126,18 @@ impl Sampler for SystemSampler {
         self.refresh();
         let memory = memory::read()
             .map_err(|error| Error::Sampler(format!("reading VM statistics: {error}")))?;
-        let gpu = std::mem::take(&mut self.gpu);
+        let gpu = &self.gpu;
         let processes = self
             .system
             .processes()
             .values()
             .map(|process| {
                 let pid = process.pid().as_u32();
-                let ram_bytes = footprint_bytes(pid).unwrap_or_else(|| process.memory());
+                let ram_bytes = self
+                    .footprints
+                    .get(&pid)
+                    .copied()
+                    .unwrap_or_else(|| process.memory());
                 RawProcess {
                     pid,
                     parent_pid: process.parent().map(Pid::as_u32),
@@ -119,7 +145,7 @@ impl Sampler for SystemSampler {
                     exe: process.exe().map(|path| path.display().to_string()),
                     start_time: process.start_time(),
                     usage: ResourceUsage {
-                        cores: self.process_cores.get(&pid).copied().unwrap_or_default(),
+                        cores: self.reads.cores(pid),
                         ram_mb: ram_bytes / BYTES_PER_MB,
                         gpu_pct: gpu.processes.get(&pid).copied().unwrap_or_default(),
                         vram_mb: 0,
@@ -142,7 +168,7 @@ impl Sampler for SystemSampler {
                 .collect(),
             memory: memory.mem_stats(),
             processes,
-            gpus: gpu.adapters,
+            gpus: gpu.adapters.clone(),
             drives: self.drives.read(),
         })
     }
@@ -160,6 +186,28 @@ fn accelerators() -> Vec<Entry> {
 
 /// The physical footprint of `pid`; `None` for another user's process, which macOS does
 /// not let a normal user read.
+/// Every PID the kernel lists; empty if it refuses, which only delays the next reads.
+fn running_pids() -> Vec<u32> {
+    // SAFETY: a null buffer of size 0 only asks how many PIDs there are.
+    let count = unsafe { libc::proc_listallpids(std::ptr::null_mut(), 0) };
+    let Ok(count) = usize::try_from(count) else {
+        return Vec::new();
+    };
+    // Room for a few that start between the two calls.
+    let mut pids = vec![0_i32; count + 64];
+    let bytes = i32::try_from(pids.len() * size_of::<i32>()).unwrap_or(i32::MAX);
+    // SAFETY: `pids` is writable for `bytes` bytes.
+    let written = unsafe { libc::proc_listallpids(pids.as_mut_ptr().cast(), bytes) };
+    let Ok(written) = usize::try_from(written) else {
+        return Vec::new();
+    };
+    pids.truncate(written.min(pids.len()));
+    pids.into_iter()
+        .filter_map(|pid| u32::try_from(pid).ok())
+        .filter(|&pid| pid != 0)
+        .collect()
+}
+
 fn footprint_bytes(pid: u32) -> Option<u64> {
     let pid = i32::try_from(pid).ok()?;
     let mut info = MaybeUninit::<libc::rusage_info_v4>::zeroed();

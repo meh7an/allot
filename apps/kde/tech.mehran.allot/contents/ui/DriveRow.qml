@@ -17,7 +17,14 @@ RowLayout {
 
     readonly property int barHeight: 4
     readonly property int barRadius: 2
-    property real used: row.used
+    readonly property BarShare usedShare: BarShare {
+        target: drive.row.used
+        barWidth: middle.width
+        animate: drive.animate
+        duration: CardView.scaledMs(CardView.GLIDE_MS, Kirigami.Units.longDuration)
+        easingType: Easing.OutQuad
+    }
+    readonly property real used: usedShare.value
 
     Layout.preferredHeight: Math.max(Kirigami.Units.largeSpacing * 3.5,
         middle.implicitHeight + Kirigami.Units.smallSpacing)
@@ -29,15 +36,6 @@ RowLayout {
     PlasmaComponents.ToolTip.text: row.id
     PlasmaComponents.ToolTip.visible: hover.hovered && row.id !== ""
     PlasmaComponents.ToolTip.delay: Kirigami.Units.toolTipDelay
-
-    Behavior on used {
-        enabled: drive.animate
-
-        NumberAnimation {
-            duration: CardView.scaledMs(CardView.GLIDE_MS, Kirigami.Units.longDuration)
-            easing.type: Easing.OutQuad
-        }
-    }
 
     HoverHandler {
         id: hover

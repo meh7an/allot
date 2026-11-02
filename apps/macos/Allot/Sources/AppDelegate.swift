@@ -101,6 +101,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         pollTask = Task {
             await poller.run()
         }
+        if let cycle = MeasureCycle.requested(
+            panel: panel, model: model, logDirectory: data.logDirectory)
+        {
+            Task {
+                await cycle.run()
+            }
+        }
         Self.log.info("launched from \(Bundle.main.bundlePath, privacy: .public)")
     }
 
@@ -119,7 +126,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         #if DEBUG
         model.loginItem = MemoryLoginItem()
         #else
-        model.loginItem = AppLoginItem()
+        let loginItem = AppLoginItem()
+        loginItem.onChange = { [weak model] in model?.refreshLogin() }
+        model.loginItem = loginItem
         #endif
         model.volumeName = { VolumeNames.name(mountedAt: $0) }
         TextScale.shared.size = model.settings.textSize
@@ -147,6 +156,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         model.apply(result, lastKnown: poller.lastKnown, startProblem: poller.startProblem)
+        panel.prepareOnce()
         logStatusChange(result)
         let update = rules.observe(
             status: result.status, live: result.state, lastKnown: poller.lastKnown,

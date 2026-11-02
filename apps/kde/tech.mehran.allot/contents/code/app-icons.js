@@ -8,18 +8,6 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
         step((generator = generator.apply(thisArg, _arguments || [])).next());
     });
 };
-var __classPrivateFieldGet = (this && this.__classPrivateFieldGet) || function (receiver, state, kind, f) {
-    if (kind === "a" && !f) throw new TypeError("Private accessor was defined without a getter");
-    if (typeof state === "function" ? receiver !== state || !f : !state.has(receiver)) throw new TypeError("Cannot read private member from an object whose class did not declare it");
-    return kind === "m" ? f : kind === "a" ? f.call(receiver) : f ? f.value : state.get(receiver);
-};
-var __classPrivateFieldSet = (this && this.__classPrivateFieldSet) || function (receiver, state, value, kind, f) {
-    if (kind === "m") throw new TypeError("Private method is not writable");
-    if (kind === "a" && !f) throw new TypeError("Private accessor was defined without a setter");
-    if (typeof state === "function" ? receiver !== state || !f : !state.has(receiver)) throw new TypeError("Cannot write private member to an object whose class did not declare it");
-    return (kind === "a" ? f.call(receiver, value) : f ? f.value = value : state.set(receiver, value)), value;
-};
-var _AppIcons_instances, _AppIcons_runner, _AppIcons_onLoaded, _AppIcons_apps, _AppIcons_cache, _AppIcons_isLoading, _AppIcons_load;
 import { matchingApp, sandboxedAppId } from "./shared/app-match.js";
 /** @import { DesktopApp } from "./shared/app-match.js" */
 /** @import { CommandRunner } from "./io.js" */
@@ -120,14 +108,11 @@ export class AppIcons {
      * @param {() => void} onLoaded Called once the entries are read, so the cards can show them.
      */
     constructor(runner, onLoaded) {
-        _AppIcons_instances.add(this);
-        _AppIcons_runner.set(this, void 0);
-        _AppIcons_onLoaded.set(this, void 0);
         /** @type {InstalledApp[] | null} */
-        _AppIcons_apps.set(this, null);
+        this._apps = null;
         /** @type {Map<string, string | null>} */
-        _AppIcons_cache.set(this, new Map());
-        _AppIcons_isLoading.set(this, false);
+        this._cache = new Map();
+        this._isLoading = false;
         /**
          * @param {string | null} exe
          * @returns {string | null} The icon's source, or `null` for none or while the entries are read.
@@ -137,39 +122,39 @@ export class AppIcons {
             if (exe === null || !exe.startsWith("/")) {
                 return null;
             }
-            if (__classPrivateFieldGet(this, _AppIcons_apps, "f") === null) {
-                __classPrivateFieldGet(this, _AppIcons_instances, "m", _AppIcons_load).call(this);
+            if (this._apps === null) {
+                this._load();
                 return null;
             }
-            const cached = __classPrivateFieldGet(this, _AppIcons_cache, "f").get(exe);
+            const cached = this._cache.get(exe);
             if (cached !== undefined) {
                 return cached;
             }
-            const apps = __classPrivateFieldGet(this, _AppIcons_apps, "f");
+            const apps = this._apps;
             const id = (_a = sandboxedAppId(exe)) !== null && _a !== void 0 ? _a : matchingApp(exe, apps);
             const app = apps.find((candidate) => candidate.id === id);
             const icon = app === undefined ? null : iconSource(app.icon);
-            __classPrivateFieldGet(this, _AppIcons_cache, "f").set(exe, icon);
+            this._cache.set(exe, icon);
             return icon;
         };
-        __classPrivateFieldSet(this, _AppIcons_runner, runner, "f");
-        __classPrivateFieldSet(this, _AppIcons_onLoaded, onLoaded, "f");
+        this._runner = runner;
+        this._onLoaded = onLoaded;
     }
     forget() {
-        __classPrivateFieldSet(this, _AppIcons_apps, null, "f");
-        __classPrivateFieldGet(this, _AppIcons_cache, "f").clear();
+        this._apps = null;
+        this._cache.clear();
+    }
+    _load() {
+        return __awaiter(this, void 0, void 0, function* () {
+            if (this._isLoading) {
+                return;
+            }
+            this._isLoading = true;
+            const output = yield this._runner.run(DESKTOP_ENTRIES_COMMAND);
+            this._isLoading = false;
+            this._apps = parseDesktopEntries(output.stdout);
+            this._cache.clear();
+            this._onLoaded();
+        });
     }
 }
-_AppIcons_runner = new WeakMap(), _AppIcons_onLoaded = new WeakMap(), _AppIcons_apps = new WeakMap(), _AppIcons_cache = new WeakMap(), _AppIcons_isLoading = new WeakMap(), _AppIcons_instances = new WeakSet(), _AppIcons_load = function _AppIcons_load() {
-    return __awaiter(this, void 0, void 0, function* () {
-        if (__classPrivateFieldGet(this, _AppIcons_isLoading, "f")) {
-            return;
-        }
-        __classPrivateFieldSet(this, _AppIcons_isLoading, true, "f");
-        const output = yield __classPrivateFieldGet(this, _AppIcons_runner, "f").run(DESKTOP_ENTRIES_COMMAND);
-        __classPrivateFieldSet(this, _AppIcons_isLoading, false, "f");
-        __classPrivateFieldSet(this, _AppIcons_apps, parseDesktopEntries(output.stdout), "f");
-        __classPrivateFieldGet(this, _AppIcons_cache, "f").clear();
-        __classPrivateFieldGet(this, _AppIcons_onLoaded, "f").call(this);
-    });
-};

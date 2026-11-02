@@ -1,9 +1,9 @@
 //! The live Linux sampler over the real `/proc` and mounted filesystems.
 
 use std::{
-    collections::HashMap,
+    fs,
     path::Path,
-    time::{Instant, SystemTime, UNIX_EPOCH},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use allot_core::sampler::{RawProcess, RawSample, Sampler};
@@ -11,19 +11,25 @@ use allot_shared::{Error, Result, types::ResourceUsage};
 use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System, UpdateKind};
 
 use crate::{
-    cpu::{CpuTimes, ProcessTime},
+    cadence::Cadence,
+    cpu::ProcessTime,
     linux::{
         drives::Drives,
         gpu::{GpuReading, Gpus},
         meminfo::MemInfo,
         pressure::Pressure,
     },
+    reads::ProcessReads,
 };
 
 const BYTES_PER_MB: u64 = 1024 * 1024;
 
 /// The machine's own root; the parsers take it so fixtures can stand in for it.
 const ROOT: &str = "/";
+
+/// GPU use is read every other tick: it is a good part of what a tick costs, and it changes in
+/// the same few seconds a process does.
+const GPU_PERIOD: Duration = Duration::from_millis(1_500);
 
 /// Reads the local machine.
 ///
@@ -33,12 +39,11 @@ const ROOT: &str = "/";
 #[derive(Debug)]
 pub struct SystemSampler {
     system: System,
-    cpu_times: CpuTimes,
-    /// Logical cores per PID since the previous refresh.
-    process_cores: HashMap<u32, f32>,
+    reads: ProcessReads,
     drives: Drives,
     gpus: Gpus,
-    /// GPU use as of the last refresh.
+    gpu_reads: Cadence,
+    /// GPU use as of the last read.
     gpu: GpuReading,
 }
 
@@ -55,10 +60,10 @@ impl SystemSampler {
     pub fn new() -> Result<Self> {
         let mut sampler = Self {
             system: System::new(),
-            cpu_times: CpuTimes::default(),
-            process_cores: HashMap::new(),
+            reads: ProcessReads::default(),
             drives: Drives::new(Path::new(ROOT)),
             gpus: Gpus::new(Path::new(ROOT)),
+            gpu_reads: Cadence::new(GPU_PERIOD),
             gpu: GpuReading::default(),
         };
         sampler.refresh();
@@ -73,9 +78,15 @@ impl SystemSampler {
 
     fn refresh(&mut self) {
         self.system.refresh_cpu_usage();
+        let due: Vec<Pid> = self
+            .reads
+            .due(&running_pids())
+            .into_iter()
+            .map(Pid::from_u32)
+            .collect();
         // Without tasks, threads are not listed as processes of their own.
         self.system.refresh_processes_specifics(
-            ProcessesToUpdate::All,
+            ProcessesToUpdate::Some(&due),
             true,
             ProcessRefreshKind::nothing()
                 .with_cpu()
@@ -83,10 +94,9 @@ impl SystemSampler {
                 .with_exe(UpdateKind::OnlyIfNotSet)
                 .without_tasks(),
         );
-        let times: Vec<ProcessTime> = self
-            .system
-            .processes()
-            .values()
+        let times: Vec<ProcessTime> = due
+            .iter()
+            .filter_map(|&pid| self.system.process(pid))
             .map(|process| ProcessTime {
                 pid: process.pid().as_u32(),
                 start_time: process.start_time(),
@@ -95,9 +105,11 @@ impl SystemSampler {
             .collect();
         let now = Instant::now();
         let logical_cores = self.system.cpus().len().max(1) as f32;
-        self.process_cores = self.cpu_times.update(now, &times, logical_cores);
+        self.reads.record(now, &times, logical_cores);
         self.drives.refresh(now);
-        self.gpu = self.gpus.read(now);
+        if self.gpu_reads.due(now) {
+            self.gpu = self.gpus.read(now);
+        }
     }
 }
 
@@ -106,7 +118,7 @@ impl Sampler for SystemSampler {
         self.refresh();
         let memory = MemInfo::read(Path::new(ROOT))
             .map_err(|error| Error::Sampler(format!("reading /proc/meminfo: {error}")))?;
-        let gpu = std::mem::take(&mut self.gpu);
+        let gpu = &self.gpu;
         let processes = self
             .system
             .processes()
@@ -121,7 +133,7 @@ impl Sampler for SystemSampler {
                     exe: process.exe().map(|path| path.display().to_string()),
                     start_time: process.start_time(),
                     usage: ResourceUsage {
-                        cores: self.process_cores.get(&pid).copied().unwrap_or_default(),
+                        cores: self.reads.cores(pid),
                         ram_mb: process.memory() / BYTES_PER_MB,
                         gpu_pct: process_gpu.gpu_pct,
                         vram_mb: process_gpu.vram_mb,
@@ -144,10 +156,21 @@ impl Sampler for SystemSampler {
                 .collect(),
             memory: memory.mem_stats(),
             processes,
-            gpus: gpu.adapters,
+            gpus: gpu.adapters.clone(),
             drives: self.drives.read(),
         })
     }
+}
+
+/// Every PID in `/proc`: threads have no entry of their own in the listing.
+fn running_pids() -> Vec<u32> {
+    let Ok(entries) = fs::read_dir("/proc") else {
+        return Vec::new();
+    };
+    entries
+        .flatten()
+        .filter_map(|entry| entry.file_name().to_str()?.parse().ok())
+        .collect()
 }
 
 #[cfg(test)]

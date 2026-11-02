@@ -20,18 +20,6 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
         step((generator = generator.apply(thisArg, _arguments || [])).next());
     });
 };
-var __classPrivateFieldSet = (this && this.__classPrivateFieldSet) || function (receiver, state, value, kind, f) {
-    if (kind === "m") throw new TypeError("Private method is not writable");
-    if (kind === "a" && !f) throw new TypeError("Private accessor was defined without a setter");
-    if (typeof state === "function" ? receiver !== state || !f : !state.has(receiver)) throw new TypeError("Cannot write private member to an object whose class did not declare it");
-    return (kind === "a" ? f.call(receiver, value) : f ? f.value = value : state.set(receiver, value)), value;
-};
-var __classPrivateFieldGet = (this && this.__classPrivateFieldGet) || function (receiver, state, kind, f) {
-    if (kind === "a" && !f) throw new TypeError("Private accessor was defined without a getter");
-    if (typeof state === "function" ? receiver !== state || !f : !state.has(receiver)) throw new TypeError("Cannot read private member from an object whose class did not declare it");
-    return kind === "m" ? f : kind === "a" ? f.call(receiver) : f ? f.value : state.get(receiver);
-};
-var _SystemdServiceLauncher_instances, _SystemdServiceLauncher_paths, _SystemdServiceLauncher_system, _SystemdServiceLauncher_unitRunsThisDaemon;
 /**
  * @typedef {object} LauncherPaths
  * @property {string} home
@@ -54,15 +42,12 @@ export class SystemdServiceLauncher {
      * @param {ServiceSystem} system
      */
     constructor(paths, system) {
-        _SystemdServiceLauncher_instances.add(this);
-        _SystemdServiceLauncher_paths.set(this, void 0);
-        _SystemdServiceLauncher_system.set(this, void 0);
-        __classPrivateFieldSet(this, _SystemdServiceLauncher_paths, paths, "f");
-        __classPrivateFieldSet(this, _SystemdServiceLauncher_system, system, "f");
+        this._paths = paths;
+        this._system = system;
     }
     /** @returns {string} */
     get daemonExe() {
-        return `${__classPrivateFieldGet(this, _SystemdServiceLauncher_paths, "f").root}/bin/allotd`;
+        return `${this._paths.root}/bin/allotd`;
     }
     /**
      * Starts allotd without waiting for it to answer.
@@ -71,19 +56,19 @@ export class SystemdServiceLauncher {
      */
     start() {
         return __awaiter(this, void 0, void 0, function* () {
-            if (yield __classPrivateFieldGet(this, _SystemdServiceLauncher_instances, "m", _SystemdServiceLauncher_unitRunsThisDaemon).call(this)) {
+            if (yield this._unitRunsThisDaemon()) {
                 const argv = ["systemctl", "--user", "start", SYSTEMD_UNIT];
-                if (yield __classPrivateFieldGet(this, _SystemdServiceLauncher_system, "f").run(argv)) {
+                if (yield this._system.run(argv)) {
                     return null;
                 }
                 // systemctl's refusals are not worth a banner line while allotd can still run directly.
             }
             const exe = this.daemonExe;
-            if (!(yield __classPrivateFieldGet(this, _SystemdServiceLauncher_system, "f").isExecutable(exe))) {
+            if (!(yield this._system.isExecutable(exe))) {
                 return `${exe} is missing; run allot install`;
             }
             try {
-                __classPrivateFieldGet(this, _SystemdServiceLauncher_system, "f").spawn(exe);
+                this._system.spawn(exe);
                 return null;
             }
             catch (error) {
@@ -91,14 +76,15 @@ export class SystemdServiceLauncher {
             }
         });
     }
+    // The unit of another install (a dev build, another home) must not be started for this one.
+    _unitRunsThisDaemon() {
+        return __awaiter(this, void 0, void 0, function* () {
+            const file = systemdUnitFile(this._paths.home, this._paths.configHome);
+            const unit = yield this._system.readText(file);
+            return unit !== null && systemdUnitExec(unit) === this.daemonExe;
+        });
+    }
 }
-_SystemdServiceLauncher_paths = new WeakMap(), _SystemdServiceLauncher_system = new WeakMap(), _SystemdServiceLauncher_instances = new WeakSet(), _SystemdServiceLauncher_unitRunsThisDaemon = function _SystemdServiceLauncher_unitRunsThisDaemon() {
-    return __awaiter(this, void 0, void 0, function* () {
-        const file = systemdUnitFile(__classPrivateFieldGet(this, _SystemdServiceLauncher_paths, "f").home, __classPrivateFieldGet(this, _SystemdServiceLauncher_paths, "f").configHome);
-        const unit = yield __classPrivateFieldGet(this, _SystemdServiceLauncher_system, "f").readText(file);
-        return unit !== null && systemdUnitExec(unit) === this.daemonExe;
-    });
-};
 /**
  * The user unit file under `home`, in `configHome` when it is an absolute path, as the XDG spec
  * requires, and in `~/.config` otherwise. `allot_shared::autostart::systemd_unit_file`.

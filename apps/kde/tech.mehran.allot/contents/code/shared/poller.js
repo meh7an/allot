@@ -8,18 +8,6 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
         step((generator = generator.apply(thisArg, _arguments || [])).next());
     });
 };
-var __classPrivateFieldSet = (this && this.__classPrivateFieldSet) || function (receiver, state, value, kind, f) {
-    if (kind === "m") throw new TypeError("Private method is not writable");
-    if (kind === "a" && !f) throw new TypeError("Private accessor was defined without a setter");
-    if (typeof state === "function" ? receiver !== state || !f : !state.has(receiver)) throw new TypeError("Cannot write private member to an object whose class did not declare it");
-    return (kind === "a" ? f.call(receiver, value) : f ? f.value = value : state.set(receiver, value)), value;
-};
-var __classPrivateFieldGet = (this && this.__classPrivateFieldGet) || function (receiver, state, kind, f) {
-    if (kind === "a" && !f) throw new TypeError("Private accessor was defined without a getter");
-    if (typeof state === "function" ? receiver !== state || !f : !state.has(receiver)) throw new TypeError("Cannot read private member from an object whose class did not declare it");
-    return kind === "m" ? f : kind === "a" ? f.call(receiver) : f ? f.value : state.get(receiver);
-};
-var _DaemonPoller_instances, _DaemonPoller_client, _DaemonPoller_timers, _DaemonPoller_launcher, _DaemonPoller_now, _DaemonPoller_startingUntil, _DaemonPoller_schedule, _DaemonPoller_popupOpen, _DaemonPoller_looping, _DaemonPoller_stopped, _DaemonPoller_wakePending, _DaemonPoller_timer, _DaemonPoller_wake, _DaemonPoller_whileStarting, _DaemonPoller_wait, _DaemonPoller_endWait;
 import { CancelledError } from "./client.js";
 import { PollSchedule } from "./schedule.js";
 /** @import { DaemonClient, PollResult } from "./client.js" */
@@ -56,7 +44,6 @@ export class DaemonPoller {
      */
     constructor(client, timers, options = {}) {
         var _a, _b;
-        _DaemonPoller_instances.add(this);
         /**
          * Called after every poll.
          *
@@ -78,25 +65,21 @@ export class DaemonPoller {
          * @type {string | null}
          */
         this.startProblem = null;
-        _DaemonPoller_client.set(this, void 0);
-        _DaemonPoller_timers.set(this, void 0);
-        _DaemonPoller_launcher.set(this, void 0);
-        _DaemonPoller_now.set(this, void 0);
         /** @type {number | null} */
-        _DaemonPoller_startingUntil.set(this, null);
-        _DaemonPoller_schedule.set(this, new PollSchedule());
-        _DaemonPoller_popupOpen.set(this, false);
-        _DaemonPoller_looping.set(this, false);
-        _DaemonPoller_stopped.set(this, false);
-        _DaemonPoller_wakePending.set(this, false);
+        this._startingUntil = null;
+        this._schedule = new PollSchedule();
+        this._popupOpen = false;
+        this._looping = false;
+        this._stopped = false;
+        this._wakePending = false;
         /** @type {unknown} */
-        _DaemonPoller_timer.set(this, null);
+        this._timer = null;
         /** @type {(() => void) | null} */
-        _DaemonPoller_wake.set(this, null);
-        __classPrivateFieldSet(this, _DaemonPoller_client, client, "f");
-        __classPrivateFieldSet(this, _DaemonPoller_timers, timers, "f");
-        __classPrivateFieldSet(this, _DaemonPoller_launcher, (_a = options.launcher) !== null && _a !== void 0 ? _a : null, "f");
-        __classPrivateFieldSet(this, _DaemonPoller_now, (_b = options.now) !== null && _b !== void 0 ? _b : (() => Date.now()), "f");
+        this._wake = null;
+        this._client = client;
+        this._timers = timers;
+        this._launcher = (_a = options.launcher) !== null && _a !== void 0 ? _a : null;
+        this._now = (_b = options.now) !== null && _b !== void 0 ? _b : (() => Date.now());
     }
     /**
      * Launches allotd and polls quickly until it answers or `START_TIMEOUT_MS` passes.
@@ -107,11 +90,11 @@ export class DaemonPoller {
         return __awaiter(this, void 0, void 0, function* () {
             var _a;
             var _b;
-            const problem = (_b = (yield (_a = __classPrivateFieldGet(this, _DaemonPoller_launcher, "f")) === null || _a === void 0 ? void 0 : _a.start())) !== null && _b !== void 0 ? _b : null;
+            const problem = (_b = (yield (_a = this._launcher) === null || _a === void 0 ? void 0 : _a.start())) !== null && _b !== void 0 ? _b : null;
             // A failed launch polls too, so whoever shows the poll shows the problem at once.
             this.startProblem = problem;
             if (problem === null) {
-                __classPrivateFieldSet(this, _DaemonPoller_startingUntil, __classPrivateFieldGet(this, _DaemonPoller_now, "f").call(this) + START_TIMEOUT_MS, "f");
+                this._startingUntil = this._now() + START_TIMEOUT_MS;
             }
             this.pollNow();
             return problem;
@@ -124,7 +107,7 @@ export class DaemonPoller {
      */
     stopService() {
         return __awaiter(this, void 0, void 0, function* () {
-            const problem = yield __classPrivateFieldGet(this, _DaemonPoller_client, "f").shutdown();
+            const problem = yield this._client.shutdown();
             this.pollNow();
             return problem;
         });
@@ -135,7 +118,7 @@ export class DaemonPoller {
      * @param {boolean} open
      */
     setPopupOpen(open) {
-        __classPrivateFieldSet(this, _DaemonPoller_popupOpen, open, "f");
+        this._popupOpen = open;
         if (open) {
             this.pollNow();
         }
@@ -145,23 +128,23 @@ export class DaemonPoller {
      * instead of being lost.
      */
     pollNow() {
-        __classPrivateFieldGet(this, _DaemonPoller_schedule, "f").reset();
-        if (__classPrivateFieldGet(this, _DaemonPoller_wake, "f") === null) {
-            __classPrivateFieldSet(this, _DaemonPoller_wakePending, true, "f");
+        this._schedule.reset();
+        if (this._wake === null) {
+            this._wakePending = true;
         }
         else {
-            __classPrivateFieldGet(this, _DaemonPoller_instances, "m", _DaemonPoller_endWait).call(this);
+            this._endWait();
         }
     }
     /** Polls until `stop`. */
     start() {
         return __awaiter(this, void 0, void 0, function* () {
-            if (__classPrivateFieldGet(this, _DaemonPoller_looping, "f")) {
+            if (this._looping) {
                 return;
             }
-            __classPrivateFieldSet(this, _DaemonPoller_looping, true, "f");
-            __classPrivateFieldSet(this, _DaemonPoller_stopped, false, "f");
-            while (!__classPrivateFieldGet(this, _DaemonPoller_stopped, "f")) {
+            this._looping = true;
+            this._stopped = false;
+            while (!this._stopped) {
                 let delay;
                 try {
                     delay = yield this.pollOnce();
@@ -172,9 +155,9 @@ export class DaemonPoller {
                     }
                     throw error;
                 }
-                yield __classPrivateFieldGet(this, _DaemonPoller_instances, "m", _DaemonPoller_wait).call(this, delay);
+                yield this._wait(delay);
             }
-            __classPrivateFieldSet(this, _DaemonPoller_looping, false, "f");
+            this._looping = false;
         });
     }
     /**
@@ -182,8 +165,8 @@ export class DaemonPoller {
      * transport owns it.
      */
     stop() {
-        __classPrivateFieldSet(this, _DaemonPoller_stopped, true, "f");
-        __classPrivateFieldGet(this, _DaemonPoller_instances, "m", _DaemonPoller_endWait).call(this);
+        this._stopped = true;
+        this._endWait();
     }
     /**
      * @returns {Promise<number>} Milliseconds to wait before the next poll.
@@ -191,12 +174,12 @@ export class DaemonPoller {
     pollOnce() {
         return __awaiter(this, void 0, void 0, function* () {
             var _a;
-            const polled = yield __classPrivateFieldGet(this, _DaemonPoller_client, "f").poll();
-            if (__classPrivateFieldGet(this, _DaemonPoller_stopped, "f")) {
+            const polled = yield this._client.poll();
+            if (this._stopped) {
                 throw new CancelledError();
             }
-            const result = __classPrivateFieldGet(this, _DaemonPoller_instances, "m", _DaemonPoller_whileStarting).call(this, polled);
-            const delay = __classPrivateFieldGet(this, _DaemonPoller_schedule, "f").next(__classPrivateFieldGet(this, _DaemonPoller_popupOpen, "f"), result.status);
+            const result = this._whileStarting(polled);
+            const delay = this._schedule.next(this._popupOpen, result.status);
             if (result.state !== null) {
                 this.lastKnown = result.state;
             }
@@ -205,41 +188,53 @@ export class DaemonPoller {
             return delay;
         });
     }
+    /**
+     * A launched allotd takes a moment to bind its port; until then it looks stopped.
+     *
+     * @param {PollResult} result
+     * @returns {PollResult}
+     */
+    _whileStarting(result) {
+        if (result.status !== "stopped") {
+            this._startingUntil = null;
+            this.startProblem = null;
+            return result;
+        }
+        if (this._startingUntil === null) {
+            return result;
+        }
+        if (this._now() < this._startingUntil) {
+            return Object.assign(Object.assign({}, result), { status: "starting" });
+        }
+        this._startingUntil = null;
+        const detail = `allotd did not answer within ${START_TIMEOUT_MS / 1000} s; ` + "see logs/allotd.log";
+        this.startProblem = detail;
+        return Object.assign(Object.assign({}, result), { status: "stopped", detail });
+    }
+    /**
+     * @param {number} ms
+     * @returns {Promise<void>}
+     */
+    _wait(ms) {
+        if (this._wakePending || this._stopped) {
+            this._wakePending = false;
+            return Promise.resolve();
+        }
+        return new Promise((resolve) => {
+            this._wake = resolve;
+            this._timer = this._timers.setTimeout(() => {
+                this._timer = null;
+                this._endWait();
+            }, ms);
+        });
+    }
+    _endWait() {
+        if (this._timer !== null) {
+            this._timers.clearTimeout(this._timer);
+            this._timer = null;
+        }
+        const wake = this._wake;
+        this._wake = null;
+        wake === null || wake === void 0 ? void 0 : wake();
+    }
 }
-_DaemonPoller_client = new WeakMap(), _DaemonPoller_timers = new WeakMap(), _DaemonPoller_launcher = new WeakMap(), _DaemonPoller_now = new WeakMap(), _DaemonPoller_startingUntil = new WeakMap(), _DaemonPoller_schedule = new WeakMap(), _DaemonPoller_popupOpen = new WeakMap(), _DaemonPoller_looping = new WeakMap(), _DaemonPoller_stopped = new WeakMap(), _DaemonPoller_wakePending = new WeakMap(), _DaemonPoller_timer = new WeakMap(), _DaemonPoller_wake = new WeakMap(), _DaemonPoller_instances = new WeakSet(), _DaemonPoller_whileStarting = function _DaemonPoller_whileStarting(result) {
-    if (result.status !== "stopped") {
-        __classPrivateFieldSet(this, _DaemonPoller_startingUntil, null, "f");
-        this.startProblem = null;
-        return result;
-    }
-    if (__classPrivateFieldGet(this, _DaemonPoller_startingUntil, "f") === null) {
-        return result;
-    }
-    if (__classPrivateFieldGet(this, _DaemonPoller_now, "f").call(this) < __classPrivateFieldGet(this, _DaemonPoller_startingUntil, "f")) {
-        return Object.assign(Object.assign({}, result), { status: "starting" });
-    }
-    __classPrivateFieldSet(this, _DaemonPoller_startingUntil, null, "f");
-    const detail = `allotd did not answer within ${START_TIMEOUT_MS / 1000} s; ` + "see logs/allotd.log";
-    this.startProblem = detail;
-    return Object.assign(Object.assign({}, result), { status: "stopped", detail });
-}, _DaemonPoller_wait = function _DaemonPoller_wait(ms) {
-    if (__classPrivateFieldGet(this, _DaemonPoller_wakePending, "f") || __classPrivateFieldGet(this, _DaemonPoller_stopped, "f")) {
-        __classPrivateFieldSet(this, _DaemonPoller_wakePending, false, "f");
-        return Promise.resolve();
-    }
-    return new Promise((resolve) => {
-        __classPrivateFieldSet(this, _DaemonPoller_wake, resolve, "f");
-        __classPrivateFieldSet(this, _DaemonPoller_timer, __classPrivateFieldGet(this, _DaemonPoller_timers, "f").setTimeout(() => {
-            __classPrivateFieldSet(this, _DaemonPoller_timer, null, "f");
-            __classPrivateFieldGet(this, _DaemonPoller_instances, "m", _DaemonPoller_endWait).call(this);
-        }, ms), "f");
-    });
-}, _DaemonPoller_endWait = function _DaemonPoller_endWait() {
-    if (__classPrivateFieldGet(this, _DaemonPoller_timer, "f") !== null) {
-        __classPrivateFieldGet(this, _DaemonPoller_timers, "f").clearTimeout(__classPrivateFieldGet(this, _DaemonPoller_timer, "f"));
-        __classPrivateFieldSet(this, _DaemonPoller_timer, null, "f");
-    }
-    const wake = __classPrivateFieldGet(this, _DaemonPoller_wake, "f");
-    __classPrivateFieldSet(this, _DaemonPoller_wake, null, "f");
-    wake === null || wake === void 0 ? void 0 : wake();
-};

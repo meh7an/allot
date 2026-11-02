@@ -16,28 +16,24 @@ Item {
     readonly property int barRadius: 2
     readonly property int glideMs: CardView.scaledMs(CardView.GLIDE_MS, Kirigami.Units.longDuration)
     readonly property color fillColor: Kirigami.Theme.highlightColor
-    property real used: row.used
-    property real shared: row.shared === null ? 0 : row.shared
+    readonly property BarShare usedShare: BarShare {
+        target: bar.row.used
+        barWidth: bar.width
+        animate: bar.animate
+        duration: bar.glideMs
+        easingType: Easing.OutQuad
+    }
+    readonly property BarShare sharedShare: BarShare {
+        target: bar.row.shared === null ? 0 : bar.row.shared
+        barWidth: bar.width
+        animate: bar.animate
+        duration: bar.glideMs
+        easingType: Easing.OutQuad
+    }
+    readonly property real used: usedShare.value
+    readonly property real shared: sharedShare.value
 
     implicitHeight: 14
-
-    Behavior on used {
-        enabled: bar.animate
-
-        NumberAnimation {
-            duration: bar.glideMs
-            easing.type: Easing.OutQuad
-        }
-    }
-
-    Behavior on shared {
-        enabled: bar.animate
-
-        NumberAnimation {
-            duration: bar.glideMs
-            easing.type: Easing.OutQuad
-        }
-    }
 
     HatchedTrack {
         y: (bar.height - bar.barHeight) / 2

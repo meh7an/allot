@@ -1,16 +1,4 @@
 // Generated from apps/gnome/allot@mehran.tech/lib/notification-rules.js by apps/kde/tools/emit.mjs (pnpm build); do not edit.
-var __classPrivateFieldSet = (this && this.__classPrivateFieldSet) || function (receiver, state, value, kind, f) {
-    if (kind === "m") throw new TypeError("Private method is not writable");
-    if (kind === "a" && !f) throw new TypeError("Private accessor was defined without a setter");
-    if (typeof state === "function" ? receiver !== state || !f : !state.has(receiver)) throw new TypeError("Cannot write private member to an object whose class did not declare it");
-    return (kind === "a" ? f.call(receiver, value) : f ? f.value = value : state.set(receiver, value)), value;
-};
-var __classPrivateFieldGet = (this && this.__classPrivateFieldGet) || function (receiver, state, kind, f) {
-    if (kind === "a" && !f) throw new TypeError("Private accessor was defined without a getter");
-    if (typeof state === "function" ? receiver !== state || !f : !state.has(receiver)) throw new TypeError("Cannot read private member from an object whose class did not declare it");
-    return kind === "m" ? f : kind === "a" ? f.call(receiver) : f ? f.value : state.get(receiver);
-};
-var _NotificationRules_instances, _NotificationRules_now, _NotificationRules_long, _NotificationRules_runs, _NotificationRules_notices, _NotificationRules_localKills, _NotificationRules_merged, _NotificationRules_mergeStart, _NotificationRules_mergeWindows, _NotificationRules_isBaselined, _NotificationRules_wasRunning, _NotificationRules_stoppedPolls, _NotificationRules_isStopShown, _NotificationRules_stopChosenAt, _NotificationRules_observeService, _NotificationRules_baseline, _NotificationRules_observeJobs, _NotificationRules_finished;
 import * as text from "./notification-text.js";
 /** @import { ActiveJob, RecentRun, UiSession, UiState } from "../contract.g.mjs" */
 /** @import { ServiceStatus } from "./client.js" */
@@ -61,28 +49,26 @@ const SILENT = {
 export class NotificationRules {
     /** @param {() => number} [now] The local clock in milliseconds; the tests pass their own. */
     constructor(now = () => Date.now()) {
-        _NotificationRules_instances.add(this);
-        _NotificationRules_now.set(this, void 0);
         /** @type {Set<number>} */
-        _NotificationRules_long.set(this, new Set());
+        this._long = new Set();
         /** @type {Set<string>} */
-        _NotificationRules_runs.set(this, new Set());
+        this._runs = new Set();
         /** @type {Set<number>} */
-        _NotificationRules_notices.set(this, new Set());
+        this._notices = new Set();
         /** @type {Set<number>} */
-        _NotificationRules_localKills.set(this, new Set());
+        this._localKills = new Set();
         /** @type {RecentRun[]} */
-        _NotificationRules_merged.set(this, []);
+        this._merged = [];
         /** @type {number | null} */
-        _NotificationRules_mergeStart.set(this, null);
-        _NotificationRules_mergeWindows.set(this, 0);
-        _NotificationRules_isBaselined.set(this, false);
-        _NotificationRules_wasRunning.set(this, false);
-        _NotificationRules_stoppedPolls.set(this, 0);
-        _NotificationRules_isStopShown.set(this, false);
+        this._mergeStart = null;
+        this._mergeWindows = 0;
+        this._isBaselined = false;
+        this._wasRunning = false;
+        this._stoppedPolls = 0;
+        this._isStopShown = false;
         /** @type {number | null} */
-        _NotificationRules_stopChosenAt.set(this, null);
-        __classPrivateFieldSet(this, _NotificationRules_now, now, "f");
+        this._stopChosenAt = null;
+        this._now = now;
     }
     /**
      * The popup is about to kill this lease, so its notice is not a kill from outside. Called
@@ -91,11 +77,11 @@ export class NotificationRules {
      * @param {number} lease
      */
     noteLocalKill(lease) {
-        __classPrivateFieldGet(this, _NotificationRules_localKills, "f").add(lease);
+        this._localKills.add(lease);
     }
     /** The user chose Stop Service, so the stop that follows does not notify. */
     expectStop() {
-        __classPrivateFieldSet(this, _NotificationRules_stopChosenAt, __classPrivateFieldGet(this, _NotificationRules_now, "f").call(this), "f");
+        this._stopChosenAt = this._now();
     }
     /**
      * @param {ObservedPoll} poll
@@ -105,131 +91,155 @@ export class NotificationRules {
         const allowed = poll.popupOpen ? SILENT : poll.toggles;
         /** @type {NotificationUpdate} */
         const update = { show: [], withdraw: [] };
-        __classPrivateFieldGet(this, _NotificationRules_instances, "m", _NotificationRules_observeService).call(this, poll, allowed, update);
+        this._observeService(poll, allowed, update);
         if (poll.live !== null) {
-            if (__classPrivateFieldGet(this, _NotificationRules_isBaselined, "f")) {
-                __classPrivateFieldGet(this, _NotificationRules_instances, "m", _NotificationRules_observeJobs).call(this, poll.live, allowed, update.show);
+            if (this._isBaselined) {
+                this._observeJobs(poll.live, allowed, update.show);
             }
             else {
-                __classPrivateFieldGet(this, _NotificationRules_instances, "m", _NotificationRules_baseline).call(this, poll.live);
+                this._baseline(poll.live);
             }
         }
         return update;
     }
+    /**
+     * @param {ObservedPoll} poll
+     * @param {NotificationToggles} allowed
+     * @param {NotificationUpdate} update
+     */
+    _observeService(poll, allowed, update) {
+        var _a;
+        var _b;
+        if (poll.status === "running") {
+            this._wasRunning = true;
+            this._stoppedPolls = 0;
+            if (this._isStopShown) {
+                this._isStopShown = false;
+                update.withdraw.push(text.SERVICE_TAG);
+            }
+            return;
+        }
+        // Starting and Incompatible change nothing: neither is a running service going away.
+        if (poll.status !== "stopped" || !this._wasRunning) {
+            return;
+        }
+        this._stoppedPolls += 1;
+        if (this._stoppedPolls < STOPPED_POLLS) {
+            return;
+        }
+        this._wasRunning = false;
+        const chosenAt = this._stopChosenAt;
+        this._stopChosenAt = null;
+        const chosen = chosenAt !== null && this._now() - chosenAt <= EXPECTED_STOP_WINDOW_MS;
+        if (!chosen && allowed.service_stopped) {
+            update.show.push(text.serviceStopped((_b = (_a = poll.lastKnown) === null || _a === void 0 ? void 0 : _a.sessions.length) !== null && _b !== void 0 ? _b : 0));
+            this._isStopShown = true;
+        }
+    }
+    /** @param {UiState} live */
+    _baseline(live) {
+        this._isBaselined = true;
+        for (const job of live.active) {
+            if (isLong(job, live.generated_at_ms)) {
+                this._long.add(job.lease.id);
+            }
+        }
+        for (const run of live.recent) {
+            this._runs.add(runKey(run));
+        }
+        for (const notice of live.notices) {
+            this._notices.add(notice.lease_id);
+        }
+    }
+    /**
+     * Jobs, then runs and notices, each oldest first: allotd lists runs and notices newest first.
+     *
+     * @param {UiState} live
+     * @param {NotificationToggles} allowed
+     * @param {NotificationMessage[]} show
+     */
+    _observeJobs(live, allowed, show) {
+        var _a;
+        /** @type {Map<string, UiSession>} */
+        const sessions = new Map();
+        for (const session of live.sessions) {
+            if (!sessions.has(session.session)) {
+                sessions.set(session.session, session);
+            }
+        }
+        keepOnly(this._long, live.active.map((job) => job.lease.id));
+        for (const job of live.active) {
+            if (isLong(job, live.generated_at_ms) && !this._long.has(job.lease.id)) {
+                this._long.add(job.lease.id);
+                if (allowed.running_long) {
+                    const session = (_a = sessions.get(job.lease.holder.session)) !== null && _a !== void 0 ? _a : null;
+                    show.push(text.runningLong(job, session, live.generated_at_ms));
+                }
+            }
+        }
+        /** @type {RecentRun[]} */
+        const finished = [];
+        for (const run of [...live.recent].reverse()) {
+            const key = runKey(run);
+            const isNew = !this._runs.has(key);
+            this._runs.add(key);
+            // A killed run has the kill's notification or the popup's own Stopped card.
+            if (!isNew || (run.end_cause !== null && run.end_cause !== "released")) {
+                continue;
+            }
+            if (run.noise !== null) {
+                if (allowed.benchmark_finished && run.lease_id !== null) {
+                    show.push(text.benchmarkFinished(run, run.noise));
+                }
+            }
+            else if (allowed.job_finished) {
+                finished.push(run);
+            }
+        }
+        keepOnly(this._runs, live.recent.map(runKey));
+        if (finished.length > 0) {
+            show.push(this._finished(finished, sessions));
+        }
+        for (const notice of [...live.notices].reverse()) {
+            const isNew = !this._notices.has(notice.lease_id);
+            this._notices.add(notice.lease_id);
+            if (isNew &&
+                notice.cause === "killed" &&
+                !this._localKills.has(notice.lease_id) &&
+                allowed.killed_outside_flyout) {
+                show.push(text.killedOutside(notice));
+            }
+        }
+        keepOnly(this._notices, live.notices.map((notice) => notice.lease_id));
+    }
+    /**
+     * The first finish opens a window; later ones within it replace its notification with the
+     * count.
+     *
+     * @param {RecentRun[]} runs
+     * @param {Map<string, UiSession>} sessions
+     * @returns {NotificationMessage}
+     */
+    _finished(runs, sessions) {
+        var _a;
+        const now = this._now();
+        if (this._merged.length === 0 ||
+            this._mergeStart === null ||
+            now - this._mergeStart >= MERGE_WINDOW_MS) {
+            this._merged = [];
+            this._mergeStart = now;
+            this._mergeWindows += 1;
+        }
+        this._merged.push(...runs);
+        const tag = `done-${this._mergeWindows}`;
+        const [only] = this._merged;
+        if (this._merged.length > 1 || only === undefined) {
+            return text.jobsFinished(this._merged, tag);
+        }
+        const session = only.session === null ? null : ((_a = sessions.get(only.session)) !== null && _a !== void 0 ? _a : null);
+        return text.jobFinished(only, session, tag);
+    }
 }
-_NotificationRules_now = new WeakMap(), _NotificationRules_long = new WeakMap(), _NotificationRules_runs = new WeakMap(), _NotificationRules_notices = new WeakMap(), _NotificationRules_localKills = new WeakMap(), _NotificationRules_merged = new WeakMap(), _NotificationRules_mergeStart = new WeakMap(), _NotificationRules_mergeWindows = new WeakMap(), _NotificationRules_isBaselined = new WeakMap(), _NotificationRules_wasRunning = new WeakMap(), _NotificationRules_stoppedPolls = new WeakMap(), _NotificationRules_isStopShown = new WeakMap(), _NotificationRules_stopChosenAt = new WeakMap(), _NotificationRules_instances = new WeakSet(), _NotificationRules_observeService = function _NotificationRules_observeService(poll, allowed, update) {
-    var _a;
-    var _b;
-    if (poll.status === "running") {
-        __classPrivateFieldSet(this, _NotificationRules_wasRunning, true, "f");
-        __classPrivateFieldSet(this, _NotificationRules_stoppedPolls, 0, "f");
-        if (__classPrivateFieldGet(this, _NotificationRules_isStopShown, "f")) {
-            __classPrivateFieldSet(this, _NotificationRules_isStopShown, false, "f");
-            update.withdraw.push(text.SERVICE_TAG);
-        }
-        return;
-    }
-    // Starting and Incompatible change nothing: neither is a running service going away.
-    if (poll.status !== "stopped" || !__classPrivateFieldGet(this, _NotificationRules_wasRunning, "f")) {
-        return;
-    }
-    __classPrivateFieldSet(this, _NotificationRules_stoppedPolls, __classPrivateFieldGet(this, _NotificationRules_stoppedPolls, "f") + 1, "f");
-    if (__classPrivateFieldGet(this, _NotificationRules_stoppedPolls, "f") < STOPPED_POLLS) {
-        return;
-    }
-    __classPrivateFieldSet(this, _NotificationRules_wasRunning, false, "f");
-    const chosenAt = __classPrivateFieldGet(this, _NotificationRules_stopChosenAt, "f");
-    __classPrivateFieldSet(this, _NotificationRules_stopChosenAt, null, "f");
-    const chosen = chosenAt !== null && __classPrivateFieldGet(this, _NotificationRules_now, "f").call(this) - chosenAt <= EXPECTED_STOP_WINDOW_MS;
-    if (!chosen && allowed.service_stopped) {
-        update.show.push(text.serviceStopped((_b = (_a = poll.lastKnown) === null || _a === void 0 ? void 0 : _a.sessions.length) !== null && _b !== void 0 ? _b : 0));
-        __classPrivateFieldSet(this, _NotificationRules_isStopShown, true, "f");
-    }
-}, _NotificationRules_baseline = function _NotificationRules_baseline(live) {
-    __classPrivateFieldSet(this, _NotificationRules_isBaselined, true, "f");
-    for (const job of live.active) {
-        if (isLong(job, live.generated_at_ms)) {
-            __classPrivateFieldGet(this, _NotificationRules_long, "f").add(job.lease.id);
-        }
-    }
-    for (const run of live.recent) {
-        __classPrivateFieldGet(this, _NotificationRules_runs, "f").add(runKey(run));
-    }
-    for (const notice of live.notices) {
-        __classPrivateFieldGet(this, _NotificationRules_notices, "f").add(notice.lease_id);
-    }
-}, _NotificationRules_observeJobs = function _NotificationRules_observeJobs(live, allowed, show) {
-    var _a;
-    /** @type {Map<string, UiSession>} */
-    const sessions = new Map();
-    for (const session of live.sessions) {
-        if (!sessions.has(session.session)) {
-            sessions.set(session.session, session);
-        }
-    }
-    keepOnly(__classPrivateFieldGet(this, _NotificationRules_long, "f"), live.active.map((job) => job.lease.id));
-    for (const job of live.active) {
-        if (isLong(job, live.generated_at_ms) && !__classPrivateFieldGet(this, _NotificationRules_long, "f").has(job.lease.id)) {
-            __classPrivateFieldGet(this, _NotificationRules_long, "f").add(job.lease.id);
-            if (allowed.running_long) {
-                const session = (_a = sessions.get(job.lease.holder.session)) !== null && _a !== void 0 ? _a : null;
-                show.push(text.runningLong(job, session, live.generated_at_ms));
-            }
-        }
-    }
-    /** @type {RecentRun[]} */
-    const finished = [];
-    for (const run of [...live.recent].reverse()) {
-        const key = runKey(run);
-        const isNew = !__classPrivateFieldGet(this, _NotificationRules_runs, "f").has(key);
-        __classPrivateFieldGet(this, _NotificationRules_runs, "f").add(key);
-        // A killed run has the kill's notification or the popup's own Stopped card.
-        if (!isNew || (run.end_cause !== null && run.end_cause !== "released")) {
-            continue;
-        }
-        if (run.noise !== null) {
-            if (allowed.benchmark_finished && run.lease_id !== null) {
-                show.push(text.benchmarkFinished(run, run.noise));
-            }
-        }
-        else if (allowed.job_finished) {
-            finished.push(run);
-        }
-    }
-    keepOnly(__classPrivateFieldGet(this, _NotificationRules_runs, "f"), live.recent.map(runKey));
-    if (finished.length > 0) {
-        show.push(__classPrivateFieldGet(this, _NotificationRules_instances, "m", _NotificationRules_finished).call(this, finished, sessions));
-    }
-    for (const notice of [...live.notices].reverse()) {
-        const isNew = !__classPrivateFieldGet(this, _NotificationRules_notices, "f").has(notice.lease_id);
-        __classPrivateFieldGet(this, _NotificationRules_notices, "f").add(notice.lease_id);
-        if (isNew &&
-            notice.cause === "killed" &&
-            !__classPrivateFieldGet(this, _NotificationRules_localKills, "f").has(notice.lease_id) &&
-            allowed.killed_outside_flyout) {
-            show.push(text.killedOutside(notice));
-        }
-    }
-    keepOnly(__classPrivateFieldGet(this, _NotificationRules_notices, "f"), live.notices.map((notice) => notice.lease_id));
-}, _NotificationRules_finished = function _NotificationRules_finished(runs, sessions) {
-    var _a;
-    const now = __classPrivateFieldGet(this, _NotificationRules_now, "f").call(this);
-    if (__classPrivateFieldGet(this, _NotificationRules_merged, "f").length === 0 ||
-        __classPrivateFieldGet(this, _NotificationRules_mergeStart, "f") === null ||
-        now - __classPrivateFieldGet(this, _NotificationRules_mergeStart, "f") >= MERGE_WINDOW_MS) {
-        __classPrivateFieldSet(this, _NotificationRules_merged, [], "f");
-        __classPrivateFieldSet(this, _NotificationRules_mergeStart, now, "f");
-        __classPrivateFieldSet(this, _NotificationRules_mergeWindows, __classPrivateFieldGet(this, _NotificationRules_mergeWindows, "f") + 1, "f");
-    }
-    __classPrivateFieldGet(this, _NotificationRules_merged, "f").push(...runs);
-    const tag = `done-${__classPrivateFieldGet(this, _NotificationRules_mergeWindows, "f")}`;
-    const [only] = __classPrivateFieldGet(this, _NotificationRules_merged, "f");
-    if (__classPrivateFieldGet(this, _NotificationRules_merged, "f").length > 1 || only === undefined) {
-        return text.jobsFinished(__classPrivateFieldGet(this, _NotificationRules_merged, "f"), tag);
-    }
-    const session = only.session === null ? null : ((_a = sessions.get(only.session)) !== null && _a !== void 0 ? _a : null);
-    return text.jobFinished(only, session, tag);
-};
 /**
  * @param {ActiveJob} job
  * @param {number} nowMs

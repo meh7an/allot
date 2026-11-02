@@ -1,17 +1,5 @@
 // Generated from apps/gnome/allot@mehran.tech/lib/state-clock.js by apps/kde/tools/emit.mjs (pnpm build); do not edit.
 /** @import { UiState } from "../contract.g.mjs" */
-var __classPrivateFieldSet = (this && this.__classPrivateFieldSet) || function (receiver, state, value, kind, f) {
-    if (kind === "m") throw new TypeError("Private method is not writable");
-    if (kind === "a" && !f) throw new TypeError("Private accessor was defined without a setter");
-    if (typeof state === "function" ? receiver !== state || !f : !state.has(receiver)) throw new TypeError("Cannot write private member to an object whose class did not declare it");
-    return (kind === "a" ? f.call(receiver, value) : f ? f.value = value : state.set(receiver, value)), value;
-};
-var __classPrivateFieldGet = (this && this.__classPrivateFieldGet) || function (receiver, state, kind, f) {
-    if (kind === "a" && !f) throw new TypeError("Private accessor was defined without a getter");
-    if (typeof state === "function" ? receiver !== state || !f : !state.has(receiver)) throw new TypeError("Cannot read private member from an object whose class did not declare it");
-    return kind === "m" ? f : kind === "a" ? f.call(receiver) : f ? f.value : state.get(receiver);
-};
-var _StateClock_now, _StateClock_generatedAtMs, _StateClock_receivedAt;
 /**
  * The daemon's time between polls: the latest state's `generated_at_ms` plus the time since it
  * arrived, so that elapsed and waited times tick every second without a new poll and without
@@ -20,11 +8,10 @@ var _StateClock_now, _StateClock_generatedAtMs, _StateClock_receivedAt;
 export class StateClock {
     /** @param {() => number} now The local clock in milliseconds; the tests pass their own. */
     constructor(now) {
-        _StateClock_now.set(this, void 0);
-        _StateClock_generatedAtMs.set(this, 0);
+        this._generatedAtMs = 0;
         /** @type {number | null} */
-        _StateClock_receivedAt.set(this, null);
-        __classPrivateFieldSet(this, _StateClock_now, now, "f");
+        this._receivedAt = null;
+        this._now = now;
     }
     /**
      * The current moment in the daemon's clock, or `null` while no live state is known.
@@ -32,10 +19,10 @@ export class StateClock {
      * @returns {number | null}
      */
     get nowMs() {
-        if (__classPrivateFieldGet(this, _StateClock_receivedAt, "f") === null) {
+        if (this._receivedAt === null) {
             return null;
         }
-        return __classPrivateFieldGet(this, _StateClock_generatedAtMs, "f") + Math.max(0, Math.floor(__classPrivateFieldGet(this, _StateClock_now, "f").call(this) - __classPrivateFieldGet(this, _StateClock_receivedAt, "f")));
+        return this._generatedAtMs + Math.max(0, Math.floor(this._now() - this._receivedAt));
     }
     /**
      * Takes the state of a poll; `null` stops the clock, as last known times stand still.
@@ -44,11 +31,10 @@ export class StateClock {
      */
     received(state) {
         if (state === null) {
-            __classPrivateFieldSet(this, _StateClock_receivedAt, null, "f");
+            this._receivedAt = null;
             return;
         }
-        __classPrivateFieldSet(this, _StateClock_generatedAtMs, state.generated_at_ms, "f");
-        __classPrivateFieldSet(this, _StateClock_receivedAt, __classPrivateFieldGet(this, _StateClock_now, "f").call(this), "f");
+        this._generatedAtMs = state.generated_at_ms;
+        this._receivedAt = this._now();
     }
 }
-_StateClock_now = new WeakMap(), _StateClock_generatedAtMs = new WeakMap(), _StateClock_receivedAt = new WeakMap();

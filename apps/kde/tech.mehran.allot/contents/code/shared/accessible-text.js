@@ -1,18 +1,6 @@
 // Generated from apps/gnome/allot@mehran.tech/lib/accessible-text.js by apps/kde/tools/emit.mjs (pnpm build); do not edit.
 /** @import { DriveRow, MeterRow } from "./resources-view.js" */
 /** @import { JobRow, PanelSnapshot } from "./snapshot.js" */
-var __classPrivateFieldSet = (this && this.__classPrivateFieldSet) || function (receiver, state, value, kind, f) {
-    if (kind === "m") throw new TypeError("Private method is not writable");
-    if (kind === "a" && !f) throw new TypeError("Private accessor was defined without a setter");
-    if (typeof state === "function" ? receiver !== state || !f : !state.has(receiver)) throw new TypeError("Cannot write private member to an object whose class did not declare it");
-    return (kind === "a" ? f.call(receiver, value) : f ? f.value = value : state.set(receiver, value)), value;
-};
-var __classPrivateFieldGet = (this && this.__classPrivateFieldGet) || function (receiver, state, kind, f) {
-    if (kind === "a" && !f) throw new TypeError("Private accessor was defined without a getter");
-    if (typeof state === "function" ? receiver !== state || !f : !state.has(receiver)) throw new TypeError("Cannot read private member from an object whose class did not declare it");
-    return kind === "m" ? f : kind === "a" ? f.call(receiver) : f ? f.value : state.get(receiver);
-};
-var _Announcer_summary, _Announcer_spoken;
 // The Resources card's width for its label, bar and value columns, in CSS pixels: the popup's 360
 // less the card's margins, border, padding and the two gaps between the columns.
 const METER_COLUMNS_PX = 310;
@@ -99,21 +87,21 @@ export function meterColumns(textScale) {
 export class Announcer {
     constructor() {
         /** @type {string | null} */
-        _Announcer_summary.set(this, null);
+        this._summary = null;
         /** @type {Map<number, string>} */
-        _Announcer_spoken.set(this, new Map());
+        this._spoken = new Map();
     }
     /** The popup opened: what it shows now is read by focus, not announced. */
     reset() {
-        __classPrivateFieldSet(this, _Announcer_summary, null, "f");
-        __classPrivateFieldGet(this, _Announcer_spoken, "f").clear();
+        this._summary = null;
+        this._spoken.clear();
     }
     /**
      * @param {PanelSnapshot} snapshot
      * @returns {string[]} What to announce now, in order.
      */
     observe(snapshot) {
-        const isFirst = __classPrivateFieldGet(this, _Announcer_summary, "f") === null;
+        const isFirst = this._summary === null;
         /** @type {string[]} */
         const texts = [];
         /** @type {Map<number, string>} */
@@ -121,18 +109,17 @@ export class Announcer {
         for (const group of snapshot.groups) {
             for (const { id, card } of group.jobs) {
                 spoken.set(id, card.announcement);
-                if (!isFirst && card.announcement !== "" && card.announcement !== __classPrivateFieldGet(this, _Announcer_spoken, "f").get(id)) {
+                if (!isFirst && card.announcement !== "" && card.announcement !== this._spoken.get(id)) {
                     texts.push(card.announcement);
                 }
             }
         }
         const { summary } = snapshot.header;
-        if (!isFirst && summary !== __classPrivateFieldGet(this, _Announcer_summary, "f")) {
+        if (!isFirst && summary !== this._summary) {
             texts.push(summary);
         }
-        __classPrivateFieldSet(this, _Announcer_summary, summary, "f");
-        __classPrivateFieldSet(this, _Announcer_spoken, spoken, "f");
+        this._summary = summary;
+        this._spoken = spoken;
         return texts;
     }
 }
-_Announcer_summary = new WeakMap(), _Announcer_spoken = new WeakMap();

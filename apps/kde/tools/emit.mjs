@@ -2,11 +2,13 @@
 // extension's logic modules, lowered by tsc to ES2016 syntax for QML's JavaScript engine, which
 // has no class fields, private members or async functions; plus the generated contract module.
 // Built-ins are not lowered: the typecheck holds both sets of sources to the ES2016 library.
+// Private members become plain `_name` ones first: tsc would lower them to WeakMaps, and Qt 6.12's
+// collector frees WeakMap values that are still in use, which takes plasmashell down.
 
 import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const KDE_DIR = new URL("../", import.meta.url);
@@ -22,6 +24,7 @@ export const CODE_DIR = new URL("tech.mehran.allot/contents/code/", KDE_DIR);
 export const SHARED_MODULES = [
   "accessible-text",
   "app-match",
+  "bar-move",
   "benchmark-status",
   "client",
   "config",
@@ -95,7 +98,12 @@ export function emit() {
  * @param {string} out
  */
 function lower(sources, out) {
-  const apps = fileURLToPath(APPS_DIR);
+  const input = join(out, "in");
+  for (const source of sources) {
+    const target = join(input, source);
+    mkdirSync(dirname(target), { recursive: true });
+    writeFileSync(target, withoutPrivateNames(readFileSync(new URL(source, APPS_DIR), "utf8")));
+  }
   const result = spawnSync(
     process.execPath,
     [
@@ -109,16 +117,29 @@ function lower(sources, out) {
       "--newLine",
       "lf",
       "--rootDir",
-      apps,
+      input,
       "--outDir",
       out,
-      ...sources.map((source) => join(apps, source)),
+      ...sources.map((source) => join(input, source)),
     ],
     { encoding: "utf8" },
   );
   if (result.status !== 0) {
     throw new Error(`tsc failed:\n${result.stdout}${result.stderr}`);
   }
+}
+
+/**
+ * Renames `#name` to `_name` wherever it is a member: after a dot, or starting a declaration.
+ * Colours and comments such as `#N` are neither.
+ *
+ * @param {string} code
+ * @returns {string}
+ */
+export function withoutPrivateNames(code) {
+  return code
+    .replace(/\.#([A-Za-z_]\w*)/g, "._$1")
+    .replace(/^(\s*(?:(?:static|async|get|set)\s+)*)#([A-Za-z_]\w*)/gm, "$1_$2");
 }
 
 /**

@@ -8,18 +8,6 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
         step((generator = generator.apply(thisArg, _arguments || [])).next());
     });
 };
-var __classPrivateFieldSet = (this && this.__classPrivateFieldSet) || function (receiver, state, value, kind, f) {
-    if (kind === "m") throw new TypeError("Private method is not writable");
-    if (kind === "a" && !f) throw new TypeError("Private accessor was defined without a setter");
-    if (typeof state === "function" ? receiver !== state || !f : !state.has(receiver)) throw new TypeError("Cannot write private member to an object whose class did not declare it");
-    return (kind === "a" ? f.call(receiver, value) : f ? f.value = value : state.set(receiver, value)), value;
-};
-var __classPrivateFieldGet = (this && this.__classPrivateFieldGet) || function (receiver, state, kind, f) {
-    if (kind === "a" && !f) throw new TypeError("Private accessor was defined without a getter");
-    if (typeof state === "function" ? receiver !== state || !f : !state.has(receiver)) throw new TypeError("Cannot read private member from an object whose class did not declare it");
-    return kind === "m" ? f : kind === "a" ? f.call(receiver) : f ? f.value : state.get(receiver);
-};
-var _AllotWidget_instances, _AllotWidget_host, _AllotWidget_runner, _AllotWidget_transport, _AllotWidget_keeper, _AllotWidget_appIcons, _AllotWidget_rules, _AllotWidget_notifier, _AllotWidget_configFolder, _AllotWidget_dataFolder, _AllotWidget_announcer, _AllotWidget_poller, _AllotWidget_lastStatus, _AllotWidget_tick, _AllotWidget_saving, _AllotWidget_expanded, _AllotWidget_stopped, _AllotWidget_show, _AllotWidget_notify, _AllotWidget_pressNotificationButton, _AllotWidget_showRow, _AllotWidget_stopService, _AllotWidget_saveSettings, _AllotWidget_showPress, _AllotWidget_showChange, _AllotWidget_render, _AllotWidget_scheduleTick, _AllotWidget_clearTick;
 import { Announcer } from "./shared/accessible-text.js";
 import { DaemonClient } from "./shared/client.js";
 import { DEFAULT_PORT, dataPaths, portFromToml } from "./shared/config.js";
@@ -105,7 +93,6 @@ const TICK_MS = 1000;
 export class AllotWidget {
     /** @param {WidgetHost} host */
     constructor(host) {
-        _AllotWidget_instances.add(this);
         /**
          * The question the popup's Stop card asks, or empty.
          *
@@ -118,50 +105,41 @@ export class AllotWidget {
          * @type {boolean}
          */
         this.notificationsOff = false;
-        _AllotWidget_host.set(this, void 0);
-        _AllotWidget_runner.set(this, void 0);
-        _AllotWidget_transport.set(this, void 0);
-        _AllotWidget_keeper.set(this, void 0);
-        _AllotWidget_appIcons.set(this, void 0);
-        _AllotWidget_rules.set(this, void 0);
-        _AllotWidget_notifier.set(this, void 0);
-        _AllotWidget_configFolder.set(this, void 0);
-        _AllotWidget_dataFolder.set(this, void 0);
-        _AllotWidget_announcer.set(this, new Announcer());
+        this._announcer = new Announcer();
         /** @type {DaemonPoller | null} */
-        _AllotWidget_poller.set(this, null);
+        this._poller = null;
         /** @type {ServiceStatus | null} */
-        _AllotWidget_lastStatus.set(this, null);
+        this._lastStatus = null;
         /** @type {unknown} */
-        _AllotWidget_tick.set(this, null);
+        this._tick = null;
         /** @type {Promise<void>} */
-        _AllotWidget_saving.set(this, Promise.resolve());
-        _AllotWidget_expanded.set(this, false);
-        _AllotWidget_stopped.set(this, false);
-        __classPrivateFieldSet(this, _AllotWidget_host, host, "f");
+        this._saving = Promise.resolve();
+        this._expanded = false;
+        this._stopped = false;
+        this._host = host;
         this.model = new PopupModel(host.now);
-        this.model.onChange = (change) => __classPrivateFieldGet(this, _AllotWidget_instances, "m", _AllotWidget_showChange).call(this, change);
-        this.model.onStopAnswered = () => { var _a; return (_a = __classPrivateFieldGet(this, _AllotWidget_poller, "f")) === null || _a === void 0 ? void 0 : _a.pollNow(); };
-        this.model.onKillSent = (lease) => __classPrivateFieldGet(this, _AllotWidget_rules, "f").noteLocalKill(lease);
-        this.model.onSettingsChanged = () => __classPrivateFieldGet(this, _AllotWidget_instances, "m", _AllotWidget_saveSettings).call(this);
+        this.model.onChange = (change) => this._showChange(change);
+        this.model.onStopAnswered = () => { var _a; return (_a = this._poller) === null || _a === void 0 ? void 0 : _a.pollNow(); };
+        this.model.onKillSent = (lease) => this._rules.noteLocalKill(lease);
+        this.model.onSettingsChanged = () => this._saveSettings();
         if (host.timeOfDay !== undefined) {
             this.model.timeOfDay = host.timeOfDay;
         }
         this.paths = dataPaths(localPath(host.homeUrl));
-        __classPrivateFieldSet(this, _AllotWidget_configFolder, localPath(host.configUrl), "f");
-        __classPrivateFieldSet(this, _AllotWidget_dataFolder, localPath(host.dataUrl), "f");
-        __classPrivateFieldSet(this, _AllotWidget_runner, new CommandRunner(host.connectSource), "f");
-        __classPrivateFieldSet(this, _AllotWidget_transport, new XhrTransport(host.requests, host.timers), "f");
-        __classPrivateFieldSet(this, _AllotWidget_keeper, new RowKeeper(host.rows), "f");
-        __classPrivateFieldSet(this, _AllotWidget_appIcons, new AppIcons(__classPrivateFieldGet(this, _AllotWidget_runner, "f"), () => {
-            __classPrivateFieldGet(this, _AllotWidget_instances, "m", _AllotWidget_showChange).call(this, { snapshot: true, indicator: false });
-        }), "f");
-        __classPrivateFieldSet(this, _AllotWidget_rules, new NotificationRules(host.now), "f");
-        __classPrivateFieldSet(this, _AllotWidget_notifier, new Notifier({
+        this._configFolder = localPath(host.configUrl);
+        this._dataFolder = localPath(host.dataUrl);
+        this._runner = new CommandRunner(host.connectSource);
+        this._transport = new XhrTransport(host.requests, host.timers);
+        this._keeper = new RowKeeper(host.rows);
+        this._appIcons = new AppIcons(this._runner, () => {
+            this._showChange({ snapshot: true, indicator: false });
+        });
+        this._rules = new NotificationRules(host.now);
+        this._notifier = new Notifier({
             send: host.sendNotification,
-            onButton: (button, target) => __classPrivateFieldGet(this, _AllotWidget_instances, "m", _AllotWidget_pressNotificationButton).call(this, button, target),
-            onActivate: (target) => __classPrivateFieldGet(this, _AllotWidget_instances, "m", _AllotWidget_showRow).call(this, target),
-        }), "f");
+            onButton: (button, target) => this._pressNotificationButton(button, target),
+            onActivate: (target) => this._showRow(target),
+        });
     }
     /**
      * Reads the settings and the port once, as the other apps do at launch, puts the notifyrc where
@@ -172,47 +150,47 @@ export class AllotWidget {
     start() {
         return __awaiter(this, void 0, void 0, function* () {
             const [toml, settings, notifyRc] = yield Promise.all([
-                readTextFile(__classPrivateFieldGet(this, _AllotWidget_runner, "f"), this.paths.config),
-                readTextFile(__classPrivateFieldGet(this, _AllotWidget_runner, "f"), this.paths.settings),
-                copyFile(__classPrivateFieldGet(this, _AllotWidget_runner, "f"), localPath(__classPrivateFieldGet(this, _AllotWidget_host, "f").notifyRcUrl), `${__classPrivateFieldGet(this, _AllotWidget_dataFolder, "f")}/knotifications6/${NOTIFY_RC_FILE}`),
+                readTextFile(this._runner, this.paths.config),
+                readTextFile(this._runner, this.paths.settings),
+                copyFile(this._runner, localPath(this._host.notifyRcUrl), `${this._dataFolder}/knotifications6/${NOTIFY_RC_FILE}`),
             ]);
-            if (__classPrivateFieldGet(this, _AllotWidget_stopped, "f")) {
+            if (this._stopped) {
                 return;
             }
             if (!notifyRc) {
-                __classPrivateFieldGet(this, _AllotWidget_host, "f").log("Allot: cannot install the notifyrc; notifications will not show");
+                this._host.log("Allot: cannot install the notifyrc; notifications will not show");
             }
-            __classPrivateFieldGet(this, _AllotWidget_instances, "m", _AllotWidget_showChange).call(this, this.model.loadSettings(decodeSettings(settings)));
+            this._showChange(this.model.loadSettings(decodeSettings(settings)));
             this.refreshNotificationState();
             const client = new DaemonClient({
                 port: toml === null ? DEFAULT_PORT : portFromToml(toml),
-                send: __classPrivateFieldGet(this, _AllotWidget_transport, "f").send,
-                readToken: () => readTextFile(__classPrivateFieldGet(this, _AllotWidget_runner, "f"), this.paths.token),
+                send: this._transport.send,
+                readToken: () => readTextFile(this._runner, this.paths.token),
             });
             this.model.stopper = client;
             const launcher = new SystemdServiceLauncher({
-                home: localPath(__classPrivateFieldGet(this, _AllotWidget_host, "f").homeUrl),
-                configHome: __classPrivateFieldGet(this, _AllotWidget_configFolder, "f"),
+                home: localPath(this._host.homeUrl),
+                configHome: this._configFolder,
                 root: this.paths.root,
-            }, serviceSystem(__classPrivateFieldGet(this, _AllotWidget_runner, "f")));
-            const poller = new DaemonPoller(client, __classPrivateFieldGet(this, _AllotWidget_host, "f").timers, Object.assign({ launcher }, (__classPrivateFieldGet(this, _AllotWidget_host, "f").now === undefined ? {} : { now: __classPrivateFieldGet(this, _AllotWidget_host, "f").now })));
-            poller.onUpdate = (result) => __classPrivateFieldGet(this, _AllotWidget_instances, "m", _AllotWidget_show).call(this, result);
-            poller.setPopupOpen(__classPrivateFieldGet(this, _AllotWidget_expanded, "f"));
-            __classPrivateFieldSet(this, _AllotWidget_poller, poller, "f");
+            }, serviceSystem(this._runner));
+            const poller = new DaemonPoller(client, this._host.timers, Object.assign({ launcher }, (this._host.now === undefined ? {} : { now: this._host.now })));
+            poller.onUpdate = (result) => this._show(result);
+            poller.setPopupOpen(this._expanded);
+            this._poller = poller;
             try {
                 yield poller.start();
             }
             catch (error) {
-                __classPrivateFieldGet(this, _AllotWidget_host, "f").log(`Allot: polling stopped: ${error}`);
+                this._host.log(`Allot: polling stopped: ${error}`);
             }
         });
     }
     stop() {
         var _a;
-        __classPrivateFieldSet(this, _AllotWidget_stopped, true, "f");
-        __classPrivateFieldGet(this, _AllotWidget_instances, "m", _AllotWidget_clearTick).call(this);
-        (_a = __classPrivateFieldGet(this, _AllotWidget_poller, "f")) === null || _a === void 0 ? void 0 : _a.stop();
-        __classPrivateFieldGet(this, _AllotWidget_transport, "f").cancel();
+        this._stopped = true;
+        this._clearTick();
+        (_a = this._poller) === null || _a === void 0 ? void 0 : _a.stop();
+        this._transport.cancel();
     }
     /**
      * The executable data source's answers.
@@ -221,7 +199,7 @@ export class AllotWidget {
      * @param {Record<string, unknown>} data
      */
     deliver(command, data) {
-        __classPrivateFieldGet(this, _AllotWidget_runner, "f").deliver(command, data);
+        this._runner.deliver(command, data);
     }
     /**
      * Follows Plasma's `expanded`: opening polls at once, starts without Keep Open and shows the
@@ -231,21 +209,21 @@ export class AllotWidget {
      */
     setExpanded(expanded) {
         var _a;
-        __classPrivateFieldSet(this, _AllotWidget_expanded, expanded, "f");
+        this._expanded = expanded;
         if (expanded) {
             this.model.resetForOpen();
             this.model.refresh();
-            __classPrivateFieldGet(this, _AllotWidget_announcer, "f").reset();
-            __classPrivateFieldGet(this, _AllotWidget_instances, "m", _AllotWidget_render).call(this, false);
+            this._announcer.reset();
+            this._render(false);
             this.refreshNotificationState();
         }
         else {
             this.model.cancelConfirms();
-            __classPrivateFieldGet(this, _AllotWidget_appIcons, "f").forget();
+            this._appIcons.forget();
             this.stopQuestion = "";
         }
-        (_a = __classPrivateFieldGet(this, _AllotWidget_poller, "f")) === null || _a === void 0 ? void 0 : _a.setPopupOpen(expanded);
-        __classPrivateFieldGet(this, _AllotWidget_instances, "m", _AllotWidget_scheduleTick).call(this);
+        (_a = this._poller) === null || _a === void 0 ? void 0 : _a.setPopupOpen(expanded);
+        this._scheduleTick();
     }
     toggleKeepOpen() {
         this.model.toggleStayOpen();
@@ -257,7 +235,7 @@ export class AllotWidget {
      */
     pressKill(lease) {
         this.model.pressKill(lease);
-        __classPrivateFieldGet(this, _AllotWidget_instances, "m", _AllotWidget_showPress).call(this);
+        this._showPress();
     }
     /**
      * A press of Remove on a queued request.
@@ -266,7 +244,7 @@ export class AllotWidget {
      */
     pressRemove(lease) {
         this.model.pressRemove(lease);
-        __classPrivateFieldGet(this, _AllotWidget_instances, "m", _AllotWidget_showPress).call(this);
+        this._showPress();
     }
     /**
      * Focus left a Kill? confirm.
@@ -275,13 +253,13 @@ export class AllotWidget {
      */
     cancelConfirm(lease) {
         if (this.model.cancelConfirm(lease)) {
-            __classPrivateFieldGet(this, _AllotWidget_instances, "m", _AllotWidget_showPress).call(this);
+            this._showPress();
         }
     }
     /** Esc takes back a Kill? confirm before it closes the popup. */
     cancelConfirms() {
         if (this.model.cancelConfirms()) {
-            __classPrivateFieldGet(this, _AllotWidget_instances, "m", _AllotWidget_showPress).call(this);
+            this._showPress();
         }
     }
     /**
@@ -290,12 +268,12 @@ export class AllotWidget {
      * @param {string} key
      */
     rowGone(key) {
-        __classPrivateFieldGet(this, _AllotWidget_keeper, "f").gone(key);
+        this._keeper.gone(key);
     }
     /** The Resources card's header. */
     toggleResources() {
         this.model.toggleResources();
-        __classPrivateFieldGet(this, _AllotWidget_instances, "m", _AllotWidget_showPress).call(this);
+        this._showPress();
     }
     /**
      * A Meters check item.
@@ -306,7 +284,7 @@ export class AllotWidget {
         this.model.updateSettings((settings) => {
             settings.meters[key] = !settings.meters[key];
         });
-        __classPrivateFieldGet(this, _AllotWidget_instances, "m", _AllotWidget_showPress).call(this);
+        this._showPress();
     }
     /**
      * A Notifications check item.
@@ -317,24 +295,24 @@ export class AllotWidget {
         this.model.updateSettings((settings) => {
             settings.notifications[key] = !settings.notifications[key];
         });
-        __classPrivateFieldGet(this, _AllotWidget_instances, "m", _AllotWidget_showPress).call(this);
+        this._showPress();
     }
     /** The first-run card's Done. */
     finishFirstRun() {
         this.model.finishFirstRun();
-        __classPrivateFieldGet(this, _AllotWidget_instances, "m", _AllotWidget_showPress).call(this);
+        this._showPress();
     }
     /** The banner's Start Service, or the panel menu's while allotd is down. */
     startService() {
         return __awaiter(this, void 0, void 0, function* () {
-            const poller = __classPrivateFieldGet(this, _AllotWidget_poller, "f");
+            const poller = this._poller;
             if (poller === null) {
                 return;
             }
-            __classPrivateFieldGet(this, _AllotWidget_instances, "m", _AllotWidget_showChange).call(this, this.model.noteStarting());
+            this._showChange(this.model.noteStarting());
             const problem = yield poller.startService();
             if (problem !== null) {
-                __classPrivateFieldGet(this, _AllotWidget_host, "f").log(`Allot: cannot start the service: ${problem}`);
+                this._host.log(`Allot: cannot start the service: ${problem}`);
             }
         });
     }
@@ -347,14 +325,14 @@ export class AllotWidget {
                 this.startService();
                 break;
             case "stop": {
-                const question = stopConfirmation((_b = (_a = __classPrivateFieldGet(this, _AllotWidget_poller, "f")) === null || _a === void 0 ? void 0 : _a.lastKnown) !== null && _b !== void 0 ? _b : null);
+                const question = stopConfirmation((_b = (_a = this._poller) === null || _a === void 0 ? void 0 : _a.lastKnown) !== null && _b !== void 0 ? _b : null);
                 if (question === null) {
-                    __classPrivateFieldGet(this, _AllotWidget_instances, "m", _AllotWidget_stopService).call(this);
+                    this._stopService();
                 }
                 else {
                     this.stopQuestion = question;
-                    __classPrivateFieldGet(this, _AllotWidget_host, "f").expand();
-                    __classPrivateFieldGet(this, _AllotWidget_host, "f").onChange({ snapshot: false, indicator: false });
+                    this._host.expand();
+                    this._host.onChange({ snapshot: false, indicator: false });
                 }
                 break;
             }
@@ -365,12 +343,12 @@ export class AllotWidget {
     /** The Stop card's Stop. */
     confirmStop() {
         this.cancelStop();
-        __classPrivateFieldGet(this, _AllotWidget_instances, "m", _AllotWidget_stopService).call(this);
+        this._stopService();
     }
     /** The Stop card's Cancel. */
     cancelStop() {
         this.stopQuestion = "";
-        __classPrivateFieldGet(this, _AllotWidget_host, "f").onChange({ snapshot: false, indicator: false });
+        this._host.onChange({ snapshot: false, indicator: false });
     }
     /**
      * Reads whether Plasma would show notifications now: when the popup or More options opens, since
@@ -379,11 +357,11 @@ export class AllotWidget {
     refreshNotificationState() {
         return __awaiter(this, void 0, void 0, function* () {
             const [inhibited, events, plasma] = yield Promise.all([
-                __classPrivateFieldGet(this, _AllotWidget_runner, "f").run(INHIBITED_COMMAND),
-                readTextFile(__classPrivateFieldGet(this, _AllotWidget_runner, "f"), `${__classPrivateFieldGet(this, _AllotWidget_configFolder, "f")}/${NOTIFY_RC_FILE}`),
-                readTextFile(__classPrivateFieldGet(this, _AllotWidget_runner, "f"), `${__classPrivateFieldGet(this, _AllotWidget_configFolder, "f")}/plasmanotifyrc`),
+                this._runner.run(INHIBITED_COMMAND),
+                readTextFile(this._runner, `${this._configFolder}/${NOTIFY_RC_FILE}`),
+                readTextFile(this._runner, `${this._configFolder}/plasmanotifyrc`),
             ]);
-            if (__classPrivateFieldGet(this, _AllotWidget_stopped, "f")) {
+            if (this._stopped) {
                 return;
             }
             const off = isOffInSettings(events, plasma);
@@ -391,17 +369,17 @@ export class AllotWidget {
             if (off !== this.notificationsOff || doNotDisturb !== this.model.doNotDisturb) {
                 this.notificationsOff = off;
                 this.model.setDoNotDisturb(doNotDisturb);
-                __classPrivateFieldGet(this, _AllotWidget_instances, "m", _AllotWidget_showPress).call(this);
+                this._showPress();
             }
         });
     }
     /** The menu's and the first-run card's way to turn notifications back on. */
     openNotificationSettings() {
-        __classPrivateFieldGet(this, _AllotWidget_runner, "f").run(detachedCommand(SETTINGS_ARGV));
+        this._runner.run(detachedCommand(SETTINGS_ARGV));
     }
     /** Opens the logs folder. */
     openLogs() {
-        __classPrivateFieldGet(this, _AllotWidget_host, "f").openUrl(`file://${this.paths.logs}`);
+        this._host.openUrl(`file://${this.paths.logs}`);
     }
     /** @returns {boolean} */
     get keepOpen() {
@@ -429,127 +407,151 @@ export class AllotWidget {
             ? NOTIFICATIONS_OFF_COUNT
             : notificationCount(this.model.settings.notifications);
     }
-}
-_AllotWidget_host = new WeakMap(), _AllotWidget_runner = new WeakMap(), _AllotWidget_transport = new WeakMap(), _AllotWidget_keeper = new WeakMap(), _AllotWidget_appIcons = new WeakMap(), _AllotWidget_rules = new WeakMap(), _AllotWidget_notifier = new WeakMap(), _AllotWidget_configFolder = new WeakMap(), _AllotWidget_dataFolder = new WeakMap(), _AllotWidget_announcer = new WeakMap(), _AllotWidget_poller = new WeakMap(), _AllotWidget_lastStatus = new WeakMap(), _AllotWidget_tick = new WeakMap(), _AllotWidget_saving = new WeakMap(), _AllotWidget_expanded = new WeakMap(), _AllotWidget_stopped = new WeakMap(), _AllotWidget_instances = new WeakSet(), _AllotWidget_show = function _AllotWidget_show(result) {
-    var _a, _b;
-    var _c, _d, _e, _f;
-    if (result.status !== __classPrivateFieldGet(this, _AllotWidget_lastStatus, "f")) {
-        __classPrivateFieldSet(this, _AllotWidget_lastStatus, result.status, "f");
-        const detail = (_d = (_c = result.version) !== null && _c !== void 0 ? _c : result.detail) !== null && _d !== void 0 ? _d : "";
-        __classPrivateFieldGet(this, _AllotWidget_host, "f").log(`Allot: service ${result.status}${detail === "" ? "" : `: ${detail}`}`);
+    /** @param {PollResult} result */
+    _show(result) {
+        var _a, _b;
+        var _c, _d, _e, _f;
+        if (result.status !== this._lastStatus) {
+            this._lastStatus = result.status;
+            const detail = (_d = (_c = result.version) !== null && _c !== void 0 ? _c : result.detail) !== null && _d !== void 0 ? _d : "";
+            this._host.log(`Allot: service ${result.status}${detail === "" ? "" : `: ${detail}`}`);
+        }
+        const lastKnown = (_e = (_a = this._poller) === null || _a === void 0 ? void 0 : _a.lastKnown) !== null && _e !== void 0 ? _e : null;
+        const startProblem = (_f = (_b = this._poller) === null || _b === void 0 ? void 0 : _b.startProblem) !== null && _f !== void 0 ? _f : null;
+        this._showChange(this.model.apply(result, lastKnown, startProblem));
+        this._notify(result);
+        if (this.model.wantsFirstOpen) {
+            this.model.noteFirstOpened();
+            this._host.expand();
+        }
     }
-    const lastKnown = (_e = (_a = __classPrivateFieldGet(this, _AllotWidget_poller, "f")) === null || _a === void 0 ? void 0 : _a.lastKnown) !== null && _e !== void 0 ? _e : null;
-    const startProblem = (_f = (_b = __classPrivateFieldGet(this, _AllotWidget_poller, "f")) === null || _b === void 0 ? void 0 : _b.startProblem) !== null && _f !== void 0 ? _f : null;
-    __classPrivateFieldGet(this, _AllotWidget_instances, "m", _AllotWidget_showChange).call(this, this.model.apply(result, lastKnown, startProblem));
-    __classPrivateFieldGet(this, _AllotWidget_instances, "m", _AllotWidget_notify).call(this, result);
-    if (this.model.wantsFirstOpen) {
-        this.model.noteFirstOpened();
-        __classPrivateFieldGet(this, _AllotWidget_host, "f").expand();
+    /** @param {PollResult} result */
+    _notify(result) {
+        var _a;
+        var _b;
+        const update = this._rules.observe({
+            status: result.status,
+            live: result.state,
+            lastKnown: (_b = (_a = this._poller) === null || _a === void 0 ? void 0 : _a.lastKnown) !== null && _b !== void 0 ? _b : null,
+            toggles: this.model.settings.notifications,
+            popupOpen: this._expanded,
+        });
+        for (const message of update.show) {
+            this._notifier.show(message, this.iconFile);
+            this._host.log(`Allot: notified ${message.tag}`);
+        }
+        for (const tag of update.withdraw) {
+            this._notifier.withdraw(tag);
+        }
     }
-}, _AllotWidget_notify = function _AllotWidget_notify(result) {
-    var _a;
-    var _b;
-    const update = __classPrivateFieldGet(this, _AllotWidget_rules, "f").observe({
-        status: result.status,
-        live: result.state,
-        lastKnown: (_b = (_a = __classPrivateFieldGet(this, _AllotWidget_poller, "f")) === null || _a === void 0 ? void 0 : _a.lastKnown) !== null && _b !== void 0 ? _b : null,
-        toggles: this.model.settings.notifications,
-        popupOpen: __classPrivateFieldGet(this, _AllotWidget_expanded, "f"),
-    });
-    for (const message of update.show) {
-        __classPrivateFieldGet(this, _AllotWidget_notifier, "f").show(message, this.iconFile);
-        __classPrivateFieldGet(this, _AllotWidget_host, "f").log(`Allot: notified ${message.tag}`);
+    /**
+     * @param {NotificationButton} button
+     * @param {string | null} target
+     */
+    _pressNotificationButton(button, target) {
+        switch (button) {
+            case "start-service":
+                this.startService();
+                break;
+            case "open-logs":
+                this.openLogs();
+                break;
+            case "show":
+                this._showRow(target);
+                break;
+        }
     }
-    for (const tag of update.withdraw) {
-        __classPrivateFieldGet(this, _AllotWidget_notifier, "f").withdraw(tag);
+    /** @param {string | null} target */
+    _showRow(target) {
+        this._host.expand();
+        this._host.scrollTo(target);
     }
-}, _AllotWidget_pressNotificationButton = function _AllotWidget_pressNotificationButton(button, target) {
-    switch (button) {
-        case "start-service":
-            this.startService();
-            break;
-        case "open-logs":
-            this.openLogs();
-            break;
-        case "show":
-            __classPrivateFieldGet(this, _AllotWidget_instances, "m", _AllotWidget_showRow).call(this, target);
-            break;
+    _stopService() {
+        return __awaiter(this, void 0, void 0, function* () {
+            const poller = this._poller;
+            if (poller === null) {
+                return;
+            }
+            this._rules.expectStop();
+            try {
+                const problem = yield poller.stopService();
+                if (problem !== null) {
+                    this._host.log(`Allot: cannot stop the service: ${problem}`);
+                }
+            }
+            catch (error) {
+                // Only the widget going away cancels the request.
+                this._host.log(`Allot: stop not finished: ${error}`);
+            }
+        });
     }
-}, _AllotWidget_showRow = function _AllotWidget_showRow(target) {
-    __classPrivateFieldGet(this, _AllotWidget_host, "f").expand();
-    __classPrivateFieldGet(this, _AllotWidget_host, "f").scrollTo(target);
-}, _AllotWidget_stopService = function _AllotWidget_stopService() {
-    return __awaiter(this, void 0, void 0, function* () {
-        const poller = __classPrivateFieldGet(this, _AllotWidget_poller, "f");
-        if (poller === null) {
+    // One write at a time, in order, so a slow one never replaces a newer one.
+    _saveSettings() {
+        const text = encodeSettings(this.model.settings);
+        this._saving = this._saving.then(() => __awaiter(this, void 0, void 0, function* () {
+            if (!(yield writeTextFile(this._runner, this.paths.settings, text))) {
+                this._host.log(`Allot: cannot save ${this.paths.settings}`);
+            }
+        }));
+    }
+    _showPress() {
+        this._showChange({ snapshot: true, indicator: true });
+    }
+    /** @param {ModelChange} change */
+    _showChange(change) {
+        if (change.snapshot && this._expanded) {
+            this._render(true);
+        }
+        if (change.snapshot || change.indicator) {
+            this._host.onChange(change);
+        }
+        this._scheduleTick();
+    }
+    /** @param {boolean} animate */
+    _render(animate) {
+        const { snapshot } = this.model;
+        const text = {
+            idle: snapshot.idle === null ? "" : idleText(snapshot.idle),
+            nothing: NOTHING_TEXT,
+        };
+        const rows = listRows(snapshot, this._appIcons.icon, text, this.notificationsOff);
+        this._keeper.show(rows, animate, (data) => this._host.showRows(data, animate));
+        for (const spoken of this._announcer.observe(snapshot)) {
+            this._host.announce(spoken);
+        }
+    }
+    /**
+     * Wakes up for the next second while the popup is open, and for the next countdown second or
+     * hold end either way, since a Removed card still counts for the panel icon.
+     */
+    _scheduleTick() {
+        this._clearTick();
+        if (this._stopped) {
             return;
         }
-        __classPrivateFieldGet(this, _AllotWidget_rules, "f").expectStop();
-        try {
-            const problem = yield poller.stopService();
-            if (problem !== null) {
-                __classPrivateFieldGet(this, _AllotWidget_host, "f").log(`Allot: cannot stop the service: ${problem}`);
-            }
+        const stop = this.model.nextStopChangeMs;
+        const delays = [];
+        if (this._expanded) {
+            delays.push(TICK_MS);
         }
-        catch (error) {
-            // Only the widget going away cancels the request.
-            __classPrivateFieldGet(this, _AllotWidget_host, "f").log(`Allot: stop not finished: ${error}`);
+        if (stop !== null) {
+            delays.push(stop);
         }
-    });
-}, _AllotWidget_saveSettings = function _AllotWidget_saveSettings() {
-    const text = encodeSettings(this.model.settings);
-    __classPrivateFieldSet(this, _AllotWidget_saving, __classPrivateFieldGet(this, _AllotWidget_saving, "f").then(() => __awaiter(this, void 0, void 0, function* () {
-        if (!(yield writeTextFile(__classPrivateFieldGet(this, _AllotWidget_runner, "f"), this.paths.settings, text))) {
-            __classPrivateFieldGet(this, _AllotWidget_host, "f").log(`Allot: cannot save ${this.paths.settings}`);
+        if (delays.length === 0) {
+            return;
         }
-    })), "f");
-}, _AllotWidget_showPress = function _AllotWidget_showPress() {
-    __classPrivateFieldGet(this, _AllotWidget_instances, "m", _AllotWidget_showChange).call(this, { snapshot: true, indicator: true });
-}, _AllotWidget_showChange = function _AllotWidget_showChange(change) {
-    if (change.snapshot && __classPrivateFieldGet(this, _AllotWidget_expanded, "f")) {
-        __classPrivateFieldGet(this, _AllotWidget_instances, "m", _AllotWidget_render).call(this, true);
+        this._tick = this._host.timers.setTimeout(() => {
+            this._tick = null;
+            this._showChange(this.model.refresh());
+        }, Math.max(1, Math.ceil(Math.min(...delays))));
     }
-    if (change.snapshot || change.indicator) {
-        __classPrivateFieldGet(this, _AllotWidget_host, "f").onChange(change);
+    _clearTick() {
+        if (this._tick !== null) {
+            this._host.timers.clearTimeout(this._tick);
+            this._tick = null;
+        }
     }
-    __classPrivateFieldGet(this, _AllotWidget_instances, "m", _AllotWidget_scheduleTick).call(this);
-}, _AllotWidget_render = function _AllotWidget_render(animate) {
-    const { snapshot } = this.model;
-    const text = {
-        idle: snapshot.idle === null ? "" : idleText(snapshot.idle),
-        nothing: NOTHING_TEXT,
-    };
-    const rows = listRows(snapshot, __classPrivateFieldGet(this, _AllotWidget_appIcons, "f").icon, text, this.notificationsOff);
-    __classPrivateFieldGet(this, _AllotWidget_keeper, "f").show(rows, animate, (data) => __classPrivateFieldGet(this, _AllotWidget_host, "f").showRows(data, animate));
-    for (const spoken of __classPrivateFieldGet(this, _AllotWidget_announcer, "f").observe(snapshot)) {
-        __classPrivateFieldGet(this, _AllotWidget_host, "f").announce(spoken);
-    }
-}, _AllotWidget_scheduleTick = function _AllotWidget_scheduleTick() {
-    __classPrivateFieldGet(this, _AllotWidget_instances, "m", _AllotWidget_clearTick).call(this);
-    if (__classPrivateFieldGet(this, _AllotWidget_stopped, "f")) {
-        return;
-    }
-    const stop = this.model.nextStopChangeMs;
-    const delays = [];
-    if (__classPrivateFieldGet(this, _AllotWidget_expanded, "f")) {
-        delays.push(TICK_MS);
-    }
-    if (stop !== null) {
-        delays.push(stop);
-    }
-    if (delays.length === 0) {
-        return;
-    }
-    __classPrivateFieldSet(this, _AllotWidget_tick, __classPrivateFieldGet(this, _AllotWidget_host, "f").timers.setTimeout(() => {
-        __classPrivateFieldSet(this, _AllotWidget_tick, null, "f");
-        __classPrivateFieldGet(this, _AllotWidget_instances, "m", _AllotWidget_showChange).call(this, this.model.refresh());
-    }, Math.max(1, Math.ceil(Math.min(...delays)))), "f");
-}, _AllotWidget_clearTick = function _AllotWidget_clearTick() {
-    if (__classPrivateFieldGet(this, _AllotWidget_tick, "f") !== null) {
-        __classPrivateFieldGet(this, _AllotWidget_host, "f").timers.clearTimeout(__classPrivateFieldGet(this, _AllotWidget_tick, "f"));
-        __classPrivateFieldSet(this, _AllotWidget_tick, null, "f");
-    }
-};
+}
 /**
  * @param {IdleLine} idle
  * @returns {string}
