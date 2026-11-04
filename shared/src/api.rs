@@ -53,6 +53,10 @@ pub struct CanFitRequest {
     pub cwd: Option<String>,
 }
 
+/// The reason a verdict gives when ending every lease would still leave too little room, so
+/// only something outside Allot can make the request fit, if anything can.
+pub const REASON_BEYOND_LEASES: &str = "more than the machine can free";
+
 /// The admission engine's answer. Response of `POST /can-fit`.
 #[cfg_attr(any(feature = "schema", test), derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

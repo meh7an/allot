@@ -14,7 +14,7 @@
 //! waiting benchmark still drains longer leases, so it ends before the drain does.
 
 use allot_shared::{
-    api::{BenchmarkProgress, Verdict},
+    api::{BenchmarkProgress, REASON_BEYOND_LEASES, Verdict},
     config::Config,
     types::{
         EndCause, EnforcedLimits, Holder, IsolationKind, JobProfile, Lease, LeaseBinding, LeaseId,
@@ -730,7 +730,7 @@ impl Ledger {
                         }
                     }
                     None => {
-                        reasons.push("more than the machine can free".to_owned());
+                        reasons.push(REASON_BEYOND_LEASES.to_owned());
                         Hold::Free
                     }
                 }
@@ -1519,10 +1519,25 @@ mod tests {
         let ledger = Ledger::new(settings());
         let verdict = ledger.can_fit(&profile(64.0, 1_000), LeaseKind::Normal, &idle(), 0);
         assert!(!verdict.fits);
-        assert!(
-            has_reason(&verdict, "more than the machine can free"),
-            "{verdict:?}"
-        );
+        assert!(has_reason(&verdict, REASON_BEYOND_LEASES), "{verdict:?}");
+        assert_eq!(verdict.wait_estimate_secs, None);
+    }
+
+    #[test]
+    fn test_can_fit_with_reclaimable_memory_fits_beside_a_large_wired_model() {
+        let ledger = Ledger::new(settings());
+        let mut machine = idle();
+        // A Mac at normal pressure with a model wired: only 12000 of the 31000 MB used is held.
+        machine.memory.used_mb = 31_000;
+        machine.memory.reclaimable_mb = 19_000;
+        let verdict = ledger.can_fit(&profile(4.0, 4_096), LeaseKind::Normal, &machine, 0);
+        assert!(verdict.fits, "{verdict:?}");
+
+        // Under pressure the same machine reclaims nothing, and no lease can make room.
+        machine.memory.reclaimable_mb = 0;
+        let verdict = ledger.can_fit(&profile(4.0, 4_096), LeaseKind::Normal, &machine, 0);
+        assert!(!verdict.fits);
+        assert!(has_reason(&verdict, REASON_BEYOND_LEASES), "{verdict:?}");
         assert_eq!(verdict.wait_estimate_secs, None);
     }
 

@@ -379,6 +379,7 @@ mod tests {
                 available_mb: 24_768,
                 commit_used_mb: 10_000,
                 commit_limit_mb: 40_000,
+                reclaimable_mb: 0,
             },
             processes: vec![process(10, None, 1, 0.5)],
             gpus,

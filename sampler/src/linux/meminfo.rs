@@ -64,6 +64,7 @@ impl MemInfo {
             available_mb,
             commit_used_mb: used_mb + swap_used_mb,
             commit_limit_mb: total_mb + swap_total_mb,
+            reclaimable_mb: 0,
         }
     }
 }
@@ -84,6 +85,7 @@ mod tests {
                 available_mb: 19_524,
                 commit_used_mb: 12_475 + 1_024,
                 commit_limit_mb: 31_999 + 16_383,
+                reclaimable_mb: 0,
             }
         );
     }

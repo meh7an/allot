@@ -47,10 +47,14 @@ impl Room {
         let logical_cores = f64::from(snapshot.cpu.logical_cores);
         let machine_cores = f64::from(snapshot.cpu.usage_pct.avg_10s) / 100.0 * logical_cores;
         let memory = &snapshot.memory;
+        let held_mb = memory.used_mb.saturating_sub(memory.reclaimable_mb);
+        // A leased session's memory is reclaimable before it is anything else: only what
+        // exceeds the reclaimable part is still inside `held_mb`.
+        let leased_held_mb = leased.ram_mb.saturating_sub(memory.reclaimable_mb);
         let mut room = Self {
             cores: logical_cores * keep - background(machine_cores, f64::from(leased.cores)),
             ram_mb: memory.total_mb as f64 * keep
-                - background(memory.used_mb as f64, leased.ram_mb as f64),
+                - background(held_mb as f64, leased_held_mb as f64),
             gpu_pct: None,
             vram_mb: None,
             unified_memory: false,
@@ -394,6 +398,35 @@ mod tests {
         let mut snapshot = snapshot(cpu_pct, 0, None);
         snapshot.sessions.push(session_usage(session, cores));
         snapshot
+    }
+
+    fn snapshot_with_reclaimable(used_mb: u64, reclaimable_mb: u64) -> Snapshot {
+        let mut snapshot = snapshot(0.0, used_mb, None);
+        snapshot.memory.reclaimable_mb = reclaimable_mb;
+        snapshot
+    }
+
+    #[test]
+    fn test_room_does_not_count_reclaimable_memory_as_load() {
+        let room = Room::measure(&snapshot_with_reclaimable(30_000, 18_000), &[], 10.0);
+        // 29491.2 MB usable, 12000 MB held.
+        assert!((room.ram_mb - 17_491.2).abs() < 1e-6, "{room:?}");
+    }
+
+    #[test]
+    fn test_room_counts_a_leased_session_once_with_reclaimable_memory() {
+        let lease = active_lease(1, "a", profile(1.0, 4_000));
+        let measure = |session_mb: u64, reclaimable_mb: u64| {
+            let mut snapshot = snapshot_with_reclaimable(30_000, reclaimable_mb);
+            let mut session = session_usage("a", 0.0);
+            session.usage.ram_mb = session_mb;
+            snapshot.sessions.push(session);
+            Room::measure(&snapshot, &[&lease], 10.0).ram_mb
+        };
+        // The session's memory is all reclaimable: 12000 MB held by others, 4000 MB reserved.
+        assert!((measure(6_000, 18_000) - 13_491.2).abs() < 1e-6);
+        // 2000 MB of it is not: 28000 MB held, 2000 MB of that the session's, 4000 MB reserved.
+        assert!((measure(4_000, 2_000) + 508.8).abs() < 1e-6);
     }
 
     #[test]

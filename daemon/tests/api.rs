@@ -83,6 +83,7 @@ fn idle_machine() -> RawSample {
             available_mb: 28_768,
             commit_used_mb: 6_000,
             commit_limit_mb: 65_536,
+            reclaimable_mb: 0,
         },
         processes: vec![process(ALICE_PID, 100), process(BOB_PID, 200)],
         gpus: vec![],

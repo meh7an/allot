@@ -75,6 +75,7 @@ pub(crate) fn sample_snapshot() -> Snapshot {
             available_mb: 18_568,
             commit_used_mb: 20_100,
             commit_limit_mb: 37_632,
+            reclaimable_mb: 0,
         },
         gpus: vec![GpuAdapter {
             name: "NVIDIA GeForce RTX 4070".into(),

@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use allot_client::ClientError;
 use allot_shared::{
-    api::{AcquireRequest, CanFitRequest, LeaseQuery, Verdict},
+    api::{AcquireRequest, CanFitRequest, LeaseQuery, REASON_BEYOND_LEASES, Verdict},
     types::{EndCause, Holder, JobProfile, Lease, LeaseId, LeaseKind, LeaseState, NoiseReport},
 };
 use rmcp::{
@@ -52,6 +52,23 @@ struct AcquireOutcome {
     end_cause: Option<EndCause>,
     verdict: Verdict,
     next_step: &'static str,
+}
+
+/// What a session should do about its queued lease.
+fn queued_next_step(verdict: &Verdict) -> &'static str {
+    if verdict
+        .reasons
+        .iter()
+        .any(|reason| reason == REASON_BEYOND_LEASES)
+    {
+        "Still queued, and no lease ending would make room: only something outside Allot \
+         freeing resources can, unless the request is larger than this machine. Tell the user \
+         in one line what verdict.reasons says is in the way. Then call acquire_lease with this \
+         lease_id to keep waiting before running the command, or release_lease to give up."
+    } else {
+        "Still queued and keeping its place. Call acquire_lease with this lease_id \
+         to keep waiting before running the command, or release_lease to give up."
+    }
 }
 
 /// What `release_lease` reports: the lease, plus the noise report of a benchmark.
@@ -200,8 +217,7 @@ impl<C: DaemonApi> AllotServer<C> {
             }
             LeaseState::Queued => {
                 self.held.insert(lease.id);
-                "Still queued and keeping its place. Call acquire_lease with this lease_id \
-                 to keep waiting before running the command, or release_lease to give up."
+                queued_next_step(&response.verdict)
             }
             _ => {
                 self.held.remove(lease.id);
@@ -408,6 +424,18 @@ mod tests {
             label: "cargo build --release".into(),
             ..AcquireParams::default()
         })
+    }
+
+    #[test]
+    fn test_queued_next_step_says_when_no_lease_ending_would_make_room() {
+        let verdict = |reason: &str| Verdict {
+            fits: false,
+            reasons: vec!["RAM: 4096 MB requested, 0 MB free".into(), reason.into()],
+            wait_estimate_secs: None,
+            benchmark: None,
+        };
+        assert!(queued_next_step(&verdict(REASON_BEYOND_LEASES)).contains("Tell the user"));
+        assert!(!queued_next_step(&verdict("1 lease(s) queued ahead")).contains("Tell the user"));
     }
 
     #[tokio::test]

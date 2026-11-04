@@ -72,9 +72,7 @@ impl SystemSampler {
         Ok(sampler)
     }
 
-    /// The kernel's memory pressure level right now; `None` when it cannot be read. Nothing
-    /// reads it yet; it is the macOS side of a machine pressure signal for later admission
-    /// work.
+    /// The kernel's memory pressure level right now; `None` when it cannot be read.
     pub fn pressure(&self) -> Option<PressureLevel> {
         PressureLevel::read()
     }
@@ -166,7 +164,7 @@ impl Sampler for SystemSampler {
                 .iter()
                 .map(|cpu| cpu.cpu_usage())
                 .collect(),
-            memory: memory.mem_stats(),
+            memory: memory.mem_stats(self.pressure()),
             processes,
             gpus: gpu.adapters.clone(),
             drives: self.drives.read(),

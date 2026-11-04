@@ -25,17 +25,26 @@ impl Memory {
     /// as Activity Monitor's "Memory Used"; file cache and purgeable memory count as
     /// available. macOS has no commit charge, so memory in use plus swap in use stands in
     /// for it, out of memory plus swap.
-    pub(crate) fn mem_stats(&self) -> MemStats {
+    ///
+    /// macOS keeps memory full and compresses or swaps app memory on demand, so "used" says
+    /// little about room. While the kernel reports normal pressure, everything but wired
+    /// memory counts as reclaimable; at any other level, or an unknown one, nothing does.
+    pub(crate) fn mem_stats(&self, pressure: Option<PressureLevel>) -> MemStats {
         let mb = |pages: u64| pages.saturating_mul(self.page_bytes) / BYTES_PER_MB;
         let app_pages = self.internal_pages.saturating_sub(self.purgeable_pages);
         let total_mb = self.total_bytes / BYTES_PER_MB;
         let used_mb = mb(app_pages + self.wired_pages + self.compressor_pages).min(total_mb);
+        let reclaimable_mb = match pressure {
+            Some(PressureLevel::Normal) => used_mb.saturating_sub(mb(self.wired_pages)),
+            _ => 0,
+        };
         MemStats {
             total_mb,
             used_mb,
             available_mb: total_mb - used_mb,
             commit_used_mb: used_mb + self.swap_used_bytes / BYTES_PER_MB,
             commit_limit_mb: total_mb + self.swap_total_bytes / BYTES_PER_MB,
+            reclaimable_mb,
         }
     }
 }
@@ -192,7 +201,7 @@ mod tests {
 
     #[test]
     fn test_mem_stats_counts_app_wired_and_compressed_memory_as_used() {
-        let stats = royalmac().mem_stats();
+        let stats = royalmac().mem_stats(None);
         assert_eq!(stats.total_mb, 36_864);
         assert_eq!(stats.used_mb, 32_467);
         assert_eq!(stats.available_mb, 4_397);
@@ -201,12 +210,40 @@ mod tests {
     }
 
     #[test]
+    fn test_mem_stats_at_normal_pressure_reclaims_all_but_wired_memory() {
+        let stats = royalmac().mem_stats(Some(PressureLevel::Normal));
+        assert_eq!(stats.used_mb, 32_467);
+        assert_eq!(stats.reclaimable_mb, 32_467 - 18_518);
+    }
+
+    #[test]
+    fn test_mem_stats_under_pressure_or_unknown_reclaims_nothing() {
+        for pressure in [
+            Some(PressureLevel::Warning),
+            Some(PressureLevel::Critical),
+            None,
+        ] {
+            assert_eq!(royalmac().mem_stats(pressure).reclaimable_mb, 0);
+        }
+    }
+
+    #[test]
+    fn test_mem_stats_with_everything_wired_reclaims_nothing() {
+        let memory = Memory {
+            wired_pages: 40_000 * PAGES_PER_MB,
+            ..royalmac()
+        };
+        let stats = memory.mem_stats(Some(PressureLevel::Normal));
+        assert_eq!(stats.reclaimable_mb, 0);
+    }
+
+    #[test]
     fn test_mem_stats_never_reports_more_used_than_installed() {
         let memory = Memory {
             wired_pages: 30_000 * PAGES_PER_MB,
             ..royalmac()
         };
-        let stats = memory.mem_stats();
+        let stats = memory.mem_stats(None);
         assert_eq!(stats.used_mb, stats.total_mb);
         assert_eq!(stats.available_mb, 0);
     }

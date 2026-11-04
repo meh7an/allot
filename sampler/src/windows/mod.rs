@@ -259,6 +259,7 @@ impl Sampler for SystemSampler {
                 available_mb: self.system.available_memory() / BYTES_PER_MB,
                 commit_used_mb: self.counter_mb(&self.commit_used)?,
                 commit_limit_mb: self.counter_mb(&self.commit_limit)?,
+                reclaimable_mb: 0,
             },
             processes,
             gpus: gpu.adapters,

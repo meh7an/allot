@@ -328,6 +328,7 @@ mod tests {
                 available_mb: 11_264,
                 commit_used_mb: 40_960,
                 commit_limit_mb: 56_320,
+                reclaimable_mb: 0,
             },
             gpus: vec![],
             sessions: vec![SessionUsage {

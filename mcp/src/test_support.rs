@@ -63,6 +63,7 @@ pub(crate) fn snapshot() -> Snapshot {
             available_mb: 24_768,
             commit_used_mb: 9_000,
             commit_limit_mb: 65_536,
+            reclaimable_mb: 0,
         },
         gpus: vec![GpuAdapter {
             name: "Test GPU".into(),

@@ -66,6 +66,10 @@ pub struct MemStats {
     pub commit_used_mb: u64,
     /// Commit limit: physical memory plus page files.
     pub commit_limit_mb: u64,
+    /// The part of `used_mb` the OS gives up for new allocations with no harm to the machine,
+    /// which admission does not count as load. Only macOS reports any.
+    #[serde(default)]
+    pub reclaimable_mb: u64,
 }
 
 /// Utilization of one GPU's engine groups, as percentages.

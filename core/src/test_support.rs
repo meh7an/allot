@@ -30,6 +30,7 @@ pub(crate) fn snapshot(cpu_pct: f32, ram_used_mb: u64, gpu: Option<GpuAdapter>) 
             available_mb: 32_768 - ram_used_mb,
             commit_used_mb: ram_used_mb,
             commit_limit_mb: 65_536,
+            reclaimable_mb: 0,
         },
         gpus: gpu.into_iter().collect(),
         sessions: Vec::new(),

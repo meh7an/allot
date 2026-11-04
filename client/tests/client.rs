@@ -45,6 +45,7 @@ fn machine() -> RawSample {
             available_mb: 28_768,
             commit_used_mb: 6_000,
             commit_limit_mb: 65_536,
+            reclaimable_mb: 0,
         },
         processes: vec![RawProcess {
             pid: HOLDER_PID,
