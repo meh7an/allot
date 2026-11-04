@@ -4,7 +4,6 @@
 //! registrations with Claude Code and the OS.
 
 use std::{
-    env,
     fs::{self, OpenOptions},
     io,
     path::{MAIN_SEPARATOR, Path, PathBuf},
@@ -12,7 +11,7 @@ use std::{
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
-use allot_client::{BlockingClient, ClientOptions, SpawnOptions};
+use allot_client::{BlockingClient, ClientOptions, SpawnOptions, running_exe};
 #[cfg(unix)]
 use allot_shared::platform::DAEMON_LOG_TEXT;
 use allot_shared::{
@@ -371,7 +370,7 @@ pub fn uninstall(purge: bool) -> anyhow::Result<()> {
 }
 
 fn current_exe_dir() -> anyhow::Result<PathBuf> {
-    let exe = env::current_exe().context("finding this executable")?;
+    let exe = running_exe().context("finding this executable")?;
     exe.parent()
         .map(Path::to_owned)
         .context("this executable has no parent directory")
@@ -724,7 +723,7 @@ mod tests {
 
     impl TempDir {
         fn new(name: &str) -> Self {
-            let path = env::temp_dir().join(format!("allot-install-{}-{name}", process::id()));
+            let path = std::env::temp_dir().join(format!("allot-install-{}-{name}", process::id()));
             let _ = fs::remove_dir_all(&path);
             fs::create_dir_all(&path).unwrap();
             Self(path)

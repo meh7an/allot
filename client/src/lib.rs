@@ -29,7 +29,11 @@ use allot_shared::{
 use reqwest::{RequestBuilder, Response};
 use serde::de::DeserializeOwned;
 
-pub use crate::{blocking::BlockingClient, error::ClientError, spawn::SpawnOptions};
+pub use crate::{
+    blocking::BlockingClient,
+    error::ClientError,
+    spawn::{SpawnOptions, running_exe},
+};
 
 /// Result of a client call.
 pub type Result<T> = std::result::Result<T, ClientError>;

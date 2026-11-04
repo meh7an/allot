@@ -1,17 +1,17 @@
 //! Starting `allotd` as a detached background process.
 
+#[cfg(target_os = "linux")]
+use std::path::Path;
 #[cfg(unix)]
 use std::thread;
 use std::{
     env,
     ffi::OsStr,
-    io,
+    fs, io,
     path::PathBuf,
     process::{Command, Stdio},
     time::Duration,
 };
-#[cfg(target_os = "linux")]
-use std::{fs, path::Path};
 
 use allot_shared::platform::DAEMON_EXE;
 #[cfg(target_os = "linux")]
@@ -32,6 +32,22 @@ const DETACHED_PROCESS: u32 = 0x0000_0008;
 #[cfg(windows)]
 const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
 
+/// The file of the running executable. Started through a link, such as `~/.local/bin/allot`,
+/// macOS reports the link, whose folder has no other binaries, so links are followed. Not on
+/// Windows, where the result would be a `\\?\` path.
+///
+/// # Errors
+///
+/// When the OS cannot say what is running, or the file is gone.
+pub fn running_exe() -> io::Result<PathBuf> {
+    let exe = env::current_exe()?;
+    if cfg!(unix) {
+        fs::canonicalize(exe)
+    } else {
+        Ok(exe)
+    }
+}
+
 /// How the client starts the daemon when it is not running.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SpawnOptions {
@@ -45,7 +61,7 @@ impl SpawnOptions {
     /// `allotd` from the directory of the running executable, where the install puts both
     /// binaries; plain `allotd` (found on `PATH`) when that directory has none.
     pub fn beside_current_exe() -> Self {
-        let beside = env::current_exe()
+        let beside = running_exe()
             .ok()
             .and_then(|exe| exe.parent().map(|dir| dir.join(DAEMON_EXE)))
             .filter(|path| path.is_file());

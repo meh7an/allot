@@ -145,12 +145,16 @@ impl Home {
 
     /// As [`Self::allot`], with `$XDG_CURRENT_DESKTOP` set to `desktop`.
     fn allot_on_desktop(&self, args: &[&str], desktop: &str) -> Output {
+        self.run(Path::new(env!("CARGO_BIN_EXE_allot")), args, desktop)
+    }
+
+    fn run(&self, exe: &Path, args: &[&str], desktop: &str) -> Output {
         let path = format!(
             "{}:{}",
             self.fakes().display(),
             env::var("PATH").unwrap_or_default()
         );
-        Command::new(env!("CARGO_BIN_EXE_allot"))
+        Command::new(exe)
             .args(args)
             .env("HOME", &self.0)
             .env("XDG_CONFIG_HOME", self.0.join(".config"))
@@ -201,6 +205,22 @@ fn bin_names(bin: &Path) -> Vec<String> {
         .collect();
     names.sort();
     names
+}
+
+#[test]
+fn test_install_through_a_link_takes_the_binaries_beside_the_real_file() {
+    let home = Home::new("through-link");
+    let links = home.0.join("links");
+    fs::create_dir_all(&links).unwrap();
+    let link = links.join("allot");
+    symlink(home.build().join("allot"), &link).unwrap();
+
+    let output = home.run(&link, &["install"], "");
+
+    assert!(output.status.success(), "{output:?}");
+    for name in BINARIES {
+        assert!(home.bin().join(name).is_file(), "{name}");
+    }
 }
 
 #[test]
