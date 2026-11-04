@@ -140,6 +140,11 @@ impl Home {
     /// Runs the built `allot` in this home. `claude` points nowhere, so no test registers the
     /// MCP server with the real Claude Code.
     fn allot(&self, args: &[&str]) -> Output {
+        self.allot_on_desktop(args, "")
+    }
+
+    /// As [`Self::allot`], with `$XDG_CURRENT_DESKTOP` set to `desktop`.
+    fn allot_on_desktop(&self, args: &[&str], desktop: &str) -> Output {
         let path = format!(
             "{}:{}",
             self.fakes().display(),
@@ -149,6 +154,8 @@ impl Home {
             .args(args)
             .env("HOME", &self.0)
             .env("XDG_CONFIG_HOME", self.0.join(".config"))
+            .env("XDG_DATA_HOME", self.0.join(".local/share"))
+            .env("XDG_CURRENT_DESKTOP", desktop)
             .env("ALLOT_CLAUDE", self.0.join("no-claude"))
             .env("PATH", path)
             .stdin(Stdio::null())
@@ -494,6 +501,67 @@ fn test_uninstall_keeps_a_unit_or_agent_for_another_allotd() {
     assert_eq!(fs::read_to_string(&file).unwrap(), other);
     assert!(home.calls().is_empty(), "{:?}", home.calls());
     assert_eq!(fs::read_link(home.link()).unwrap(), Path::new("/dev/allot"));
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn test_install_writes_the_icon_and_uninstall_removes_it_and_the_notifyrc() {
+    let home = Home::new("icon");
+    let data = home.0.join(".local/share");
+    let icon = data.join("icons/hicolor/scalable/apps/allot.svg");
+    let notify_rc = data.join("knotifications6/allot.notifyrc");
+
+    let stdout = home.install();
+    assert!(icon.is_file(), "{stdout}");
+    assert!(stdout.contains("installed the allot icon"), "{stdout}");
+
+    fs::create_dir_all(notify_rc.parent().unwrap()).unwrap();
+    fs::write(&notify_rc, "[Global]\n").unwrap();
+    let choices = home.0.join(".config/allot.notifyrc");
+    fs::write(&choices, "[Event/notification]\n").unwrap();
+    home.uninstall();
+
+    assert!(!icon.exists());
+    assert!(!notify_rc.exists());
+    assert!(choices.is_file(), "only a purge removes the user's choices");
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn test_uninstall_purge_removes_the_notification_choices() {
+    let home = Home::new("purge-choices");
+    home.install();
+    let choices = home.0.join(".config/allot.notifyrc");
+    fs::write(&choices, "[Event/notification]\n").unwrap();
+
+    let output = home.allot(&["uninstall", "--purge"]);
+
+    assert!(output.status.success(), "{output:?}");
+    assert!(!choices.exists());
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn test_install_hints_at_the_panel_package_until_it_is_installed() {
+    let home = Home::new("panel-hint");
+    let build = home.build();
+    let args = ["install", "--from", build.to_str().unwrap()];
+    let stdout = |desktop| {
+        let output = home.allot_on_desktop(&args, desktop);
+        assert!(output.status.success(), "{output:?}");
+        String::from_utf8(output.stdout).unwrap()
+    };
+
+    assert!(stdout("KDE").contains("kpackagetool6"));
+    assert!(stdout("ubuntu:GNOME").contains("gnome-extensions install"));
+    assert!(!stdout("XFCE").contains("for the panel"));
+
+    fs::create_dir_all(
+        home.0
+            .join(".local/share/plasma/plasmoids/tech.mehran.allot"),
+    )
+    .unwrap();
+    assert!(!stdout("KDE").contains("kpackagetool6"));
 }
 
 #[test]

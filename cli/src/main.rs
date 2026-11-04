@@ -4,6 +4,12 @@ use clap::{Parser, Subcommand};
 
 mod classes;
 mod daemon;
+#[cfg(any(target_os = "linux", test))]
+#[cfg_attr(
+    not(target_os = "linux"),
+    allow(dead_code, reason = "tested on every OS, used on Linux")
+)]
+mod desktop;
 mod history;
 mod hook;
 mod install;
@@ -68,9 +74,10 @@ enum Command {
     /// live machine samples with `--sample`.
     Probe(probe::ProbeArgs),
     /// Copy the built binaries into ~/.allot/bin and link allot into ~/.local/bin, restart
-    /// allotd on them when it runs, copy the resource-guard skill, register the MCP server,
-    /// hooks, and CLAUDE.md rule with Claude Code, set up the systemd user unit (Linux) or
-    /// LaunchAgent (macOS) that starts allotd at login, and print what is left.
+    /// allotd on them when it runs, copy the resource-guard skill, install the allot icon
+    /// (Linux), register the MCP server, hooks, and CLAUDE.md rule with Claude Code, set up the
+    /// systemd user unit (Linux) or LaunchAgent (macOS) that starts allotd at login, and print
+    /// what is left.
     #[cfg(not(windows))]
     Install {
         /// Directory holding the built allot, allotd, and allot-mcp (default: this
@@ -111,8 +118,9 @@ enum Command {
         no_logon_task: bool,
     },
     /// Stop allotd and remove its systemd user unit or LaunchAgent, the binaries, the link in
-    /// ~/.local/bin, and the skill copy, unregister them from Claude Code, and print what is
-    /// left. Keeps the database, token, config, and logs.
+    /// ~/.local/bin, the skill copy, and on Linux the allot icon and the KDE widget's
+    /// notifications file, unregister them from Claude Code, and print what is left. Keeps the
+    /// database, token, config, and logs. The panel packages are removed with their own tools.
     #[cfg(not(windows))]
     Uninstall {
         /// Also delete the database, token, config, and logs.

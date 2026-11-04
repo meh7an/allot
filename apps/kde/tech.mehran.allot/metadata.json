@@ -9,7 +9,7 @@
         ],
         "Category": "System Information",
         "Description": "Shows the jobs Allot runs and queues for your Claude Code sessions.",
-        "Icon": "utilities-system-monitor",
+        "Icon": "allot",
         "Id": "tech.mehran.allot",
         "License": "MIT OR Apache-2.0",
         "Name": "Allot",

@@ -1,0 +1,141 @@
+name: Package Linux
+
+# The release workflow calls this on a tag. Run by hand, it builds the same packages as this
+# run's artifacts and publishes nothing:
+#   gh workflow run package-linux.yml --ref main
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  binaries:
+    strategy:
+      matrix:
+        include:
+          # 22.04 on both, so the packages run on glibc 2.35 and newer.
+          - runner: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+          - runner: ubuntu-22.04-arm
+            target: aarch64-unknown-linux-gnu
+    runs-on: ${{ matrix.runner }}
+    env:
+      TARGET: ${{ matrix.target }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install toolchain
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustc +stable -vV | grep -qx "host: $TARGET"
+
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-${{ runner.arch }}-release-${{ hashFiles('Cargo.lock') }}
+
+      - name: Build
+        run: cargo build --release --locked
+
+      # `allot install` takes the binaries from the folder of the allot it runs from.
+      - name: Package
+        run: |
+          version=$(cargo metadata --no-deps --format-version 1 \
+            | jq -r '.packages[] | select(.name == "allot-cli") | .version')
+          name="allot-$version-$TARGET"
+          mkdir "$name"
+          cp target/release/allot target/release/allotd target/release/allot-mcp \
+            README.md CHANGELOG.md LICENSE-MIT LICENSE-APACHE "$name"
+          tar --owner=0 --group=0 -czf "$name.tar.gz" "$name"
+          sha256sum "$name.tar.gz" > "$name.tar.gz.sha256"
+          echo "ASSET=$name" >> "$GITHUB_ENV"
+
+      # A library beyond these, or a newer glibc symbol, would narrow where the package runs.
+      - name: Check what the binaries need
+        run: |
+          for file in allot allotd allot-mcp; do
+            objdump -p "$ASSET/$file" | awk '/NEEDED/ { print $2 }'
+          done | sort -u | tee needed.txt
+          if grep -vE '^(libc|libm|libdl|librt|libpthread|libgcc_s|ld-linux-[a-z0-9_-]+)\.so' \
+            needed.txt; then
+            echo "a binary needs a library the package cannot count on" >&2
+            exit 1
+          fi
+          newest=$(for file in allot allotd allot-mcp; do objdump -T "$ASSET/$file"; done \
+            | grep -o 'GLIBC_[0-9.]*' | sort -Vu | tail -n 1)
+          echo "newest glibc symbol: $newest"
+          test "$(printf '%s\nGLIBC_2.35\n' "$newest" | sort -V | tail -n 1)" = GLIBC_2.35
+
+      # From the archive, as a user would. No autostart or Claude Code here: the runner has
+      # neither, and the unit tests cover them.
+      - name: Try the package
+        run: |
+          try=$(mktemp -d)
+          cp "$ASSET.tar.gz" "$ASSET.tar.gz.sha256" "$try"
+          cd "$try"
+          sha256sum -c "$ASSET.tar.gz.sha256"
+          tar -xzf "$ASSET.tar.gz"
+          export HOME="$try/home" XDG_CONFIG_HOME="$try/home/.config"
+          export XDG_DATA_HOME="$try/home/.local/share"
+          mkdir -p "$HOME/.local/bin"
+          "$ASSET/allot" install --no-claude --no-autostart
+          "$HOME/.local/bin/allot" status
+          test -f "$XDG_DATA_HOME/icons/hicolor/scalable/apps/allot.svg"
+          "$HOME/.local/bin/allot" uninstall --purge
+          test ! -e "$HOME/.allot"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: allot-linux-${{ matrix.target }}
+          path: |
+            ${{ env.ASSET }}.tar.gz
+            ${{ env.ASSET }}.tar.gz.sha256
+          if-no-files-found: error
+
+  # Both are zips of what git tracks, with metadata.json at the root, which is all that
+  # `gnome-extensions install` and `kpackagetool6` read; `gnome-extensions pack` would need the
+  # GNOME packages on the runner for the same result. The version shows in each desktop's list.
+  panels:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Package
+        run: |
+          version=$(cargo metadata --no-deps --format-version 1 \
+            | jq -r '.packages[] | select(.name == "allot-cli") | .version')
+          package() {
+            local source=$1 asset=$2 version_key=$3 work
+            work=$(mktemp -d)
+            git archive --format=tar "HEAD:$source" | tar -x -C "$work"
+            jq --arg version "$version" "$version_key = \$version" "$work/metadata.json" \
+              > "$work/metadata.json.new"
+            mv "$work/metadata.json.new" "$work/metadata.json"
+            (cd "$work" && zip -qrX "$GITHUB_WORKSPACE/$asset" .)
+            sha256sum "$asset" > "$asset.sha256"
+          }
+          package apps/gnome/allot@mehran.tech "allot-$version-gnome-extension.zip" \
+            '.["version-name"]'
+          package apps/kde/tech.mehran.allot "allot-$version-kde-widget.plasmoid" \
+            '.KPlugin.Version'
+          unzip -Z1 "allot-$version-gnome-extension.zip" | grep -qx extension.js
+          unzip -p "allot-$version-gnome-extension.zip" metadata.json \
+            | jq -e --arg v "$version" '.["version-name"] == $v and .uuid == "allot@mehran.tech"'
+          unzip -Z1 "allot-$version-kde-widget.plasmoid" | grep -qx contents/ui/main.qml
+          unzip -p "allot-$version-kde-widget.plasmoid" metadata.json \
+            | jq -e --arg v "$version" '.KPlugin.Version == $v and .KPlugin.Id == "tech.mehran.allot"'
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: allot-linux-panels
+          path: |
+            allot-*-gnome-extension.zip
+            allot-*-gnome-extension.zip.sha256
+            allot-*-kde-widget.plasmoid
+            allot-*-kde-widget.plasmoid.sha256
+          if-no-files-found: error

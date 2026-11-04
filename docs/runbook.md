@@ -35,6 +35,49 @@ installs the tray app and leaves it as you set it afterwards. Launching
 `bin\tray\allot-tray.exe` while it runs opens the flyout; `allot-tray.exe --quit` asks the
 running app to quit.
 
+## Linux
+
+Paths in this section start at your home folder, and the data folder is `~/.allot`.
+
+The systemd user unit `allotd.service` does the logon task's job. `allot install` writes it to
+`~/.config/systemd/user/`, enables it, and starts it; `allot uninstall` removes it, but only when
+it starts this install's `allotd`.
+
+```bash
+systemctl --user status allotd
+journalctl --user -u allotd
+```
+
+- `allot-mcp`, `allot status`, and `allot daemon start` start allotd through the unit when the
+  unit runs the same file, and directly otherwise.
+- The unit has no restart policy, like the logon task: the next client starts a crashed allotd.
+- allotd stops at your last logout. `loginctl enable-linger` keeps it running after that.
+- `allotd.log` is in `~/.allot/logs/`, the same as on Windows.
+
+| Symptom | Cause and fix |
+|---------|---------------|
+| `[todo] allotd at login` | No systemd user session, such as WSL without systemd. The line prints the commands. On WSL, set `systemd=true` under `[boot]` in `/etc/wsl.conf` and restart WSL. Clients still start allotd without the unit. |
+| `systemctl --user list-units 'allot-*.scope'` lists nothing while a job runs | `linux.scopes` needs cgroup v2 and a systemd user session; without them leases follow the process tree. See Configuration. |
+| `allot: command not found` | `~/.local/bin` is not on `PATH`, or it did not exist during the install. Add `~/.allot/bin` to `PATH`, or create the folder and install again. |
+| `version GLIBC_2.xx not found` | The system's glibc is older than 2.35. Build from source there. |
+| The GNOME extension is not listed after installing it | The shell only finds a new extension when it starts: log out and in, then `gnome-extensions enable allot@mehran.tech`. |
+| The GNOME extension shows an error | `gnome-extensions info allot@mehran.tech` shows its state, and `journalctl --user -b /usr/bin/gnome-shell \| grep -i allot` the reason. |
+| The KDE widget is not in Add Widgets, or does not change after an upgrade | Plasma reads packages when it starts: `systemctl --user restart plasma-plasmashell`. |
+| The KDE widget misbehaves | `journalctl --user -b -u plasma-plasmashell \| grep -i allot`. |
+| The widget or its notifications have a generic icon | The `allot` icon comes from `allot install`. Install, then restart Plasma. |
+
+To remove everything, take the panel package away first, since the KDE widget puts its
+notifications file back each time it starts:
+
+```bash
+gnome-extensions uninstall allot@mehran.tech
+kpackagetool6 -t Plasma/Applet -r tech.mehran.allot
+allot uninstall
+```
+
+`allot uninstall` removes the `allot` icon and `~/.local/share/knotifications6/allot.notifyrc`;
+`--purge` also removes `~/.allot` and `~/.config/allot.notifyrc`, your notification choices.
+
 ## Stopping a job
 
 Kill (in the flyout, or `allot kill <id>`) works on an active lease, whichever session holds it:

@@ -9,9 +9,9 @@
 [![CI](https://github.com/meh7an/allot/actions/workflows/ci.yml/badge.svg)](https://github.com/meh7an/allot/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/meh7an/allot)](https://github.com/meh7an/allot/releases/latest)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue)](#license)
-![Platform: Windows](https://img.shields.io/badge/platform-Windows-0078D6)
+![Platform: Windows and Linux](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-0078D6)
 
-Coordinates CPU and GPU heavy work between the Claude Code sessions on one Windows PC. Sessions
+Coordinates CPU and GPU heavy work between the Claude Code sessions on one machine. Sessions
 ask a per-user daemon for a lease before a build, test suite, benchmark, or training run, and
 wait their turn when the machine is busy, instead of all compiling at once. A tray app shows
 every session's jobs and lets you stop one; the session is told and asks you what to do next.
@@ -75,11 +75,13 @@ What the daemon does with a request:
 - **Fail-open.** If allotd is down, the hook lets commands run with a warning instead of
   blocking every shell call.
 
-Windows only. Everything lives in `%USERPROFILE%\.allot\`, not under `AppData`,
-because the Claude desktop app is MSIX-packaged and Windows redirects its writes to `AppData`
+Runs on Windows and Linux. Everything lives in `~/.allot`, which on Windows is
+`%USERPROFILE%\.allot\`, not under `AppData`, because the Claude desktop app is MSIX-packaged and Windows redirects its writes to `AppData`
 into a folder that terminal sessions cannot see.
 
 ## Install
+
+### Windows
 
 Needs Windows 10 or 11 (x64) and Claude Code. No admin rights: everything is installed for
 your user only.
@@ -122,7 +124,7 @@ claude mcp get allot
 To type `allot` anywhere, add `%USERPROFILE%\.allot\bin` to your user `PATH`
 (optional; the examples below assume it).
 
-### Without the setup
+### Windows without the setup
 
 The release also has `allot-<version>-x86_64-pc-windows-msvc.zip`. Extract it and
 run `allot.exe install` from that folder: it does everything the setup does except the Start
@@ -143,6 +145,76 @@ target\release\allot.exe install
 The publish finds the linker through `vswhere.exe`; if it cannot, add
 `C:\Program Files (x86)\Microsoft Visual Studio\Installer` to `PATH`. The setup itself is
 built from `installer\allot.iss` with Inno Setup 7 (see the script's header).
+
+### Linux
+
+Needs x86_64 or aarch64, glibc 2.35 or newer (Ubuntu 22.04, Debian 12, Fedora 36 and later), and
+Claude Code. systemd starts allotd at login and gives each job a cgroup of its own; without a
+user manager the install says what it could not do, and leases follow the job's process tree.
+No root needed. Linux packages are published from v0.3.0 on.
+
+```bash
+version=0.3.0
+target=x86_64-unknown-linux-gnu    # or aarch64-unknown-linux-gnu
+base=https://github.com/meh7an/allot/releases/download/v$version
+curl -fLO "$base/allot-$version-$target.tar.gz"
+curl -fLO "$base/allot-$version-$target.tar.gz.sha256"
+sha256sum -c "allot-$version-$target.tar.gz.sha256"
+tar -xzf "allot-$version-$target.tar.gz"
+"allot-$version-$target/allot" install
+```
+
+Then start a new Claude session. The folder can be deleted afterwards. The install:
+
+- puts `allot`, `allotd`, and `allot-mcp` in `~/.allot/bin`, and links `allot` into
+  `~/.local/bin` when that folder exists and has no other `allot`;
+- sets up the systemd user unit `allotd.service`, which starts allotd when you log in;
+- installs the `allot` icon into `~/.local/share/icons/hicolor`;
+- sets up Claude Code the way the Windows setup does (skill, MCP server, hooks, and the rule).
+
+`allot install --help` lists its options (`--no-claude`, `--no-autostart`), and it prints `[done]`
+for each step, or `[todo]` with what to do by hand. Run a newer package's `allot install` the same
+way to upgrade.
+
+#### The panel
+
+The desktop part is a separate package, because a desktop only loads it from its own folders.
+Both are in the release, with a `.sha256` each, and work on either architecture.
+
+On GNOME Shell (48 to 51; tested on 50):
+
+```bash
+gnome-extensions install --force "allot-$version-gnome-extension.zip"
+```
+
+Log out and in, since the shell only finds a new extension when it starts, and then:
+
+```bash
+gnome-extensions enable allot@mehran.tech
+```
+
+On KDE Plasma 6 (tested on 6.8), then add Allot to a panel with Add Widgets:
+
+```bash
+kpackagetool6 -t Plasma/Applet -i "allot-$version-kde-widget.plasmoid"
+```
+
+To upgrade the widget, use `-u` in place of `-i` and restart Plasma with
+`systemctl --user restart plasma-plasmashell`. Other desktops have no panel yet; `allot status`
+shows the same jobs and `allot kill ID` stops one.
+
+#### From source
+
+You need Rust (stable, 1.99 or newer) and a C compiler for the bundled SQLite. Inside a Claude
+session each build is a `cpu_heavy` lease like any other.
+
+```bash
+cargo build --release
+target/release/allot install
+```
+
+`gnome-extensions install` wants a zip, so zip `apps/gnome/allot@mehran.tech` from inside the
+folder first; `kpackagetool6 -i apps/kde/tech.mehran.allot` takes the folder as it is.
 
 ## Usage
 
@@ -251,9 +323,20 @@ from the bin directory (a running exe cannot delete itself). It does the same an
 it could not do. The database, token, config, tray settings, and logs stay unless you choose
 to delete them, or pass `--purge`.
 
+On Linux, remove the panel package first, since the KDE widget restores its notifications file
+when it starts, and then run `allot uninstall`. It takes away the unit, the binaries, the link,
+the skill copy, the icon, and that file, and keeps the data unless you pass `--purge`.
+
+```bash
+gnome-extensions uninstall allot@mehran.tech
+kpackagetool6 -t Plasma/Applet -r tech.mehran.allot
+allot uninstall
+```
+
 ## Files
 
-All under `%USERPROFILE%\.allot\`:
+All under `%USERPROFILE%\.allot\`, or `~/.allot` on Linux, which has no `bin/tray/` and keeps the
+panel's settings in `tray.json` too:
 
 | Path | Contents |
 |------|----------|
@@ -285,9 +368,13 @@ Health checks, fail-open behavior, crash recovery, and resetting the database ar
 
 ## Platform support
 
-Windows 10 and 11 on x86_64 only. The sampler reads Windows performance counters (PDH) and
-DXGI for vendor-neutral GPU and VRAM usage, autostart uses a Windows logon task and the Run
-key, and the tray app is a WinUI 3 app. GPU numbers cover one adapter.
+Windows 10 and 11 on x86_64: the sampler reads Windows performance counters (PDH) and DXGI for
+vendor-neutral GPU and VRAM usage, autostart uses a Windows logon task and the Run key, and the
+tray app is a WinUI 3 app. GPU numbers cover one adapter.
+
+Linux on x86_64 and aarch64 with glibc 2.35 or newer: the sampler reads `/proc` and sysfs, and
+NVML or DRM for the GPU, autostart is a systemd user unit, and jobs run in cgroup v2 scopes where
+systemd allows it. The panel is a GNOME Shell extension or a KDE Plasma 6 widget.
 
 ## Contributing
 

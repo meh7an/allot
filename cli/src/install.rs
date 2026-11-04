@@ -22,6 +22,8 @@ use allot_shared::{
 };
 use anyhow::{Context, bail};
 
+#[cfg(target_os = "linux")]
+use crate::desktop;
 use crate::{daemon, registration};
 #[cfg(windows)]
 use crate::{legacy, tray};
@@ -110,6 +112,8 @@ pub fn install(options: Options) -> anyhow::Result<()> {
         if options.setup.claude {
             copy_skill(&paths)?;
         }
+        #[cfg(target_os = "linux")]
+        desktop::install(&paths);
         // Stopped before the autostart step, which starts the new build.
         let client = client_options(&paths);
         let stopped = stop_daemon(&paths, &client);
@@ -117,6 +121,8 @@ pub fn install(options: Options) -> anyhow::Result<()> {
         let autostarted = registration::register(&paths, options.setup);
         restart_after_setup(&paths, stopped, autostarted, client);
         report_leftovers(&leftovers);
+        #[cfg(target_os = "linux")]
+        desktop::print_panel_hint(&paths);
         Ok(())
     }
     #[cfg(windows)]
@@ -337,6 +343,8 @@ pub fn uninstall(purge: bool) -> anyhow::Result<()> {
     remove_if_present(&paths.root().join(OLD_RULE_FILE))?;
     #[cfg(windows)]
     in_use.extend(legacy::clean_up(&paths));
+    #[cfg(target_os = "linux")]
+    desktop::uninstall(&paths, purge);
 
     if purge {
         in_use.extend(purge_root(paths.root())?);
@@ -529,7 +537,7 @@ fn report_leftovers(in_use: &[PathBuf]) {
     }
 }
 
-fn remove_if_present(path: &Path) -> anyhow::Result<()> {
+pub(crate) fn remove_if_present(path: &Path) -> anyhow::Result<()> {
     match fs::remove_file(path) {
         Err(error) if error.kind() != io::ErrorKind::NotFound => {
             Err(error).with_context(|| format!("removing {}", path.display()))
