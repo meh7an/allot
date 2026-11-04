@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "allot-cli"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "allot-client",
  "allot-core",
@@ -19,7 +19,7 @@ dependencies = [
 
 [[package]]
 name = "allot-client"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "allot-core",
  "allot-shared",
@@ -34,7 +34,7 @@ dependencies = [
 
 [[package]]
 name = "allot-core"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "allot-shared",
  "thiserror 2.0.21",
@@ -42,7 +42,7 @@ dependencies = [
 
 [[package]]
 name = "allot-mcp"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "allot-client",
  "allot-core",
@@ -59,7 +59,7 @@ dependencies = [
 
 [[package]]
 name = "allot-sampler"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "allot-core",
  "allot-shared",
@@ -74,7 +74,7 @@ dependencies = [
 
 [[package]]
 name = "allot-shared"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "schemars",
  "serde",
@@ -85,7 +85,7 @@ dependencies = [
 
 [[package]]
 name = "allotd"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "allot-core",
  "allot-sampler",

@@ -9,7 +9,7 @@
 [![CI](https://github.com/meh7an/allot/actions/workflows/ci.yml/badge.svg)](https://github.com/meh7an/allot/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/meh7an/allot)](https://github.com/meh7an/allot/releases/latest)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue)](#license)
-![Platform: Windows and Linux](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-0078D6)
+![Platform: Windows, Linux and macOS](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-0078D6)
 
 Coordinates CPU and GPU heavy work between the Claude Code sessions on one machine. Sessions
 ask a per-user daemon for a lease before a build, test suite, benchmark, or training run, and
@@ -56,6 +56,7 @@ flowchart LR
 | `allot hook pre-tool` | A PreToolUse hook for the Bash and PowerShell tools. It denies a heavy command when the session holds no covering lease, and lets it through with a warning when allotd is down. |
 | `allot hook post-tool` | A PostToolUse and PostToolUseFailure hook that tells the session when you stopped its job. |
 | `allot-tray` | The tray app: an icon that shows how busy the machine is, and a flyout with every session's jobs, Kill and Remove, resource meters, and toasts. Only a client of allotd. |
+| Menu bar app, GNOME extension, KDE widget | The same for macOS and Linux desktops, also only clients of allotd. |
 | `resource-guard` skill | Tells Claude when and how to lease. A CLAUDE.md rule points sessions to it. |
 | `allot` | The CLI: status, leases, history, kill, remove, daemon control, install. |
 
@@ -75,7 +76,7 @@ What the daemon does with a request:
 - **Fail-open.** If allotd is down, the hook lets commands run with a warning instead of
   blocking every shell call.
 
-Runs on Windows and Linux. Everything lives in `~/.allot`, which on Windows is
+Runs on Windows, Linux, and macOS. Everything lives in `~/.allot`, which on Windows is
 `%USERPROFILE%\.allot\`, not under `AppData`, because the Claude desktop app is MSIX-packaged and Windows redirects its writes to `AppData`
 into a folder that terminal sessions cannot see.
 
@@ -216,6 +217,58 @@ target/release/allot install
 `gnome-extensions install` wants a zip, so zip `apps/gnome/allot@mehran.tech` from inside the
 folder first; `kpackagetool6 -i apps/kde/tech.mehran.allot` takes the folder as it is.
 
+### macOS
+
+Needs Apple Silicon, macOS 14 or newer, Homebrew, and Claude Code. No admin rights. macOS packages
+are published from v0.3.0 on.
+
+```bash
+brew tap meh7an/allot
+brew trust --tap meh7an/allot
+brew install allot
+allot install
+```
+
+Homebrew only loads a third-party tap you have trusted. Then start a new Claude session. The
+install:
+
+- copies `allot`, `allotd`, and `allot-mcp` to `~/.allot/bin`, and links `allot` into
+  `~/.local/bin` when that folder exists and has no other `allot`;
+- sets up the LaunchAgent `tech.mehran.allotd`, which starts allotd when you log in;
+- sets up Claude Code the way the Windows setup does (skill, MCP server, hooks, and the rule).
+
+`allot install --help` lists its options (`--no-claude`, `--no-autostart`).
+
+#### The menu bar app
+
+```bash
+brew install --cask allot-app
+open /Applications/Allot.app
+```
+
+The app is signed ad hoc, not with an Apple Developer ID, so macOS stops it once: it says Apple
+could not verify Allot, and System Settings > Privacy & Security then offers Open Anyway. A new
+version asks again. The app also needs the install above, since it only talks to allotd.
+
+#### Without Homebrew
+
+The release has `allot-<version>-aarch64-apple-darwin.tar.gz` and
+`allot-<version>-macos-app.zip`, with a `.sha256` each. Check them with `shasum -a 256 -c`, run
+`./allot install` from the unpacked tarball, and move `Allot.app` to Applications; from any other
+folder macOS runs a copy it moved aside, which cannot launch at login.
+
+#### From source
+
+You need Rust (stable, 1.99 or newer) and Xcode's command line tools. The app also needs Xcode and
+[XcodeGen](https://github.com/yonaskolb/XcodeGen).
+
+```bash
+cargo build --release
+target/release/allot install
+cd apps/macos && xcodegen generate
+xcodebuild -project Allot.xcodeproj -scheme Allot -configuration Release -derivedDataPath build build
+```
+
 ## Usage
 
 Once installed there is nothing to call by hand: the skill and the CLAUDE.md rule make each
@@ -310,6 +363,15 @@ the CLAUDE.md import (now `@allot.md`), and removes the old binaries. allotd kee
 and token, so sessions that were open keep their old MCP server working until they restart.
 The old folder is deleted by a later install once nothing runs from it.
 
+On macOS, Homebrew updates its own copy only. `allot install` is what puts the new binaries in
+`~/.allot/bin`, where sessions and allotd run them from:
+
+```bash
+brew upgrade allot
+allot install
+brew upgrade --cask allot-app
+```
+
 ## Uninstall
 
 Uninstall Allot in Settings > Apps > Installed apps. It asks whether to delete your
@@ -333,10 +395,20 @@ kpackagetool6 -t Plasma/Applet -r tech.mehran.allot
 allot uninstall
 ```
 
+On macOS, run `allot uninstall` before Homebrew takes the `allot` command away. It removes the
+LaunchAgent, the binaries, the link, and the skill copy, and keeps the data unless you pass
+`--purge`.
+
+```bash
+allot uninstall
+brew uninstall --cask allot-app
+brew uninstall allot
+```
+
 ## Files
 
-All under `%USERPROFILE%\.allot\`, or `~/.allot` on Linux, which has no `bin/tray/` and keeps the
-panel's settings in `tray.json` too:
+All under `%USERPROFILE%\.allot\`, or `~/.allot` on Linux and macOS, which have no `bin/tray/` and
+keep the panel's settings in `tray.json` too:
 
 | Path | Contents |
 |------|----------|
@@ -375,6 +447,11 @@ tray app is a WinUI 3 app. GPU numbers cover one adapter.
 Linux on x86_64 and aarch64 with glibc 2.35 or newer: the sampler reads `/proc` and sysfs, and
 NVML or DRM for the GPU, autostart is a systemd user unit, and jobs run in cgroup v2 scopes where
 systemd allows it. The panel is a GNOME Shell extension or a KDE Plasma 6 widget.
+
+macOS 14 or newer on Apple Silicon: the sampler reads the Mach VM statistics and memory pressure
+level, and IOKit for the GPU and drives (per-process GPU figures are estimates), autostart is a
+LaunchAgent, and the panel is a menu bar app. Memory is shared with the GPU, so video memory
+counts against RAM. The app is signed ad hoc.
 
 ## Contributing
 

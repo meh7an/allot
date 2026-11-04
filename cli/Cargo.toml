@@ -17,10 +17,10 @@ name = "allot"
 path = "src/main.rs"
 
 [dependencies]
-allot-client = { version = "0.2.0", path = "../client" }
-allot-core = { version = "0.2.0", path = "../core" }
-allot-sampler = { version = "0.2.0", path = "../sampler" }
-allot-shared = { version = "0.2.0", path = "../shared" }
+allot-client = { version = "0.3.0", path = "../client" }
+allot-core = { version = "0.3.0", path = "../core" }
+allot-sampler = { version = "0.3.0", path = "../sampler" }
+allot-shared = { version = "0.3.0", path = "../shared" }
 anyhow = "1.0.104"
 clap = { version = "4.6.7", features = ["derive"] }
 serde = { version = "1.0.229", features = ["derive"] }

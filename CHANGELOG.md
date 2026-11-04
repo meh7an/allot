@@ -6,8 +6,36 @@ All notable changes to this project are documented in this file. The format foll
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-04
+
+Allot now runs on Linux and macOS too, with a native panel on each, and is called Allot instead
+of Resources Helper. Windows keeps its setup, tray app and behavior.
+
+### Added
+
+- Linux: x86_64 and aarch64 tarballs for glibc 2.35 and newer. `allot install` sets up a systemd
+  user unit and the `allot` icon. Each lease's command runs in a cgroup v2 scope of its own where
+  systemd allows it, which gives exact usage and an atomic kill, with optional CPU and memory
+  limits; otherwise leases follow the process tree. GPU figures come from NVML, DRM fdinfo, and
+  amdgpu sysfs.
+- Linux panels, as separate packages: a GNOME Shell extension (48 to 51, tested on 50) and a KDE
+  Plasma 6 widget (tested on 6.8), with the Windows flyout's job cards, Kill and Remove, Resources
+  card, first run, and notifications.
+- macOS on Apple Silicon, 14 or newer: a Homebrew tap, `meh7an/allot`, with a formula for the
+  binaries and the `allot-app` cask for the menu bar app, also as release assets. `allot install`
+  sets up the LaunchAgent `tech.mehran.allotd`. The app is signed ad hoc, so macOS asks once per
+  version (see the README). GPU figures come from IOKit, and video memory counts against RAM.
+- Keyboard use, screen readers, text scaling, and high contrast in the three new panels.
+- `acquire_lease` tells a session when no lease ending would make room for its request, so it
+  says so instead of waiting silently.
+- The Windows tray says when Windows has Allot's toasts turned off, with a link to the setting.
+
 ### Changed
 
+- On macOS, while memory pressure is normal, admission counts only wired memory as load, so a
+  local model holding most of RAM no longer keeps every lease queued.
+- `allot --version` prints `allot`, not the package name `allot-cli`.
+- The Windows tray icon shows play, benchmark, and clock badges.
 - Resources Helper is now called Allot, and everything it installs is renamed:
 
   | Before | Now |
@@ -121,6 +149,7 @@ First public release.
 - A logon task for autostart, and a runbook for health checks, troubleshooting, and
   configuration.
 
-[Unreleased]: https://github.com/meh7an/allot/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/meh7an/allot/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/meh7an/allot/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/meh7an/allot/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/meh7an/allot/releases/tag/v0.1.0

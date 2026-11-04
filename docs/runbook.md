@@ -78,6 +78,51 @@ allot uninstall
 `allot uninstall` removes the `allot` icon and `~/.local/share/knotifications6/allot.notifyrc`;
 `--purge` also removes `~/.allot` and `~/.config/allot.notifyrc`, your notification choices.
 
+## macOS
+
+Paths in this section start at your home folder, and the data folder is `~/.allot`.
+
+The LaunchAgent `tech.mehran.allotd` does the logon task's job. `allot install` writes it to
+`~/Library/LaunchAgents/` and loads it; `allot uninstall` removes it. Homebrew has no service for
+Allot, so `brew services` does not list it.
+
+```bash
+launchctl print "gui/$(id -u)/tech.mehran.allotd"
+launchctl kickstart "gui/$(id -u)/tech.mehran.allotd"
+```
+
+- It has no restart policy, like the logon task: the next client starts a crashed allotd. The
+  menu bar app's Start Service uses the agent when it is there.
+- `allotd.log` is in `~/.allot/logs/`, the same as on Windows.
+- Homebrew's copy of the binaries is only what `allot install` copies from, so after
+  `brew upgrade allot` run `allot install`. Sessions run from `~/.allot/bin`.
+
+While the kernel reports normal memory pressure, admission counts only wired memory as load, plus
+what leases reserved. macOS keeps memory full and compresses or swaps the rest on demand. At the
+warning or critical level it counts everything Activity Monitor calls Memory Used. So the
+Resources card's RAM bar can run past its headroom while jobs still start. Wired memory includes
+a model a local LLM server has loaded. A running GPU lease's memory can count twice, as wired and
+as reserved, so other leases wait more than they need to until it ends.
+
+| Symptom | Cause and fix |
+|---------|---------------|
+| `brew` refuses the tap, formula, or cask as untrusted | `brew trust --tap meh7an/allot`. |
+| "Apple could not verify Allot" | The app is signed ad hoc. System Settings > Privacy & Security > Open Anyway, once per version. |
+| The app says to move it to Applications | It runs from a copy macOS moved aside, which cannot launch at login. Move it to `/Applications`. |
+| Login Items lists an unidentified `allotd` | That is the LaunchAgent. Turning it off stops allotd starting at login; clients still start it when needed. |
+| The app shows the service down right after installing | The cask does not run the install. Run `allot install`. |
+| A session says no lease ending would make room | Wired memory or the request's own size is in the way; `allot status` shows the memory. Unload the local model, or lower the request. |
+
+To remove everything:
+
+```bash
+allot uninstall
+brew uninstall --cask allot-app
+brew uninstall allot
+```
+
+`--purge` on the first command also removes `~/.allot`.
+
 ## Stopping a job
 
 Kill (in the flyout, or `allot kill <id>`) works on an active lease, whichever session holds it:

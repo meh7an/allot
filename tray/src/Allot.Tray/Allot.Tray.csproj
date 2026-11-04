@@ -7,7 +7,7 @@
     <AssemblyName>allot-tray</AssemblyName>
     <!-- Released together with the Rust workspace; the release workflow checks both against
          the tag. -->
-    <Version>0.2.0</Version>
+    <Version>0.3.0</Version>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>Assets\AppIcon.ico</ApplicationIcon>
     <Platforms>x64</Platforms>

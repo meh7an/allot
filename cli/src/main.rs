@@ -26,7 +26,7 @@ mod tray;
 
 /// Inspect machine usage and leases, control the daemon, and run the Claude Code hook.
 #[derive(Debug, Parser)]
-#[command(version)]
+#[command(name = "allot", version)]
 struct Args {
     #[command(subcommand)]
     command: Command,
