@@ -506,18 +506,14 @@ fn purge_root(root: &Path) -> anyhow::Result<Vec<PathBuf>> {
     };
     for entry in entries {
         let path = entry?.path();
-        let removed = if path.is_dir() {
+        if !path.is_dir() {
+            // As allotd exits, SQLite may delete its -wal and -shm files before we get to them.
+            remove_if_present(&path)?;
+        } else if cfg!(not(windows)) || executables(&path).is_empty() {
             // On Windows the bin directory still holds the executables in use; Unix deletes
             // files in use.
-            if cfg!(not(windows)) || executables(&path).is_empty() {
-                fs::remove_dir_all(&path)
-            } else {
-                continue;
-            }
-        } else {
-            fs::remove_file(&path)
-        };
-        removed.with_context(|| format!("removing {}", path.display()))?;
+            fs::remove_dir_all(&path).with_context(|| format!("removing {}", path.display()))?;
+        }
     }
     let in_use = executables(&root.join("bin"));
     if in_use.is_empty() {
