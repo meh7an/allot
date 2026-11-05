@@ -28,13 +28,13 @@ body:
     id: log
     attributes:
       label: Relevant allotd.log lines
-      description: From `%USERPROFILE%\.allot\logs\allotd.log`, if any.
+      description: From `logs/allotd.log` in `~/.allot` (`%USERPROFILE%\.allot` on Windows), if any.
       render: text
   - type: input
-    id: windows
+    id: os
     attributes:
-      label: Windows version
-      placeholder: Windows 11 24H2
+      label: OS and desktop
+      placeholder: Windows 11 24H2, macOS 26.1, or Ubuntu 24.04 with GNOME 46
     validations:
       required: true
   - type: input

@@ -1,7 +1,8 @@
 # Allot runbook
 
-Paths below are relative to `%USERPROFILE%\.allot\` unless they start with `~` or a drive.
-`allot` means `bin\allot.exe`.
+The sections without an OS in their name use Windows paths, relative to `%USERPROFILE%\.allot\`
+unless they start with `~` or a drive, and `allot` means `bin\allot.exe`. On Linux and macOS the
+same files are in `~/.allot`; the Linux and macOS sections cover what differs.
 
 ## Is it working?
 
