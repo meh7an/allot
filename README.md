@@ -16,6 +16,16 @@ daemon for a lease before a build, test suite, benchmark, or training run, and w
 the machine is busy, instead of all compiling at once.
 
 <p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/demo-dark.gif">
+    <img src="docs/images/demo-light.gif" alt="allot status --watch while two sessions each lease cargo build --release: the second lease waits in the queue, then starts as soon as the first build ends" width="800">
+  </picture>
+  <br>
+  <sub>A real run: two sessions ask for the same build, and the second waits its turn.
+  Recorded by <a href="docs/demo/record.sh">docs/demo/record.sh</a>.</sub>
+</p>
+
+<p align="center">
   <img src="docs/images/panel-windows-res-collapsed.png" alt="The Allot panel with one cargo build running and one npm test run waiting behind it" width="360">
   <br>
   <sub>The Windows panel, showing sample jobs.</sub>
