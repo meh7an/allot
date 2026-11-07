@@ -3,3 +3,5 @@ xtask = "run --quiet --package xtask --"
 
 [target.x86_64-pc-windows-msvc]
 linker = "rust-lld.exe"
+# The C runtime goes into each binary, so a clean Windows needs no Visual C++ Redistributable.
+rustflags = ["-C", "target-feature=+crt-static"]

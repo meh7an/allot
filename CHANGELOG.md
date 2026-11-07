@@ -22,11 +22,19 @@ All notable changes to this project are documented in this file. The format foll
 - Colour in `status`, `leases`, `history` and `doctor`, with `--color auto|always|never`. It
   follows `NO_COLOR` and `CLICOLOR_FORCE` and is off when piped.
 - `--help` shows examples.
+- The Windows setup puts `%USERPROFILE%\.allot\bin` on the user `PATH`, so `allot` runs in any
+  new terminal, and its uninstaller takes it off again.
 
 ### Changed
 
 - Errors fit on one line, and a `hint:` line says what to run next when allotd is not running
   or a lease ID is wrong.
+
+### Fixed
+
+- On a Windows without the Visual C++ Redistributable, `allot.exe` could not start
+  (VCRUNTIME140.dll was not found), so the setup installed nothing while reporting success. The
+  Windows binaries now carry the C runtime themselves.
 
 ## [0.3.0] - 2026-11-04
 

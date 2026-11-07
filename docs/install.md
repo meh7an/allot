@@ -46,9 +46,9 @@ and `--no-autostart`. `install.ps1` takes `-Version`, `-NoClaude` (leave Claude 
 later run without them keeps the choices of the last install. `ALLOT_DOWNLOAD_BASE` replaces
 `https://github.com/meh7an/allot/releases` for both, for a mirror.
 
-Neither script changes your `PATH` or shell profile. `allot install` links `allot` into
-`~/.local/bin` when that folder exists, and the scripts say what to add when `allot` would not be
-found.
+Neither script changes your shell profile. `allot install` links `allot` into `~/.local/bin`
+when that folder exists, the Windows setup after 0.3.0 puts `%USERPROFILE%\.allot\bin` on your
+user `PATH`, and the scripts say what to add when `allot` would not be found.
 
 ## Windows
 
@@ -78,6 +78,8 @@ The setup:
 - writes the rule to `~/.claude/allot.md` and imports it into `~/.claude/CLAUDE.md`
   with the line `@allot.md`. A copy of the rule pasted by hand before is replaced
   by that line;
+- puts `%USERPROFILE%\.allot\bin` on your user `PATH` (setups after 0.3.0), so `allot` runs in
+  any terminal opened afterwards; uninstalling takes it off again;
 - adds Allot to Apps & features, for uninstalling.
 
 A file is only rewritten when something in it changes, and the old one is kept beside it as
@@ -90,7 +92,8 @@ Check it with:
 claude mcp get allot
 ```
 
-To type `allot` anywhere, add `%USERPROFILE%\.allot\bin` to your user `PATH` (optional).
+The 0.3.0 setup leaves `PATH` alone: to type `allot` anywhere with it, add
+`%USERPROFILE%\.allot\bin` to your user `PATH` (optional).
 
 ### Without the setup
 

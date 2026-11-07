@@ -107,6 +107,35 @@ jobs:
             "/DPayload=$payload" "/O$env:RUNNER_TEMP" ..\installer\allot.iss
           if ($LASTEXITCODE -ne 0) { throw "ISCC exited with $LASTEXITCODE" }
 
+      # The stand-in allot.exe cannot run, so this checks only what the setup does itself: the
+      # bin folder joins the user PATH once, even on a second install, and leaves it on uninstall.
+      - name: Installer PATH
+        shell: pwsh
+        run: |
+          $bin = Join-Path $env:USERPROFILE '.allot\bin'
+          function Get-BinEntries {
+            $path = [Environment]::GetEnvironmentVariable('Path', 'User')
+            @(($path ?? '') -split ';' | Where-Object { $_ -eq $bin }).Count
+          }
+          # -Wait would also wait for the processes the setup starts.
+          function Invoke-Quietly([string] $exe) {
+            $process = Start-Process $exe -PassThru -ArgumentList `
+              '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/SP-'
+            $null = $process.Handle
+            $process.WaitForExit()
+          }
+          $setup = "$env:RUNNER_TEMP\allot-0.0.0-setup.exe"
+          Invoke-Quietly $setup
+          Invoke-Quietly $setup
+          if ((Get-BinEntries) -ne 1) { throw "the user PATH has $(Get-BinEntries) entries for $bin" }
+          # The uninstaller hands over to a copy of itself in the temp folder and may exit first.
+          $uninstaller = "$env:LOCALAPPDATA\Programs\Allot\unins000.exe"
+          Invoke-Quietly $uninstaller
+          $deadline = (Get-Date).AddMinutes(2)
+          while ((Test-Path $uninstaller) -and (Get-Date) -lt $deadline) { Start-Sleep 1 }
+          if (Test-Path $uninstaller) { throw "the uninstall did not finish" }
+          if ((Get-BinEntries) -ne 0) { throw "the uninstall left $bin on the user PATH" }
+
   unix:
     strategy:
       fail-fast: false

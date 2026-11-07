@@ -268,13 +268,15 @@ Publishing the draft release is the one gate: nothing reaches a package manager 
 | Channel | Job | Secret on `meh7an/allot` |
 |---------|-----|--------------------------|
 | Homebrew tap | `homebrew` | `TAP_DEPLOY_KEY`: private half of a write deploy key on `meh7an/homebrew-allot` |
+| winget (`Mehran.Allot`) | `winget` | `WINGET_TOKEN`: classic token of `meh7an` with `public_repo` and `workflow` |
 | Manual stores issue | `checklist` | None; the job's own token |
 
 ### Re-running a channel
 
 Each channel fails alone, so Re-run failed jobs on the run's page finishes a release. Running a
 channel again is safe: the tap is only pushed when it differs and never moves to an older version,
-and the issue is opened once per tag. A prerelease goes to no channel.
+winget gets no pull request for a version it already has or one with a pull request open, and the
+issue is opened once per tag. A prerelease goes to no channel.
 
 A re-run uses the workflow at the tag. To get a later fix to `distribute.yml`, or for a tag that
 predates the file (v0.3.0 and older, which publishing could not start), run `main`'s copy by hand:
@@ -300,4 +302,27 @@ tap, read its diff, and delete the branch. The job refuses a fake version on the
 
 ```bash
 gh workflow run distribute.yml -f tag=v0.3.0 -f channel=homebrew -f test_version=0.99.0 -f tap_branch=test/fake-version
+```
+
+### The winget token
+
+The `winget` job runs [Komac](https://github.com/russellbanks/Komac), which writes the new
+version's manifests from the last one merged in `microsoft/winget-pkgs` and opens the pull
+request from the fork `meh7an/winget-pkgs`. The first version, 0.3.0, went in by hand. The pull
+request is merged by winget's moderators after its checks pass; one that the bot hands back for
+changes closes itself after 8 days without an answer.
+
+Komac cannot open the pull request with a fine-grained token, so `WINGET_TOKEN` is a classic
+token (Settings, Developer settings, Personal access tokens, Tokens (classic)) with `public_repo`,
+which `komac sync-fork` also needs `workflow` beside. It can write to every public repository of
+`meh7an`, so give it an expiry and replace it before then:
+
+```bash
+gh secret set WINGET_TOKEN --repo meh7an/allot
+```
+
+To prove the token and the job without a pull request, print the manifests Komac would submit:
+
+```bash
+gh workflow run distribute.yml -f tag=v0.3.0 -f channel=winget -f winget_dry_run=true
 ```

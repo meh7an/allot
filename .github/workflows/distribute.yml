@@ -19,7 +19,7 @@ on:
         description: Channel to run
         type: choice
         default: all
-        options: [all, homebrew, checklist]
+        options: [all, homebrew, winget, checklist]
       tap_branch:
         description: Tap branch to push to
         type: string
@@ -28,6 +28,10 @@ on:
         description: Homebrew test, a fake version with dummy checksums; not for the tap's main
         type: string
         default: ""
+      winget_dry_run:
+        description: winget test, print the manifests instead of opening a pull request
+        type: boolean
+        default: false
 
 permissions: {}
 
@@ -142,6 +146,75 @@ jobs:
           else
             git push --force origin "HEAD:refs/heads/$TAP_BRANCH"
           fi
+
+  # Komac writes the new version's manifests from the last merged one and opens the pull request
+  # to microsoft/winget-pkgs from Mehran's fork. It is the tool winget-releaser runs, called
+  # directly so that the exact build that runs is pinned.
+  winget:
+    needs: resolve
+    if: contains(fromJSON('["all", "winget"]'), needs.resolve.outputs.channel)
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    env:
+      KOMAC_VERSION: 2.17.2
+      KOMAC_SHA256: b03b020eec98acfb0b53e284a6e21815b884be33de6785b97e7a120f0e748966
+      PACKAGE: Mehran.Allot
+      PACKAGE_PATH: manifests/m/Mehran/Allot
+    steps:
+      - name: Check the token is set
+        env:
+          WINGET_TOKEN: ${{ secrets.WINGET_TOKEN }}
+        run: |
+          if [ -z "$WINGET_TOKEN" ]; then
+            echo "::error::Set the WINGET_TOKEN secret; see Releasing in docs/runbook.md"
+            exit 1
+          fi
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Komac
+        run: |
+          archive="komac-$KOMAC_VERSION-x86_64-unknown-linux-gnu.tar.gz"
+          curl --fail --silent --show-error --location --output "$RUNNER_TEMP/$archive" \
+            "https://github.com/russellbanks/Komac/releases/download/v$KOMAC_VERSION/$archive"
+          echo "$KOMAC_SHA256  $RUNNER_TEMP/$archive" | sha256sum --check --strict
+          mkdir "$RUNNER_TEMP/komac" "$RUNNER_TEMP/bin"
+          tar -xzf "$RUNNER_TEMP/$archive" -C "$RUNNER_TEMP/komac"
+          install -m 0755 "$(find "$RUNNER_TEMP/komac" -type f -name komac)" "$RUNNER_TEMP/bin"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+
+      - name: Open the pull request, once per version
+        env:
+          GH_TOKEN: ${{ github.token }}
+          # Komac's own token: a classic one, since Komac cannot open the pull request with a
+          # fine-grained one.
+          GITHUB_TOKEN: ${{ secrets.WINGET_TOKEN }}
+          DRY_RUN: ${{ inputs.winget_dry_run || false }}
+          FORCE_HYPERLINK: 0
+          TAG: ${{ needs.resolve.outputs.tag }}
+          VERSION: ${{ needs.resolve.outputs.version }}
+        run: |
+          komac --version
+          setup="allot-$VERSION-setup.exe"
+          bash .github/scripts/asset-sha256.sh "$TAG" "$setup" > /dev/null
+          if [ "$DRY_RUN" != true ]; then
+            if found=$(gh api "repos/microsoft/winget-pkgs/contents/$PACKAGE_PATH/$VERSION" \
+              --jq length 2>&1); then
+              echo "::notice::winget-pkgs already has $PACKAGE $VERSION"
+              exit 0
+            elif [[ "$found" != *"HTTP 404"* ]]; then
+              echo "::error::Could not look for $PACKAGE $VERSION in winget-pkgs: $found"
+              exit 1
+            fi
+            komac sync-fork
+          fi
+          komac update "$PACKAGE" --version "$VERSION" \
+            --urls "https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG/$setup" \
+            --release-notes-url "https://github.com/$GITHUB_REPOSITORY/releases/tag/$TAG" \
+            --submit
 
   checklist:
     needs: resolve

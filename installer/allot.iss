@@ -1,8 +1,9 @@
 ; Setup for Allot: a per-user install that needs no admin. The files themselves are
 ; placed by `allot.exe install`, which already replaces binaries that running sessions hold open
 ; and sets up Claude Code, the logon task, and the tray app; this setup unpacks the build,
-; runs it with the choices made in the wizard, and adds the Apps & features entry whose
-; uninstaller runs `allot.exe uninstall`.
+; runs it with the choices made in the wizard, puts %USERPROFILE%\.allot\bin on the user PATH,
+; and adds the Apps & features entry whose uninstaller runs `allot.exe uninstall` and takes the
+; folder off PATH again.
 ;
 ; Build: ISCC.exe /DAppVersion=<x.y.z> /DPayload=<dir> /O<output dir> allot.iss
 ; where <dir> holds allot.exe, allotd.exe, allot-mcp.exe, and the tray app's publish folder as tray\.
@@ -41,6 +42,8 @@ MinVersion=10.0.17763
 ; allot.exe install quits the tray app and renames files in use aside itself.
 CloseApplications=no
 RestartApplications=no
+; Tells open shells and Explorer that the user PATH gained or lost the bin folder.
+ChangesEnvironment=yes
 OutputBaseFilename=allot-{#AppVersion}-setup
 SetupIconFile=..\tray\src\Allot.Tray\Assets\AppIcon.ico
 UninstallDisplayIcon={#Home}\bin\tray\allot-tray.exe
@@ -71,8 +74,58 @@ Type: files; Name: "{app}\install.log"
 Name: "{userprograms}\{#AppName}"; Filename: "{#Home}\bin\tray\allot-tray.exe"; Comment: "Shows and stops the jobs of your Claude Code sessions"
 
 [Code]
+const
+  EnvironmentKey = 'Environment';
+
 var
   InstallLog: String;
+
+// Where allot.exe install puts the binaries; the setup puts it on the user's PATH so that
+// `allot` runs from any shell, as `allot install` does with ~/.local/bin on Linux and macOS.
+function BinDir: String;
+begin
+  Result := ExpandConstant('{#Home}\bin');
+end;
+
+// The position of Dir among the ';'-separated entries of ';' + Paths + ';', ignoring case,
+// or 0.
+function EntryPos(const Paths, Dir: String): Integer;
+begin
+  Result := Pos(';' + Uppercase(Dir) + ';', ';' + Uppercase(Paths) + ';');
+end;
+
+// Raw reads and writes, so entries such as %USERPROFILE%\bin stay unexpanded.
+procedure AddBinToPath;
+var
+  Paths: String;
+begin
+  if not RegQueryStringValue(HKCU, EnvironmentKey, 'Path', Paths) then
+    Paths := '';
+  if EntryPos(Paths, BinDir) > 0 then
+    exit;
+  if (Paths <> '') and (Paths[Length(Paths)] <> ';') then
+    Paths := Paths + ';';
+  RegWriteExpandStringValue(HKCU, EnvironmentKey, 'Path', Paths + BinDir);
+end;
+
+procedure RemoveBinFromPath;
+var
+  Paths: String;
+  Entry: Integer;
+begin
+  if not RegQueryStringValue(HKCU, EnvironmentKey, 'Path', Paths) then
+    exit;
+  Entry := EntryPos(Paths, BinDir);
+  if Entry = 0 then
+    exit;
+  Paths := ';' + Paths + ';';
+  Delete(Paths, Entry, Length(BinDir) + 1);
+  Paths := Copy(Paths, 2, Length(Paths) - 2);
+  if Paths = '' then
+    RegDeleteValue(HKCU, EnvironmentKey, 'Path')
+  else
+    RegWriteExpandStringValue(HKCU, EnvironmentKey, 'Path', Paths);
+end;
 
 // Runs allot.exe with its output in a log file, and returns its exit code.
 function RunRh(const Exe, Arguments, Log: String): Integer;
@@ -105,6 +158,7 @@ begin
   if RunRh(Payload + '\allot.exe', Arguments, InstallLog) <> 0 then
     SuppressibleMsgBox('Allot could not be installed. What happened is in' + #13#10
       + InstallLog, mbError, MB_OK, IDOK);
+  AddBinToPath;
 end;
 
 procedure CurPageChanged(CurPageID: Integer);
@@ -127,4 +181,5 @@ begin
     Arguments := Arguments + ' --purge';
   // The log goes to the temp folder, because the uninstall removes {app}.
   RunRh(ExpandConstant('{app}\allot.exe'), Arguments, ExpandConstant('{tmp}\uninstall.log'));
+  RemoveBinFromPath;
 end;
