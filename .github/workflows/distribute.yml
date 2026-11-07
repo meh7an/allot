@@ -1,0 +1,174 @@
+name: Distribute
+
+# Publishing a draft release starts this, using the copy of this file at the release's tag. A
+# hand run uses main's copy, so it also reaches tags older than a fix to this file:
+#   gh workflow run distribute.yml -f tag=v0.3.0
+# Every channel is a job of its own that needs `resolve`, is safe to re-run for a tag, and has a
+# row in the runbook's Releasing section; a new one adds itself to the `channel` options too.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Tag of a published release, like v0.3.0
+        required: true
+        type: string
+      channel:
+        description: Channel to run
+        type: choice
+        default: all
+        options: [all, homebrew, checklist]
+      tap_branch:
+        description: Tap branch to push to
+        type: string
+        default: main
+      test_version:
+        description: Homebrew test, a fake version with dummy checksums; not for the tap's main
+        type: string
+        default: ""
+
+permissions: {}
+
+concurrency:
+  group: distribute-${{ github.event.release.tag_name || inputs.tag }}
+
+jobs:
+  # `published` also fires for a prerelease, which no package manager should get.
+  resolve:
+    if: github.event_name != 'release' || !github.event.release.prerelease
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      tag: ${{ steps.release.outputs.tag }}
+      version: ${{ steps.release.outputs.version }}
+      channel: ${{ steps.release.outputs.channel }}
+    steps:
+      - name: Check the release and the inputs
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+          CHANNEL: ${{ inputs.channel || 'all' }}
+          TAP_BRANCH: ${{ inputs.tap_branch || 'main' }}
+          TEST_VERSION: ${{ inputs.test_version }}
+        run: |
+          fail() { echo "::error::$1"; exit 1; }
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || fail "$TAG is not a tag like v1.2.3"
+          [[ "$TAP_BRANCH" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]*$ ]] || fail "bad branch $TAP_BRANCH"
+          if [ -n "$TEST_VERSION" ]; then
+            [[ "$TEST_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || fail "bad version $TEST_VERSION"
+            [ "$TAP_BRANCH" != main ] || fail "test_version needs a tap_branch other than main"
+            [ "$CHANNEL" = homebrew ] || fail "test_version needs the homebrew channel"
+          fi
+          # A draft is invisible to this job's token, so a draft's tag fails here too.
+          prerelease=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" \
+            --json isPrerelease --jq .isPrerelease)
+          [ "$prerelease" = false ] || fail "$TAG is a prerelease"
+          {
+            echo "tag=$TAG"
+            echo "version=${TAG#v}"
+            echo "channel=$CHANNEL"
+          } >> "$GITHUB_OUTPUT"
+
+  homebrew:
+    needs: resolve
+    if: contains(fromJSON('["all", "homebrew"]'), needs.resolve.outputs.channel)
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      # Without this, the tap's checkout falls back to the job's token and only the push fails.
+      - name: Check the deploy key is set
+        env:
+          TAP_DEPLOY_KEY: ${{ secrets.TAP_DEPLOY_KEY }}
+        run: |
+          if [ -z "$TAP_DEPLOY_KEY" ]; then
+            echo "::error::Set the TAP_DEPLOY_KEY secret; see Releasing in docs/runbook.md"
+            exit 1
+          fi
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: meh7an/homebrew-allot
+          ref: main
+          path: tap
+          ssh-key: ${{ secrets.TAP_DEPLOY_KEY }}
+
+      - name: Rewrite the formula and the cask
+        id: rewrite
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.resolve.outputs.tag }}
+          RELEASE_VERSION: ${{ needs.resolve.outputs.version }}
+          TEST_VERSION: ${{ inputs.test_version }}
+        run: |
+          if [ -n "$TEST_VERSION" ]; then
+            version=$TEST_VERSION
+            tarball=$(printf '0%.0s' {1..64})
+            app=$(printf '1%.0s' {1..64})
+          else
+            version=$RELEASE_VERSION
+            tarball=$(bash .github/scripts/asset-sha256.sh "$TAG" \
+              "allot-$version-aarch64-apple-darwin.tar.gz")
+            app=$(bash .github/scripts/asset-sha256.sh "$TAG" "allot-$version-macos-app.zip")
+          fi
+          bash .github/scripts/update-tap.sh tap "$version" "$tarball" "$app"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      # Mehran is the tap's only author, by his choice; this clone lives only on the runner.
+      - name: Push the change, if there is one
+        working-directory: tap
+        env:
+          VERSION: ${{ steps.rewrite.outputs.version }}
+          TAP_BRANCH: ${{ inputs.tap_branch || 'main' }}
+        run: |
+          if git diff --quiet; then
+            echo "::notice::The tap needs no change for $VERSION"
+            exit 0
+          fi
+          git --no-pager diff
+          git config user.name Mehran
+          git config user.email hi@mehran.tech
+          git commit --all --message "Update allot to $VERSION"
+          if [ "$TAP_BRANCH" = main ]; then
+            git push origin HEAD:main
+          else
+            git push --force origin "HEAD:refs/heads/$TAP_BRANCH"
+          fi
+
+  checklist:
+    needs: resolve
+    if: contains(fromJSON('["all", "checklist"]'), needs.resolve.outputs.channel)
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Open the issue, once per tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.resolve.outputs.tag }}
+          VERSION: ${{ needs.resolve.outputs.version }}
+        run: |
+          title="Manual stores for $TAG"
+          existing=$(gh issue list --repo "$GITHUB_REPOSITORY" --state all \
+            --search "\"$title\" in:title" --json title \
+            --jq "map(select(.title == \"$title\")) | length")
+          if [ "$existing" != 0 ]; then
+            echo "::notice::$title is already open or closed"
+            exit 0
+          fi
+          bash .github/scripts/store-checklist.sh "$TAG" "$VERSION" > "$RUNNER_TEMP/checklist.md"
+          gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" \
+            --body-file "$RUNNER_TEMP/checklist.md" --assignee "$GITHUB_REPOSITORY_OWNER"

@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["cli","client","core", "daemon", "mcp", "sampler","shared"]
+members = ["cli","client","core", "daemon", "mcp", "sampler","shared", "xtask"]
 
 [workspace.package]
 version = "0.3.0"

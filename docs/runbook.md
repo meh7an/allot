@@ -245,3 +245,59 @@ clients read it on their next request.
 `logs\allotd.log` rotates to `allotd.1.log` ... `allotd.4.log` at 10 MB. `allot-mcp` writes its
 diagnostics to stderr, which Claude Code captures with its other MCP server output. The tray
 app writes `logs\tray.log`; More options > Open logs opens the folder.
+
+## Releasing
+
+Publishing the draft release is the one gate: nothing reaches a package manager before it.
+
+1. `cargo xtask version 0.4.0` sets the version in the workspace, the crates' path dependencies,
+   `Cargo.lock`, the tray and Mac projects and the install snippets, and moves `[Unreleased]` in
+   `CHANGELOG.md` to a dated section. It refuses an empty `[Unreleased]` and a version that is
+   not newer. GNOME's and KDE's metadata and the Windows installer get the version at packaging.
+2. Review the diff, commit it, push `main`, and wait for CI. A test in CI's `check` job fails if
+   the places disagree; `cargo xtask version --check` runs the same check locally.
+3. `git tag v0.4.0` and `git push origin v0.4.0`. `release.yml` builds every platform and uploads
+   to a draft release.
+4. Check the draft's assets, then publish it: click Publish, or run
+   `gh release edit v0.4.0 --draft=false --latest`. It has to be a person's login, because an
+   event caused by a workflow's `GITHUB_TOKEN` starts no workflow.
+5. `distribute.yml` starts, using the copy at the tag. Read each job's result with
+   `gh run view`.
+6. Do what the `Manual stores for v0.4.0` issue lists, then close it.
+
+| Channel | Job | Secret on `meh7an/allot` |
+|---------|-----|--------------------------|
+| Homebrew tap | `homebrew` | `TAP_DEPLOY_KEY`: private half of a write deploy key on `meh7an/homebrew-allot` |
+| Manual stores issue | `checklist` | None; the job's own token |
+
+### Re-running a channel
+
+Each channel fails alone, so Re-run failed jobs on the run's page finishes a release. Running a
+channel again is safe: the tap is only pushed when it differs and never moves to an older version,
+and the issue is opened once per tag. A prerelease goes to no channel.
+
+A re-run uses the workflow at the tag. To get a later fix to `distribute.yml`, or for a tag that
+predates the file (v0.3.0 and older, which publishing could not start), run `main`'s copy by hand:
+
+```bash
+gh workflow run distribute.yml -f tag=v0.4.0 -f channel=homebrew
+```
+
+### The tap's deploy key
+
+The key never expires. To create it or replace it, with the old one then removed from the tap's
+settings:
+
+```bash
+ssh-keygen -t ed25519 -N "" -C "allot distribute" -f tap-key
+gh repo deploy-key add tap-key.pub --repo meh7an/homebrew-allot --allow-write --title "allot distribute"
+gh secret set TAP_DEPLOY_KEY --repo meh7an/allot < tap-key
+rm tap-key tap-key.pub
+```
+
+To prove the key and the job without a release, push a fake version to a throwaway branch of the
+tap, read its diff, and delete the branch. The job refuses a fake version on the tap's `main`.
+
+```bash
+gh workflow run distribute.yml -f tag=v0.3.0 -f channel=homebrew -f test_version=0.99.0 -f tap_branch=test/fake-version
+```
