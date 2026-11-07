@@ -19,7 +19,7 @@ on:
         description: Channel to run
         type: choice
         default: all
-        options: [all, homebrew, winget, checklist]
+        options: [all, homebrew, winget, npm, checklist]
       tap_branch:
         description: Tap branch to push to
         type: string
@@ -30,6 +30,10 @@ on:
         default: ""
       winget_dry_run:
         description: winget test, print the manifests instead of opening a pull request
+        type: boolean
+        default: false
+      npm_dry_run:
+        description: npm test, pack the packages as an artifact without publishing them
         type: boolean
         default: false
 
@@ -215,6 +219,59 @@ jobs:
             --urls "https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG/$setup" \
             --release-notes-url "https://github.com/$GITHUB_REPOSITORY/releases/tag/$TAG" \
             --submit
+
+  # Publishes the five npm packages by trusted publishing, so no npm token is stored; each one's
+  # first version went up by hand, since npm only gives an existing package a trusted publisher.
+  npm:
+    needs: resolve
+    if: contains(fromJSON('["all", "npm"]'), needs.resolve.outputs.channel)
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Trusted publishing needs npm 11.5.1 or newer, which Node 26 brings.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 26
+
+      - name: Pack
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.resolve.outputs.tag }}
+        run: |
+          npm --version
+          bash .github/scripts/npm-packages.sh "$TAG" "$RUNNER_TEMP/npm"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: npm-${{ needs.resolve.outputs.tag }}
+          path: ${{ runner.temp }}/npm/
+          if-no-files-found: error
+
+      - name: Publish, once per version
+        if: ${{ !inputs.npm_dry_run }}
+        working-directory: ${{ runner.temp }}/npm
+        env:
+          VERSION: ${{ needs.resolve.outputs.version }}
+        run: |
+          while read -r name tarball <&3; do
+            # A missing version prints nothing or fails with E404; anything else is a real error.
+            if found=$(npm view "$name@$VERSION" version 2>&1); then
+              if [ "$found" = "$VERSION" ]; then
+                echo "::notice::npm already has $name $VERSION"
+                continue
+              fi
+            elif [[ "$found" != *E404* ]]; then
+              echo "::error::Could not look for $name $VERSION on npm: $found"
+              exit 1
+            fi
+            npm publish "./$tarball" --access public
+          done 3< packages.txt
 
   checklist:
     needs: resolve

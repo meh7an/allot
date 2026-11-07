@@ -269,7 +269,10 @@ jobs:
 
       - name: Lint
         if: matrix.os == 'ubuntu-24.04'
-        run: shellcheck install.sh .github/scripts/test-install-sh.sh .github/scripts/check-completions.sh
+        run: |
+          shellcheck install.sh .github/scripts/test-install-sh.sh \
+            .github/scripts/check-completions.sh .github/scripts/npm-packages.sh \
+            .github/scripts/test-npm.sh
 
       - name: install.sh
         if: matrix.shell == 'sh'
@@ -279,3 +282,53 @@ jobs:
         if: matrix.shell != 'sh'
         shell: pwsh
         run: .github/scripts/test-install-ps1.ps1 install.ps1 ${{ matrix.shell }}
+
+  # The npm packages, packed from the latest release by the script distribute.yml publishes with.
+  npm-pack:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 26
+
+      - name: Pack
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag=$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName)
+          bash .github/scripts/npm-packages.sh "$tag" "$RUNNER_TEMP/npm"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: npm-packages
+          path: ${{ runner.temp }}/npm/
+          if-no-files-found: error
+          retention-days: 7
+
+  # npm installs them from the tarballs into a throwaway prefix and home on each OS, then
+  # `allot install` runs from the result. Windows' install starts allotd and the tray app.
+  npm:
+    needs: npm-pack
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, ubuntu-24.04-arm, macos-15, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 26
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: npm-packages
+          path: ${{ runner.temp }}/npm
+
+      - name: Install with npm
+        shell: bash
+        run: bash .github/scripts/test-npm.sh "$RUNNER_TEMP/npm"

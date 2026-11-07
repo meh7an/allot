@@ -24,6 +24,10 @@ All notable changes to this project are documented in this file. The format foll
 - `--help` shows examples.
 - The Windows setup puts `%USERPROFILE%\.allot\bin` on the user `PATH`, so `allot` runs in any
   new terminal, and its uninstaller takes it off again.
+- npm: `npm install -g @meh7an/allot`, then `allot install`. npm installs only the binaries for
+  the machine, with nothing downloaded or run at install time, and `allot` reminds you to run
+  `allot install` until `~/.allot/bin` matches the package. `allot doctor` accepts npm's
+  launcher on `PATH`.
 
 ### Changed
 

@@ -3,6 +3,7 @@
 Every way to install, upgrade, and remove Allot. The [README](../README.md) has the short version.
 
 - [The install script](#the-install-script)
+- [npm](#npm)
 - [Windows](#windows)
 - [Linux](#linux)
 - [macOS](#macos)
@@ -49,6 +50,23 @@ later run without them keeps the choices of the last install. `ALLOT_DOWNLOAD_BA
 Neither script changes your shell profile. `allot install` links `allot` into `~/.local/bin`
 when that folder exists, the Windows setup after 0.3.0 puts `%USERPROFILE%\.allot\bin` on your
 user `PATH`, and the scripts say what to add when `allot` would not be found.
+
+## npm
+
+Allot is on npm as `@meh7an/allot`, for any machine the install script supports. npm installs
+only the binaries for your machine, from one of its four platform packages, and runs nothing at
+install time. Then `allot install` sets up the rest, as under your OS below:
+
+```bash
+npm install -g @meh7an/allot
+allot install
+```
+
+npm's `allot` is a small Node launcher that runs the binary from the package, so it also works
+with pnpm, yarn, bun and `--ignore-scripts`. The binary is left out with `--omit=optional`, and
+on a Linux without glibc. allotd and Claude Code run the copy in `~/.allot/bin`, which
+`allot install` writes; until it matches the npm package, `allot` prints a reminder in a
+terminal. `allot doctor` counts the launcher as a good `allot` on `PATH`.
 
 ## Windows
 
@@ -272,7 +290,12 @@ to install. `allot man` prints the man page; `allot man | man -l -` reads it on 
 ## Upgrade
 
 Run the [install script](#the-install-script) again: it installs the latest release over the old
-one, the same way as below.
+one, the same way as below. With npm, update the package and install from it:
+
+```bash
+npm update -g @meh7an/allot
+allot install
+```
 
 On Windows, run the new setup over the old install (or `allot.exe install` from a new zip or
 build). Binaries that running sessions hold open cannot be overwritten, so the old file is renamed
@@ -335,4 +358,11 @@ LaunchAgent, the binaries, the link, and the skill copy, and keeps the data unle
 allot uninstall
 brew uninstall --cask allot-app
 brew uninstall allot
+```
+
+With npm, the same applies: `allot uninstall` first, while npm still provides the command.
+
+```bash
+allot uninstall
+npm uninstall -g @meh7an/allot
 ```

@@ -269,14 +269,15 @@ Publishing the draft release is the one gate: nothing reaches a package manager 
 |---------|-----|--------------------------|
 | Homebrew tap | `homebrew` | `TAP_DEPLOY_KEY`: private half of a write deploy key on `meh7an/homebrew-allot` |
 | winget (`Mehran.Allot`) | `winget` | `WINGET_TOKEN`: classic token of `meh7an` with `public_repo` and `workflow` |
+| npm (`@meh7an/allot` and its four platform packages) | `npm` | None; trusted publishing (OIDC), set on each package |
 | Manual stores issue | `checklist` | None; the job's own token |
 
 ### Re-running a channel
 
 Each channel fails alone, so Re-run failed jobs on the run's page finishes a release. Running a
 channel again is safe: the tap is only pushed when it differs and never moves to an older version,
-winget gets no pull request for a version it already has or one with a pull request open, and the
-issue is opened once per tag. A prerelease goes to no channel.
+winget gets no pull request for a version it already has or one with a pull request open, npm
+skips each package whose version is already published, and the issue is opened once per tag. A prerelease goes to no channel.
 
 A re-run uses the workflow at the tag. To get a later fix to `distribute.yml`, or for a tag that
 predates the file (v0.3.0 and older, which publishing could not start), run `main`'s copy by hand:
@@ -326,3 +327,38 @@ To prove the token and the job without a pull request, print the manifests Komac
 ```bash
 gh workflow run distribute.yml -f tag=v0.3.0 -f channel=winget -f winget_dry_run=true
 ```
+
+### The npm packages
+
+The `npm` job builds five packages from the release's archives, each checked against its
+`.sha256`: `@meh7an/allot-win32-x64`, `-linux-x64`, `-linux-arm64` and `-darwin-arm64` with the
+binaries (and the tray app on Windows), then `@meh7an/allot` with the launcher, which depends on
+the four as optional dependencies. It publishes them in that order, by trusted publishing, so no
+npm token is stored; npm adds provenance itself. Every run uploads the tarballs as the artifact
+`npm-<tag>`.
+
+npm only lets a package that exists take a trusted publisher, so the first version of each went
+up by hand: 0.3.0, from a dry run's artifact. Publish the tarballs CI packed, not ones packed on
+Windows, where the binaries would lose their executable bit:
+
+```bash
+gh workflow run distribute.yml -f tag=v0.3.0 -f channel=npm -f npm_dry_run=true
+gh run download <run id> --repo meh7an/allot --name npm-v0.3.0 --dir npm-v0.3.0
+npm login
+while read -r name tarball <&3; do
+  npm publish "npm-v0.3.0/$tarball" --access public
+done 3< npm-v0.3.0/packages.txt
+```
+
+Then give each of the five packages its trusted publisher, with 2FA on the account and npm
+11.15.0 or newer. A new one expires unless a publish uses it within 2 days, so do this right
+before publishing the next release:
+
+```bash
+while read -r name tarball <&3; do
+  npm trust github "$name" --file distribute.yml --repo meh7an/allot --allow-publish
+done 3< npm-v0.3.0/packages.txt
+```
+
+Once a release has gone through, Settings, Publishing access, "Require two-factor authentication
+and disallow tokens" on each package leaves trusted publishing as the only way in.

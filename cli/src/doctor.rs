@@ -3,6 +3,7 @@
 
 use std::{
     env,
+    ffi::OsString,
     path::{Path, PathBuf},
 };
 
@@ -26,6 +27,8 @@ use crate::{
 const REINSTALL: &str =
     "run the one-line install again (README, Install), or `allot install` from a release folder";
 const VERSION: &str = env!("CARGO_PKG_VERSION");
+/// Set by the npm package's launcher (`npm/bin/allot.js`) on the allot it runs.
+const NPM_LAUNCHER_ENV: &str = "ALLOT_NPM_LAUNCHER";
 
 /// How one check came out.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -86,7 +89,10 @@ impl Check {
 /// Fails when the home directory is unknown, or after the report when a check failed.
 pub fn doctor(json: bool) -> anyhow::Result<()> {
     let paths = Paths::from_env()?;
-    let mut checks = vec![check_binaries(&paths), check_path(&paths)];
+    let mut checks = vec![
+        check_binaries(&paths),
+        check_path(&paths, env::var_os(NPM_LAUNCHER_ENV)),
+    ];
     checks.extend(check_config_and_daemon(&paths));
     // Warnings, not failures: `--no-claude` and `--no-autostart` leave these out on purpose.
     checks.extend(
@@ -158,7 +164,19 @@ fn check_binaries(paths: &Paths) -> Check {
     )
 }
 
-fn check_path(paths: &Paths) -> Check {
+/// `npm_launcher` is [`NPM_LAUNCHER_ENV`]'s value.
+fn check_path(paths: &Paths, npm_launcher: Option<OsString>) -> Check {
+    // npm's `allot` is a launcher for the binary in its own package, so on PATH it is never this
+    // install's file, and on Windows it is a .cmd that the lookup below cannot see.
+    if let Some(launcher) = npm_launcher.filter(|value| !value.is_empty()) {
+        return Check::ok(
+            "path",
+            format!(
+                "allot runs through npm's launcher {}",
+                Path::new(&launcher).display()
+            ),
+        );
+    }
     let installed = paths.bin_dir().join(CLI_EXE);
     let path = env::var_os("PATH").unwrap_or_default();
     let dirs: Vec<PathBuf> = env::split_paths(&path).collect();
@@ -326,6 +344,23 @@ mod tests {
             &second.join(CLI_EXE)
         ));
         fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn test_check_path_accepts_the_npm_launcher() {
+        let paths = Paths::under(env::temp_dir().join("allot-doctor-npm"));
+        let launcher = Path::new("npm").join("bin").join("allot.js");
+        let check = check_path(&paths, Some(launcher.clone().into_os_string()));
+        assert_eq!(check.outcome, Outcome::Ok);
+        assert!(
+            check.detail.ends_with(&launcher.display().to_string()),
+            "{}",
+            check.detail
+        );
+        assert_ne!(
+            check_path(&paths, Some(OsString::new())).detail,
+            check.detail
+        );
     }
 
     #[test]
