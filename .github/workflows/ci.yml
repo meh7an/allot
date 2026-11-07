@@ -45,6 +45,7 @@ jobs:
 
   tray:
     runs-on: windows-latest
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: tray
@@ -85,7 +86,9 @@ jobs:
           }
 
       # The release builds setup.exe with this script; stand-ins for the Rust binaries are
-      # enough to check that it compiles. Same pinned Inno Setup as the release.
+      # enough to check that it compiles. Same pinned Inno Setup as the release. The next step's
+      # setup runs allot.exe, so its stand-in is a real program: for a file that is not one, cmd
+      # opens an error dialog that nobody on the runner closes.
       - name: Installer script
         shell: pwsh
         run: |
@@ -101,16 +104,19 @@ jobs:
           if ($process.ExitCode -ne 0) { throw "the Inno Setup install exited with $($process.ExitCode)" }
           $payload = "$env:RUNNER_TEMP\payload"
           New-Item -ItemType Directory $payload | Out-Null
-          foreach ($exe in 'allot.exe', 'allotd.exe', 'allot-mcp.exe') { Set-Content "$payload\$exe" 'stand-in' }
+          foreach ($exe in 'allotd.exe', 'allot-mcp.exe') { Set-Content "$payload\$exe" 'stand-in' }
+          Copy-Item "$env:SystemRoot\System32\whoami.exe" "$payload\allot.exe"
           Copy-Item publish -Destination "$payload\tray" -Recurse
           & "$env:LOCALAPPDATA\Programs\Inno Setup 7\ISCC.exe" /Qp /DAppVersion=0.0.0 `
             "/DPayload=$payload" "/O$env:RUNNER_TEMP" ..\installer\allot.iss
           if ($LASTEXITCODE -ne 0) { throw "ISCC exited with $LASTEXITCODE" }
 
-      # The stand-in allot.exe cannot run, so this checks only what the setup does itself: the
-      # bin folder joins the user PATH once, even on a second install, and leaves it on uninstall.
+      # The stand-in allot.exe, whoami.exe, rejects the setup's arguments at once, so this checks
+      # only what the setup does itself: the bin folder joins the user PATH once, even on a second
+      # install, and leaves it on uninstall.
       - name: Installer PATH
         shell: pwsh
+        timeout-minutes: 5
         run: |
           $bin = Join-Path $env:USERPROFILE '.allot\bin'
           function Get-BinEntries {
