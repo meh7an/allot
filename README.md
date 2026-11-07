@@ -34,33 +34,39 @@ waits in a queue and is told what is ahead and roughly how long. Everything stay
 
 ## Install
 
-All three need Claude Code and no admin rights. Start a new Claude session afterwards. There is
-nothing else to set up. [docs/install.md](docs/install.md) has every option, upgrades, uninstalling,
-and building from source.
+All three need Claude Code and no admin rights. On Linux and macOS:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/meh7an/allot/main/install.sh | sh
+```
+
+On Windows, in PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/meh7an/allot/main/install.ps1 | iex
+```
+
+The script downloads the latest release for your machine, checks it against its `.sha256`, and
+runs `allot install`, which sets up Claude Code and starts allotd at login. Start a new Claude
+session afterwards; there is nothing else to set up. [docs/install.md](docs/install.md) has every
+option, including pinning a version, and upgrades, uninstalling, and building from source.
 
 ### Windows
 
-Download `allot-<version>-setup.exe` from the
-[latest release](https://github.com/meh7an/allot/releases/latest) and run it. It is not code-signed,
-so SmartScreen may ask you to confirm (More info, Run anyway).
+The script runs the release's setup silently, so Allot is in Apps & features for uninstalling.
+To run the setup yourself, download `allot-<version>-setup.exe` from the
+[latest release](https://github.com/meh7an/allot/releases/latest). It is not code-signed, so
+SmartScreen may ask you to confirm (More info, Run anyway).
 
 ### Linux
 
-```bash
-version=0.3.0
-target=x86_64-unknown-linux-gnu    # or aarch64-unknown-linux-gnu
-base=https://github.com/meh7an/allot/releases/download/v$version
-curl -fLO "$base/allot-$version-$target.tar.gz"
-curl -fLO "$base/allot-$version-$target.tar.gz.sha256"
-sha256sum -c "allot-$version-$target.tar.gz.sha256"
-tar -xzf "allot-$version-$target.tar.gz"
-"allot-$version-$target/allot" install
-```
-
+Needs x86_64 or aarch64 and glibc 2.35 or newer (Ubuntu 22.04, Debian 12, Fedora 36 and later).
 The GNOME extension and the KDE widget are separate packages:
 [install the panel](docs/install.md#the-panel).
 
 ### macOS
+
+Needs Apple Silicon and macOS 14 or newer. Homebrew works too:
 
 ```bash
 brew tap meh7an/allot
@@ -70,8 +76,8 @@ allot install
 brew install --cask allot-app    # the menu bar app
 ```
 
-The app is signed ad hoc, so macOS stops it once: System Settings > Privacy & Security then offers
-Open Anyway. Needs Apple Silicon and macOS 14 or newer.
+The menu bar app is a separate package either way. It is signed ad hoc, so macOS stops it once:
+System Settings > Privacy & Security then offers Open Anyway.
 
 ## What a session looks like
 

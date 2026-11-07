@@ -251,9 +251,9 @@ app writes `logs\tray.log`; More options > Open logs opens the folder.
 Publishing the draft release is the one gate: nothing reaches a package manager before it.
 
 1. `cargo xtask version 0.4.0` sets the version in the workspace, the crates' path dependencies,
-   `Cargo.lock`, the tray and Mac projects and the install snippets, and moves `[Unreleased]` in
-   `CHANGELOG.md` to a dated section. It refuses an empty `[Unreleased]` and a version that is
-   not newer. GNOME's and KDE's metadata and the Windows installer get the version at packaging.
+   `Cargo.lock`, the tray and Mac projects and the Linux snippet in `docs/install.md`, and moves
+   `[Unreleased]` in `CHANGELOG.md` to a dated section. It refuses an empty `[Unreleased]` and a
+   version that is not newer. GNOME's and KDE's metadata and the Windows installer get the version at packaging.
 2. Review the diff, commit it, push `main`, and wait for CI. A test in CI's `check` job fails if
    the places disagree; `cargo xtask version --check` runs the same check locally.
 3. `git tag v0.4.0` and `git push origin v0.4.0`. `release.yml` builds every platform and uploads

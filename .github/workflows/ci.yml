@@ -190,3 +190,32 @@ jobs:
           xcodebuild -project Allot.xcodeproj -scheme Allot -configuration Release \
             -derivedDataPath build build
           codesign --verify --strict build/Build/Products/Release/Allot.app
+
+  # install.sh and install.ps1 against the published release, each into a throwaway home. The two
+  # Windows shells run apart, since each install starts allotd and the tray app.
+  install-scripts:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-24.04, shell: sh }
+          - { os: ubuntu-24.04-arm, shell: sh }
+          - { os: macos-15, shell: sh }
+          - { os: windows-latest, shell: powershell }
+          - { os: windows-latest, shell: pwsh }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Lint
+        if: matrix.os == 'ubuntu-24.04'
+        run: shellcheck install.sh .github/scripts/test-install-sh.sh
+
+      - name: install.sh
+        if: matrix.shell == 'sh'
+        run: bash .github/scripts/test-install-sh.sh install.sh
+
+      - name: install.ps1
+        if: matrix.shell != 'sh'
+        shell: pwsh
+        run: .github/scripts/test-install-ps1.ps1 install.ps1 ${{ matrix.shell }}

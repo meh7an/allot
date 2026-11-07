@@ -68,7 +68,6 @@ const PINS: &[Pin] = &[
         open: "MARKETING_VERSION: \"",
         close: "\"",
     },
-    install_snippet("README.md"),
     install_snippet("docs/install.md"),
 ];
 
@@ -374,13 +373,13 @@ mod tests {
     #[test]
     fn test_rewrite_install_snippet_keeps_line_ending_and_sample_output() {
         let text = "version=0.3.0\r\nallotd 0.3.0 (pid 1)\r\n";
-        let rewritten = rewrite(pin_for("README.md"), text, "0.4.0").unwrap();
+        let rewritten = rewrite(pin_for("docs/install.md"), text, "0.4.0").unwrap();
         assert_eq!(rewritten, "version=0.4.0\r\nallotd 0.3.0 (pid 1)\r\n");
     }
 
     #[test]
     fn test_rewrite_no_matching_line_is_an_error() {
-        assert!(rewrite(pin_for("README.md"), "nothing here\n", "0.4.0").is_err());
+        assert!(rewrite(pin_for("docs/install.md"), "nothing here\n", "0.4.0").is_err());
     }
 
     #[test]

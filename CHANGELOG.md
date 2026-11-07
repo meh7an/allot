@@ -6,6 +6,13 @@ All notable changes to this project are documented in this file. The format foll
 
 ## [Unreleased]
 
+### Added
+
+- One-line install: `install.sh` for Linux and macOS and `install.ps1` for Windows download the
+  release package for the machine, check it against its `.sha256`, and run `allot install` (on
+  Windows, the setup, silently). They take a version to pin and stop with a clear message on a
+  platform without a package.
+
 ## [0.3.0] - 2026-11-04
 
 Allot now runs on Linux and macOS too, with a native panel on each, and is called Allot instead

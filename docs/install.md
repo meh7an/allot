@@ -2,18 +2,60 @@
 
 Every way to install, upgrade, and remove Allot. The [README](../README.md) has the short version.
 
+- [The install script](#the-install-script)
 - [Windows](#windows)
 - [Linux](#linux)
 - [macOS](#macos)
 - [Upgrade](#upgrade)
 - [Uninstall](#uninstall)
 
+## The install script
+
+One line on each OS. It downloads the release package for your machine, checks it against the
+`.sha256` published beside it, and runs `allot install` from it, which does everything listed
+under your OS below. The package is downloaded to a temporary folder, deleted afterwards.
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/meh7an/allot/main/install.sh | sh
+```
+
+```powershell
+irm https://raw.githubusercontent.com/meh7an/allot/main/install.ps1 | iex
+```
+
+On Windows the script runs `allot-<version>-setup.exe` silently, so Allot is in Apps & features
+for uninstalling; on Linux and macOS it runs the tarball's `allot install`. It stops with a message,
+before downloading anything, on a platform there is no package for: an Intel Mac, macOS before 14,
+Linux other than x86_64 or aarch64, a Linux without glibc 2.35 or newer (such as Alpine's musl),
+and Windows on ARM.
+
+The latest release is the default. To pin one (0.3.0 or later), and to pass options:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/meh7an/allot/main/install.sh | sh -s -- --version 0.3.0 --no-claude
+```
+
+```powershell
+$env:ALLOT_VERSION = '0.3.0'; irm https://raw.githubusercontent.com/meh7an/allot/main/install.ps1 | iex
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/meh7an/allot/main/install.ps1))) -Version 0.3.0 -NoClaude
+```
+
+`install.sh` passes every option other than `--version` to `allot install`, such as `--no-claude`
+and `--no-autostart`. `install.ps1` takes `-Version`, `-NoClaude` (leave Claude Code alone) and
+`-NoLaunchAtLogon` (do not start the tray app at sign-in), the two choices the setup offers; a
+later run without them keeps the choices of the last install. `ALLOT_DOWNLOAD_BASE` replaces
+`https://github.com/meh7an/allot/releases` for both, for a mirror.
+
+Neither script changes your `PATH` or shell profile. `allot install` links `allot` into
+`~/.local/bin` when that folder exists, and the scripts say what to add when `allot` would not be
+found.
+
 ## Windows
 
 Needs Windows 10 or 11 (x64) and Claude Code. No admin rights: everything is installed for
 your user only.
 
-1. Download `allot-<version>-setup.exe` from the
+1. Run the [install script](#the-install-script), or download `allot-<version>-setup.exe` from the
    [latest release](https://github.com/meh7an/allot/releases/latest) and run
    it. Close the Claude sessions you have open first if you can: the setup edits their
    settings and CLAUDE.md. The setup is not code-signed, so SmartScreen may ask you to confirm
@@ -81,6 +123,8 @@ Claude Code. systemd starts allotd at login and gives each job a cgroup of its o
 user manager the install says what it could not do, and leases follow the job's process tree.
 No root needed. Linux packages are published from v0.3.0 on.
 
+The [install script](#the-install-script) does this for you. By hand:
+
 ```bash
 version=0.3.0
 target=x86_64-unknown-linux-gnu    # or aarch64-unknown-linux-gnu
@@ -146,8 +190,9 @@ folder first; `kpackagetool6 -i apps/kde/tech.mehran.allot` takes the folder as 
 
 ## macOS
 
-Needs Apple Silicon, macOS 14 or newer, Homebrew, and Claude Code. No admin rights. macOS packages
-are published from v0.3.0 on.
+Needs Apple Silicon, macOS 14 or newer, and Claude Code. No admin rights. macOS packages are
+published from v0.3.0 on. The [install script](#the-install-script) needs nothing else; Homebrew
+works too:
 
 ```bash
 brew tap meh7an/allot
@@ -197,6 +242,9 @@ xcodebuild -project Allot.xcodeproj -scheme Allot -configuration Release -derive
 ```
 
 ## Upgrade
+
+Run the [install script](#the-install-script) again: it installs the latest release over the old
+one, the same way as below.
 
 On Windows, run the new setup over the old install (or `allot.exe install` from a new zip or
 build). Binaries that running sessions hold open cannot be overwritten, so the old file is renamed
