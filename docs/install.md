@@ -241,6 +241,31 @@ cd apps/macos && xcodegen generate
 xcodebuild -project Allot.xcodeproj -scheme Allot -configuration Release -derivedDataPath build build
 ```
 
+## Shell completions and the man page
+
+`allot install` writes the bash and fish completions to where those shells load them by
+themselves: `~/.local/share/bash-completion/completions/allot` (or under
+`$BASH_COMPLETION_USER_DIR`) and `~/.config/fish/completions/allot.fish`. It never edits a shell
+profile. A file there that it did not write is left alone, and `allot uninstall` removes only
+its own.
+
+zsh and PowerShell load completions only from what a profile names, so add them yourself:
+
+```bash
+mkdir -p ~/.zfunc && allot completions zsh > ~/.zfunc/_allot
+# in ~/.zshrc, before compinit:
+fpath+=~/.zfunc
+```
+
+```powershell
+# in $PROFILE:
+allot completions powershell | Out-String | Invoke-Expression
+```
+
+Release packages carry the same scripts in `completions/` (`allot.bash`, `_allot`,
+`allot.fish`, and `allot.ps1` on Windows) and the man page as `allot.1`, for package managers
+to install. `allot man` prints the man page; `allot man | man -l -` reads it on Linux.
+
 ## Upgrade
 
 Run the [install script](#the-install-script) again: it installs the latest release over the old

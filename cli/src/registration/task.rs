@@ -40,6 +40,11 @@ pub(super) fn set_up(paths: &Paths, allotd: &Path) -> anyhow::Result<Option<Stri
     Ok(Some(found.replaced_note(allotd, "registered")))
 }
 
+/// What the logon task starts.
+pub(super) fn current(_paths: &Paths) -> Found {
+    find(TASK_NAME)
+}
+
 /// How to register the logon task by hand.
 pub(super) fn manual_set_up(_paths: &Paths, allotd: &Path) -> Vec<String> {
     let mut manual = vec!["In PowerShell (no admin needed):".to_owned()];

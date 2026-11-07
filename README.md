@@ -152,12 +152,18 @@ retries on its own.
 
 | Command | Shows or does |
 |---------|---------------|
-| `allot status` | Machine usage, sessions, and their leases. Starts allotd if it is down. |
+| `allot status [--watch]` | Machine usage, sessions, and their leases, once or redrawn every 2 s. Starts allotd if it is down. |
 | `allot leases [--all]` | Active and queued leases, or the most recent ones in any state. |
 | `allot history [FINGERPRINT]` | What past jobs needed, or the runs of one job. |
 | `allot classes` | The heavy-command rules, class profiles, and presets in effect. |
 | `allot kill ID` / `allot remove ID` | Stop a running job, or take a queued one out of the queue. |
 | `allot daemon start\|stop\|status` | Control allotd. `status` never starts it. |
+| `allot doctor` | Check the install and say what to fix. Changes nothing. |
+
+`status`, `leases`, `history`, `kill`, `remove`, `daemon status` and `doctor` take `--json`; the
+shapes are the JSON Schemas in [`contract/`](contract/). Colour follows `--color`, `NO_COLOR` and
+`CLICOLOR_FORCE`, and is off when the output is piped. Shell completions and the man page:
+[docs/install.md](docs/install.md#shell-completions-and-the-man-page).
 
 ## Configuration
 

@@ -1,0 +1,105 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Array_of_JobSummary",
+  "type": "array",
+  "items": {
+    "$ref": "#/definitions/JobSummary"
+  },
+  "definitions": {
+    "JobProfile": {
+      "description": "Resources a job is expected to need while it runs.",
+      "type": "object",
+      "properties": {
+        "cores": {
+          "description": "Logical cores the job keeps busy.",
+          "type": "number",
+          "format": "float"
+        },
+        "est_secs": {
+          "description": "Expected run time.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "gpu_pct": {
+          "description": "GPU engine load as a percentage of one adapter.",
+          "type": "number",
+          "format": "float"
+        },
+        "ram_mb": {
+          "description": "Peak resident memory.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "vram_mb": {
+          "description": "Peak dedicated video memory.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "cores",
+        "ram_mb",
+        "gpu_pct",
+        "vram_mb",
+        "est_secs"
+      ]
+    },
+    "JobSummary": {
+      "description": "What the history knows about one fingerprint.",
+      "type": "object",
+      "properties": {
+        "command": {
+          "description": "Label of the most recent run.",
+          "type": "string"
+        },
+        "cwd": {
+          "description": "Working directory of the most recent run.",
+          "type": "string"
+        },
+        "estimate_runs": {
+          "description": "Runs the estimate is based on: the most recent ones without an overlapping lease.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "fingerprint": {
+          "description": "Normalized command plus working directory.",
+          "type": "string"
+        },
+        "last_ended_at_ms": {
+          "description": "End of the most recent run, in milliseconds since the Unix epoch.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "learned": {
+          "description": "What the runs needed: p90 of peak memory, of CPU and GPU load while busy, and of run\ntime. `None` when every run overlapped another lease.",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/JobProfile"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "runs": {
+          "description": "Stored runs.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "fingerprint",
+        "command",
+        "cwd",
+        "runs",
+        "estimate_runs",
+        "last_ended_at_ms"
+      ]
+    }
+  }
+}

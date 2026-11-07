@@ -571,6 +571,7 @@ pub struct NoiseReport {
 
 /// Average load of a lease holder's session over only the samples in which it was busy, so
 /// the idle time before and after the command does not water the load down.
+#[cfg_attr(any(feature = "schema", test), derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct BusyUsage {
     /// Average CPU load in logical cores.
@@ -580,6 +581,7 @@ pub struct BusyUsage {
 }
 
 /// One finished lease with what its holder's session used, kept for history-based estimates.
+#[cfg_attr(any(feature = "schema", test), derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct JobRun {
     /// Lease the job ran under, if the lease is still stored.

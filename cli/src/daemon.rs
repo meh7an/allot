@@ -7,9 +7,19 @@ use std::{
 
 use allot_client::{BlockingClient, DaemonStart};
 use anyhow::bail;
+use serde::Serialize;
+
+use crate::output::print_json;
 
 const STOP_WAIT: Duration = Duration::from_secs(10);
 const STOP_POLL: Duration = Duration::from_millis(100);
+
+/// What `allot daemon status --json` prints when allotd is not running, in place of its health
+/// response, which has no `running` field.
+#[derive(Debug, Default, Serialize)]
+struct NotRunning {
+    running: bool,
+}
 
 /// Starts allotd in the background unless it is already running.
 ///
@@ -76,14 +86,17 @@ pub fn shutdown(client: &BlockingClient) -> anyhow::Result<Option<u32>> {
     Ok(Some(pid))
 }
 
-/// Reports whether allotd is running, without starting it.
+/// Reports whether allotd is running, without starting it. With `json`, prints its health
+/// response, or `{"running": false}` when it is not running.
 ///
 /// # Errors
 ///
 /// Fails when the local configuration cannot be read.
-pub fn status() -> anyhow::Result<()> {
+pub fn status(json: bool) -> anyhow::Result<()> {
     let client = BlockingClient::discover(false)?;
     match client.health() {
+        Ok(health) if json => print_json(&health)?,
+        Err(error) if json && error.is_unreachable() => print_json(&NotRunning::default())?,
         Ok(health) => {
             println!(
                 "allotd {} running at {} (pid {}, up {} s)",
@@ -102,4 +115,17 @@ pub fn status() -> anyhow::Result<()> {
         Err(error) => return Err(error.into()),
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_not_running_json_has_only_the_running_flag() {
+        assert_eq!(
+            serde_json::to_string(&NotRunning::default()).unwrap(),
+            r#"{"running":false}"#
+        );
+    }
 }

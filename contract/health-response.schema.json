@@ -1,0 +1,36 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "HealthResponse",
+  "description": "Response of `GET /health`.",
+  "type": "object",
+  "properties": {
+    "config_error": {
+      "description": "Why the last change to `config.toml` was rejected; the daemon keeps the config it had\nuntil the file is fixed.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "pid": {
+      "description": "Daemon process ID.",
+      "type": "integer",
+      "format": "uint32",
+      "minimum": 0
+    },
+    "uptime_secs": {
+      "description": "Seconds since the daemon started.",
+      "type": "integer",
+      "format": "uint64",
+      "minimum": 0
+    },
+    "version": {
+      "description": "Daemon version, from its `Cargo.toml`.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "version",
+    "pid",
+    "uptime_secs"
+  ]
+}

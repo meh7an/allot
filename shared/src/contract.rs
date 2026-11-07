@@ -1,7 +1,8 @@
 //! Golden files for the desktop apps: the JSON Schemas of [`UiState`] and of the kill and
 //! remove responses, one fixture per flyout scenario and response shape, kept in `contract/` at
 //! the repository root, and the types generated from the schemas: C# in the tray's logic
-//! library, a Swift package and a JavaScript module with JSDoc types in `contract/`.
+//! library, a Swift package and a JavaScript module with JSDoc types in `contract/`. The other
+//! responses `allot --json` prints get schemas there too.
 //!
 //! The tests fail when a file no longer matches the types. Rerun them with
 //! `ALLOT_UPDATE_CONTRACT=1` to rewrite the files, then review the diff.
@@ -18,13 +19,13 @@ use serde::Serialize;
 
 use crate::{
     api::{
-        BenchmarkProgress, HealthResponse, KillResponse, KilledProcess, RemoveResponse,
+        BenchmarkProgress, HealthResponse, JobSummary, KillResponse, KilledProcess, RemoveResponse,
         UnkilledProcess, Verdict,
     },
     types::{
         Accuracy, BoundProcess, DriveUsage, EndCause, EnforcedLimits, Holder, IsolationKind,
-        JobClass, JobProfile, Lease, LeaseBinding, LeaseId, LeaseIsolation, LeaseKind, LeaseState,
-        NoiseReport, ResourceUsage, SessionKey,
+        JobClass, JobProfile, JobRun, Lease, LeaseBinding, LeaseId, LeaseIsolation, LeaseKind,
+        LeaseState, NoiseReport, ResourceUsage, SessionKey,
     },
     ui::{
         ActiveJob, CpuMeter, EndedLease, GpuMeter, JobProcess, Meters, Notice, QueuedJob, RamMeter,
@@ -36,6 +37,10 @@ const UPDATE_VAR: &str = "ALLOT_UPDATE_CONTRACT";
 const SCHEMA_FILE: &str = "contract/ui-state.schema.json";
 const KILL_SCHEMA_FILE: &str = "contract/kill-response.schema.json";
 const REMOVE_SCHEMA_FILE: &str = "contract/remove-response.schema.json";
+const LEASES_SCHEMA_FILE: &str = "contract/leases.schema.json";
+const JOBS_SCHEMA_FILE: &str = "contract/job-summaries.schema.json";
+const RUNS_SCHEMA_FILE: &str = "contract/job-runs.schema.json";
+const HEALTH_SCHEMA_FILE: &str = "contract/health-response.schema.json";
 const CSHARP_FILE: &str = "tray/src/Allot.Tray.Core/Contract/UiState.g.cs";
 const SWIFT_FILE: &str = "contract/swift/Sources/AllotContract/Contract.g.swift";
 const TYPESCRIPT_FILE: &str = "contract/typescript/contract.g.mjs";
@@ -841,9 +846,21 @@ fn contract_schemas() -> [(&'static str, Schema); 3] {
     ]
 }
 
+/// What `allot`'s `--json` prints besides [`UiState`] and the kill and remove responses: the
+/// daemon's own responses, unchanged. No desktop app decodes these, so they get no generated
+/// types.
+fn cli_schemas() -> [(&'static str, Schema); 4] {
+    [
+        (LEASES_SCHEMA_FILE, root_schema::<Vec<Lease>>()),
+        (JOBS_SCHEMA_FILE, root_schema::<Vec<JobSummary>>()),
+        (RUNS_SCHEMA_FILE, root_schema::<Vec<JobRun>>()),
+        (HEALTH_SCHEMA_FILE, root_schema::<HealthResponse>()),
+    ]
+}
+
 #[test]
 fn test_contract_schemas_match_committed_files() {
-    for (file, schema) in contract_schemas() {
+    for (file, schema) in contract_schemas().into_iter().chain(cli_schemas()) {
         assert_matches_file(file, &pretty_json(&schema));
     }
 }

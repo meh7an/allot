@@ -159,6 +159,7 @@ impl Home {
             .env("HOME", &self.0)
             .env("XDG_CONFIG_HOME", self.0.join(".config"))
             .env("XDG_DATA_HOME", self.0.join(".local/share"))
+            .env_remove("BASH_COMPLETION_USER_DIR")
             .env("XDG_CURRENT_DESKTOP", desktop)
             .env("ALLOT_CLAUDE", self.0.join("no-claude"))
             .env("PATH", path)
@@ -485,6 +486,43 @@ fn test_uninstall_removes_autostart_binaries_link_and_registrations() {
     let settings = fs::read_to_string(home.claude("settings.json")).unwrap();
     assert!(!settings.contains("allot"), "{settings}");
     assert!(home.app().join("config.toml").is_file(), "data is kept");
+}
+
+#[test]
+fn test_install_writes_bash_and_fish_completions_and_uninstall_removes_only_those() {
+    let home = Home::new("completions");
+    let bash = home
+        .0
+        .join(".local/share/bash-completion/completions/allot");
+    let fish = home.0.join(".config/fish/completions/allot.fish");
+    fs::create_dir_all(fish.parent().unwrap()).unwrap();
+    fs::write(&fish, "# my own\n").unwrap();
+
+    let stdout = home.install();
+
+    let script = fs::read_to_string(&bash).unwrap();
+    assert!(
+        script.starts_with("# Written by `allot install`"),
+        "{script}"
+    );
+    assert!(script.contains("_allot()"), "{script}");
+    assert_eq!(fs::read_to_string(&fish).unwrap(), "# my own\n", "{stdout}");
+    assert!(
+        stdout.contains("zsh completions: run `allot completions zsh"),
+        "{stdout}"
+    );
+
+    fs::remove_file(&fish).unwrap();
+    home.install();
+    assert!(
+        fs::read_to_string(&fish)
+            .unwrap()
+            .contains("complete -c allot")
+    );
+
+    let stdout = home.uninstall();
+    assert!(!bash.exists(), "{stdout}");
+    assert!(!fish.exists(), "{stdout}");
 }
 
 #[test]

@@ -6,23 +6,37 @@ use allot_shared::{
     types::{BusyUsage, JobProfile, JobRun},
 };
 
-use crate::status::{duration, gb, now_ms};
+use crate::{
+    output::{HEADING, paint, print_json},
+    status::{duration, gb, now_ms},
+};
 
-/// Prints one entry per job fingerprint, or with `fingerprint` the runs of that job.
+/// Prints one entry per job fingerprint, or with `fingerprint` the runs of that job, as text or
+/// as the daemon's job summaries or runs.
 ///
 /// # Errors
 ///
 /// Fails when allotd cannot be reached or started.
-pub fn history(fingerprint: Option<&str>, limit: Option<u32>) -> anyhow::Result<()> {
+pub fn history(fingerprint: Option<&str>, limit: Option<u32>, json: bool) -> anyhow::Result<()> {
     let client = BlockingClient::discover(true)?;
     let now = now_ms();
     let text = match fingerprint {
         Some(fingerprint) => {
-            format_runs(fingerprint, &client.history_runs(fingerprint, limit)?, now)
+            let runs = client.history_runs(fingerprint, limit)?;
+            if json {
+                return print_json(&runs);
+            }
+            format_runs(fingerprint, &runs, now)
         }
-        None => format_jobs(&client.history()?, now),
+        None => {
+            let jobs = client.history()?;
+            if json {
+                return print_json(&jobs);
+            }
+            format_jobs(&jobs, now)
+        }
     };
-    print!("{text}");
+    anstream::print!("{text}");
     Ok(())
 }
 
@@ -37,7 +51,7 @@ fn format_jobs(jobs: &[JobSummary], now_ms: i64) -> String {
     for job in jobs {
         text.push_str(&format!(
             "\n{}\n  {} run(s), last ended {} ago: {}\n",
-            job.fingerprint,
+            paint(HEADING, &job.fingerprint),
             job.runs,
             duration(now_ms - job.last_ended_at_ms),
             job.command
@@ -71,7 +85,7 @@ fn format_runs(fingerprint: &str, runs: &[JobRun], now_ms: i64) -> String {
     if runs.is_empty() {
         return format!("no runs of {fingerprint}\n");
     }
-    let mut text = format!("{fingerprint}\n");
+    let mut text = format!("{}\n", paint(HEADING, fingerprint));
     for run in runs {
         let lease = run
             .lease_id
@@ -117,6 +131,7 @@ mod tests {
     use allot_shared::types::{LeaseId, ResourceUsage};
 
     use super::*;
+    use crate::output::plain;
 
     fn profile() -> JobProfile {
         JobProfile {
@@ -172,7 +187,7 @@ mod tests {
             estimate_runs: 0,
             ..job.clone()
         };
-        let text = format_jobs(&[job, unknown], 397_000);
+        let text = plain(format_jobs(&[job, unknown], 397_000));
         assert!(text.contains("\ncargo build|e:\\app\n"), "{text}");
         assert!(
             text.contains("  3 run(s), last ended 5m 02s ago: cargo build 2>&1\n"),
@@ -192,11 +207,11 @@ mod tests {
             busy: None,
             ..run(false)
         };
-        let text = format_runs(
+        let text = plain(format_runs(
             "cargo build|e:\\app",
             &[run(false), run(true), older],
             155_000,
-        );
+        ));
         let lines: Vec<&str> = text.lines().collect();
         assert_eq!(lines[0], "cargo build|e:\\app");
         assert_eq!(

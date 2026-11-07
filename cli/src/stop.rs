@@ -6,29 +6,41 @@ use allot_shared::{
     types::LeaseId,
 };
 
+use crate::output::print_json;
+
 /// Ends an active lease of any session and terminates its bound process tree. The session
 /// that held it is told on its next tool call.
+///
+/// Prints what happened as text or as the daemon's response.
 ///
 /// # Errors
 ///
 /// Fails when allotd cannot be reached, the lease is not active, or the kill is refused.
-pub fn kill(id: i64) -> anyhow::Result<()> {
+pub fn kill(id: i64, json: bool) -> anyhow::Result<()> {
     let client = BlockingClient::discover(true)?;
     let response = client.kill(LeaseId(id))?;
-    print!("{}", format_kill(&response));
+    if json {
+        return print_json(&response);
+    }
+    anstream::print!("{}", format_kill(&response));
     Ok(())
 }
 
 /// Ends a queued lease of any session before it starts. The session that asked for it does
 /// not run its command.
 ///
+/// Prints what happened as text or as the daemon's response.
+///
 /// # Errors
 ///
 /// Fails when allotd cannot be reached or the lease is not queued.
-pub fn remove(id: i64) -> anyhow::Result<()> {
+pub fn remove(id: i64, json: bool) -> anyhow::Result<()> {
     let client = BlockingClient::discover(true)?;
     let response = client.remove(LeaseId(id))?;
-    print!("{}", format_remove(&response));
+    if json {
+        return print_json(&response);
+    }
+    anstream::print!("{}", format_remove(&response));
     Ok(())
 }
 

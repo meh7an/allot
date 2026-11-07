@@ -71,6 +71,10 @@ jobs:
           New-Item -ItemType Directory $name | Out-Null
           Copy-Item target/release/allot.exe, target/release/allotd.exe, target/release/allot-mcp.exe,
             README.md, CHANGELOG.md, LICENSE-MIT, LICENSE-APACHE -Destination $name
+          New-Item -ItemType Directory "$name/completions" | Out-Null
+          & target/release/allot.exe completions powershell |
+            Set-Content -Encoding utf8 "$name/completions/allot.ps1"
+          if ($LASTEXITCODE -ne 0) { throw "allot completions exited with $LASTEXITCODE" }
           Copy-Item tray-publish -Destination "$name/tray" -Recurse
           Get-ChildItem "$name/tray" -Recurse -Filter *.pdb | Remove-Item
           if (-not (Test-Path "$name/tray/allot-tray.exe")) { throw "the package has no tray app" }

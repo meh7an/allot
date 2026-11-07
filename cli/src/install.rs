@@ -23,7 +23,7 @@ use anyhow::{Context, bail};
 
 #[cfg(target_os = "linux")]
 use crate::desktop;
-use crate::{daemon, registration};
+use crate::{completions, daemon, registration};
 #[cfg(windows)]
 use crate::{legacy, tray};
 
@@ -35,10 +35,10 @@ const RELEASE_DIR: &str = if cfg!(windows) {
 } else {
     "target/release"
 };
-const SKILL: &str = include_str!("../../skill/resource-guard/SKILL.md");
+pub(crate) const SKILL: &str = include_str!("../../skill/resource-guard/SKILL.md");
 /// The rule copy older installs left for pasting; the rule is imported into CLAUDE.md now.
 const OLD_RULE_FILE: &str = "claude-md-rule.md";
-const SKILL_FILE: &str = "SKILL.md";
+pub(crate) const SKILL_FILE: &str = "SKILL.md";
 /// How long to wait for a stopped allotd to exit. Older builds finish open acquire waits first,
 /// which can take a minute.
 const EXIT_WAIT: Duration = Duration::from_secs(90);
@@ -113,6 +113,7 @@ pub fn install(options: Options) -> anyhow::Result<()> {
         }
         #[cfg(target_os = "linux")]
         desktop::install(&paths);
+        completions::install(&paths);
         // Stopped before the autostart step, which starts the new build.
         let client = client_options(&paths);
         let stopped = stop_daemon(&paths, &client);
@@ -223,6 +224,7 @@ fn install_on_windows(
         copy_skill(&paths)?;
     }
     remove_if_present(&paths.root().join(OLD_RULE_FILE))?;
+    completions::install();
 
     let replaces_old_daemon = taken_over.is_some_and(|taken| taken.daemon_stopped);
     if let Err(error) = restart_daemon(&paths, replaces_old_daemon) {
@@ -333,7 +335,10 @@ pub fn uninstall(purge: bool) -> anyhow::Result<()> {
 
     let bin = paths.bin_dir();
     #[cfg(unix)]
-    unlink_from_path(&paths);
+    {
+        unlink_from_path(&paths);
+        completions::uninstall(&paths)?;
+    }
     in_use.extend(remove_binaries(&bin)?);
     let skill_dir = registration::skill_dir(&paths);
     remove_if_present(&skill_dir.join(SKILL_FILE))?;

@@ -3,17 +3,17 @@
 //! widget leaves behind, since removing a widget package cannot.
 
 use std::{
-    env,
-    ffi::OsStr,
-    fs,
+    env, fs,
     path::{Path, PathBuf},
 };
 
-use allot_shared::{autostart::CONFIG_HOME_VAR, paths::Paths};
+use allot_shared::paths::Paths;
 
-use crate::install::remove_if_present;
+use crate::{
+    install::remove_if_present,
+    xdg::{config_home, data_home},
+};
 
-const DATA_HOME_VAR: &str = "XDG_DATA_HOME";
 const DESKTOP_VAR: &str = "XDG_CURRENT_DESKTOP";
 /// The file the KDE widget copies into `knotifications6` at start, and the name of the user's
 /// choices for it, which System Settings writes to the config folder.
@@ -83,30 +83,6 @@ pub fn print_panel_hint(paths: &Paths) {
     if let Some(hint) = panel_hint(&desktop, &data_home(paths)) {
         println!("{hint}");
     }
-}
-
-/// `$XDG_DATA_HOME` when it is absolute, as the base directory spec asks, else `~/.local/share`.
-fn data_home(paths: &Paths) -> PathBuf {
-    xdg_home(
-        env::var_os(DATA_HOME_VAR).as_deref(),
-        paths.home(),
-        ".local/share",
-    )
-}
-
-fn config_home(paths: &Paths) -> PathBuf {
-    xdg_home(
-        env::var_os(CONFIG_HOME_VAR).as_deref(),
-        paths.home(),
-        ".config",
-    )
-}
-
-fn xdg_home(value: Option<&OsStr>, home: &Path, default: &str) -> PathBuf {
-    value
-        .map(Path::new)
-        .filter(|path| path.is_absolute())
-        .map_or_else(|| home.join(default), Path::to_owned)
 }
 
 fn hicolor(data: &Path) -> PathBuf {
@@ -244,31 +220,6 @@ mod tests {
         let folder = Folder::new("remove-none");
 
         remove_icons(&folder.0.join("hicolor")).unwrap();
-    }
-
-    #[test]
-    fn test_xdg_home_with_relative_value_uses_the_default() {
-        let home = Path::new("/home/me");
-
-        assert_eq!(
-            xdg_home(Some(OsStr::new("relative")), home, ".local/share"),
-            home.join(".local/share")
-        );
-        assert_eq!(xdg_home(None, home, ".config"), home.join(".config"));
-    }
-
-    #[test]
-    fn test_xdg_home_with_absolute_value_uses_it() {
-        let value = env::temp_dir();
-
-        assert_eq!(
-            xdg_home(
-                Some(value.as_os_str()),
-                Path::new("/home/me"),
-                ".local/share"
-            ),
-            value
-        );
     }
 
     #[test]

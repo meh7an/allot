@@ -51,6 +51,12 @@ jobs:
           mkdir "$name"
           cp target/release/allot target/release/allotd target/release/allot-mcp \
             README.md CHANGELOG.md LICENSE-MIT LICENSE-APACHE "$name"
+          # For packages (AUR, Homebrew) to install where their shells and man look.
+          mkdir "$name/completions"
+          target/release/allot completions bash > "$name/completions/allot.bash"
+          target/release/allot completions zsh > "$name/completions/_allot"
+          target/release/allot completions fish > "$name/completions/allot.fish"
+          target/release/allot man > "$name/allot.1"
           tar --owner=0 --group=0 -czf "$name.tar.gz" "$name"
           sha256sum "$name.tar.gz" > "$name.tar.gz.sha256"
           echo "ASSET=$name" >> "$GITHUB_ENV"

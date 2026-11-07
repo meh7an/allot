@@ -12,6 +12,21 @@ All notable changes to this project are documented in this file. The format foll
   release package for the machine, check it against its `.sha256`, and run `allot install` (on
   Windows, the setup, silently). They take a version to pin and stop with a clear message on a
   platform without a package.
+- `allot doctor` checks the binaries, `PATH`, the config, allotd and its version, and what
+  `allot install` registers, and says what to fix. It changes nothing.
+- `allot status --watch [--interval SECS]` redraws the status until Ctrl-C.
+- `--json` on `status`, `leases`, `history`, `kill`, `remove`, `daemon status` and `doctor`. It
+  prints allotd's own responses, with JSON Schemas in `contract/`.
+- `allot completions <bash|zsh|fish|powershell|elvish>` and `allot man`. Release packages carry
+  the scripts and `allot.1`, and `allot install` sets up bash and fish completions.
+- Colour in `status`, `leases`, `history` and `doctor`, with `--color auto|always|never`. It
+  follows `NO_COLOR` and `CLICOLOR_FORCE` and is off when piped.
+- `--help` shows examples.
+
+### Changed
+
+- Errors fit on one line, and a `hint:` line says what to run next when allotd is not running
+  or a lease ID is wrong.
 
 ## [0.3.0] - 2026-11-04
 

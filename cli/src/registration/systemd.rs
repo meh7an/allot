@@ -114,6 +114,18 @@ pub(super) fn manual_remove(paths: &Paths) -> String {
     )
 }
 
+/// What the unit file starts, and whether it is enabled; a unit that is not enabled starts
+/// nothing at login.
+pub(super) fn current(paths: &Paths) -> Found {
+    match read_text(&unit_file(paths)) {
+        Ok(unit) => match found(unit.as_deref()) {
+            Found::Runs(_) if !is_enabled() => Found::Missing,
+            other => other,
+        },
+        Err(_) => Found::Unknown,
+    }
+}
+
 fn found(unit: Option<&str>) -> Found {
     match unit {
         None => Found::Missing,

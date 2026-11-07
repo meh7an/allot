@@ -129,6 +129,11 @@ pub(super) fn manual_remove(paths: &Paths) -> String {
     )
 }
 
+/// What the agent's plist starts at login.
+pub(super) fn current(paths: &Paths) -> Found {
+    read_text(&plist_file(paths)).map_or(Found::Unknown, |plist| found(plist.as_deref()))
+}
+
 fn found(plist: Option<&str>) -> Found {
     match plist {
         None => Found::Missing,

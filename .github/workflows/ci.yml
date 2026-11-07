@@ -31,6 +31,18 @@ jobs:
       - name: Test
         run: cargo test --workspace
 
+      # The PowerShell completions the Windows package ships: they parse, and complete a command.
+      - name: Completions
+        shell: pwsh
+        run: |
+          $script = (& target/debug/allot.exe completions powershell) -join "`n"
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseInput($script, [ref]$null, [ref]$errors) | Out-Null
+          if ($errors) { $errors; throw "the PowerShell completions do not parse" }
+          Invoke-Expression $script
+          $found = (TabExpansion2 'allot sta' 9).CompletionMatches.CompletionText
+          if ($found -notcontains 'status') { throw "allot sta completes to: $found" }
+
   tray:
     runs-on: windows-latest
     defaults:
@@ -122,6 +134,16 @@ jobs:
       - name: Test
         run: cargo test --workspace
 
+      # The completions and man page the packages ship, read by each shell and by man.
+      - name: Install fish and zsh
+        if: matrix.os == 'ubuntu-24.04'
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends fish zsh
+
+      - name: Completions
+        run: sh .github/scripts/check-completions.sh target/debug/allot
+
       # The generated contract types, each checked once on a runner with its toolchain.
       - name: Install pnpm
         if: matrix.os == 'ubuntu-24.04'
@@ -210,7 +232,7 @@ jobs:
 
       - name: Lint
         if: matrix.os == 'ubuntu-24.04'
-        run: shellcheck install.sh .github/scripts/test-install-sh.sh
+        run: shellcheck install.sh .github/scripts/test-install-sh.sh .github/scripts/check-completions.sh
 
       - name: install.sh
         if: matrix.shell == 'sh'

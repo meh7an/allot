@@ -290,6 +290,7 @@ pub struct HistoryResponse {
 }
 
 /// What the history knows about one fingerprint.
+#[cfg_attr(any(feature = "schema", test), derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct JobSummary {
     /// Normalized command plus working directory.

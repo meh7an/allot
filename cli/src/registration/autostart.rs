@@ -6,11 +6,11 @@
 use std::path::Path;
 
 #[cfg(target_os = "macos")]
-pub(super) use super::launchd::{manual_remove, manual_set_up, remove, set_up, title};
+pub(super) use super::launchd::{current, manual_remove, manual_set_up, remove, set_up, title};
 #[cfg(target_os = "linux")]
-pub(super) use super::systemd::{manual_remove, manual_set_up, remove, set_up, title};
+pub(super) use super::systemd::{current, manual_remove, manual_set_up, remove, set_up, title};
 #[cfg(windows)]
-pub(super) use super::task::{manual_remove, manual_set_up, remove, set_up, title};
+pub(super) use super::task::{current, manual_remove, manual_set_up, remove, set_up, title};
 use crate::registered::same_path;
 
 /// What the OS knows about an autostart entry.

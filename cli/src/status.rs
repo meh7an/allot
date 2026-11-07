@@ -2,6 +2,7 @@
 
 use std::{
     collections::HashSet,
+    io::{self, IsTerminal, Write},
     thread,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
@@ -9,9 +10,12 @@ use std::{
 use allot_client::BlockingClient;
 use allot_shared::{
     api::{HealthResponse, LeaseQuery},
-    types::{JobClass, Lease, LeaseState, ResourceUsage, SessionKey, Snapshot},
+    types::{EndCause, JobClass, Lease, LeaseState, ResourceUsage, SessionKey, Snapshot},
     ui::Notice,
 };
+use anstyle::Style;
+
+use crate::output::{BAD, DIM, GOOD, HEADING, WAIT, paint, print_json};
 
 const SNAPSHOT_WAIT: Duration = Duration::from_secs(5);
 const SNAPSHOT_POLL: Duration = Duration::from_millis(200);
@@ -19,24 +23,74 @@ const HISTORY_SHOWN: usize = 20;
 const SESSION_ID_SHOWN: usize = 8;
 // Kills and removals older than this are history, not status.
 const NOTICES_SHOWN_MS: i64 = 60 * 60 * 1_000;
+/// Moves the cursor home and clears the screen, so each `--watch` frame replaces the last.
+const CLEAR_SCREEN: &str = "\u{1b}[H\u{1b}[2J";
 
-/// Prints machine usage, every session with its leases, and the rest. Starts allotd when it is
-/// not running.
+/// How `allot status` prints.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StatusMode {
+    /// Once, as text.
+    Text,
+    /// Once, as the daemon's `/ui/state`.
+    Json,
+    /// As text, again every interval until interrupted.
+    Watch(Duration),
+}
+
+/// Prints machine usage, every session with its leases, and the rest, once or every interval,
+/// or the daemon's whole UI state as JSON. Starts allotd when it is not running.
 ///
 /// # Errors
 ///
-/// Fails when allotd cannot be reached or started.
-pub fn status() -> anyhow::Result<()> {
+/// Fails when allotd cannot be reached or started. While watching, only the first frame can
+/// fail; later failures are shown in the frame and retried.
+pub fn status(mode: StatusMode) -> anyhow::Result<()> {
     let client = BlockingClient::discover(true)?;
-    let snapshot = snapshot_when_ready(&client)?;
-    let health = client.health()?;
-    let leases = current_leases(&client)?;
-    let notices = recent_notices(&client)?;
-    print!(
-        "{}",
-        format_status(&health, &snapshot, &leases, &notices, now_ms())
-    );
+    match mode {
+        StatusMode::Text => anstream::print!("{}", status_text(&client)?),
+        StatusMode::Json => print_json(&when_ready(|| client.ui_state())?)?,
+        StatusMode::Watch(interval) => watch(&client, interval)?,
+    }
     Ok(())
+}
+
+fn status_text(client: &BlockingClient) -> anyhow::Result<String> {
+    let snapshot = snapshot_when_ready(client)?;
+    let health = client.health()?;
+    let leases = current_leases(client)?;
+    let notices = recent_notices(client)?;
+    Ok(format_status(
+        &health,
+        &snapshot,
+        &leases,
+        &notices,
+        now_ms(),
+    ))
+}
+
+/// Redraws the status every `interval` until the process is interrupted. On a terminal each
+/// frame replaces the last; piped, frames follow one another with a blank line between.
+fn watch(client: &BlockingClient, interval: Duration) -> anyhow::Result<()> {
+    let terminal = io::stdout().is_terminal();
+    // Fail at once when allotd is unusable, rather than showing the error forever.
+    let mut frame = status_text(client)?;
+    loop {
+        let header = paint(
+            DIM,
+            &format!(
+                "every {}, Ctrl-C stops\n\n",
+                duration(i64::try_from(interval.as_millis()).unwrap_or(i64::MAX))
+            ),
+        );
+        match draw(terminal, &format!("{header}{frame}")) {
+            // The reader went away, such as `head` that has its lines: done, not an error.
+            Err(error) if error.kind() == io::ErrorKind::BrokenPipe => return Ok(()),
+            other => other?,
+        }
+        thread::sleep(interval);
+        frame = status_text(client)
+            .unwrap_or_else(|error| format!("{} {error:#}\n", paint(BAD, "Error:")));
+    }
 }
 
 /// The newest kills and removals; none from an allotd built before they existed.
@@ -48,12 +102,13 @@ fn recent_notices(client: &BlockingClient) -> anyhow::Result<Vec<Notice>> {
     }
 }
 
-/// Prints active and queued leases, or with `all` the most recent ones in any state.
+/// Prints active and queued leases, or with `all` the most recent ones in any state, as text or
+/// as the daemon's lease objects.
 ///
 /// # Errors
 ///
 /// Fails when allotd cannot be reached or started.
-pub fn leases(all: bool) -> anyhow::Result<()> {
+pub fn leases(all: bool, json: bool) -> anyhow::Result<()> {
     let client = BlockingClient::discover(true)?;
     let leases = if all {
         let every = client.leases(&LeaseQuery::default())?;
@@ -62,25 +117,55 @@ pub fn leases(all: bool) -> anyhow::Result<()> {
     } else {
         current_leases(&client)?
     };
-    if leases.is_empty() {
-        println!("no leases");
+    if json {
+        return print_json(&leases);
     }
-    let now = now_ms();
-    for lease in &leases {
-        println!(
-            "{}  {}",
-            short(&lease.holder.session),
-            format_lease(lease, now)
-        );
-    }
+    anstream::print!("{}", format_leases(&leases, now_ms()));
     Ok(())
 }
 
-/// A freshly started allotd answers 503 until its first sample; wait that out briefly.
+fn format_leases(leases: &[Lease], now_ms: i64) -> String {
+    if leases.is_empty() {
+        return "no leases\n".to_owned();
+    }
+    leases
+        .iter()
+        .map(|lease| {
+            format!(
+                "{}  {}\n",
+                short(&lease.holder.session),
+                format_lease(lease, now_ms)
+            )
+        })
+        .collect()
+}
+
+/// Writes one `--watch` frame over the last one on a terminal, or after it with a blank line.
+fn draw(terminal: bool, frame: &str) -> io::Result<()> {
+    if terminal {
+        // Not colour, so it is written even under NO_COLOR; the ANSI stream also turns on
+        // escape sequences in a Windows console.
+        let mut raw = anstream::AutoStream::always_ansi(io::stdout());
+        write!(raw, "{CLEAR_SCREEN}")?;
+        raw.flush()?;
+    }
+    let mut out = anstream::stdout();
+    write!(out, "{frame}")?;
+    if !terminal {
+        writeln!(out)?;
+    }
+    out.flush()
+}
+
 fn snapshot_when_ready(client: &BlockingClient) -> anyhow::Result<Snapshot> {
+    when_ready(|| client.snapshot())
+}
+
+/// A freshly started allotd answers 503 until its first sample; wait that out briefly.
+fn when_ready<T>(call: impl Fn() -> allot_client::Result<T>) -> anyhow::Result<T> {
     let deadline = Instant::now() + SNAPSHOT_WAIT;
     loop {
-        match client.snapshot() {
+        match call() {
             Err(error) if error.status() == Some(503) && Instant::now() < deadline => {
                 thread::sleep(SNAPSHOT_POLL);
             }
@@ -118,7 +203,8 @@ fn format_status(
     );
     if let Some(error) = &health.config_error {
         text.push_str(&format!(
-            "config  REJECTED, still using the previous one: {error}\n"
+            "config  {}, still using the previous one: {error}\n",
+            paint(BAD, "REJECTED")
         ));
     }
     text.push_str(&format!(
@@ -142,7 +228,7 @@ fn format_status(
         ));
     }
 
-    text.push_str("\nsessions\n");
+    text.push_str(&format!("\n{}\n", paint(HEADING, "sessions")));
     if snapshot.sessions.is_empty() {
         text.push_str("  none registered\n");
     }
@@ -179,7 +265,7 @@ fn format_status(
         .filter(|notice| now_ms - notice.ended_at_ms <= NOTICES_SHOWN_MS)
         .collect();
     if !recent.is_empty() {
-        text.push_str("\nstopped by the user\n");
+        text.push_str(&format!("\n{}\n", paint(HEADING, "stopped by the user")));
     }
     for notice in recent {
         let told = if notice.delivered_at_ms.is_some() {
@@ -188,10 +274,10 @@ fn format_status(
             "  (session not told yet)"
         };
         text.push_str(&format!(
-            "  {}  lease {:<4} {:<8} {} ago  {}{told}\n",
+            "  {}  lease {:<4} {} {} ago  {}{told}\n",
             short(&notice.session),
             notice.lease_id.0,
-            notice.cause.as_str(),
+            paint(BAD, &format!("{:<8}", notice.cause.as_str())),
             duration(now_ms - notice.ended_at_ms),
             notice.command
         ));
@@ -219,14 +305,15 @@ fn format_lease(lease: &Lease, now_ms: i64) -> String {
     };
     let age = since.map_or_else(String::new, |at| format!(" for {}", duration(now_ms - at)));
     // A kill or removal is stored as expired; the cause is what the user wants to see.
-    let shown_state = lease
-        .end_cause
-        .filter(|cause| cause.is_notice())
-        .map_or(lease.state.as_str(), |cause| cause.as_str());
+    let notice = lease.end_cause.filter(|cause| cause.is_notice());
+    let shown_state = notice.map_or(lease.state.as_str(), EndCause::as_str);
     let mut text = format!(
-        "lease {:<4} {:<8} {:<9} {:.1} cores, {}",
+        "lease {:<4} {} {:<9} {:.1} cores, {}",
         lease.id.0,
-        shown_state,
+        paint(
+            state_style(lease.state, notice.is_some()),
+            &format!("{shown_state:<8}")
+        ),
         class,
         profile.cores,
         gb(profile.ram_mb)
@@ -242,9 +329,20 @@ fn format_lease(lease: &Lease, now_ms: i64) -> String {
     text
 }
 
+/// Active is good news, queued is waiting, and a kill or removal is the user stopping it;
+/// anything else that ended is past and needs no colour.
+fn state_style(state: LeaseState, stopped_by_user: bool) -> Style {
+    match state {
+        _ if stopped_by_user => BAD,
+        LeaseState::Active => GOOD,
+        LeaseState::Queued => WAIT,
+        _ => Style::new(),
+    }
+}
+
 fn short(session: &SessionKey) -> String {
     let id: String = session.0.chars().take(SESSION_ID_SHOWN).collect();
-    format!("{id:<SESSION_ID_SHOWN$}")
+    paint(DIM, &format!("{id:<SESSION_ID_SHOWN$}"))
 }
 
 pub(crate) fn gb(mb: u64) -> String {
@@ -271,10 +369,53 @@ pub(crate) fn now_ms() -> i64 {
 #[cfg(test)]
 mod tests {
     use allot_shared::types::{
-        CpuStats, EndCause, Holder, JobProfile, LeaseId, LeaseKind, MemStats, Rolling, SessionUsage,
+        CpuStats, Holder, JobProfile, LeaseId, LeaseKind, MemStats, Rolling, SessionUsage,
     };
 
     use super::*;
+    use crate::output::plain;
+
+    #[test]
+    fn test_format_lease_colours_the_state_without_moving_the_columns() {
+        let queued = format_lease(&lease(4, "s", LeaseState::Queued), 2_000);
+        assert!(queued.contains(&paint(WAIT, "queued  ")), "{queued:?}");
+        let active = format_lease(&lease(5, "s", LeaseState::Active), 2_000);
+        assert!(active.contains(&paint(GOOD, "active  ")), "{active:?}");
+        assert_eq!(
+            plain(queued).find("cpu_heavy"),
+            plain(active).find("cpu_heavy")
+        );
+    }
+
+    #[test]
+    fn test_format_leases_lists_each_lease_under_its_session() {
+        let leases = [
+            lease(12, "3f2a9c1e-aaaa-bbbb", LeaseState::Active),
+            lease(13, "77777777-cccc", LeaseState::Queued),
+        ];
+        let text = plain(format_leases(&leases, 62_000));
+        let lines: Vec<&str> = text.lines().collect();
+        assert_eq!(lines.len(), 2, "{text}");
+        assert!(
+            lines[0].starts_with("3f2a9c1e  lease 12   active "),
+            "{text}"
+        );
+        assert!(
+            lines[1].starts_with("77777777  lease 13   queued "),
+            "{text}"
+        );
+        assert_eq!(format_leases(&[], 0), "no leases\n");
+    }
+
+    #[test]
+    fn test_lease_json_is_the_daemon_wire_shape() {
+        let lease = lease(12, "3f2a9c1e", LeaseState::Active);
+        let json = serde_json::to_value([&lease]).unwrap();
+        assert_eq!(json[0]["id"], 12);
+        assert_eq!(json[0]["state"], "active");
+        let back: Vec<Lease> = serde_json::from_value(json).unwrap();
+        assert_eq!(back, [lease]);
+    }
 
     fn holder(session: &str) -> Holder {
         Holder {
@@ -358,7 +499,7 @@ mod tests {
             lease(12, "3f2a9c1e-aaaa-bbbb", LeaseState::Active),
             lease(13, "77777777-cccc", LeaseState::Queued),
         ];
-        let text = format_status(&health, &snapshot(), &leases, &[], 62_000);
+        let text = plain(format_status(&health, &snapshot(), &leases, &[], 62_000));
         assert!(
             text.starts_with("allotd 0.1.0 (pid 1234, up 1h 02m)\n"),
             "{text}"
@@ -406,7 +547,7 @@ mod tests {
             notice(38, EndCause::Removed, now - 600_000, Some(now - 590_000)),
             notice(37, EndCause::Killed, now - NOTICES_SHOWN_MS - 1, None),
         ];
-        let text = format_status(&health, &snapshot(), &[], &notices, now);
+        let text = plain(format_status(&health, &snapshot(), &[], &notices, now));
         assert!(
             text.contains(
                 "stopped by the user\n  3f2a9c1e  lease 39   killed   4m 00s ago  cargo clippy  \
@@ -426,7 +567,7 @@ mod tests {
             uptime_secs: 5,
             config_error: Some("config.toml: invalid configuration: x".into()),
         };
-        let text = format_status(&health, &snapshot(), &[], &[], 0);
+        let text = plain(format_status(&health, &snapshot(), &[], &[], 0));
         assert!(
             text.contains("config  REJECTED, still using the previous one: config.toml:"),
             "{text}"
@@ -438,9 +579,9 @@ mod tests {
         let mut gpu_lease = lease(1, "s", LeaseState::Queued);
         gpu_lease.profile.gpu_pct = 80.0;
         gpu_lease.profile.vram_mb = 4_096;
-        let text = format_lease(&gpu_lease, 31_000);
+        let text = plain(format_lease(&gpu_lease, 31_000));
         assert!(text.contains(", gpu 80%, vram 4.0 GB for 30s"), "{text}");
-        assert!(!format_lease(&lease(2, "s", LeaseState::Active), 0).contains("gpu"));
+        assert!(!plain(format_lease(&lease(2, "s", LeaseState::Active), 0)).contains("gpu"));
     }
 
     #[test]
@@ -451,9 +592,18 @@ mod tests {
             end_cause: Some(cause),
             ..lease(3, "s", LeaseState::Expired)
         };
-        assert!(format_lease(&ended(EndCause::Killed), 3_000).starts_with("lease 3    killed   "));
-        assert!(format_lease(&ended(EndCause::Removed), 3_000).starts_with("lease 3    removed  "));
-        assert!(format_lease(&ended(EndCause::Expired), 3_000).starts_with("lease 3    expired  "));
+        assert!(
+            plain(format_lease(&ended(EndCause::Killed), 3_000))
+                .starts_with("lease 3    killed   ")
+        );
+        assert!(
+            plain(format_lease(&ended(EndCause::Removed), 3_000))
+                .starts_with("lease 3    removed  ")
+        );
+        assert!(
+            plain(format_lease(&ended(EndCause::Expired), 3_000))
+                .starts_with("lease 3    expired  ")
+        );
     }
 
     #[test]

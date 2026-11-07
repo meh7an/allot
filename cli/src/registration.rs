@@ -35,7 +35,7 @@ use crate::{legacy, registered::same_path};
 
 /// Whether a step is done, as far as allot can tell.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum State {
+pub enum State {
     Done,
     Missing,
     /// The file or command that would tell could not be read.
@@ -102,6 +102,144 @@ impl Step {
         for line in &self.manual {
             println!("   {line}");
         }
+    }
+}
+
+/// One part of the setup as it is now, read without changing anything, for `allot doctor`.
+#[derive(Debug)]
+pub struct Inspection {
+    /// A short name, such as `hooks`.
+    pub name: &'static str,
+    pub state: State,
+    /// What was looked at, and what is wrong when it is not done.
+    pub detail: String,
+}
+
+/// Reads the MCP server, the hooks, the CLAUDE.md rule, the skill copy, and allotd's autostart,
+/// in that order.
+pub fn inspect(paths: &Paths) -> [Inspection; 5] {
+    [
+        inspect_mcp(paths),
+        inspect_hooks(paths),
+        inspect_rule(paths),
+        inspect_skill(paths),
+        inspect_autostart(paths),
+    ]
+}
+
+fn inspect_mcp(paths: &Paths) -> Inspection {
+    let file = claude_json(paths);
+    let exe = allot_mcp_exe(paths);
+    let (state, detail) = match read_json(&file) {
+        Some(Some(config)) if mcp_registered(&config, &exe) => (
+            State::Done,
+            format!("MCP server \"{MCP_NAME}\" in {}", file.display()),
+        ),
+        Some(_) => (
+            State::Missing,
+            format!(
+                "{} has no user-scope MCP server \"{MCP_NAME}\" that runs {}",
+                file.display(),
+                exe.display()
+            ),
+        ),
+        None => (
+            State::Unknown,
+            format!("{} cannot be read as JSON", file.display()),
+        ),
+    };
+    Inspection {
+        name: "mcp",
+        state,
+        detail,
+    }
+}
+
+fn inspect_hooks(paths: &Paths) -> Inspection {
+    let file = settings_json(paths);
+    let missing =
+        read_text(&file).and_then(|text| missing_hooks(text.as_deref(), &allot_exe(paths)));
+    let (state, detail) = match missing {
+        Ok(missing) if missing.is_empty() => (State::Done, format!("hooks in {}", file.display())),
+        Ok(missing) => {
+            let events: Vec<&str> = missing.iter().map(|(event, _)| *event).collect();
+            (
+                State::Missing,
+                format!("{} lacks {}", file.display(), events.join(", ")),
+            )
+        }
+        Err(error) => (State::Unknown, format!("{error:#}")),
+    };
+    Inspection {
+        name: "hooks",
+        state,
+        detail,
+    }
+}
+
+fn inspect_rule(paths: &Paths) -> Inspection {
+    let rule = rule_file(paths);
+    let claude_md = claude_md(paths);
+    let found = read_text(&rule).and_then(|text| Ok((text, read_text(&claude_md)?)));
+    let (state, detail) = match found {
+        Ok((Some(text), Some(md))) if text == claude_md::RULE && claude_md::has_import(&md) => {
+            (State::Done, format!("rule {} imported", rule.display()))
+        }
+        Ok((None, _)) => (State::Missing, format!("no rule at {}", rule.display())),
+        Ok((Some(text), _)) if text != claude_md::RULE => (
+            State::Missing,
+            format!("{} is not this version's rule", rule.display()),
+        ),
+        Ok(_) => (
+            State::Missing,
+            format!(
+                "{} lacks the line @{}",
+                claude_md.display(),
+                claude_md::FILE_NAME
+            ),
+        ),
+        Err(error) => (State::Unknown, format!("{error:#}")),
+    };
+    Inspection {
+        name: "rule",
+        state,
+        detail,
+    }
+}
+
+fn inspect_skill(paths: &Paths) -> Inspection {
+    let file = skill_dir(paths).join(crate::install::SKILL_FILE);
+    let (state, detail) = match read_text(&file) {
+        Ok(Some(text)) if text == crate::install::SKILL => {
+            (State::Done, format!("skill {}", file.display()))
+        }
+        Ok(Some(_)) => (
+            State::Missing,
+            format!("{} is not this version's skill", file.display()),
+        ),
+        Ok(None) => (State::Missing, format!("no skill at {}", file.display())),
+        Err(error) => (State::Unknown, format!("{error:#}")),
+    };
+    Inspection {
+        name: "skill",
+        state,
+        detail,
+    }
+}
+
+fn inspect_autostart(paths: &Paths) -> Inspection {
+    let allotd = allotd_exe(paths);
+    let title = autostart::title(paths);
+    let (state, detail) = match autostart::current(paths) {
+        found if found.starts(&allotd) => (State::Done, title),
+        autostart::Found::Runs(other) => (State::Missing, format!("{title} starts {other}")),
+        autostart::Found::Missing => (State::Missing, format!("{title} is not set up")),
+        autostart::Found::Unknown => (State::Unknown, format!("{title} could not be read")),
+    };
+    Inspection {
+        name: "autostart",
+        state,
+        detail,
     }
 }
 
