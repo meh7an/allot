@@ -135,14 +135,16 @@ jobs:
         run: cargo test --workspace
 
       # The completions and man page the packages ship, read by each shell and by man.
-      - name: Install fish and zsh
+      - name: Install fish, zsh and man
         if: matrix.os == 'ubuntu-24.04'
         run: |
           sudo apt-get update -q
-          sudo apt-get install -y -q --no-install-recommends fish zsh
+          sudo apt-get install -y -q --no-install-recommends fish zsh man-db groff-base
 
       - name: Completions
         run: sh .github/scripts/check-completions.sh target/debug/allot
+        env:
+          CHECK_MAN: ${{ matrix.os == 'ubuntu-24.04' && '1' || '' }}
 
       # The generated contract types, each checked once on a runner with its toolchain.
       - name: Install pnpm

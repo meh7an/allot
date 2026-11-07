@@ -38,18 +38,20 @@ check zsh zsh zsh -n "$out/_allot"
 check fish fish fish --no-execute "$out/allot.fish"
 
 # man-db's man prints groff's warnings on stderr and still exits 0, so any stderr output fails
-# the check. macOS's man (mandoc) has neither --warnings nor -l.
+# the check. macOS's man (mandoc) has neither --warnings nor -l, and a runner may have man
+# without groff, so the job that installs man-db and groff asks for it with CHECK_MAN=1.
+# shellcheck disable=SC2317 # called through check
 man_page() {
     MANWIDTH=80 man --warnings -l "$out/allot.1" > "$out/man.txt" 2> "$out/man.err" \
         && ! [ -s "$out/man.err" ] && grep -q 'doctor' "$out/man.txt"
 }
-if man --version 2> /dev/null | grep -q man-db; then
+if [ "${CHECK_MAN:-}" = 1 ]; then
     check "man page" man man_page
     if [ -s "$out/man.err" ]; then
         cat "$out/man.err"
     fi
 else
-    echo "skipped man page: no man-db"
+    echo "skipped man page: CHECK_MAN is not 1"
 fi
 
 exit "$failed"
