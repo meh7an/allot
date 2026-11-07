@@ -151,7 +151,7 @@ path_hint() {
     [ -e "$HOME/.local/bin/allot" ] || return 0
     case ":$PATH:" in
     *":$HOME/.local/bin:"*) ;;
-    *) say "~/.local/bin is not on PATH here; add it in your shell's profile to type allot" ;;
+    *) say "$HOME/.local/bin is not on PATH here; add it in your shell's profile to type allot" ;;
     esac
 }
 

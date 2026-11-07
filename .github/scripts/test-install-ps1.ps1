@@ -22,18 +22,33 @@ function Problem([string]$Message) {
 }
 
 # Runs $Command in a new $Shell with the given environment variables set, and returns its exit
-# code and output.
-function Invoke-Shell([hashtable]$Environment, [string]$Command) {
-    $ErrorActionPreference = 'Continue'
+# code and output. The output goes through files, not a pipe: allotd and the tray app, which an
+# install starts, inherit the shell's handles and would hold a pipe open. A shell still running
+# after $TimeoutSecs is killed and fails the test.
+function Invoke-Shell([hashtable]$Environment, [string]$Command, [int]$TimeoutSecs = 600) {
     $saved = @{}
     foreach ($name in $Environment.Keys) {
         $saved[$name] = [Environment]::GetEnvironmentVariable($name)
         [Environment]::SetEnvironmentVariable($name, $Environment[$name])
     }
+    $id = [guid]::NewGuid()
+    $out = Join-Path $work "$id.out"
+    $err = Join-Path $work "$id.err"
+    # A file, since Windows PowerShell writes redirected errors as CLIXML for -EncodedCommand.
+    $file = Join-Path $work "$id.ps1"
+    Set-Content -Path $file -Value $Command
     try {
-        $output = & $Shell -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command $Command `
-            2>&1 | Out-String
-        [pscustomobject]@{ Code = $LASTEXITCODE; Output = $output }
+        $arguments = '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
+            '-File', "`"$file`""
+        $process = Start-Process -FilePath $Shell -NoNewWindow -PassThru `
+            -RedirectStandardOutput $out -RedirectStandardError $err -ArgumentList $arguments
+        $null = $process.Handle
+        if (-not $process.WaitForExit($TimeoutSecs * 1000)) {
+            $process.Kill()
+            throw "$Shell was still running after $TimeoutSecs s: $Command"
+        }
+        $output = "$(Get-Content -Raw $out)$(Get-Content -Raw $err)"
+        [pscustomobject]@{ Code = $process.ExitCode; Output = $output }
     } finally {
         foreach ($name in $saved.Keys) {
             [Environment]::SetEnvironmentVariable($name, $saved[$name])

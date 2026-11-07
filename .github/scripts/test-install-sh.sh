@@ -43,6 +43,8 @@ sha256() {
 fake_platform() {
     local dir=$work/fake-$1-$2
     mkdir -p "$dir"
+    # The fake commands expand $1 themselves.
+    # shellcheck disable=SC2016
     printf '#!/bin/sh\ncase $1 in -s) echo %s ;; -m) echo %s ;; esac\n' "$1" "$2" >"$dir/uname"
     printf '#!/bin/sh\n%s\n' "${3:-exit 1}" >"$dir/getconf"
     printf '#!/bin/sh\n%s\n' "${4:-exit 1}" >"$dir/sw_vers"
@@ -71,6 +73,8 @@ mkdir -p "$download"
 for target in x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu aarch64-apple-darwin; do
     package=allot-0.3.0-$target
     mkdir -p "$work/stub/$package"
+    # The stub expands $* and $STUB_MARKER when it runs.
+    # shellcheck disable=SC2016
     printf '#!/bin/sh\nprintf "%%s\\n" "$*" >"$STUB_MARKER"\n' >"$work/stub/$package/allot"
     chmod +x "$work/stub/$package/allot"
     tar -czf "$download/$package.tar.gz" -C "$work/stub" "$package"

@@ -103,7 +103,15 @@ function Install-Allot {
         if (([string]$name).TrimStart('*') -ne $setup) {
             Fail "$setup.sha256 does not hold a checksum for $setup"
         }
-        $actual = (Get-FileHash (Join-Path $work $setup) -Algorithm SHA256).Hash.ToLower()
+        # .NET, not Get-FileHash: Windows PowerShell started from pwsh inherits a module path
+        # where that cmdlet cannot be found.
+        $stream = [IO.File]::OpenRead((Join-Path $work $setup))
+        try {
+            $bytes = [Security.Cryptography.SHA256]::Create().ComputeHash($stream)
+        } finally {
+            $stream.Dispose()
+        }
+        $actual = -join ($bytes | ForEach-Object { $_.ToString('x2') })
         if ($actual -ne $listed.ToLower()) {
             Fail ("checksum mismatch for ${setup}: expected $listed, got $actual. " +
                 'Nothing was installed.')
@@ -116,8 +124,12 @@ function Install-Allot {
         $arguments = '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP-'
         if ($off) { $arguments += " /MERGETASKS=$($off -join ',')" }
         Say 'running the setup'
+        # Not -Wait: it also waits for the setup's descendants, and the tray app and allotd it
+        # starts keep running. Reading Handle first keeps ExitCode readable after the exit.
         $process = Start-Process -FilePath (Join-Path $work $setup) -ArgumentList $arguments `
-            -Wait -PassThru
+            -PassThru
+        $null = $process.Handle
+        $process.WaitForExit()
         if ($process.ExitCode -ne 0) { Fail "the setup exited with $($process.ExitCode)" }
     } finally {
         Remove-Item -Recurse -Force -Path $work -ErrorAction SilentlyContinue
