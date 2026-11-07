@@ -81,11 +81,12 @@ export class SoupTransport {
  * Reads a small text file without blocking the compositor.
  *
  * @param {string} path
+ * @param {Gio.Cancellable} cancellable
  * @returns {Promise<string | null>} `null` when the file cannot be read.
  */
-export async function readTextFile(path) {
+export async function readTextFile(path, cancellable) {
   try {
-    const [contents] = await Gio.File.new_for_path(path).load_contents_async(null);
+    const [contents] = await Gio.File.new_for_path(path).load_contents_async(cancellable);
     return new TextDecoder().decode(contents);
   } catch {
     return null;
@@ -94,7 +95,8 @@ export async function readTextFile(path) {
 
 /**
  * Replaces a small text file through a temporary file and a rename, so a crash never leaves half
- * a file.
+ * a file. Not cancellable: locking the screen disables the extension, and a setting changed just
+ * before must still be saved.
  *
  * @param {string} path
  * @param {string} text
@@ -112,36 +114,40 @@ export async function writeTextFile(path, text) {
 
 /**
  * Starts programs for Start Service, from `/` with no standard streams, as `allot-client` does.
+ * Cancelling ends the waits only: `systemctl` exits by itself, and GLib reaps it.
  *
- * @type {import("./lib/service-launcher.js").ServiceSystem}
+ * @param {Gio.Cancellable} cancellable
+ * @returns {import("./lib/service-launcher.js").ServiceSystem}
  */
-export const serviceSystem = {
-  readText: readTextFile,
-  isExecutable: async (path) => {
-    try {
-      const info = await Gio.File.new_for_path(path).query_info_async(
-        "access::can-execute",
-        Gio.FileQueryInfoFlags.NONE,
-        GLib.PRIORITY_DEFAULT,
-        null,
-      );
-      return info.get_attribute_boolean("access::can-execute");
-    } catch {
-      return false;
-    }
-  },
-  run: async (argv) => {
-    try {
-      return await silentLauncher().spawnv(argv).wait_check_async(null);
-    } catch {
-      return false;
-    }
-  },
-  spawn: (path) => {
-    // Its own session, so the shell's process group never signals allotd.
-    silentLauncher().spawnv(["setsid", path]);
-  },
-};
+export function createServiceSystem(cancellable) {
+  return {
+    readText: (path) => readTextFile(path, cancellable),
+    isExecutable: async (path) => {
+      try {
+        const info = await Gio.File.new_for_path(path).query_info_async(
+          "access::can-execute",
+          Gio.FileQueryInfoFlags.NONE,
+          GLib.PRIORITY_DEFAULT,
+          cancellable,
+        );
+        return info.get_attribute_boolean("access::can-execute");
+      } catch {
+        return false;
+      }
+    },
+    run: async (argv) => {
+      try {
+        return await silentLauncher().spawnv(argv).wait_check_async(cancellable);
+      } catch {
+        return false;
+      }
+    },
+    spawn: (path) => {
+      // Its own session, so the shell's process group never signals allotd.
+      silentLauncher().spawnv(["setsid", path]);
+    },
+  };
+}
 
 /** @returns {Gio.SubprocessLauncher} */
 function silentLauncher() {

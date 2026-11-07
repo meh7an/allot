@@ -8,9 +8,9 @@ import * as PopupMenu from "resource:///org/gnome/shell/ui/popupMenu.js";
 
 import {
   SoupTransport,
+  createServiceSystem,
   glibTimers,
   readTextFile,
-  serviceSystem,
   writeTextFile,
 } from "./daemon-io.js";
 import { AllotIndicator } from "./indicator.js";
@@ -39,7 +39,10 @@ const SHOW_BANNERS = "show-banners";
 export default class AllotExtension extends Extension {
   enable() {
     this._tickId = 0;
+    this._showIdleId = 0;
     this._firstOpenWait = null;
+    this._stopDialog = null;
+    this._files = new Gio.Cancellable();
     const paths = dataPaths(GLib.get_home_dir());
     const iconDirectory = this.dir.get_child("icons");
     const monotonicMs = () => GLib.get_monotonic_time() / 1000;
@@ -99,13 +102,16 @@ export default class AllotExtension extends Extension {
     this._indicator.showStatus(this._model.indicator);
     Main.panel.addToStatusArea(this.uuid, this._indicator);
     this._lastStatus = null;
-    this._startPolling(paths, this._transport);
+    this._startPolling(paths, this._transport, this._files);
   }
 
   disable() {
     this._clearFirstOpenWait();
+    this._clearShowIdle();
+    this._stopDialog?.close();
     this._poller?.stop();
     this._transport?.cancel();
+    this._files?.cancel();
     this._notifier?.destroy();
     this._notificationSettings?.disconnect(this._notificationSettingsId);
     this._contextMenu?.menu.destroy();
@@ -115,6 +121,7 @@ export default class AllotExtension extends Extension {
     this._clearTick();
     this._poller = null;
     this._transport = null;
+    this._files = null;
     this._notifier = null;
     this._notificationSettings = null;
     this._contextMenu = null;
@@ -131,11 +138,12 @@ export default class AllotExtension extends Extension {
    *
    * @param {import("./lib/config.js").DataPaths} paths
    * @param {SoupTransport} transport
+   * @param {Gio.Cancellable} files Ends the file reads and service waits in flight.
    */
-  async _startPolling(paths, transport) {
+  async _startPolling(paths, transport, files) {
     const [toml, settings] = await Promise.all([
-      readTextFile(paths.config),
-      readTextFile(paths.settings),
+      readTextFile(paths.config, files),
+      readTextFile(paths.settings, files),
     ]);
     // A disable, or a disable and enable, while the files were being read.
     if (this._transport !== transport) {
@@ -146,7 +154,7 @@ export default class AllotExtension extends Extension {
     const client = new DaemonClient({
       port: toml === null ? DEFAULT_PORT : portFromToml(toml),
       send: transport.send,
-      readToken: () => readTextFile(paths.token),
+      readToken: () => readTextFile(paths.token, files),
     });
     this._model.stopper = client;
     const launcher = new SystemdServiceLauncher(
@@ -155,7 +163,7 @@ export default class AllotExtension extends Extension {
         configHome: GLib.getenv("XDG_CONFIG_HOME"),
         root: paths.root,
       },
-      serviceSystem,
+      createServiceSystem(files),
     );
     const poller = new DaemonPoller(client, glibTimers, {
       launcher,
@@ -290,7 +298,10 @@ export default class AllotExtension extends Extension {
         if (question === null) {
           this._stopService();
         } else {
-          confirmStop(question, () => this._stopService());
+          this._stopDialog = confirmStop(question, () => this._stopService());
+          this._stopDialog.connect("destroy", () => {
+            this._stopDialog = null;
+          });
         }
         break;
       }
@@ -306,7 +317,8 @@ export default class AllotExtension extends Extension {
     }
     this._showChange(this._model.noteStarting());
     const problem = await poller.startService();
-    if (problem !== null) {
+    // A disable cancels the checks, which then read as a missing allotd.
+    if (problem !== null && this._poller === poller) {
       console.warn(`Allot: cannot start the service: ${problem}`);
     }
   }
@@ -354,10 +366,19 @@ export default class AllotExtension extends Extension {
    */
   _showFromNotification(target) {
     Main.panel.closeCalendar();
-    GLib.idle_add(GLib.PRIORITY_DEFAULT, () => {
+    this._clearShowIdle();
+    this._showIdleId = GLib.idle_add(GLib.PRIORITY_DEFAULT, () => {
+      this._showIdleId = 0;
       this._popup?.show(target);
       return GLib.SOURCE_REMOVE;
     });
+  }
+
+  _clearShowIdle() {
+    if (this._showIdleId !== 0) {
+      GLib.source_remove(this._showIdleId);
+      this._showIdleId = 0;
+    }
   }
 
   /**

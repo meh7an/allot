@@ -10,6 +10,7 @@ import { STOP_CONFIRM_TITLE } from "./lib/service-menu.js";
  *
  * @param {string} description
  * @param {() => void} onStop Stop Service was pressed.
+ * @returns {ModalDialog.ModalDialog} Destroyed once it closes.
  */
 export function confirmStop(description, onStop) {
   const dialog = new ModalDialog.ModalDialog();
@@ -29,4 +30,5 @@ export function confirmStop(description, onStop) {
     },
   });
   dialog.open();
+  return dialog;
 }
