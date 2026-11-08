@@ -89,6 +89,15 @@ brew install --cask allot-app    # the menu bar app
 The menu bar app is a separate package either way. It is signed ad hoc, so macOS stops it once:
 System Settings > Privacy & Security then offers Open Anyway.
 
+### npm
+
+On any of these machines, npm works too:
+
+```bash
+npm install -g @meh7an/allot
+allot install
+```
+
 ## What a session looks like
 
 Once installed, there is nothing to call by hand. The skill and the CLAUDE.md rule make each session
