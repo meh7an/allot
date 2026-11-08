@@ -132,9 +132,9 @@ for binary in allot allotd allot-mcp; do
 done
 installed=$("$home/.allot/bin/allot$exe" --version 2>&1 || true)
 if [ "$installed" = "allot $version" ]; then
-    check "~/.allot/bin/allot is $version"
+    check "the installed allot is $version"
 else
-    problem "~/.allot/bin/allot --version said: $installed"
+    problem "$home/.allot/bin/allot$exe --version said: $installed"
 fi
 if [ "$(uname -s)" = Linux ]; then
     if [ "$(hint)" = "allot $version" ]; then
