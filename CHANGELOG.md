@@ -28,6 +28,9 @@ All notable changes to this project are documented in this file. The format foll
   the machine, with nothing downloaded or run at install time, and `allot` reminds you to run
   `allot install` until `~/.allot/bin` matches the package. `allot doctor` accepts npm's
   launcher on `PATH`.
+- crates.io: `cargo install --locked allot-cli allotd allot-mcp`, or the same three names with
+  `cargo binstall` for the release binaries, then `allot install`. A missing binary is reported
+  with that line, and `allot doctor` accepts cargo's identical copy on `PATH`.
 
 ### Changed
 

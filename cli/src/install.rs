@@ -35,7 +35,7 @@ const RELEASE_DIR: &str = if cfg!(windows) {
 } else {
     "target/release"
 };
-pub(crate) const SKILL: &str = include_str!("../../skill/resource-guard/SKILL.md");
+pub(crate) const SKILL: &str = include_str!("../skill/resource-guard/SKILL.md");
 /// The rule copy older installs left for pasting; the rule is imported into CLAUDE.md now.
 const OLD_RULE_FILE: &str = "claude-md-rule.md";
 pub(crate) const SKILL_FILE: &str = "SKILL.md";
@@ -94,7 +94,8 @@ pub fn install(options: Options) -> anyhow::Result<()> {
     }
     if let Some(missing) = BINARIES.iter().find(|name| !source.join(name).is_file()) {
         bail!(
-            "{} has no {missing}; run `cargo build --release` in the workspace first",
+            "{} has no {missing}; install all three with `cargo install --locked allot-cli allotd \
+             allot-mcp`, or run `cargo build --release` in the workspace first",
             source.display()
         );
     }

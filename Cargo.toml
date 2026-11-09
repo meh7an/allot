@@ -12,4 +12,3 @@ repository = "https://github.com/meh7an/allot"
 readme = "README.md"
 keywords = ["claude-code", "mcp", "scheduling", "cpu", "gpu"]
 categories = ["command-line-utilities", "development-tools"]
-publish = false

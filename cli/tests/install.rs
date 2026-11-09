@@ -12,8 +12,8 @@ use std::{
     process::{self, Child, Command, Output, Stdio},
 };
 
-const SKILL: &str = include_str!("../../skill/resource-guard/SKILL.md");
-const RULE: &str = include_str!("../../skill/claude-md-rule.md");
+const SKILL: &str = include_str!("../skill/resource-guard/SKILL.md");
+const RULE: &str = include_str!("../skill/claude-md-rule.md");
 const BINARIES: [&str; 3] = ["allot.exe", "allotd.exe", "allot-mcp.exe"];
 
 /// A home directory with a build output to install from and a config that points at a port

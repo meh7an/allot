@@ -20,6 +20,7 @@ from pathlib import Path
 
 BRAND = Path(__file__).resolve().parent
 ROOT = BRAND.parents[1]
+CLI_ICONS = ROOT / "cli" / "icons" / "hicolor"
 TRAY_ASSETS = ROOT / "tray" / "src" / "Allot.Tray" / "Assets"
 MACOS_ASSETS = ROOT / "apps" / "macos" / "Allot" / "Assets.xcassets"
 GNOME_ICONS = ROOT / "apps" / "gnome" / "allot@mehran.tech" / "icons"
@@ -488,9 +489,9 @@ def build_web():
 
 def build_linux():
     for size in HICOLOR_SIZES:
-        write(BRAND / "linux" / "hicolor" / f"{size}x{size}" / "apps" / "allot.png",
+        write(CLI_ICONS / f"{size}x{size}" / "apps" / "allot.png",
               png_bytes(app_icon(size), size))
-    write(BRAND / "linux" / "hicolor" / "scalable" / "apps" / "allot.svg", tile_svg())
+    write(CLI_ICONS / "scalable" / "apps" / "allot.svg", tile_svg())
     # Symbolic icons: GTK and GNOME Shell recolour #2e3436 and the success, warning and error
     # classes to the theme. The benchmark badge has no class of its own, so it takes the glyph
     # colour.

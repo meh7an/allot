@@ -68,6 +68,24 @@ on a Linux without glibc. allotd and Claude Code run the copy in `~/.allot/bin`,
 `allot install` writes; until it matches the npm package, `allot` prints a reminder in a
 terminal. `allot doctor` counts the launcher as a good `allot` on `PATH`.
 
+## cargo
+
+With a Rust toolchain, `allot`, `allotd` and `allot-mcp` come from crates.io as three crates.
+`allot install` needs all three side by side, then sets up the rest as under your OS below:
+
+```bash
+cargo install --locked allot-cli allotd allot-mcp
+allot install
+```
+
+`cargo binstall allot-cli allotd allot-mcp` fetches the same binaries from the GitHub release
+instead of compiling them. Neither route brings the Windows tray app, so `allot install` skips
+it there; use the setup below for the tray.
+
+allotd and Claude Code run the copies in `~/.allot/bin`, so run `allot install` again after each
+cargo upgrade. `allot doctor` counts an identical copy on `PATH` as good and warns about one that
+differs.
+
 ## Windows
 
 Needs Windows 10 or 11 (x64) and Claude Code. No admin rights: everything is installed for

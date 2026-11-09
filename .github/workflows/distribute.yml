@@ -19,7 +19,7 @@ on:
         description: Channel to run
         type: choice
         default: all
-        options: [all, homebrew, winget, npm, checklist]
+        options: [all, homebrew, winget, npm, crates, checklist]
       tap_branch:
         description: Tap branch to push to
         type: string
@@ -34,6 +34,10 @@ on:
         default: false
       npm_dry_run:
         description: npm test, pack the packages as an artifact without publishing them
+        type: boolean
+        default: false
+      crates_dry_run:
+        description: crates.io test, package and build the crates without publishing them
         type: boolean
         default: false
 
@@ -272,6 +276,40 @@ jobs:
             fi
             npm publish "./$tarball" --access public
           done 3< packages.txt
+
+  # Publishes the workspace crates from the tag by trusted publishing, so no crates.io token is
+  # stored; each one's first version went up by hand, since only an existing crate can take a
+  # trusted publisher.
+  crates:
+    needs: resolve
+    if: contains(fromJSON('["all", "crates"]'), needs.resolve.outputs.channel)
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.resolve.outputs.tag }}
+          persist-credentials: false
+
+      - name: Install toolchain
+        run: rustup toolchain install stable --profile minimal
+
+      - uses: rust-lang/crates-io-auth-action@3268eb413133e2960fa4ae0e963ca76380c54cd9 # v1.0.6
+        if: ${{ !inputs.crates_dry_run }}
+        id: auth
+
+      - name: Publish, once per version
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+          DRY_RUN: ${{ inputs.crates_dry_run || false }}
+        run: |
+          if [ "$DRY_RUN" = true ]; then
+            bash .github/scripts/publish-crates.sh --dry-run
+          else
+            bash .github/scripts/publish-crates.sh
+          fi
 
   checklist:
     needs: resolve

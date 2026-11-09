@@ -10,7 +10,16 @@ repository.workspace = true
 readme.workspace = true
 keywords.workspace = true
 categories.workspace = true
-publish.workspace = true
+
+[package.metadata.binstall]
+pkg-url = "{ repo }/releases/download/v{ version }/allot-{ version }-{ target }.tar.gz"
+bin-dir = "allot-{ version }-{ target }/{ bin }{ binary-ext }"
+pkg-fmt = "tgz"
+disabled-strategies = ["quick-install"]
+
+[package.metadata.binstall.overrides.x86_64-pc-windows-msvc]
+pkg-url = "{ repo }/releases/download/v{ version }/allot-{ version }-{ target }.zip"
+pkg-fmt = "zip"
 
 [dependencies]
 allot-core = { version = "0.3.0", path = "../core" }

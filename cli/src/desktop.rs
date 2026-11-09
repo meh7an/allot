@@ -23,18 +23,13 @@ const RELEASE_URL: &str = concat!(
     env!("CARGO_PKG_VERSION")
 );
 
-/// Pairs a path under `icons/hicolor` with its bytes from the brand folder, which `build.py`
-/// writes. In the binary like the skill, so a source build installs them too.
+/// Pairs a path under `icons/hicolor` with its bytes from this crate's `icons` folder, which
+/// `build.py` writes. In the binary like the skill, so a source build installs them too.
 macro_rules! icon {
     ($size:literal, $file:literal) => {
         (
             concat!($size, "/apps/", $file),
-            include_bytes!(concat!(
-                "../../assets/brand/linux/hicolor/",
-                $size,
-                "/apps/",
-                $file
-            )) as &[u8],
+            include_bytes!(concat!("../icons/hicolor/", $size, "/apps/", $file)) as &[u8],
         )
     };
 }
@@ -172,10 +167,10 @@ mod tests {
     }
 
     #[test]
-    fn test_icons_table_lists_every_file_in_the_brand_folder() {
-        let brand = Path::new(env!("CARGO_MANIFEST_DIR")).join("../assets/brand/linux/hicolor");
+    fn test_icons_table_lists_every_file_in_the_icons_folder() {
+        let icons = Path::new(env!("CARGO_MANIFEST_DIR")).join("icons/hicolor");
 
-        assert_eq!(files_under(&brand), ICONS.len());
+        assert_eq!(files_under(&icons), ICONS.len());
     }
 
     #[test]

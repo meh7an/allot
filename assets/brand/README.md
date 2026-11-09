@@ -47,7 +47,7 @@ python assets/brand/build.py
 | `tray/src/Allot.Tray/Assets/Tray/allot-*-256.png` | Toast logos for the same states |
 | `tray/src/Allot.Tray/Assets/AppIcon.ico` | Windows app: exe, setup, Start menu, toast registration |
 | `web/favicon.ico`, `web/favicon.svg` | Favicon; the SVG follows the light or dark scheme |
-| `linux/hicolor/` | Linux app icon, PNG sizes and scalable SVG |
+| `cli/icons/hicolor/` | Linux app icon, PNG sizes and scalable SVG, in the CLI crate because the binary embeds it |
 | `linux/symbolic/allot-{state}-symbolic.svg` | Panel icons for GNOME and KDE; badges use the theme's warning and error colours |
 | `macos/AppIcon-1024.png` | macOS app icon source on Apple's 824 px body |
 | `apps/macos/Allot/Assets.xcassets/AppIcon.appiconset/` | macOS app icon, 16 to 512 pt at 1x and 2x, box-filtered from the 1024 px master |

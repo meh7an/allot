@@ -4,6 +4,7 @@
 use std::{
     env,
     ffi::OsString,
+    fs,
     path::{Path, PathBuf},
 };
 
@@ -177,20 +178,30 @@ fn check_path(paths: &Paths, npm_launcher: Option<OsString>) -> Check {
             ),
         );
     }
-    let installed = paths.bin_dir().join(CLI_EXE);
     let path = env::var_os("PATH").unwrap_or_default();
     let dirs: Vec<PathBuf> = env::split_paths(&path).collect();
-    match first_on_path(&dirs, CLI_EXE) {
+    check_found(first_on_path(&dirs, CLI_EXE), paths)
+}
+
+/// `found` is the first `allot` on PATH.
+fn check_found(found: Option<PathBuf>, paths: &Paths) -> Check {
+    let installed = paths.bin_dir().join(CLI_EXE);
+    match found {
         Some(found) if is_this_install(&found, &installed) => {
             Check::ok("path", format!("allot runs {}", found.display()))
         }
+        // `cargo install` leaves its copy in ~/.cargo/bin, usually first on PATH.
+        Some(found) if same_contents(&found, &installed) => Check::ok(
+            "path",
+            format!("allot runs {}, a copy of this install", found.display()),
+        ),
         Some(found) => Check::problem(
             "path",
             Outcome::Warn,
             format!("allot on PATH is {}, not this install", found.display()),
             &format!(
-                "remove or rename {}, or put {} first on PATH",
-                found.display(),
+                "run `allot install` if that is a newer build; otherwise remove or rename it, or \
+                 put {} first on PATH",
                 paths.bin_dir().display()
             ),
         ),
@@ -214,6 +225,11 @@ fn first_on_path(dirs: &[PathBuf], name: &str) -> Option<PathBuf> {
 fn is_this_install(found: &Path, installed: &Path) -> bool {
     let canonical = |path: &Path| path.canonicalize().ok();
     found == installed || canonical(found).is_some_and(|found| Some(found) == canonical(installed))
+}
+
+/// Whether both files can be read and hold the same bytes.
+fn same_contents(a: &Path, b: &Path) -> bool {
+    matches!((fs::read(a), fs::read(b)), (Ok(a), Ok(b)) if a == b)
 }
 
 /// The config file, then allotd: whether it runs, its version, and whether it took the config.
@@ -361,6 +377,32 @@ mod tests {
             check_path(&paths, Some(OsString::new())).detail,
             check.detail
         );
+    }
+
+    #[test]
+    fn test_check_found_accepts_only_an_identical_copy() {
+        let root = env::temp_dir().join(format!("allot-doctor-copy-{}", process::id()));
+        let paths = Paths::under(root.join("home"));
+        fs::create_dir_all(paths.bin_dir()).unwrap();
+        fs::write(paths.bin_dir().join(CLI_EXE), "build one").unwrap();
+        let cargo_bin = root.join("cargo");
+        fs::create_dir_all(&cargo_bin).unwrap();
+        let found = cargo_bin.join(CLI_EXE);
+
+        fs::write(&found, "build one").unwrap();
+        let copy = check_found(Some(found.clone()), &paths);
+        assert_eq!(copy.outcome, Outcome::Ok);
+        assert!(
+            copy.detail.contains("a copy of this install"),
+            "{}",
+            copy.detail
+        );
+
+        fs::write(&found, "build two").unwrap();
+        let other = check_found(Some(found), &paths);
+        assert_eq!(other.outcome, Outcome::Warn);
+        assert!(other.fix.unwrap().contains("allot install"));
+        fs::remove_dir_all(&root).unwrap();
     }
 
     #[test]

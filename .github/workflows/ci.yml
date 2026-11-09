@@ -272,7 +272,8 @@ jobs:
         run: |
           shellcheck install.sh .github/scripts/test-install-sh.sh \
             .github/scripts/check-completions.sh .github/scripts/npm-packages.sh \
-            .github/scripts/test-npm.sh
+            .github/scripts/test-npm.sh .github/scripts/publish-crates.sh \
+            .github/scripts/test-cargo-install.sh .github/scripts/test-binstall.sh
 
       - name: install.sh
         if: matrix.shell == 'sh'
@@ -332,3 +333,40 @@ jobs:
       - name: Install with npm
         shell: bash
         run: bash .github/scripts/test-npm.sh "$RUNNER_TEMP/npm"
+
+  # On each OS, since the code each crate compiles differs by platform: the publish dry run
+  # (the Linux icons reach only a Linux build), then what a cargo user would run.
+  crates:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install toolchain
+        run: rustup toolchain install stable --profile minimal
+
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-crates-${{ hashFiles('Cargo.lock') }}
+
+      - name: Publish dry run
+        shell: bash
+        run: bash .github/scripts/publish-crates.sh --dry-run
+
+      - name: Install with cargo
+        shell: bash
+        run: bash .github/scripts/test-cargo-install.sh
+
+      - name: Binstall metadata
+        if: matrix.os == 'ubuntu-24.04'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash .github/scripts/test-binstall.sh

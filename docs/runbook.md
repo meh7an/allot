@@ -270,6 +270,7 @@ Publishing the draft release is the one gate: nothing reaches a package manager 
 | Homebrew tap | `homebrew` | `TAP_DEPLOY_KEY`: private half of a write deploy key on `meh7an/homebrew-allot` |
 | winget (`Mehran.Allot`) | `winget` | `WINGET_TOKEN`: classic token of `meh7an` with `public_repo` and `workflow` |
 | npm (`@meh7an/allot` and its four platform packages) | `npm` | None; trusted publishing (OIDC), set on each package |
+| crates.io (`allot-cli`, `allotd`, `allot-mcp` and four library crates) | `crates` | None; trusted publishing (OIDC), set on each crate |
 | Manual stores issue | `checklist` | None; the job's own token |
 
 ### Re-running a channel
@@ -277,7 +278,8 @@ Publishing the draft release is the one gate: nothing reaches a package manager 
 Each channel fails alone, so Re-run failed jobs on the run's page finishes a release. Running a
 channel again is safe: the tap is only pushed when it differs and never moves to an older version,
 winget gets no pull request for a version it already has or one with a pull request open, npm
-skips each package whose version is already published, and the issue is opened once per tag. A prerelease goes to no channel.
+skips each package whose version is already published, crates.io skips each crate whose version
+it already has, and the issue is opened once per tag. A prerelease goes to no channel.
 
 A re-run uses the workflow at the tag. To get a later fix to `distribute.yml`, or for a tag that
 predates the file (v0.3.0 and older, which publishing could not start), run `main`'s copy by hand:
@@ -362,3 +364,31 @@ done 3< npm-v0.3.0/packages.txt
 
 Once a release has gone through, Settings, Publishing access, "Require two-factor authentication
 and disallow tokens" on each package leaves trusted publishing as the only way in.
+
+### The crates
+
+The `crates` job publishes `allot-shared`, `allot-core`, `allot-client`, `allot-sampler`,
+`allot-cli`, `allot-mcp` and `allotd` from the tag, in one `cargo publish`, with a token crates.io
+issues for that run alone. A published crate name and version can never be deleted; a yank only
+keeps new projects from picking a version. To package and build them without publishing:
+
+```bash
+gh workflow run distribute.yml -f tag=v0.4.0 -f channel=crates -f crates_dry_run=true
+```
+
+A crate takes a trusted publisher only once it exists, so each one's first version went up by
+hand, with a token from crates.io's Account Settings (`publish-new` and `publish-update`, crates
+matching `allot*`, with an expiry). crates.io allows five new crates at once and then one per ten
+minutes, so the seven go in three steps:
+
+```bash
+cargo login
+cargo publish --locked -p allot-shared -p allot-core -p allot-client -p allot-sampler -p allot-cli
+# ten minutes later
+cargo publish --locked -p allot-mcp
+# ten minutes later
+cargo publish --locked -p allotd
+```
+
+Then, on each crate's Settings, Trusted Publishing, add GitHub with owner `meh7an`, repository
+`allot`, workflow `distribute.yml` and no environment, and revoke the token.
