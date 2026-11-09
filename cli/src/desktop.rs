@@ -30,7 +30,7 @@ macro_rules! icon {
         (
             concat!($size, "/apps/", $file),
             include_bytes!(concat!(
-                "../../assets/brand/linux/hicolor/",
+                "../icons/hicolor/",
                 $size,
                 "/apps/",
                 $file
@@ -197,7 +197,7 @@ mod tests {
 
     #[test]
     fn test_icons_table_lists_every_file_in_the_brand_folder() {
-        let brand = Path::new(env!("CARGO_MANIFEST_DIR")).join("../assets/brand/linux/hicolor");
+        let brand = Path::new(env!("CARGO_MANIFEST_DIR")).join("icons/hicolor");
 
         assert_eq!(files_under(&brand), ICONS.len());
     }

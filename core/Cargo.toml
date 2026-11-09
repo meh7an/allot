@@ -1,6 +1,6 @@
 [package]
 name = "allot-core"
-description = "Lease ledger, admission control, and heavy-command classifier for Allot"
+description = "Internal to Allot, no stable API: lease ledger, admission control, heavy-command classifier"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -10,7 +10,6 @@ repository.workspace = true
 readme.workspace = true
 keywords.workspace = true
 categories.workspace = true
-publish.workspace = true
 
 [dependencies]
 allot-shared = { version = "0.3.0", path = "../shared" }

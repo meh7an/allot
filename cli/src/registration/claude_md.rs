@@ -4,7 +4,7 @@
 //! rename to Allot, is replaced by the import.
 
 /// The section the imported file holds.
-pub(super) const RULE: &str = include_str!("../../../skill/claude-md-rule.md");
+pub(super) const RULE: &str = include_str!("../../skill/claude-md-rule.md");
 /// The imported file's name, beside CLAUDE.md.
 pub(super) const FILE_NAME: &str = "allot.md";
 /// The rule file CLAUDE.md imported before the rename. Only Windows had installs then, but

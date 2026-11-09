@@ -10,7 +10,6 @@ repository.workspace = true
 readme.workspace = true
 keywords.workspace = true
 categories.workspace = true
-publish.workspace = true
 
 [[bin]]
 name = "allot"
@@ -28,3 +27,13 @@ serde_json = "1.0.154"
 
 [target."cfg(unix)".dependencies]
 libc = "0.2.191"
+
+[package.metadata.binstall]
+pkg-url = "{ repo }/releases/download/v{ version }/allot-{ version }-{ target }.tar.gz"
+bin-dir = "allot-{ version }-{ target }/{ bin }{ binary-ext }"
+pkg-fmt = "tgz"
+disabled-strategies = ["quick-install"]
+
+[package.metadata.binstall.overrides.x86_64-pc-windows-msvc]
+pkg-url = "{ repo }/releases/download/v{ version }/allot-{ version }-{ target }.zip"
+pkg-fmt = "zip"

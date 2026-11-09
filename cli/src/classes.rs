@@ -76,7 +76,7 @@ fn push_row(out: &mut String, name: &str, profile: &JobProfile) {
 mod tests {
     use super::*;
 
-    const SKILL: &str = include_str!("../../skill/resource-guard/SKILL.md");
+    const SKILL: &str = include_str!("../skill/resource-guard/SKILL.md");
     const BEGIN: &str = "<!-- allot classes: begin -->";
     const END: &str = "<!-- allot classes: end -->";
 
@@ -89,7 +89,7 @@ mod tests {
         assert_eq!(
             skill[start..end].trim(),
             expected.trim(),
-            "skill/resource-guard/SKILL.md is out of date; replace its classes block with:\n\n\
+            "cli/skill/resource-guard/SKILL.md is out of date; replace its classes block with:\n\n\
              {expected}"
         );
     }

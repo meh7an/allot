@@ -35,7 +35,7 @@ const RELEASE_DIR: &str = if cfg!(windows) {
 } else {
     "target/release"
 };
-const SKILL: &str = include_str!("../../skill/resource-guard/SKILL.md");
+const SKILL: &str = include_str!("../skill/resource-guard/SKILL.md");
 /// The rule copy older installs left for pasting; the rule is imported into CLAUDE.md now.
 const OLD_RULE_FILE: &str = "claude-md-rule.md";
 const SKILL_FILE: &str = "SKILL.md";
