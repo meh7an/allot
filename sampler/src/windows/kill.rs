@@ -5,14 +5,14 @@ use std::{collections::HashMap, thread, time::Duration};
 
 use allot_core::kill::{KillFailure, KillPlan, KillReport, KillTarget};
 use windows::Win32::{
-    Foundation::{CloseHandle, ERROR_INVALID_PARAMETER, FILETIME, HANDLE, WAIT_OBJECT_0},
+    Foundation::{CloseHandle, ERROR_INVALID_PARAMETER, HANDLE, WAIT_OBJECT_0},
     System::Threading::{
-        GetProcessTimes, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_SYNCHRONIZE,
-        PROCESS_TERMINATE, TerminateProcess, WaitForSingleObject,
+        OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_SYNCHRONIZE, PROCESS_TERMINATE,
+        TerminateProcess, WaitForSingleObject,
     },
 };
 
-use crate::table::process_table;
+use crate::{table::process_table, windows::process::start_time};
 
 /// Sweeps at most; each takes a fresh process list and catches what the previous one missed.
 const SWEEPS: u32 = 3;
@@ -26,12 +26,6 @@ const EXIT_WAIT_MS: u32 = 500;
 /// The exit code Task Manager and `Stop-Process` use. Claude Code reports a command killed
 /// with it as "Exit code 255".
 const KILLED_EXIT_CODE: u32 = u32::MAX;
-
-/// FILETIME ticks per second.
-const TICKS_PER_SEC: u64 = 10_000_000;
-
-/// Seconds from the FILETIME epoch (1601) to the Unix epoch.
-const FILETIME_TO_UNIX_SECS: u64 = 11_644_473_600;
 
 /// What happened to one target.
 #[derive(Debug, PartialEq, Eq)]
@@ -115,18 +109,6 @@ fn terminate_open(handle: HANDLE, target: &KillTarget) -> Outcome {
     }
     has_exited(handle, EXIT_WAIT_MS);
     Outcome::Terminated
-}
-
-/// The process's start time in whole seconds since the Unix epoch, rounded down as sysinfo
-/// does, so it compares equal to the process table's.
-fn start_time(handle: HANDLE) -> windows::core::Result<u64> {
-    let mut creation = FILETIME::default();
-    let mut unused = [FILETIME::default(); 3];
-    let [exit, kernel, user] = &mut unused;
-    // SAFETY: `handle` has limited query access and every pointer is a valid FILETIME.
-    unsafe { GetProcessTimes(handle, &mut creation, exit, kernel, user) }?;
-    let ticks = (u64::from(creation.dwHighDateTime) << 32) | u64::from(creation.dwLowDateTime);
-    Ok((ticks / TICKS_PER_SEC).saturating_sub(FILETIME_TO_UNIX_SECS))
 }
 
 fn has_exited(handle: HANDLE, wait_ms: u32) -> bool {

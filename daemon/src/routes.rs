@@ -136,6 +136,15 @@ async fn register_session(
     State(state): State<AppState>,
     Json(request): Json<RegisterSessionRequest>,
 ) -> StatusCode {
+    let holder = &request.holder;
+    // The holder's PID and start time decide whether its leases live, so a session whose
+    // leases expire at once can be checked against the process table.
+    tracing::info!(
+        session = %holder.session.0,
+        pid = holder.pid,
+        start_time = holder.pid_start_time,
+        "session registered"
+    );
     state.connect(request.holder).await;
     StatusCode::NO_CONTENT
 }

@@ -22,7 +22,7 @@ use allot_shared::{
     Result,
     types::{Accuracy, GpuSource, MemStats, ResourceUsage},
 };
-use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System};
+use sysinfo::{Pid, Process, ProcessRefreshKind, ProcessesToUpdate, System};
 
 use crate::{
     cpu::{CpuTimes, ProcessTime},
@@ -47,6 +47,10 @@ pub struct SystemSampler {
     /// Logical cores per PID since the previous refresh.
     process_cores: HashMap<u32, f32>,
     exe_paths: ExeCache,
+    /// Start times sysinfo reported as 0, read again on a handle. sysinfo stores 0 for a
+    /// process it could not open when it first listed it and never reads it again, so a
+    /// session's `claude.exe` would read as exited, and its leases expire, while it runs.
+    start_times: HashMap<u32, u64>,
 }
 
 #[derive(Debug)]
@@ -105,6 +109,7 @@ impl SystemSampler {
             cpu_times: CpuTimes::default(),
             process_cores: HashMap::new(),
             exe_paths: ExeCache::default(),
+            start_times: HashMap::new(),
         };
         sampler.refresh()?;
         Ok(sampler)
@@ -119,14 +124,27 @@ impl SystemSampler {
             true,
             ProcessRefreshKind::nothing().with_cpu().with_memory(),
         );
+        // One `OpenProcess` per process sysinfo could not open: about 150 on a desktop, nearly
+        // all services of other accounts that refuse it again. A sample still takes tens of
+        // milliseconds.
+        self.start_times = self
+            .system
+            .processes()
+            .values()
+            .filter(|entry| entry.start_time() == 0)
+            .filter_map(|entry| {
+                let pid = entry.pid().as_u32();
+                Some((pid, process::start_time_of(pid)?))
+            })
+            .collect();
         let times: Vec<ProcessTime> = self
             .system
             .processes()
             .values()
-            .map(|process| ProcessTime {
-                pid: process.pid().as_u32(),
-                start_time: process.start_time(),
-                cpu_ms: process.accumulated_cpu_time(),
+            .map(|entry| ProcessTime {
+                pid: entry.pid().as_u32(),
+                start_time: self.start_time(entry),
+                cpu_ms: entry.accumulated_cpu_time(),
             })
             .collect();
         self.exe_paths.update(
@@ -138,6 +156,15 @@ impl SystemSampler {
         self.process_cores = self.cpu_times.update(now, &times, logical_cores);
         self.drives.refresh(now);
         self.query.collect()
+    }
+
+    /// The start time of `entry`, read again on a handle where sysinfo reported 0.
+    fn start_time(&self, entry: &Process) -> u64 {
+        let pid = entry.pid().as_u32();
+        self.start_times
+            .get(&pid)
+            .copied()
+            .unwrap_or_else(|| entry.start_time())
     }
 
     fn read_gpu(&self, counters: &GpuCounters) -> Result<GpuReading> {
@@ -224,7 +251,7 @@ impl Sampler for SystemSampler {
             .filter(|process| process.pid().as_u32() != 0)
             .map(|process| {
                 let pid = process.pid().as_u32();
-                let start_time = process.start_time();
+                let start_time = self.start_time(process);
                 RawProcess {
                     pid,
                     parent_pid: process.parent().map(Pid::as_u32),
@@ -287,6 +314,8 @@ mod tests {
         let own = raw.processes.iter().find(|p| p.pid == process::id());
         let own = own.expect("own process is sampled");
         assert!(own.usage.ram_mb > 0);
+        let read = crate::windows::process::start_time_of(process::id());
+        assert_eq!(Some(own.start_time), read);
         let exe = own.exe.as_deref().expect("own exe path is read");
         assert!(exe.to_ascii_lowercase().ends_with(".exe"), "{exe}");
         assert!(raw.processes.iter().all(|p| p.pid != 0));

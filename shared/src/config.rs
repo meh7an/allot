@@ -520,7 +520,7 @@ impl Default for ClassifierConfig {
                     &["build", "test", "run", "bench"],
                     JobClass::CpuHeavy,
                 ),
-                HeavyRule::new("pnpm", &["build", "test"], JobClass::CpuHeavy),
+                HeavyRule::new("pnpm", &["build*", "test*"], JobClass::CpuHeavy),
                 HeavyRule::new("msbuild", &[], JobClass::CpuHeavy),
                 HeavyRule::new("cmake", &["--build"], JobClass::CpuHeavy),
                 HeavyRule::new("python*", &["train*.py"], JobClass::GpuHeavy),

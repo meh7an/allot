@@ -29,7 +29,7 @@ on this list.
 A command line is heavy when any command in it (after `&&`, `;`, `|`, env prefixes, and wrappers such as `npx` or `bash -c`) matches a rule:
 
 - `cargo build|test|run|bench -> cpu_heavy`
-- `pnpm build|test -> cpu_heavy`
+- `pnpm build*|test* -> cpu_heavy`
 - `msbuild (any arguments) -> cpu_heavy`
 - `cmake --build -> cpu_heavy`
 - `python* train*.py -> gpu_heavy`

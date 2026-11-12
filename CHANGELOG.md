@@ -42,6 +42,13 @@ All notable changes to this project are documented in this file. The format foll
 - On a Windows without the Visual C++ Redistributable, `allot.exe` could not start
   (VCRUNTIME140.dll was not found), so the setup installed nothing while reporting success. The
   Windows binaries now carry the C runtime themselves.
+- On Windows, a session could have every lease expire the moment it was made ("holder process
+  exited") while its Claude Code was running, and the hook then blocked its builds and tests.
+  allotd read the session's start time as 0 when it could not open the process the first time it
+  saw it, and never read it again. It now reads such start times again on every sample.
+- `pnpm test:engines`, `pnpm build:css` and other `pnpm build*` and `pnpm test*` scripts are now
+  heavy work, so the hook binds them to their lease. Before, such a lease could end as idle after
+  180 s while its tests still ran.
 
 ## [0.3.0] - 2026-11-04
 
