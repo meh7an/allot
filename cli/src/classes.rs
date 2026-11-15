@@ -51,14 +51,14 @@ fn format_classes(config: &Config) -> String {
          |-------|------:|-------:|------:|--------:|----------:|\n",
     );
     for class in JobClass::ALL {
-        push_row(&mut out, class.as_str(), config.classes.get(class));
+        push_row(&mut out, class.as_str(), &config.classes.get(class).profile);
     }
     out.push_str(
         "\n| Preset | Cores | RAM MB | GPU % | VRAM MB | Est. secs |\n\
          |--------|------:|-------:|------:|--------:|----------:|\n",
     );
-    for (name, profile) in &config.presets.0 {
-        push_row(&mut out, name, profile);
+    for (name, sizing) in &config.presets.0 {
+        push_row(&mut out, name, &sizing.profile);
     }
     out
 }

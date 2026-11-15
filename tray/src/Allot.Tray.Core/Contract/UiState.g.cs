@@ -642,6 +642,12 @@ public sealed record KilledProcess
 public sealed record Lease
 {
     /// <summary>
+    /// Cores the request asked for, after history raised them; <c>null</c> for leases from before
+    /// minimums were recorded, which asked for <c>profile.cores</c>.
+    /// </summary>
+    public float? AskedCores { get; init; }
+
+    /// <summary>
     /// The command the lease's holder last reported running under it; <c>null</c> until the hook
     /// reports one.
     /// </summary>
@@ -705,7 +711,14 @@ public sealed record Lease
     public required string Label { get; init; }
 
     /// <summary>
-    /// Resources reserved while the lease is active.
+    /// The fewest cores the lease may start with; <c>null</c> for leases from before minimums were
+    /// recorded, which may not shrink.
+    /// </summary>
+    public float? MinCores { get; init; }
+
+    /// <summary>
+    /// Resources reserved while the lease is active. Its cores are what the lease was granted,
+    /// which is fewer than <c>asked_cores</c> when the grant shrank to fit.
     /// </summary>
     public required JobProfile Profile { get; init; }
 

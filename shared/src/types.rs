@@ -278,6 +278,24 @@ impl JobProfile {
         }
     }
 
+    /// The minimum of a class or preset that names none: half the cores, but at least one
+    /// core, or all of them when there are fewer. `light` (1 core) never shrinks.
+    pub fn default_min_cores(&self) -> f32 {
+        (self.cores / 2.0).max(self.cores.min(1.0))
+    }
+
+    /// Returns why `min_cores` cannot be the fewest cores this profile starts with, or `None`
+    /// when `0 < min_cores <= cores`.
+    pub fn min_cores_reason(&self, min_cores: f32) -> Option<&'static str> {
+        if !(min_cores.is_finite() && min_cores > 0.0) {
+            Some("min_cores must be a finite number above 0")
+        } else if min_cores > self.cores {
+            Some("min_cores must be at most cores")
+        } else {
+            None
+        }
+    }
+
     /// Whether a job of this profile ends within [`QUICK_MAX_SECS`]: a normal lease for it may
     /// start while a benchmark still waits for other leases to end.
     pub fn is_quick(&self) -> bool {
@@ -453,8 +471,17 @@ pub struct Lease {
     pub state: LeaseState,
     /// Class the profile was taken from, or `None` for a custom profile.
     pub class: Option<JobClass>,
-    /// Resources reserved while the lease is active.
+    /// Resources reserved while the lease is active. Its cores are what the lease was granted,
+    /// which is fewer than `asked_cores` when the grant shrank to fit.
     pub profile: JobProfile,
+    /// Cores the request asked for, after history raised them; `None` for leases from before
+    /// minimums were recorded, which asked for `profile.cores`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub asked_cores: Option<f32>,
+    /// The fewest cores the lease may start with; `None` for leases from before minimums were
+    /// recorded, which may not shrink.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub min_cores: Option<f32>,
     /// What the lease is for, usually the command that will run.
     pub label: String,
     /// Working directory of the command, or empty when the requester did not say.
@@ -690,6 +717,22 @@ mod tests {
     }
 
     #[test]
+    fn test_lease_with_asked_and_min_cores_round_trips_and_omits_them_when_unknown() {
+        let lease = Lease {
+            asked_cores: Some(8.0),
+            min_cores: Some(4.0),
+            ..sample_lease()
+        };
+        assert_json_round_trip(&lease);
+        let value = serde_json::to_value(&lease).unwrap();
+        assert_eq!(value["asked_cores"], 8.0);
+        assert_eq!(value["min_cores"], 4.0);
+        let unknown = serde_json::to_value(sample_lease()).unwrap();
+        assert!(unknown.get("asked_cores").is_none());
+        assert!(unknown.get("min_cores").is_none());
+    }
+
+    #[test]
     fn test_lease_with_binding_round_trips_with_and_without_root() {
         let pending = LeaseBinding {
             tool_use_id: "toolu_01AbC".into(),
@@ -719,6 +762,7 @@ mod tests {
         assert_eq!(lease.end_cause, None);
         assert_eq!(lease.binding, None);
         assert_eq!(lease.isolation, None);
+        assert_eq!((lease.asked_cores, lease.min_cores), (None, None));
 
         let mut snapshot = serde_json::to_value(sample_snapshot()).unwrap();
         snapshot.as_object_mut().unwrap().remove("drives");

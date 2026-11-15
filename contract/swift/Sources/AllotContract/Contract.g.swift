@@ -553,6 +553,10 @@ public struct KilledProcess: Codable, Sendable, Equatable {
 
 /// A reservation of machine resources for one job.
 public struct Lease: Codable, Sendable, Equatable {
+    /// Cores the request asked for, after history raised them; `nil` for leases from before
+    /// minimums were recorded, which asked for `profile.cores`.
+    public let askedCores: Float?
+
     /// The command the lease's holder last reported running under it; `nil` until the hook
     /// reports one.
     public let binding: LeaseBinding?
@@ -592,7 +596,12 @@ public struct Lease: Codable, Sendable, Equatable {
     /// What the lease is for, usually the command that will run.
     public let label: String
 
-    /// Resources reserved while the lease is active.
+    /// The fewest cores the lease may start with; `nil` for leases from before minimums were
+    /// recorded, which may not shrink.
+    public let minCores: Float?
+
+    /// Resources reserved while the lease is active. Its cores are what the lease was granted,
+    /// which is fewer than `asked_cores` when the grant shrank to fit.
     public let profile: JobProfile
 
     /// When the lease was requested, in milliseconds since the Unix epoch.
@@ -602,6 +611,7 @@ public struct Lease: Codable, Sendable, Equatable {
     public let state: LeaseState
 
     private enum CodingKeys: String, CodingKey {
+        case askedCores = "asked_cores"
         case binding
         case `class`
         case cwd
@@ -614,6 +624,7 @@ public struct Lease: Codable, Sendable, Equatable {
         case isolation
         case kind
         case label
+        case minCores = "min_cores"
         case profile
         case requestedAtMs = "requested_at_ms"
         case state
@@ -621,6 +632,7 @@ public struct Lease: Codable, Sendable, Equatable {
 
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.askedCores = try container.decodeIfPresent(Float.self, forKey: .askedCores)
         self.binding = try container.decodeIfPresent(LeaseBinding.self, forKey: .binding)
         self.`class` = try container.decodeIfPresent(JobClass.self, forKey: .`class`)
         self.cwd = try container.decodeIfPresent(String.self, forKey: .cwd) ?? ""
@@ -633,6 +645,7 @@ public struct Lease: Codable, Sendable, Equatable {
         self.isolation = try container.decodeIfPresent(LeaseIsolation.self, forKey: .isolation)
         self.kind = try container.decode(LeaseKind.self, forKey: .kind)
         self.label = try container.decode(String.self, forKey: .label)
+        self.minCores = try container.decodeIfPresent(Float.self, forKey: .minCores)
         self.profile = try container.decode(JobProfile.self, forKey: .profile)
         self.requestedAtMs = try container.decode(Int64.self, forKey: .requestedAtMs)
         self.state = try container.decode(LeaseState.self, forKey: .state)

@@ -41,6 +41,8 @@ pub(super) struct LeaseRow {
     bound_at_ms: Option<i64>,
     bound_pid: Option<i64>,
     bound_pid_start_time: Option<i64>,
+    asked_cores: Option<f32>,
+    min_cores: Option<f32>,
 }
 
 impl TryFrom<LeaseRow> for Lease {
@@ -93,6 +95,8 @@ impl TryFrom<LeaseRow> for Lease {
                 vram_mb: from_column(row.vram_mb, "leases.vram_mb")?,
                 est_secs: from_column(row.est_secs, "leases.est_secs")?,
             },
+            asked_cores: row.asked_cores,
+            min_cores: row.min_cores,
             label: row.label,
             cwd: row.cwd,
             requested_at_ms: row.requested_at_ms,
@@ -129,6 +133,8 @@ pub(super) struct NewLeaseRow<'a> {
     cwd: &'a str,
     requested_at_ms: i64,
     expires_at_ms: i64,
+    asked_cores: f32,
+    min_cores: f32,
 }
 
 impl<'a> NewLeaseRow<'a> {
@@ -149,6 +155,8 @@ impl<'a> NewLeaseRow<'a> {
             cwd: &draft.cwd,
             requested_at_ms: draft.requested_at_ms,
             expires_at_ms: draft.expires_at_ms,
+            asked_cores: draft.profile.cores,
+            min_cores: draft.min_cores,
         })
     }
 }

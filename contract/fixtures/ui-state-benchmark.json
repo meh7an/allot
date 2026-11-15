@@ -48,6 +48,8 @@
           "vram_mb": 0,
           "est_secs": 120
         },
+        "asked_cores": 16.0,
+        "min_cores": 16.0,
         "label": "cargo bench --bench parser",
         "cwd": "E:\\work\\app",
         "requested_at_ms": 1792824648000,
@@ -89,6 +91,8 @@
           "vram_mb": 0,
           "est_secs": 300
         },
+        "asked_cores": 8.0,
+        "min_cores": 4.0,
         "label": "cargo build",
         "cwd": "E:\\work\\tools",
         "requested_at_ms": 1792824690000,

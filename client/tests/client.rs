@@ -72,6 +72,7 @@ fn build_request(wait_timeout_secs: u64) -> AcquireRequest {
     AcquireRequest {
         holder: holder(),
         profile: ProfileSpec::Class(JobClass::CpuHeavy),
+        min_cores: None,
         kind: LeaseKind::Normal,
         label: "cargo build".into(),
         cwd: Some(r"E:\work\app".into()),
@@ -181,6 +182,7 @@ async fn test_client_lease_lifecycle() {
     let request = CanFitRequest {
         profile: ProfileSpec::Class(JobClass::CpuHeavy),
         kind: LeaseKind::Normal,
+        min_cores: None,
         label: Some("cargo build".into()),
         cwd: Some(r"E:\work\app".into()),
     };

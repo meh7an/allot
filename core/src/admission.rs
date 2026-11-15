@@ -10,6 +10,8 @@ use allot_shared::types::{Accuracy, GpuAdapter, JobProfile, Lease, ResourceUsage
 
 // Tolerance for float sums of reservations, so 8.0 cores fit in 8.0 cores of room.
 const EPSILON: f64 = 1e-6;
+// Background load below this rounds to 0.0 cores in messages, so it is left out of them.
+const SHOWN_CORES: f64 = 0.05;
 
 /// Resources still free for new leases. Values go negative when the machine is overcommitted.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -26,6 +28,12 @@ pub struct Room {
     /// Whether the primary adapter's video memory is RAM, so requested VRAM comes out of
     /// `ram_mb`.
     pub unified_memory: bool,
+    /// Cores the reservations taken out of this room hold.
+    pub reserved_cores: f64,
+    /// How many reservations are taken out of this room.
+    pub reservations: u32,
+    /// Cores in use outside the sessions holding active leases.
+    pub background_cores: f64,
 }
 
 impl Room {
@@ -51,13 +59,17 @@ impl Room {
         // A leased session's memory is reclaimable before it is anything else: only what
         // exceeds the reclaimable part is still inside `held_mb`.
         let leased_held_mb = leased.ram_mb.saturating_sub(memory.reclaimable_mb);
+        let background_cores = background(machine_cores, f64::from(leased.cores));
         let mut room = Self {
-            cores: logical_cores * keep - background(machine_cores, f64::from(leased.cores)),
+            cores: logical_cores * keep - background_cores,
             ram_mb: memory.total_mb as f64 * keep
                 - background(held_mb as f64, leased_held_mb as f64),
             gpu_pct: None,
             vram_mb: None,
             unified_memory: false,
+            reserved_cores: 0.0,
+            reservations: 0,
+            background_cores,
         };
         if let Some(gpu) = primary_adapter(&snapshot.gpus) {
             // Where the source cannot measure processes exactly, the leased sessions' own GPU
@@ -103,6 +115,12 @@ impl Room {
 
     fn shift(&mut self, profile: &JobProfile, sign: f64) {
         self.cores += sign * f64::from(profile.cores);
+        self.reserved_cores -= sign * f64::from(profile.cores);
+        self.reservations = if sign < 0.0 {
+            self.reservations.saturating_add(1)
+        } else {
+            self.reservations.saturating_sub(1)
+        };
         self.ram_mb += sign * self.ram_needed_mb(profile);
         if let Some(gpu_pct) = &mut self.gpu_pct {
             *gpu_pct += sign * f64::from(profile.gpu_pct);
@@ -118,9 +136,10 @@ impl Room {
         let mut reasons = Vec::new();
         if exceeds(f64::from(profile.cores), self.cores) {
             reasons.push(format!(
-                "cores: {:.1} requested, {:.1} free",
+                "cores: {:.1} requested, {:.1} free{}",
                 profile.cores,
-                self.cores.max(0.0)
+                self.cores.max(0.0),
+                self.cores_taken()
             ));
         }
         let ram_needed_mb = self.ram_needed_mb(profile);
@@ -160,6 +179,35 @@ impl Room {
             ));
         }
         reasons
+    }
+
+    /// What takes the cores that are not free, such as " (8.0 held by 1 lease, 5.6 in use
+    /// outside leases)", or nothing when neither does. Load outside leases can be a leased
+    /// job's own, when it runs outside its session's process tree, as in containers.
+    fn cores_taken(&self) -> String {
+        let mut parts = Vec::new();
+        if self.reservations > 0 {
+            let leases = if self.reservations == 1 {
+                "lease"
+            } else {
+                "leases"
+            };
+            parts.push(format!(
+                "{:.1} held by {} {leases}",
+                self.reserved_cores, self.reservations
+            ));
+        }
+        if self.background_cores >= SHOWN_CORES {
+            parts.push(format!(
+                "{:.1} in use outside leases",
+                self.background_cores
+            ));
+        }
+        if parts.is_empty() {
+            String::new()
+        } else {
+            format!(" ({})", parts.join(", "))
+        }
     }
 
     /// The RAM `profile` takes: its own, plus its video memory when that is RAM.
@@ -404,6 +452,42 @@ mod tests {
         let mut snapshot = snapshot(0.0, used_mb, None);
         snapshot.memory.reclaimable_mb = reclaimable_mb;
         snapshot
+    }
+
+    #[test]
+    fn test_cores_shortfall_names_what_holds_the_cores() {
+        // Lease 1770: an 8-core lease whose job ran outside its session, at 35% of 16 cores.
+        let lease = active_lease(1, "a", profile(8.0, 1_000));
+        let room = Room::measure(&snapshot(35.0, 0, None), &[&lease], 15.0);
+        assert_eq!(
+            room.shortfalls(&profile(8.2, 1_000)),
+            ["cores: 8.2 requested, 0.0 free (8.0 held by 1 lease, 5.6 in use outside leases)"]
+        );
+
+        let other = active_lease(2, "b", profile(2.0, 1_000));
+        let room = Room::measure(&snapshot(0.0, 0, None), &[&lease, &other], 15.0);
+        assert_eq!(
+            room.shortfalls(&profile(8.0, 1_000)),
+            ["cores: 8.0 requested, 3.6 free (10.0 held by 2 leases)"]
+        );
+
+        let room = Room::measure(&snapshot(0.0, 0, None), &[], 15.0);
+        assert_eq!(
+            room.shortfalls(&profile(64.0, 1_000)),
+            ["cores: 64.0 requested, 13.6 free"]
+        );
+    }
+
+    #[test]
+    fn test_room_released_reservations_leave_the_message() {
+        let lease = active_lease(1, "a", profile(8.0, 1_000));
+        let mut room = Room::measure(&snapshot(0.0, 0, None), &[&lease], 15.0);
+        room.release(&lease.profile);
+        assert_eq!(room.reservations, 0);
+        assert_eq!(
+            room.shortfalls(&profile(64.0, 1_000)),
+            ["cores: 64.0 requested, 13.6 free"]
+        );
     }
 
     #[test]

@@ -113,6 +113,8 @@ mod tests {
             expires_at_ms: 60_000,
             end_cause: Some(cause),
             binding: None,
+            asked_cores: None,
+            min_cores: None,
             isolation: None,
         }
     }

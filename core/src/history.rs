@@ -343,6 +343,9 @@ mod tests {
             gpu_pct: Some(85.0),
             vram_mb: Some(9_000.0),
             unified_memory: false,
+            reserved_cores: 0.0,
+            reservations: 0,
+            background_cores: 0.0,
         }
     }
 

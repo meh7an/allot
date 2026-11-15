@@ -47,6 +47,8 @@
           "vram_mb": 2048,
           "est_secs": 1800
         },
+        "asked_cores": 2.0,
+        "min_cores": 1.0,
         "label": "python train.py --epochs 40",
         "cwd": "/home/mehran/work/ml-trainer",
         "requested_at_ms": 1792824118500,
@@ -89,6 +91,8 @@
           "vram_mb": 0,
           "est_secs": 300
         },
+        "asked_cores": 8.0,
+        "min_cores": 4.0,
         "label": "cargo build --release",
         "cwd": "/home/mehran/work/app",
         "requested_at_ms": 1792824670500,
@@ -133,6 +137,8 @@
           "vram_mb": 0,
           "est_secs": 300
         },
+        "asked_cores": 8.0,
+        "min_cores": 4.0,
         "label": "cargo test --workspace",
         "cwd": "/home/mehran/work/app",
         "requested_at_ms": 1792824708000,

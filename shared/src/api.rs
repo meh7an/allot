@@ -45,6 +45,10 @@ pub struct CanFitRequest {
     pub profile: ProfileSpec,
     /// How the job would share the machine.
     pub kind: LeaseKind,
+    /// The fewest cores the job can start with. Without it the class or preset's minimum
+    /// applies, and a custom profile keeps all its cores.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub min_cores: Option<f32>,
     /// The command, so the daemon can raise the profile from similar past runs.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
@@ -117,6 +121,10 @@ pub struct AcquireRequest {
     pub holder: Holder,
     /// Resources to reserve.
     pub profile: ProfileSpec,
+    /// The fewest cores the job can start with. Without it the class or preset's minimum
+    /// applies, and a custom profile keeps all its cores.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub min_cores: Option<f32>,
     /// How the lease shares the machine.
     pub kind: LeaseKind,
     /// What the lease is for, usually the command that will run.
@@ -367,12 +375,14 @@ mod tests {
         assert_json_round_trip(&CanFitRequest {
             profile: ProfileSpec::Class(JobClass::GpuHeavy),
             kind: LeaseKind::Normal,
+            min_cores: None,
             label: None,
             cwd: None,
         });
         assert_json_round_trip(&CanFitRequest {
             profile: custom_profile(),
             kind: LeaseKind::BenchmarkExclusive,
+            min_cores: Some(2.0),
             label: Some("cargo bench".into()),
             cwd: Some(r"E:\work\app".into()),
         });
@@ -448,6 +458,7 @@ mod tests {
         assert_json_round_trip(&AcquireRequest {
             holder: sample_holder(),
             profile: custom_profile(),
+            min_cores: Some(1.5),
             kind: LeaseKind::Normal,
             label: "cargo build --release".into(),
             cwd: Some(r"E:\work\app".into()),

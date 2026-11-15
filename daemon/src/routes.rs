@@ -16,7 +16,7 @@ use allot_shared::{
         ProfileSpec, RegisterSessionRequest, ReleaseResponse, RemoveResponse, SessionsResponse,
         UnkilledProcess, Verdict, WaitRequest,
     },
-    config::Config,
+    config::{Config, Sizing},
     types::{
         EndCause, JobClass, JobProfile, JobRun, Lease, LeaseBinding, LeaseId, LeaseKind,
         LeaseState, SessionKey, Snapshot,
@@ -153,7 +153,13 @@ async fn can_fit(
     State(state): State<AppState>,
     Json(request): Json<CanFitRequest>,
 ) -> Result<Json<Verdict>, AppError> {
-    let (declared, _) = resolve_profile(&state.settings().config, &request.profile)?;
+    // The minimum is checked here and used once grants shrink.
+    let declared = resolve_profile(
+        &state.settings().config,
+        &request.profile,
+        request.min_cores,
+    )?
+    .profile;
     let latest = state.latest().ok_or(AppError::Unavailable)?;
     let estimate = match &request.label {
         Some(label) => {
@@ -234,9 +240,18 @@ async fn acquire(
     State(state): State<AppState>,
     Json(request): Json<AcquireRequest>,
 ) -> Result<Json<AcquireResponse>, AppError> {
-    let (declared, class) = resolve_profile(&state.settings().config, &request.profile)?;
+    let resolved = resolve_profile(
+        &state.settings().config,
+        &request.profile,
+        request.min_cores,
+    )?;
     let cwd = request.cwd.unwrap_or_default();
-    let estimate = estimate(&state, declared, &request.label, &cwd).await?;
+    let estimate = estimate(&state, resolved.profile, &request.label, &cwd).await?;
+    // A benchmark keeps its full request, so its measurements stay comparable.
+    let min_cores = match request.kind {
+        LeaseKind::BenchmarkExclusive => estimate.profile.cores,
+        _ => resolved.min_cores,
+    };
     state.connect(request.holder.clone()).await;
     let session = request.holder.session.clone();
     let now = now_ms();
@@ -244,8 +259,9 @@ async fn acquire(
     let draft = LeaseDraft {
         holder: request.holder,
         kind: request.kind,
-        class,
+        class: resolved.class,
         profile: estimate.profile,
+        min_cores,
         label: request.label,
         cwd,
         requested_at_ms: now,
@@ -736,30 +752,67 @@ pub(crate) fn job_run(
     }
 }
 
-/// Resolves a class or preset through the config and checks the values.
+/// A request's profile as the config resolves it.
+#[derive(Debug)]
+struct Resolved {
+    /// What the request declares, before history raises it.
+    profile: JobProfile,
+    /// The class the profile was taken from, or `None` for a preset or custom profile.
+    class: Option<JobClass>,
+    /// The fewest cores the job may start with.
+    min_cores: f32,
+}
+
+/// Resolves a class or preset through the config and checks the values. The minimum is
+/// `min_cores` when the request names one, else the class or preset's own; a custom profile
+/// without one keeps all its cores.
 fn resolve_profile(
     config: &Config,
     spec: &ProfileSpec,
-) -> Result<(JobProfile, Option<JobClass>), AppError> {
-    let (profile, class) = match spec {
+    min_cores: Option<f32>,
+) -> Result<Resolved, AppError> {
+    let (sizing, class) = match spec {
         ProfileSpec::Class(class) => (*config.classes.get(*class), Some(*class)),
         ProfileSpec::Preset(name) => {
-            let Some(profile) = config.presets.get(name) else {
+            let Some(sizing) = config.presets.get(name) else {
                 let known: Vec<&str> = config.presets.names().collect();
                 return Err(AppError::Validation(format!(
                     "unknown preset `{name}`; presets: {}",
                     known.join(", ")
                 )));
             };
-            (*profile, None)
+            (*sizing, None)
         }
-        ProfileSpec::Custom(profile) => (*profile, None),
+        ProfileSpec::Custom(profile) => (
+            Sizing {
+                profile: *profile,
+                min_cores: Some(profile.cores),
+            },
+            None,
+        ),
         _ => return Err(AppError::Validation("unsupported profile form".to_owned())),
     };
+    let profile = sizing.profile;
     if let Some(reason) = profile.invalid_reason() {
         return Err(AppError::Validation(format!("profile: {reason}")));
     }
-    Ok((profile, class))
+    let min_cores = match min_cores {
+        Some(min_cores) => {
+            if let Some(reason) = profile.min_cores_reason(min_cores) {
+                return Err(AppError::Validation(format!(
+                    "{reason} ({min_cores} given, the profile has {} cores)",
+                    profile.cores
+                )));
+            }
+            min_cores
+        }
+        None => sizing.minimum(),
+    };
+    Ok(Resolved {
+        profile,
+        class,
+        min_cores,
+    })
 }
 
 async fn is_queued(state: &AppState, id: LeaseId) -> bool {

@@ -263,6 +263,14 @@
       "description": "A reservation of machine resources for one job.",
       "type": "object",
       "properties": {
+        "asked_cores": {
+          "description": "Cores the request asked for, after history raised them; `None` for leases from before\nminimums were recorded, which asked for `profile.cores`.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float"
+        },
         "binding": {
           "description": "The command the lease's holder last reported running under it; `None` until the hook\nreports one.",
           "anyOf": [
@@ -361,8 +369,16 @@
           "description": "What the lease is for, usually the command that will run.",
           "type": "string"
         },
+        "min_cores": {
+          "description": "The fewest cores the lease may start with; `None` for leases from before minimums were\nrecorded, which may not shrink.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float"
+        },
         "profile": {
-          "description": "Resources reserved while the lease is active.",
+          "description": "Resources reserved while the lease is active. Its cores are what the lease was granted,\nwhich is fewer than `asked_cores` when the grant shrank to fit.",
           "allOf": [
             {
               "$ref": "#/definitions/JobProfile"

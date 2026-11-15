@@ -130,6 +130,8 @@ fn active_lease(id: i64, holder: Holder, label: &str, cwd: &str, granted_ago_ms:
         expires_at_ms: NOW_MS + 45_000,
         end_cause: None,
         binding: None,
+        asked_cores: Some(8.0),
+        min_cores: Some(4.0),
         isolation: None,
     }
 }
@@ -228,6 +230,8 @@ pub(crate) fn busy() -> UiState {
     let train = Lease {
         class: Some(JobClass::GpuHeavy),
         profile: profile(2.0, 4096, 80.0, 4096, 1_800),
+        asked_cores: Some(2.0),
+        min_cores: Some(1.0),
         ..active_lease(
             42,
             holder(TRAINER, 22_016),
@@ -239,6 +243,8 @@ pub(crate) fn busy() -> UiState {
     let npm = Lease {
         class: Some(JobClass::Light),
         profile: profile(1.0, 1024, 0.0, 0, 120),
+        asked_cores: Some(1.0),
+        min_cores: Some(1.0),
         ..queued_lease(
             43,
             holder(TRAINER, 22_016),
@@ -250,6 +256,8 @@ pub(crate) fn busy() -> UiState {
     let test = Lease {
         class: None,
         profile: profile(12.0, 8192, 0.0, 0, 240),
+        asked_cores: Some(12.0),
+        min_cores: Some(6.0),
         ..queued_lease(
             44,
             holder(APP, 18_240),
@@ -354,6 +362,8 @@ fn benchmark() -> UiState {
     let bench = Lease {
         kind: LeaseKind::BenchmarkExclusive,
         profile: profile(16.0, 4096, 0.0, 0, 120),
+        asked_cores: Some(16.0),
+        min_cores: Some(16.0),
         ..queued_lease(
             51,
             holder(APP, 18_240),
@@ -554,6 +564,8 @@ fn linux() -> UiState {
     let train = Lease {
         class: Some(JobClass::GpuHeavy),
         profile: profile(2.0, 4096, 60.0, 2048, 1_800),
+        asked_cores: Some(2.0),
+        min_cores: Some(1.0),
         isolation: Some(LeaseIsolation {
             kind: IsolationKind::Tree,
             scope: None,
@@ -645,6 +657,8 @@ fn macos() -> UiState {
     let train = Lease {
         class: Some(JobClass::GpuHeavy),
         profile: profile(2.0, 4096, 60.0, 8_192, 1_800),
+        asked_cores: Some(2.0),
+        min_cores: Some(1.0),
         isolation: Some(LeaseIsolation {
             kind: IsolationKind::Tree,
             scope: None,
@@ -661,6 +675,8 @@ fn macos() -> UiState {
     let render = Lease {
         class: Some(JobClass::Mixed),
         profile: profile(6.0, 8192, 50.0, 16_384, 600),
+        asked_cores: Some(6.0),
+        min_cores: Some(3.0),
         ..queued_lease(
             72,
             holder(APP, 1_204),

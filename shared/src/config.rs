@@ -27,7 +27,7 @@ pub struct Config {
     pub retention: RetentionConfig,
     /// PreToolUse hook behavior.
     pub hook: HookConfig,
-    /// The profile behind each [`JobClass`].
+    /// The profile and minimum cores behind each [`JobClass`].
     pub classes: ClassProfiles,
     /// Named profiles sized between the classes, chosen by name like a class.
     pub presets: Presets,
@@ -124,7 +124,7 @@ impl Config {
                 )));
             }
         }
-        for (name, profile) in &self.presets.0 {
+        for (name, sizing) in &self.presets.0 {
             let well_formed = !name.is_empty()
                 && name
                     .bytes()
@@ -137,7 +137,7 @@ impl Config {
                 JobClass::ALL.iter().all(|class| class.as_str() != name),
                 format!("presets.{name}: a class already has this name"),
             )?;
-            if let Some(reason) = profile.invalid_reason() {
+            if let Some(reason) = sizing.invalid_reason() {
                 return Err(Error::Config(format!("presets.{name}: {reason}")));
             }
         }
@@ -316,25 +316,62 @@ impl Default for LinuxConfig {
     }
 }
 
-/// The profile behind each [`JobClass`].
+/// A class or preset: the profile a lease of it asks for, and the fewest cores it may start
+/// with. The minimum is a key of the same table, such as `min_cores` in `[classes.cpu_heavy]`.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+pub struct Sizing {
+    /// What a lease of it asks for.
+    #[serde(flatten)]
+    pub profile: JobProfile,
+    /// The fewest cores a lease of it may start with; `None` takes
+    /// [`JobProfile::default_min_cores`], so the default follows a changed `cores`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub min_cores: Option<f32>,
+}
+
+impl Sizing {
+    /// `profile` with the default minimum.
+    pub const fn of(profile: JobProfile) -> Self {
+        Self {
+            profile,
+            min_cores: None,
+        }
+    }
+
+    /// The fewest cores a lease of it may start with: the configured minimum or the default.
+    pub fn minimum(&self) -> f32 {
+        self.min_cores
+            .unwrap_or_else(|| self.profile.default_min_cores())
+    }
+
+    /// Why the profile or its minimum is unusable, or `None` when both are in range.
+    pub fn invalid_reason(&self) -> Option<&'static str> {
+        self.profile.invalid_reason().or_else(|| {
+            self.min_cores
+                .and_then(|min_cores| self.profile.min_cores_reason(min_cores))
+        })
+    }
+}
+
+/// The profile and minimum cores behind each [`JobClass`].
 ///
 /// A partial table such as `[classes.gpu_heavy]` with only `vram_mb` keeps that class's own
 /// defaults for the other fields, not zeros.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct ClassProfiles {
-    /// Profile of [`JobClass::Light`].
-    pub light: JobProfile,
-    /// Profile of [`JobClass::CpuHeavy`].
-    pub cpu_heavy: JobProfile,
-    /// Profile of [`JobClass::GpuHeavy`].
-    pub gpu_heavy: JobProfile,
-    /// Profile of [`JobClass::Mixed`].
-    pub mixed: JobProfile,
+    /// Sizing of [`JobClass::Light`].
+    pub light: Sizing,
+    /// Sizing of [`JobClass::CpuHeavy`].
+    pub cpu_heavy: Sizing,
+    /// Sizing of [`JobClass::GpuHeavy`].
+    pub gpu_heavy: Sizing,
+    /// Sizing of [`JobClass::Mixed`].
+    pub mixed: Sizing,
 }
 
 impl ClassProfiles {
-    /// Returns the profile configured for `class`.
-    pub fn get(&self, class: JobClass) -> &JobProfile {
+    /// Returns the sizing configured for `class`.
+    pub fn get(&self, class: JobClass) -> &Sizing {
         match class {
             JobClass::Light => &self.light,
             JobClass::CpuHeavy => &self.cpu_heavy,
@@ -347,34 +384,34 @@ impl ClassProfiles {
 impl Default for ClassProfiles {
     fn default() -> Self {
         Self {
-            light: JobProfile {
+            light: Sizing::of(JobProfile {
                 cores: 1.0,
                 ram_mb: 512,
                 gpu_pct: 0.0,
                 vram_mb: 0,
                 est_secs: 30,
-            },
-            cpu_heavy: JobProfile {
+            }),
+            cpu_heavy: Sizing::of(JobProfile {
                 cores: 8.0,
                 ram_mb: 4096,
                 gpu_pct: 0.0,
                 vram_mb: 0,
                 est_secs: 300,
-            },
-            gpu_heavy: JobProfile {
+            }),
+            gpu_heavy: Sizing::of(JobProfile {
                 cores: 2.0,
                 ram_mb: 4096,
                 gpu_pct: 80.0,
                 vram_mb: 4096,
                 est_secs: 600,
-            },
-            mixed: JobProfile {
+            }),
+            mixed: Sizing::of(JobProfile {
                 cores: 6.0,
                 ram_mb: 8192,
                 gpu_pct: 50.0,
                 vram_mb: 2048,
                 est_secs: 600,
-            },
+            }),
         }
     }
 }
@@ -412,35 +449,40 @@ struct ProfileOverride {
     gpu_pct: Option<f32>,
     vram_mb: Option<u64>,
     est_secs: Option<u64>,
+    min_cores: Option<f32>,
 }
 
 impl ProfileOverride {
-    fn apply(self, base: JobProfile) -> JobProfile {
-        JobProfile {
-            cores: self.cores.unwrap_or(base.cores),
-            ram_mb: self.ram_mb.unwrap_or(base.ram_mb),
-            gpu_pct: self.gpu_pct.unwrap_or(base.gpu_pct),
-            vram_mb: self.vram_mb.unwrap_or(base.vram_mb),
-            est_secs: self.est_secs.unwrap_or(base.est_secs),
+    fn apply(self, base: Sizing) -> Sizing {
+        let profile = base.profile;
+        Sizing {
+            profile: JobProfile {
+                cores: self.cores.unwrap_or(profile.cores),
+                ram_mb: self.ram_mb.unwrap_or(profile.ram_mb),
+                gpu_pct: self.gpu_pct.unwrap_or(profile.gpu_pct),
+                vram_mb: self.vram_mb.unwrap_or(profile.vram_mb),
+                est_secs: self.est_secs.unwrap_or(profile.est_secs),
+            },
+            min_cores: self.min_cores.or(base.min_cores),
         }
     }
 }
 
-/// Named profiles between the classes, by name.
+/// Named profiles between the classes, by name, each with its minimum cores.
 ///
 /// A `[presets.<name>]` table changes that preset field by field, like a class, or adds a new
 /// one, which needs at least `cores` and `ram_mb` (GPU and VRAM default to 0, the run time
 /// to 300 s). The default presets stay unless overridden.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(transparent)]
-pub struct Presets(pub BTreeMap<String, JobProfile>);
+pub struct Presets(pub BTreeMap<String, Sizing>);
 
 /// Run time of a new preset that gives none.
 const PRESET_EST_SECS: u64 = 300;
 
 impl Presets {
-    /// The profile of preset `name`.
-    pub fn get(&self, name: &str) -> Option<&JobProfile> {
+    /// The sizing of preset `name`.
+    pub fn get(&self, name: &str) -> Option<&Sizing> {
         self.0.get(name)
     }
 
@@ -452,12 +494,14 @@ impl Presets {
 
 impl Default for Presets {
     fn default() -> Self {
-        let preset = |cores, ram_mb, gpu_pct, vram_mb, est_secs| JobProfile {
-            cores,
-            ram_mb,
-            gpu_pct,
-            vram_mb,
-            est_secs,
+        let preset = |cores, ram_mb, gpu_pct, vram_mb, est_secs| {
+            Sizing::of(JobProfile {
+                cores,
+                ram_mb,
+                gpu_pct,
+                vram_mb,
+                est_secs,
+            })
         };
         Self(BTreeMap::from([
             ("cpu_small".to_owned(), preset(2.0, 1024, 0.0, 0, 60)),
@@ -485,13 +529,13 @@ impl<'de> Deserialize<'de> for Presets {
                             "new preset `{name}` needs both cores and ram_mb"
                         )));
                     };
-                    value.apply(JobProfile {
+                    value.apply(Sizing::of(JobProfile {
                         cores,
                         ram_mb,
                         gpu_pct: 0.0,
                         vram_mb: 0,
                         est_secs: PRESET_EST_SECS,
-                    })
+                    }))
                 }
             };
             presets.0.insert(name, profile);
@@ -599,9 +643,12 @@ mod tests {
         .unwrap();
         let defaults = Presets::default();
         let small = config.presets.get("cpu_small").unwrap();
-        assert_eq!(small.cores, 3.0);
-        assert_eq!(small.est_secs, defaults.get("cpu_small").unwrap().est_secs);
-        let preview = config.presets.get("render_preview").unwrap();
+        assert_eq!(small.profile.cores, 3.0);
+        assert_eq!(
+            small.profile.est_secs,
+            defaults.get("cpu_small").unwrap().profile.est_secs
+        );
+        let preview = config.presets.get("render_preview").unwrap().profile;
         assert_eq!((preview.gpu_pct, preview.vram_mb), (40.0, 0));
         assert_eq!(preview.est_secs, PRESET_EST_SECS);
         assert_eq!(config.presets.get("quick"), defaults.get("quick"));
@@ -619,10 +666,11 @@ mod tests {
     #[test]
     fn test_default_presets_are_quick_and_low_impact_where_named() {
         let presets = Presets::default();
-        assert!(presets.get("quick").unwrap().is_quick());
-        assert!(presets.get("low_impact").unwrap().is_low_impact());
-        assert!(!presets.get("cpu_small").unwrap().is_quick());
-        assert!(!presets.get("cpu_small").unwrap().is_low_impact());
+        let profile = |name| presets.get(name).unwrap().profile;
+        assert!(profile("quick").is_quick());
+        assert!(profile("low_impact").is_low_impact());
+        assert!(!profile("cpu_small").is_quick());
+        assert!(!profile("cpu_small").is_low_impact());
     }
 
     #[test]
@@ -637,14 +685,69 @@ mod tests {
             config.leases.idle_release_secs,
             defaults.leases.idle_release_secs
         );
-        assert_eq!(config.classes.gpu_heavy.vram_mb, 8192);
+        assert_eq!(config.classes.gpu_heavy.profile.vram_mb, 8192);
         assert_eq!(
-            config.classes.gpu_heavy.cores,
-            defaults.classes.gpu_heavy.cores
+            config.classes.gpu_heavy.profile.cores,
+            defaults.classes.gpu_heavy.profile.cores
         );
         assert_eq!(config.classes.cpu_heavy, defaults.classes.cpu_heavy);
         assert_eq!(config.daemon, defaults.daemon);
         assert_eq!(config.classifier, defaults.classifier);
+    }
+
+    #[test]
+    fn test_config_default_minimums_are_half_with_at_least_one_core() {
+        let config = Config::default();
+        let class = |class| config.classes.get(class).minimum();
+        assert_eq!(class(JobClass::Light), 1.0);
+        assert_eq!(class(JobClass::CpuHeavy), 4.0);
+        assert_eq!(class(JobClass::GpuHeavy), 1.0);
+        assert_eq!(class(JobClass::Mixed), 3.0);
+        let preset = |name| config.presets.get(name).unwrap().minimum();
+        assert_eq!(preset("cpu_small"), 1.0);
+        assert_eq!(preset("cpu_medium"), 2.0);
+        assert_eq!(preset("gpu_small"), 1.0);
+        assert_eq!(preset("quick"), 2.0);
+        assert_eq!(preset("low_impact"), 0.25);
+    }
+
+    #[test]
+    fn test_config_min_cores_overrides_and_default_follows_changed_cores() {
+        let config = Config::from_toml(
+            "[classes.cpu_heavy]\nmin_cores = 6.0\n\n[classes.mixed]\ncores = 10.0\n\n\
+             [presets.quick]\nmin_cores = 1.5\n\n[presets.wide]\ncores = 12.0\nram_mb = 1024\n",
+        )
+        .unwrap();
+        assert_eq!(config.classes.cpu_heavy.minimum(), 6.0);
+        assert_eq!(config.classes.cpu_heavy.profile.cores, 8.0);
+        assert_eq!(config.classes.mixed.minimum(), 5.0);
+        assert_eq!(config.presets.get("quick").unwrap().minimum(), 1.5);
+        assert_eq!(config.presets.get("wide").unwrap().minimum(), 6.0);
+    }
+
+    #[test]
+    fn test_config_min_cores_out_of_range_names_the_table_and_key() {
+        for (table, keys) in [
+            ("classes.cpu_heavy", "min_cores = 0.0"),
+            ("classes.light", "min_cores = 1.5"),
+            ("classes.mixed", "cores = 2.0\nmin_cores = 3.0"),
+            ("presets.cpu_small", "min_cores = -1.0"),
+            ("presets.cpu_small", "min_cores = nan"),
+        ] {
+            let message = config_error(&format!("[{table}]\n{keys}\n"));
+            let named = message.contains(table) && message.contains("min_cores");
+            assert!(named, "{message}");
+        }
+    }
+
+    #[test]
+    fn test_config_min_cores_round_trips_and_stays_out_when_unset() {
+        let text = toml::to_string(&Config::default()).unwrap();
+        assert!(!text.contains("min_cores"), "{text}");
+        let config = Config::from_toml("[classes.gpu_heavy]\nmin_cores = 2.0\n").unwrap();
+        let text = toml::to_string(&config).unwrap();
+        assert_eq!(Config::from_toml(&text).unwrap(), config);
+        assert_eq!(config.classes.gpu_heavy.min_cores, Some(2.0));
     }
 
     #[test]

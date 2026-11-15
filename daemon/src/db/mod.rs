@@ -121,6 +121,8 @@ mod tests {
     const TABLES: [&str; 4] = ["job_runs", "lease_events", "leases", "meta"];
     // End causes, lease bindings, and the meta table.
     const V0_2_MIGRATIONS: usize = 3;
+    // Migrations after v0.2's, reverted first to reach the schema before it.
+    const LATER_MIGRATIONS: usize = 1;
 
     #[derive(QueryableByName)]
     struct TableName {
@@ -224,7 +226,7 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let pool = open_pool(&dir.path().join("allot.db")).unwrap();
         let mut conn = pool.get().unwrap();
-        for _ in 0..V0_2_MIGRATIONS {
+        for _ in 0..LATER_MIGRATIONS + V0_2_MIGRATIONS {
             conn.revert_last_migration(MIGRATIONS).unwrap();
         }
         sql_query(

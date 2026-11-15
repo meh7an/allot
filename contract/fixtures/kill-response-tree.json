@@ -16,6 +16,8 @@
       "vram_mb": 0,
       "est_secs": 300
     },
+    "asked_cores": 8.0,
+    "min_cores": 4.0,
     "label": "cargo clippy --workspace",
     "cwd": "E:\\work\\app",
     "requested_at_ms": 1792824623500,

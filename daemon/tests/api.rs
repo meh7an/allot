@@ -247,6 +247,7 @@ impl Daemon {
             holder,
             profile,
             kind: LeaseKind::Normal,
+            min_cores: None,
             label: "cargo build".into(),
             cwd: None,
             wait_timeout_secs: wait_secs,
@@ -273,6 +274,7 @@ impl Daemon {
                 est_secs: 30,
             }),
             kind: LeaseKind::BenchmarkExclusive,
+            min_cores: None,
             label: "cargo bench".into(),
             cwd: None,
             wait_timeout_secs: wait_secs,
@@ -647,10 +649,9 @@ async fn test_preset_resolves_to_its_profile_and_unknown_ones_are_listed() {
     assert_eq!(response.status(), StatusCode::OK);
     let acquired: AcquireResponse = response.json().await.unwrap();
     assert_eq!(acquired.lease.class, None);
-    assert_eq!(
-        Some(&acquired.lease.profile),
-        Config::default().presets.get("cpu_small")
-    );
+    let sizing = *Config::default().presets.get("cpu_small").unwrap();
+    assert_eq!(acquired.lease.profile, sizing.profile);
+    assert_eq!(acquired.lease.min_cores, Some(sizing.minimum()));
 
     let response = daemon.acquire(bob(), preset("huge"), 0).await;
     assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
@@ -659,6 +660,83 @@ async fn test_preset_resolves_to_its_profile_and_unknown_ones_are_listed() {
         text.contains("unknown preset `huge`") && text.contains("cpu_small"),
         "{text}"
     );
+    daemon.stop().await;
+}
+
+#[tokio::test]
+async fn test_lease_records_asked_cores_and_resolves_its_minimum() {
+    let daemon = Daemon::start().await;
+    let custom = ProfileSpec::Custom(JobProfile {
+        cores: 3.0,
+        ram_mb: 100,
+        gpu_pct: 0.0,
+        vram_mb: 0,
+        est_secs: 30,
+    });
+    let heavy = ProfileSpec::Class(JobClass::CpuHeavy);
+    let cases = [
+        (alice(), heavy.clone(), Some(2.5), 8.0, 2.5),
+        (bob(), heavy, None, 8.0, 4.0),
+        (alice(), custom, None, 3.0, 3.0),
+    ];
+    for (holder, profile, min_cores, asked, min) in cases {
+        let request = AcquireRequest {
+            holder,
+            profile,
+            kind: LeaseKind::Normal,
+            min_cores,
+            label: "cargo build".into(),
+            cwd: None,
+            wait_timeout_secs: 0,
+        };
+        let response = send(daemon.post("/leases").json(&request)).await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let lease = response.json::<AcquireResponse>().await.unwrap().lease;
+        assert_eq!(lease.asked_cores, Some(asked), "{lease:?}");
+        assert_eq!(lease.min_cores, Some(min), "{lease:?}");
+        // Grants do not shrink yet: the lease reserves what it asked for.
+        assert_eq!(lease.profile.cores, asked);
+    }
+    daemon.stop().await;
+}
+
+#[tokio::test]
+async fn test_benchmark_minimum_is_its_full_request() {
+    let daemon = Daemon::start().await;
+    let lease = daemon.acquire_benchmark(alice(), 0).await.lease;
+    assert_eq!(lease.min_cores, lease.asked_cores);
+    assert_eq!(lease.min_cores, Some(lease.profile.cores));
+    daemon.stop().await;
+}
+
+#[tokio::test]
+async fn test_min_cores_out_of_range_is_rejected_by_acquire_and_can_fit() {
+    let daemon = Daemon::start().await;
+    for min_cores in [0.0, -1.0, 8.5] {
+        let request = AcquireRequest {
+            holder: alice(),
+            profile: ProfileSpec::Class(JobClass::CpuHeavy),
+            kind: LeaseKind::Normal,
+            min_cores: Some(min_cores),
+            label: "cargo build".into(),
+            cwd: None,
+            wait_timeout_secs: 0,
+        };
+        let response = send(daemon.post("/leases").json(&request)).await;
+        assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        assert!(response.text().await.unwrap().contains("min_cores"));
+
+        let request = CanFitRequest {
+            profile: ProfileSpec::Class(JobClass::CpuHeavy),
+            kind: LeaseKind::Normal,
+            min_cores: Some(min_cores),
+            label: None,
+            cwd: None,
+        };
+        let response = send(daemon.post("/can-fit").json(&request)).await;
+        assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        assert!(response.text().await.unwrap().contains("min_cores"));
+    }
     daemon.stop().await;
 }
 
@@ -687,6 +765,7 @@ async fn test_can_fit_reports_the_shortfall() {
     let request = CanFitRequest {
         profile: ProfileSpec::Class(JobClass::CpuHeavy),
         kind: LeaseKind::Normal,
+        min_cores: None,
         label: None,
         cwd: None,
     };
@@ -714,6 +793,7 @@ fn stored_active_lease(conn: &mut SqliteConnection, holder: Holder, at_ms: i64) 
             vram_mb: 0,
             est_secs: 300,
         },
+        min_cores: 1.0,
         label: "old build".into(),
         cwd: String::new(),
         requested_at_ms: at_ms,
@@ -1004,6 +1084,7 @@ async fn test_released_run_raises_the_next_estimate_and_shows_in_history() {
     let request = CanFitRequest {
         profile: ProfileSpec::Class(JobClass::CpuHeavy),
         kind: LeaseKind::Normal,
+        min_cores: None,
         label: Some("cd app && cargo build 2>&1".into()),
         cwd: None,
     };
@@ -1471,6 +1552,7 @@ async fn test_ui_state_has_the_shape_of_the_busy_fixture() {
         holder: alice(),
         profile: ProfileSpec::Class(JobClass::CpuHeavy),
         kind: LeaseKind::Normal,
+        min_cores: None,
         label: "cargo build --release".into(),
         cwd: Some(r"E:\work\app".into()),
         wait_timeout_secs: 0,

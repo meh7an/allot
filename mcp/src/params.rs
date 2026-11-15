@@ -83,6 +83,10 @@ pub struct ProfileParams {
     /// Custom profile: expected run time in seconds (default 300).
     #[serde(default)]
     pub est_secs: Option<u64>,
+    /// The fewest cores the job can start with, above 0 and at most its cores; goes with any
+    /// form (default: the class or preset's minimum; a custom profile keeps all its cores).
+    #[serde(default)]
+    pub min_cores: Option<f32>,
 }
 
 impl ProfileParams {
@@ -282,6 +286,17 @@ mod tests {
     }
 
     #[test]
+    fn test_min_cores_goes_with_a_class_and_does_not_make_a_custom_profile() {
+        let params: CanFitParams =
+            serde_json::from_str(r#"{"class":"cpu_heavy","min_cores":2.5}"#).unwrap();
+        assert_eq!(params.profile.min_cores, Some(2.5));
+        assert_eq!(
+            params.profile.to_spec(),
+            Ok(ProfileSpec::Class(JobClass::CpuHeavy))
+        );
+    }
+
+    #[test]
     fn test_acquire_params_schema_lists_flattened_fields() {
         let schema = serde_json::to_value(schemars::schema_for!(AcquireParams)).unwrap();
         let properties = schema["properties"].as_object().unwrap();
@@ -294,6 +309,7 @@ mod tests {
             "label",
             "cwd",
             "wait_secs",
+            "min_cores",
         ] {
             assert!(properties.contains_key(field), "{field} missing: {schema}");
         }

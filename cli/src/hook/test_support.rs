@@ -153,6 +153,8 @@ pub fn lease(id: i64, state: LeaseState, profile: JobProfile) -> Lease {
         expires_at_ms: 60_000,
         end_cause: None,
         binding: None,
+        asked_cores: None,
+        min_cores: None,
         isolation: None,
     }
 }

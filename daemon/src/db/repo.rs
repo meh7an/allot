@@ -35,8 +35,11 @@ pub struct LeaseDraft {
     pub kind: LeaseKind,
     /// Class the profile was taken from, or `None` for a custom profile.
     pub class: Option<JobClass>,
-    /// Resources to reserve.
+    /// Resources asked for; the lease records its cores as asked, and reserves them until a
+    /// grant shrinks them.
     pub profile: JobProfile,
+    /// The fewest cores the lease may start with, at most `profile.cores`.
+    pub min_cores: f32,
     /// What the lease is for, usually the command that will run.
     pub label: String,
     /// Working directory of the command, or empty when unknown.
@@ -667,6 +670,8 @@ mod tests {
         assert_eq!(lease.holder, draft.holder);
         assert_eq!(lease.class, draft.class);
         assert_eq!(lease.profile, draft.profile);
+        assert_eq!(lease.asked_cores, Some(draft.profile.cores));
+        assert_eq!(lease.min_cores, Some(draft.min_cores));
         assert_eq!(lease.cwd, draft.cwd);
         assert_eq!(lease.granted_at_ms, None);
         assert_eq!(get_lease(&mut conn, lease.id).unwrap(), Some(lease.clone()));

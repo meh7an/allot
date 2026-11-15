@@ -123,6 +123,8 @@ pub(crate) fn queued_lease(
         expires_at_ms: requested_at_ms + 60_000,
         end_cause: None,
         binding: None,
+        asked_cores: None,
+        min_cores: None,
         isolation: None,
     }
 }

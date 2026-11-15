@@ -143,6 +143,7 @@ impl<C: DaemonApi> AllotServer<C> {
         let request = CanFitRequest {
             profile: params.profile.to_spec()?,
             kind: params.kind.into(),
+            min_cores: params.profile.min_cores,
             label: params.label,
             cwd,
         };
@@ -191,6 +192,7 @@ impl<C: DaemonApi> AllotServer<C> {
                 let request = AcquireRequest {
                     holder: self.holder.clone(),
                     profile: params.profile.to_spec()?,
+                    min_cores: params.profile.min_cores,
                     kind: params.kind.into(),
                     label: params.label,
                     cwd: Some(self.cwd_or_default(params.cwd)),
