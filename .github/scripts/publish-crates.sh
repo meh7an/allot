@@ -84,9 +84,14 @@ if [ "${#arguments[@]}" -eq 0 ]; then
     exit 0
 fi
 
-if [ -n "$dry_run" ] && [ -n "$any_published" ]; then
-    echo "::notice::crates.io already has $release; packaging these sources as $release-ci"
-    stand_in "$release" "$release-ci"
+if [ -n "$dry_run" ]; then
+    arguments+=(--dry-run)
+    if [ -n "$any_published" ]; then
+        echo "::notice::crates.io already has $release; packaging these sources as $release-ci"
+        stand_in "$release" "$release-ci"
+        # The stand-in version is the only uncommitted change.
+        arguments+=(--allow-dirty)
+    fi
 fi
 
-cargo publish --locked ${dry_run:+--dry-run} "${arguments[@]}"
+cargo publish --locked "${arguments[@]}"
