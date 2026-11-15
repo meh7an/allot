@@ -128,8 +128,9 @@ impl<C: DaemonApi> AllotServer<C> {
     #[tool(
         description = "Whether a job with this profile could start right now, with the \
                        limiting resources and an estimated wait. With label (the command), \
-                       the profile is raised to what earlier runs of it needed. Changes \
-                       nothing.",
+                       the profile is raised to what earlier runs of it needed. When fewer \
+                       cores than asked are free but at least min_cores, the reasons say how \
+                       many it would be granted. Changes nothing.",
         annotations(read_only_hint = true)
     )]
     async fn can_fit(
@@ -162,8 +163,13 @@ impl<C: DaemonApi> AllotServer<C> {
                           its place, and calling again with its lease_id keeps waiting. Run \
                           the command only when state is active, then call release_lease. \
                           The reserved profile is raised to what earlier runs of the same \
-                          command needed. A waiting benchmark reports its progress in \
-                          verdict.benchmark."
+                          command needed. A normal lease may start with fewer cores than \
+                          asked, down to min_cores (by default the class or preset's minimum; \
+                          set it lower for parallel work that can start on a few cores, or \
+                          to all the cores when fewer would spoil the run); profile.cores is \
+                          then the grant and the reasons say \"granted X of Y cores\". RAM, \
+                          GPU and benchmarks never shrink. A waiting benchmark reports its \
+                          progress in verdict.benchmark."
     )]
     async fn acquire_lease(
         &self,

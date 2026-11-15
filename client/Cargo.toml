@@ -12,7 +12,7 @@ keywords.workspace = true
 categories.workspace = true
 
 [dependencies]
-allot-shared = { version = "0.3.0", path = "../shared" }
+allot-shared = { version = "0.4.0", path = "../shared" }
 reqwest = { version = "0.13.5", default-features = false, features = ["json"] }
 serde = "1.0.229"
 thiserror = "2.0.21"

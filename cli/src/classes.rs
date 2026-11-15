@@ -4,9 +4,9 @@ use std::fmt::Write;
 
 use allot_core::classifier::describe_rule;
 use allot_shared::{
-    config::Config,
+    config::{Config, Sizing},
     paths::Paths,
-    types::{JobClass, JobProfile},
+    types::JobClass,
 };
 
 /// Prints the rules, class profiles, and presets from the user's config, or the defaults
@@ -47,28 +47,34 @@ fn format_classes(config: &Config) -> String {
         flags.join(" ")
     );
     out.push_str(
-        "| Class | Cores | RAM MB | GPU % | VRAM MB | Est. secs |\n\
-         |-------|------:|-------:|------:|--------:|----------:|\n",
+        "| Class | Cores | Min cores | RAM MB | GPU % | VRAM MB | Est. secs |\n\
+         |-------|------:|----------:|-------:|------:|--------:|----------:|\n",
     );
     for class in JobClass::ALL {
-        push_row(&mut out, class.as_str(), &config.classes.get(class).profile);
+        push_row(&mut out, class.as_str(), config.classes.get(class));
     }
     out.push_str(
-        "\n| Preset | Cores | RAM MB | GPU % | VRAM MB | Est. secs |\n\
-         |--------|------:|-------:|------:|--------:|----------:|\n",
+        "\n| Preset | Cores | Min cores | RAM MB | GPU % | VRAM MB | Est. secs |\n\
+         |--------|------:|----------:|-------:|------:|--------:|----------:|\n",
     );
     for (name, sizing) in &config.presets.0 {
-        push_row(&mut out, name, &sizing.profile);
+        push_row(&mut out, name, sizing);
     }
     out
 }
 
-fn push_row(out: &mut String, name: &str, profile: &JobProfile) {
+fn push_row(out: &mut String, name: &str, sizing: &Sizing) {
+    let profile = &sizing.profile;
     // Writing to a String cannot fail.
     let _ = writeln!(
         out,
-        "| {name} | {} | {} | {} | {} | {} |",
-        profile.cores, profile.ram_mb, profile.gpu_pct, profile.vram_mb, profile.est_secs
+        "| {name} | {} | {} | {} | {} | {} | {} |",
+        profile.cores,
+        sizing.minimum(),
+        profile.ram_mb,
+        profile.gpu_pct,
+        profile.vram_mb,
+        profile.est_secs
     );
 }
 
@@ -98,7 +104,7 @@ mod tests {
     fn test_format_classes_shows_user_rules_and_profiles() {
         let config = Config::from_toml(
             "[[classifier.rules]]\nprogram = \"ninja\"\nclass = \"cpu_heavy\"\n\n\
-             [classes.cpu_heavy]\ncores = 12.0\n",
+             [classes.cpu_heavy]\ncores = 12.0\n\n[presets.cpu_small]\nmin_cores = 1.5\n",
         )
         .unwrap();
         let out = format_classes(&config);
@@ -108,7 +114,11 @@ mod tests {
         );
         assert!(!out.contains("cargo"), "{out}");
         assert!(
-            out.contains("| cpu_heavy | 12 | 4096 | 0 | 0 | 300 |"),
+            out.contains("| cpu_heavy | 12 | 6 | 4096 | 0 | 0 | 300 |"),
+            "{out}"
+        );
+        assert!(
+            out.contains("| cpu_small | 2 | 1.5 | 1024 | 0 | 0 | 60 |"),
             "{out}"
         );
     }

@@ -37,20 +37,20 @@ A command line is heavy when any command in it (after `&&`, `;`, `|`, env prefix
 
 A command with any of `--help` `-h` `--version` `-V` `/?` is light whatever it runs.
 
-| Class | Cores | RAM MB | GPU % | VRAM MB | Est. secs |
-|-------|------:|-------:|------:|--------:|----------:|
-| light | 1 | 512 | 0 | 0 | 30 |
-| cpu_heavy | 8 | 4096 | 0 | 0 | 300 |
-| gpu_heavy | 2 | 4096 | 80 | 4096 | 600 |
-| mixed | 6 | 8192 | 50 | 2048 | 600 |
+| Class | Cores | Min cores | RAM MB | GPU % | VRAM MB | Est. secs |
+|-------|------:|----------:|-------:|------:|--------:|----------:|
+| light | 1 | 1 | 512 | 0 | 0 | 30 |
+| cpu_heavy | 8 | 4 | 4096 | 0 | 0 | 300 |
+| gpu_heavy | 2 | 1 | 4096 | 80 | 4096 | 600 |
+| mixed | 6 | 3 | 8192 | 50 | 2048 | 600 |
 
-| Preset | Cores | RAM MB | GPU % | VRAM MB | Est. secs |
-|--------|------:|-------:|------:|--------:|----------:|
-| cpu_medium | 4 | 2048 | 0 | 0 | 180 |
-| cpu_small | 2 | 1024 | 0 | 0 | 60 |
-| gpu_small | 1 | 2048 | 30 | 2048 | 300 |
-| low_impact | 0.25 | 256 | 0 | 0 | 60 |
-| quick | 4 | 2048 | 0 | 0 | 10 |
+| Preset | Cores | Min cores | RAM MB | GPU % | VRAM MB | Est. secs |
+|--------|------:|----------:|-------:|------:|--------:|----------:|
+| cpu_medium | 4 | 2 | 2048 | 0 | 0 | 180 |
+| cpu_small | 2 | 1 | 1024 | 0 | 0 | 60 |
+| gpu_small | 1 | 1 | 2048 | 30 | 2048 | 300 |
+| low_impact | 0.25 | 0.25 | 256 | 0 | 0 | 60 |
+| quick | 4 | 2 | 2048 | 0 | 0 | 10 |
 <!-- allot classes: end -->
 
 Matching is case-insensitive and `*` is a wildcard. An argument pattern starting with `-`
@@ -91,6 +91,33 @@ A custom profile counts as quick when `est_secs` is 15 or less, and as low impac
 at most 0.25 cores and 256 MB and no GPU or VRAM. History raises a lease to what earlier runs
 of the same command needed, so a command that ran bigger before loses either status by itself.
 
+### Starting with fewer cores
+
+When the machine cannot free all the cores a normal lease asks for, the lease starts with the
+free cores, down to a minimum, instead of waiting. RAM, GPU and VRAM never shrink, and a
+`benchmark_exclusive` lease always waits for its full request. A shrunk lease's
+`profile.cores` is what it was granted, and its reasons say so, for example "granted 5.6 of
+8.0 cores" (`can_fit` says "would be granted"). Nothing limits the command: it still runs
+all its threads, only on fewer reserved cores, so it takes longer. Run it as usual; a shrunk
+grant is no reason to narrow the command or to tell the user.
+
+The minimum is `min_cores`, which goes with any form (class, preset or custom profile). Leave
+it out for most jobs: a class or preset's own minimum (the Min cores column above, half its
+cores) suits work that spreads over many cores. Set it when this command differs:
+
+- **Lower** (1 or 2) for parallel work you would rather start now on a few cores than queue
+  for, such as an incremental build or a test run while another session's long build runs.
+- **Equal to `cores`** when fewer cores would spoil the run: parallelism fixed in the command
+  (`-j 8`, `--test-threads=8`) together with timeouts that a slow run would hit, or tests with
+  timing limits.
+- **A single-threaded job** (one script, one compiler or linker process) needs only 1 core:
+  ask for a custom profile with `cores: 1` instead of a class whose minimum is higher.
+
+A custom profile keeps all its cores unless you give `min_cores`, which must be above 0 and
+at most the profile's cores. A queued reason such as "cores: 8.0 requested (at least 4.0),
+2.4 free" means even the minimum does not fit yet. Keep waiting as usual; do not release and
+acquire again only to lower the minimum.
+
 ## The loop: check, lease, run, release
 
 1. **Classify** the command (above). Light: just run it.
@@ -99,7 +126,8 @@ of the same command needed, so a command that ran bigger before loses either sta
    now and a narrower one (`-p <crate>`), or to tell the user up front that the machine is
    busy. It changes nothing and holds no place in the queue.
 3. **Acquire**: `acquire_lease` with a profile sized as in "Sizing the lease" (`class`,
-   `preset`, or custom) and `label` set to the exact command, for example
+   `preset`, or custom), `min_cores` when the class or preset's minimum does not suit the
+   command (see "Starting with fewer cores"), and `label` set to the exact command, for example
    `cargo test -p allot-core`. `wait_secs` defaults to 60, at most 120.
    When the command runs somewhere other than the session's directory, pass that directory
    as `cwd`.
@@ -191,9 +219,9 @@ or in a tool result whose `end_cause` is `killed` or `removed` (`acquire_lease`,
 - `sessions`: each Claude session's summed `cores`, `ram_mb`, `gpu_pct`, `vram_mb`;
   `is_current` marks yours. `other` is load from everything outside the sessions.
 
-Admission uses reservations, not just measured load: a granted lease keeps its full profile
-reserved even before its processes ramp up, and a headroom (15% by default) of each resource
-is never handed out.
+Admission uses reservations, not just measured load: a granted lease keeps its granted
+profile reserved even before its processes ramp up, and a headroom (15% by default) of each
+resource is never handed out.
 So `can_fit` is the authority on whether a job starts; the snapshot explains why (who is
 busy, whether the load is another session's lease or unrelated background like a game).
 Mention it to the user when unrelated background load is what blocks you.

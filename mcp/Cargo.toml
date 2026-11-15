@@ -22,10 +22,10 @@ pkg-url = "{ repo }/releases/download/v{ version }/allot-{ version }-{ target }.
 pkg-fmt = "zip"
 
 [dependencies]
-allot-client = { version = "0.3.0", path = "../client" }
-allot-core = { version = "0.3.0", path = "../core" }
-allot-sampler = { version = "0.3.0", path = "../sampler" }
-allot-shared = { version = "0.3.0", path = "../shared" }
+allot-client = { version = "0.4.0", path = "../client" }
+allot-core = { version = "0.4.0", path = "../core" }
+allot-sampler = { version = "0.4.0", path = "../sampler" }
+allot-shared = { version = "0.4.0", path = "../shared" }
 anyhow = "1.0.104"
 clap = { version = "4.6.7", features = ["derive"] }
 rmcp = { version = "3.6.0", features = ["server", "macros", "transport-io"] }

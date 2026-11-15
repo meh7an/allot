@@ -6,6 +6,8 @@ All notable changes to this project are documented in this file. The format foll
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-15
+
 ### Added
 
 - One-line install: `install.sh` for Linux and macOS and `install.ps1` for Windows download the
@@ -31,11 +33,20 @@ All notable changes to this project are documented in this file. The format foll
 - crates.io: `cargo install --locked allot-cli allotd allot-mcp`, or the same three names with
   `cargo binstall` for the release binaries, then `allot install`. A missing binary is reported
   with that line, and `allot doctor` accepts cargo's identical copy on `PATH`.
+- A lease can start with fewer cores than it asked for. When not all of them are free, allotd
+  grants the free cores down to a minimum instead of queueing the lease, and its reasons say,
+  for example, "granted 5.6 of 8.0 cores". `acquire_lease` and `can_fit` take `min_cores`, and
+  each class and preset in `config.toml` has its own `min_cores` (by default half its cores, at
+  least 1). RAM, GPU and VRAM never shrink, and a benchmark always waits for its full request.
+  Leases carry `asked_cores` and `min_cores`, `allot status` shows "5.6 of 8.0 cores",
+  `allot classes` shows each minimum, and the `resource-guard` skill says when to set one.
 
 ### Changed
 
 - Errors fit on one line, and a `hint:` line says what to run next when allotd is not running
   or a lease ID is wrong.
+- A lease queued for cores says who holds them, for example "cores: 8.2 requested, 0.0 free
+  (8.0 held by 1 lease, 5.6 in use outside leases)".
 
 ### Fixed
 
@@ -193,7 +204,8 @@ First public release.
 - A logon task for autostart, and a runbook for health checks, troubleshooting, and
   configuration.
 
-[Unreleased]: https://github.com/meh7an/allot/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/meh7an/allot/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/meh7an/allot/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/meh7an/allot/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/meh7an/allot/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/meh7an/allot/releases/tag/v0.1.0

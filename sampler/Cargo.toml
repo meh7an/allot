@@ -12,8 +12,8 @@ keywords.workspace = true
 categories.workspace = true
 
 [dependencies]
-allot-core = { version = "0.3.0", path = "../core" }
-allot-shared = { version = "0.3.0", path = "../shared" }
+allot-core = { version = "0.4.0", path = "../core" }
+allot-shared = { version = "0.4.0", path = "../shared" }
 sysinfo = { version = "0.39.6", default-features = false, features = ["system"] }
 
 [target."cfg(windows)".dependencies]
