@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Publishes every publishable workspace crate at the checked-out version, skipping any that
-# crates.io already has, so a failed run can be run again. One `cargo publish` takes them all,
+# crates.io already has, so a failed run can be run again. A dry run skips none. One `cargo publish` takes them all,
 # since a crate cannot be packaged alone while a sibling it needs is not on crates.io yet.
 #   publish-crates.sh [--dry-run]
 set -euo pipefail
@@ -38,10 +38,12 @@ published() {
 packages=$(cargo metadata --no-deps --format-version 1 \
     | jq -r '.packages[] | select(.publish != []) | "\(.name) \(.version)"' | tr -d '\r')
 
+# A dry run packages every crate, published or not, so each one builds against its siblings'
+# sources on main rather than against an older release of them on crates.io.
 arguments=()
 while read -r name version; do
     [ -n "$name" ] || continue
-    if published "$name" "$version"; then
+    if [ -z "$dry_run" ] && published "$name" "$version"; then
         echo "::notice::crates.io already has $name $version"
     else
         arguments+=(--package "$name")

@@ -345,6 +345,9 @@
  * A reservation of machine resources for one job.
  *
  * @typedef {object} Lease
+ * @property {number | null} asked_cores
+ *   Cores the request asked for, after history raised them; `null` for leases from before
+ *   minimums were recorded, which asked for `profile.cores`.
  * @property {LeaseBinding | null} binding
  *   The command the lease's holder last reported running under it; `null` until the hook
  *   reports one.
@@ -372,8 +375,12 @@
  *   How the lease shares the machine.
  * @property {string} label
  *   What the lease is for, usually the command that will run.
+ * @property {number | null} min_cores
+ *   The fewest cores the lease may start with; `null` for leases from before minimums were
+ *   recorded, which may not shrink.
  * @property {JobProfile} profile
- *   Resources reserved while the lease is active.
+ *   Resources reserved while the lease is active. Its cores are what the lease was granted,
+ *   which is fewer than `asked_cores` when the grant shrank to fit.
  * @property {number} requested_at_ms
  *   When the lease was requested, in milliseconds since the Unix epoch.
  * @property {LeaseState} state
@@ -770,6 +777,7 @@ const TYPES = {
   },
   Lease: {
     fields: {
+      asked_cores: { type: "float", nullable: true, absent: null },
       binding: { type: "LeaseBinding", nullable: true, absent: null },
       class: { type: "JobClass", nullable: true, absent: null },
       cwd: { type: "string", absent: "" },
@@ -782,6 +790,7 @@ const TYPES = {
       isolation: { type: "LeaseIsolation", nullable: true, absent: null },
       kind: { type: "LeaseKind" },
       label: { type: "string" },
+      min_cores: { type: "float", nullable: true, absent: null },
       profile: { type: "JobProfile" },
       requested_at_ms: { type: "int64" },
       state: { type: "LeaseState" },
