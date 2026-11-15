@@ -224,6 +224,19 @@ fn change_state(
     })
 }
 
+/// Lowers the cores a lease reserves to what its grant shrank them to. Its asked cores stay
+/// as they were. Returns `false` when no lease has `id`.
+///
+/// # Errors
+///
+/// Returns an error when the database write fails.
+pub fn shrink_lease(conn: &mut SqliteConnection, id: LeaseId, cores: f32) -> anyhow::Result<bool> {
+    let updated = diesel::update(leases::table.find(id.0))
+        .set(leases::cores.eq(cores))
+        .execute(conn)?;
+    Ok(updated == 1)
+}
+
 /// Moves a lease's heartbeat deadline. Returns `false` when no lease has `id`.
 ///
 /// Heartbeats are not recorded in the audit trail; they would drown out the transitions.

@@ -18,7 +18,7 @@ use allot_shared::{
     config::Config,
     types::{Holder, SessionKey, Snapshot},
 };
-use diesel::sqlite::SqliteConnection;
+use diesel::{Connection, sqlite::SqliteConnection};
 use tokio::sync::{Mutex as AsyncMutex, watch};
 
 use crate::{
@@ -243,13 +243,18 @@ impl Shared {
         let transitions = transitions.to_vec();
         self.with_db(move |conn| {
             for transition in &transitions {
-                repo::transition_lease(
-                    conn,
-                    transition.id,
-                    transition.to,
-                    at_ms,
-                    &transition.reason,
-                )?;
+                conn.transaction(|conn| {
+                    if let Some(cores) = transition.granted_cores {
+                        repo::shrink_lease(conn, transition.id, cores)?;
+                    }
+                    repo::transition_lease(
+                        conn,
+                        transition.id,
+                        transition.to,
+                        at_ms,
+                        &transition.reason,
+                    )
+                })?;
             }
             Ok(())
         })

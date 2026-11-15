@@ -256,10 +256,24 @@ impl Daemon {
     }
 
     async fn acquire_build(&self, holder: Holder, wait_secs: u64) -> AcquireResponse {
-        let profile = ProfileSpec::Class(JobClass::CpuHeavy);
-        let response = self.acquire(holder, profile, wait_secs).await;
+        let response = send(self.build_request(holder, wait_secs)).await;
         assert_eq!(response.status(), StatusCode::OK);
         response.json().await.unwrap()
+    }
+
+    /// A `cpu_heavy` build that cannot start on fewer than its 8 cores, so a second one
+    /// queues behind the first instead of starting shrunk.
+    fn build_request(&self, holder: Holder, wait_secs: u64) -> RequestBuilder {
+        let request = AcquireRequest {
+            holder,
+            profile: ProfileSpec::Class(JobClass::CpuHeavy),
+            kind: LeaseKind::Normal,
+            min_cores: Some(8.0),
+            label: "cargo build".into(),
+            cwd: None,
+            wait_timeout_secs: wait_secs,
+        };
+        self.post("/leases").json(&request)
     }
 
     /// A one-core benchmark, small enough to fit beside any background load.
@@ -674,12 +688,14 @@ async fn test_lease_records_asked_cores_and_resolves_its_minimum() {
         est_secs: 30,
     });
     let heavy = ProfileSpec::Class(JobClass::CpuHeavy);
+    // 13.6 usable cores: the first build takes 8, the second starts on the 5.6 left, and the
+    // custom job, which keeps all its cores, waits with its full request.
     let cases = [
-        (alice(), heavy.clone(), Some(2.5), 8.0, 2.5),
-        (bob(), heavy, None, 8.0, 4.0),
-        (alice(), custom, None, 3.0, 3.0),
+        (alice(), heavy.clone(), Some(2.5), 8.0, 2.5, 8.0),
+        (bob(), heavy, None, 8.0, 4.0, 5.6),
+        (alice(), custom, None, 3.0, 3.0, 3.0),
     ];
-    for (holder, profile, min_cores, asked, min) in cases {
+    for (holder, profile, min_cores, asked, min, granted) in cases {
         let request = AcquireRequest {
             holder,
             profile,
@@ -694,9 +710,34 @@ async fn test_lease_records_asked_cores_and_resolves_its_minimum() {
         let lease = response.json::<AcquireResponse>().await.unwrap().lease;
         assert_eq!(lease.asked_cores, Some(asked), "{lease:?}");
         assert_eq!(lease.min_cores, Some(min), "{lease:?}");
-        // Grants do not shrink yet: the lease reserves what it asked for.
-        assert_eq!(lease.profile.cores, asked);
+        assert!((lease.profile.cores - granted).abs() < 1e-4, "{lease:?}");
     }
+    daemon.stop().await;
+}
+
+#[tokio::test]
+async fn test_shrunk_grant_is_stored_and_explained() {
+    let daemon = Daemon::start().await;
+    daemon.acquire_build(alice(), 0).await;
+    let profile = ProfileSpec::Class(JobClass::CpuHeavy);
+    let response = daemon.acquire(bob(), profile, 0).await;
+    let shrunk: AcquireResponse = response.json().await.unwrap();
+    assert_eq!(
+        shrunk.lease.state,
+        LeaseState::Active,
+        "{:?}",
+        shrunk.verdict
+    );
+    assert_eq!(shrunk.verdict.reasons, ["granted 5.6 of 8.0 cores"]);
+    assert_eq!(shrunk.lease.asked_cores, Some(8.0));
+
+    let stored = daemon.leases("").await;
+    let stored = stored
+        .iter()
+        .find(|lease| lease.id == shrunk.lease.id)
+        .unwrap();
+    assert!((stored.profile.cores - 5.6).abs() < 1e-4, "{stored:?}");
+    assert_eq!(stored.asked_cores, Some(8.0));
     daemon.stop().await;
 }
 
@@ -760,23 +801,28 @@ async fn test_low_impact_job_runs_beside_an_active_benchmark() {
 }
 
 #[tokio::test]
-async fn test_can_fit_reports_the_shortfall() {
+async fn test_can_fit_reports_the_shortfall_or_the_cores_it_would_grant() {
     let daemon = Daemon::start().await;
-    let request = CanFitRequest {
+    let request = |min_cores| CanFitRequest {
         profile: ProfileSpec::Class(JobClass::CpuHeavy),
         kind: LeaseKind::Normal,
-        min_cores: None,
+        min_cores,
         label: None,
         cwd: None,
     };
-    let can_fit = || send(daemon.post("/can-fit").json(&request));
-    let verdict: Verdict = can_fit().await.json().await.unwrap();
+    let can_fit = |min_cores| send(daemon.post("/can-fit").json(&request(min_cores)));
+    let verdict: Verdict = can_fit(Some(8.0)).await.json().await.unwrap();
     assert!(verdict.fits);
+    assert!(verdict.reasons.is_empty(), "{verdict:?}");
 
     daemon.acquire_build(alice(), 0).await;
-    let verdict: Verdict = can_fit().await.json().await.unwrap();
+    let verdict: Verdict = can_fit(Some(8.0)).await.json().await.unwrap();
     assert!(!verdict.fits);
     assert!(verdict.wait_estimate_secs.is_some());
+    // The class's own minimum, 4 cores, fits in the 5.6 left.
+    let verdict: Verdict = can_fit(None).await.json().await.unwrap();
+    assert!(verdict.fits);
+    assert_eq!(verdict.reasons, ["would be granted 5.6 of 8.0 cores"]);
     daemon.stop().await;
 }
 
@@ -906,9 +952,15 @@ async fn test_startup_prunes_leases_past_their_retention() {
 #[tokio::test]
 async fn test_config_change_takes_effect_and_a_rejected_one_is_reported() {
     let daemon = Daemon::start().await;
+    // A build of whatever size the class has now, down to its own minimum.
+    let acquire = || async {
+        let profile = ProfileSpec::Class(JobClass::CpuHeavy);
+        let response = daemon.acquire(alice(), profile, 0).await;
+        response.json::<AcquireResponse>().await.unwrap()
+    };
     daemon.write_config("[classes.cpu_heavy]\ncores = 2\n");
     eventually("the new class profile", || async {
-        let acquired = daemon.acquire_build(alice(), 0).await.lease;
+        let acquired = acquire().await.lease;
         daemon.release(acquired.id, "alice").await;
         acquired.profile.cores == 2.0
     })
@@ -923,7 +975,7 @@ async fn test_config_change_takes_effect_and_a_rejected_one_is_reported() {
             .is_some_and(|error| error.contains("leases.heartbeat_ttl_secs"))
     })
     .await;
-    let kept = daemon.acquire_build(alice(), 0).await.lease;
+    let kept = acquire().await.lease;
     assert_eq!(kept.profile.cores, 2.0);
     daemon.release(kept.id, "alice").await;
 
@@ -932,10 +984,7 @@ async fn test_config_change_takes_effect_and_a_rejected_one_is_reported() {
         daemon.health().await.config_error.is_none()
     })
     .await;
-    assert_eq!(
-        daemon.acquire_build(alice(), 0).await.lease.profile.cores,
-        3.0
-    );
+    assert_eq!(acquire().await.lease.profile.cores, 3.0);
     daemon.stop().await;
 }
 
@@ -1143,8 +1192,7 @@ async fn test_short_burst_in_a_long_lease_raises_the_next_estimate_to_the_burst(
 /// Holds an active lease for alice and starts bob's acquire, which waits up to 60 s behind it.
 async fn open_acquire_wait(daemon: &Daemon) -> JoinHandle<Response> {
     daemon.acquire_build(alice(), 0).await;
-    let profile = ProfileSpec::Class(JobClass::CpuHeavy);
-    let waiting = tokio::spawn(send(daemon.acquire_request(bob(), profile, 60)));
+    let waiting = tokio::spawn(send(daemon.build_request(bob(), 60)));
     tokio::time::sleep(Duration::from_millis(200)).await;
     assert!(!waiting.is_finished());
     waiting

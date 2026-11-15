@@ -153,13 +153,12 @@ async fn can_fit(
     State(state): State<AppState>,
     Json(request): Json<CanFitRequest>,
 ) -> Result<Json<Verdict>, AppError> {
-    // The minimum is checked here and used once grants shrink.
-    let declared = resolve_profile(
+    let resolved = resolve_profile(
         &state.settings().config,
         &request.profile,
         request.min_cores,
-    )?
-    .profile;
+    )?;
+    let declared = resolved.profile;
     let latest = state.latest().ok_or(AppError::Unavailable)?;
     let estimate = match &request.label {
         Some(label) => {
@@ -172,7 +171,13 @@ async fn can_fit(
         },
     };
     let ledger = state.ledger.lock().await;
-    let mut verdict = ledger.can_fit(&estimate.profile, request.kind, &latest.snapshot, now_ms());
+    let mut verdict = ledger.can_fit(
+        &estimate.profile,
+        resolved.min_cores,
+        request.kind,
+        &latest.snapshot,
+        now_ms(),
+    );
     verdict.reasons.splice(0..0, estimate.reasons);
     Ok(Json(verdict))
 }
@@ -411,6 +416,7 @@ async fn release(
                 id,
                 to: LeaseState::Released,
                 reason: "released by holder".to_owned(),
+                granted_cores: None,
             };
             state.persist(&[transition], now).await?;
             state.notify_changes();

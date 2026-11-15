@@ -130,13 +130,48 @@ impl Room {
         }
     }
 
+    /// What `asked` is granted in this room: all of it when it fits, else its cores lowered to
+    /// what is free, rounded down to a tenth but never below `min_cores`. Only cores shrink;
+    /// RAM, GPU and VRAM fit whole or not at all.
+    ///
+    /// # Errors
+    ///
+    /// One message per resource the room lacks even at `min_cores`, as from
+    /// [`Room::shortfalls`].
+    pub fn fit(&self, asked: &JobProfile, min_cores: f32) -> Result<JobProfile, Vec<String>> {
+        let min_cores = min_cores.min(asked.cores);
+        let reasons = self.shortfalls_down_to(asked, min_cores);
+        if !reasons.is_empty() {
+            return Err(reasons);
+        }
+        if !exceeds(f64::from(asked.cores), self.cores) {
+            return Ok(*asked);
+        }
+        // Tenths keep grants readable; the epsilon keeps a free 3.9999 from becoming 3.9.
+        let tenths = ((self.cores + EPSILON) * 10.0).floor() / 10.0;
+        Ok(JobProfile {
+            cores: (tenths as f32).max(min_cores),
+            ..*asked
+        })
+    }
+
     /// One message per resource `profile` needs more of than the room has; empty means it
     /// fits. VRAM is not checked when the adapter does not report its size.
     pub fn shortfalls(&self, profile: &JobProfile) -> Vec<String> {
+        self.shortfalls_down_to(profile, profile.cores)
+    }
+
+    /// [`Room::shortfalls`] for a profile whose cores may shrink to `min_cores`.
+    fn shortfalls_down_to(&self, profile: &JobProfile, min_cores: f32) -> Vec<String> {
         let mut reasons = Vec::new();
-        if exceeds(f64::from(profile.cores), self.cores) {
+        if exceeds(f64::from(min_cores), self.cores) {
+            let at_least = if min_cores < profile.cores {
+                format!(" (at least {min_cores:.1})")
+            } else {
+                String::new()
+            };
             reasons.push(format!(
-                "cores: {:.1} requested, {:.1} free{}",
+                "cores: {:.1} requested{at_least}, {:.1} free{}",
                 profile.cores,
                 self.cores.max(0.0),
                 self.cores_taken()
@@ -246,40 +281,52 @@ impl Running {
     /// An active lease, expected to end at its grant time plus its estimated run time.
     pub fn of(lease: &Lease) -> Self {
         let start = lease.granted_at_ms.unwrap_or(lease.requested_at_ms);
-        Self::starting(start, &lease.profile)
+        Self::starting(start, &lease.profile, lease.asked_profile().cores)
     }
 
-    /// A reservation of `profile` that starts at `start_ms`.
-    pub fn starting(start_ms: i64, profile: &JobProfile) -> Self {
+    /// A reservation of `profile`, granted for a request of `asked_cores`, that starts at
+    /// `start_ms`.
+    pub fn starting(start_ms: i64, profile: &JobProfile, asked_cores: f32) -> Self {
         Self {
-            end_ms: start_ms.saturating_add(est_ms(profile)),
+            end_ms: start_ms.saturating_add(est_ms(profile, asked_cores)),
             profile: *profile,
         }
     }
 }
 
-/// The estimated run time of `profile` in milliseconds.
-pub fn est_ms(profile: &JobProfile) -> i64 {
-    i64::try_from(profile.est_secs.saturating_mul(1_000)).unwrap_or(i64::MAX)
+/// The estimated run time in milliseconds of a reservation of `profile` granted for a request
+/// of `asked_cores`. A grant shrunk below its request is taken to run longer in proportion,
+/// which overstates it for a job that does not scale, so whatever waits on it starts no later
+/// than planned.
+pub fn est_ms(profile: &JobProfile, asked_cores: f32) -> i64 {
+    let full_ms = i64::try_from(profile.est_secs.saturating_mul(1_000)).unwrap_or(i64::MAX);
+    if profile.cores <= 0.0 || asked_cores <= profile.cores {
+        return full_ms;
+    }
+    let stretch = f64::from(asked_cores) / f64::from(profile.cores);
+    // The cast saturates, so a huge stretch stays at i64::MAX.
+    (full_ms as f64 * stretch).ceil() as i64
 }
 
-/// The earliest time `profile` fits as the `running` reservations end in order of their
-/// expected end, with the background unchanged, and the room at that time before `profile`
-/// is taken out. `None` when it does not fit even with every reservation ended.
+/// The earliest time `profile` fits, with its cores shrunk down to `min_cores` if need be, as
+/// the `running` reservations end in order of their expected end, with the background
+/// unchanged, and the room at that time before `profile` is taken out. `None` when it does
+/// not fit even with every reservation ended.
 pub fn first_fit(
     mut room: Room,
     running: &[Running],
     profile: &JobProfile,
+    min_cores: f32,
     now_ms: i64,
 ) -> Option<(i64, Room)> {
-    if room.shortfalls(profile).is_empty() {
+    if room.fit(profile, min_cores).is_ok() {
         return Some((now_ms, room));
     }
     let mut by_end = running.to_vec();
     by_end.sort_by_key(|reservation| reservation.end_ms);
     for reservation in by_end {
         room.release(&reservation.profile);
-        if room.shortfalls(profile).is_empty() {
+        if room.fit(profile, min_cores).is_ok() {
             return Some((reservation.end_ms.max(now_ms), room));
         }
     }
@@ -291,9 +338,11 @@ pub fn wait_estimate_secs(
     room: Room,
     running: &[Running],
     profile: &JobProfile,
+    min_cores: f32,
     now_ms: i64,
 ) -> Option<u64> {
-    first_fit(room, running, profile, now_ms).map(|(at_ms, _)| ms_to_secs_ceil(at_ms - now_ms))
+    first_fit(room, running, profile, min_cores, now_ms)
+        .map(|(at_ms, _)| ms_to_secs_ceil(at_ms - now_ms))
 }
 
 /// Rounds a duration in milliseconds up to whole seconds; negative durations are 0.
@@ -595,9 +644,10 @@ mod tests {
         let running: Vec<Running> = active.iter().map(|lease| Running::of(lease)).collect();
         let room = Room::measure(&snapshot, &active, 10.0);
         // `active_lease` grants at 0 ms; the short lease is expected to end at 300 s.
-        let wait = wait_estimate_secs(room, &running, &profile(8.0, 1_000), 100_500);
+        let wait = wait_estimate_secs(room, &running, &profile(8.0, 1_000), 8.0, 100_500);
         assert_eq!(wait, Some(200));
-        let (at_ms, room_then) = first_fit(room, &running, &profile(8.0, 1_000), 100_500).unwrap();
+        let (at_ms, room_then) =
+            first_fit(room, &running, &profile(8.0, 1_000), 8.0, 100_500).unwrap();
         assert_eq!(at_ms, 300_000);
         assert!((room_then.cores - 8.4).abs() < 1e-3);
     }
@@ -607,11 +657,11 @@ mod tests {
         let snapshot = snapshot(0.0, 0, None);
         let room = Room::measure(&snapshot, &[], 10.0);
         assert_eq!(
-            wait_estimate_secs(room, &[], &profile(64.0, 1_000), 0),
+            wait_estimate_secs(room, &[], &profile(64.0, 1_000), 64.0, 0),
             None
         );
         assert_eq!(
-            wait_estimate_secs(room, &[], &profile(1.0, 1_000), 0),
+            wait_estimate_secs(room, &[], &profile(1.0, 1_000), 1.0, 0),
             Some(0)
         );
     }
@@ -622,5 +672,65 @@ mod tests {
         assert_eq!(ms_to_secs_ceil(0), 0);
         assert_eq!(ms_to_secs_ceil(1), 1);
         assert_eq!(ms_to_secs_ceil(2_000), 2);
+    }
+
+    /// An idle 16-core room with `cores` free.
+    fn room_with(cores: f64) -> Room {
+        Room {
+            cores,
+            ..Room::measure(&snapshot(0.0, 0, None), &[], 10.0)
+        }
+    }
+
+    #[test]
+    fn test_fit_shrinks_cores_to_a_tenth_of_what_is_free() {
+        let room = room_with(3.8137);
+        assert_eq!(room.fit(&profile(4.0, 1_000), 1.0).unwrap().cores, 3.8);
+        assert_eq!(
+            room.fit(&profile(3.0, 1_000), 1.0).unwrap(),
+            profile(3.0, 1_000)
+        );
+        // Rounding never pushes a grant below a minimum that fits.
+        assert_eq!(room.fit(&profile(4.0, 1_000), 3.81).unwrap().cores, 3.81);
+        assert_eq!(
+            room_with(3.999_999_9)
+                .fit(&profile(4.0, 0), 1.0)
+                .unwrap()
+                .cores,
+            4.0
+        );
+    }
+
+    #[test]
+    fn test_fit_below_the_minimum_names_it() {
+        let reasons = room_with(3.8137)
+            .fit(&profile(4.0, 1_000), 3.9)
+            .unwrap_err();
+        assert_eq!(reasons, ["cores: 4.0 requested (at least 3.9), 3.8 free"]);
+        let reasons = room_with(3.8137)
+            .fit(&profile(4.0, 1_000), 4.0)
+            .unwrap_err();
+        assert_eq!(reasons, ["cores: 4.0 requested, 3.8 free"]);
+    }
+
+    #[test]
+    fn test_fit_never_shrinks_memory() {
+        let room = Room {
+            ram_mb: 512.0,
+            ..room_with(2.0)
+        };
+        let reasons = room.fit(&profile(4.0, 1_024), 1.0).unwrap_err();
+        assert_eq!(reasons, ["RAM: 1024 MB requested, 512 MB free"]);
+    }
+
+    #[test]
+    fn test_est_ms_stretches_a_shrunk_grant() {
+        let granted = JobProfile {
+            est_secs: 100,
+            ..profile(4.0, 0)
+        };
+        assert_eq!(est_ms(&granted, 4.0), 100_000);
+        assert_eq!(est_ms(&granted, 8.0), 200_000);
+        assert_eq!(est_ms(&granted, 2.0), 100_000);
     }
 }

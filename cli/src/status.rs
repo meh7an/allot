@@ -307,15 +307,21 @@ fn format_lease(lease: &Lease, now_ms: i64) -> String {
     // A kill or removal is stored as expired; the cause is what the user wants to see.
     let notice = lease.end_cause.filter(|cause| cause.is_notice());
     let shown_state = notice.map_or(lease.state.as_str(), EndCause::as_str);
+    // A grant that shrank to fit shows what it got of what it asked for.
+    let asked_cores = lease.asked_profile().cores;
+    let cores = if profile.cores < asked_cores {
+        format!("{:.1} of {asked_cores:.1}", profile.cores)
+    } else {
+        format!("{:.1}", profile.cores)
+    };
     let mut text = format!(
-        "lease {:<4} {} {:<9} {:.1} cores, {}",
+        "lease {:<4} {} {:<9} {cores} cores, {}",
         lease.id.0,
         paint(
             state_style(lease.state, notice.is_some()),
             &format!("{shown_state:<8}")
         ),
         class,
-        profile.cores,
         gb(profile.ram_mb)
     );
     if profile.gpu_pct > 0.0 || profile.vram_mb > 0 {
@@ -584,6 +590,23 @@ mod tests {
         let text = plain(format_lease(&gpu_lease, 31_000));
         assert!(text.contains(", gpu 80%, vram 4.0 GB for 30s"), "{text}");
         assert!(!plain(format_lease(&lease(2, "s", LeaseState::Active), 0)).contains("gpu"));
+    }
+
+    #[test]
+    fn test_format_lease_shows_a_shrunk_grant_against_its_request() {
+        let mut shrunk = lease(14, "s", LeaseState::Active);
+        shrunk.profile.cores = 5.6;
+        shrunk.asked_cores = Some(8.0);
+        let text = plain(format_lease(&shrunk, 2_000));
+        assert!(
+            text.contains("cpu_heavy 5.6 of 8.0 cores, 4.0 GB"),
+            "{text}"
+        );
+
+        let mut full = lease(15, "s", LeaseState::Active);
+        full.asked_cores = Some(8.0);
+        let text = plain(format_lease(&full, 2_000));
+        assert!(text.contains("cpu_heavy 8.0 cores, 4.0 GB"), "{text}");
     }
 
     #[test]

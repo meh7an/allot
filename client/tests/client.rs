@@ -68,11 +68,12 @@ fn holder() -> Holder {
     }
 }
 
+/// A `cpu_heavy` build that cannot start on fewer than its 8 cores, so a second one queues.
 fn build_request(wait_timeout_secs: u64) -> AcquireRequest {
     AcquireRequest {
         holder: holder(),
         profile: ProfileSpec::Class(JobClass::CpuHeavy),
-        min_cores: None,
+        min_cores: Some(8.0),
         kind: LeaseKind::Normal,
         label: "cargo build".into(),
         cwd: Some(r"E:\work\app".into()),

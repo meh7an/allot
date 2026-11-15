@@ -8,6 +8,12 @@
 //! running leases. A later request may start before it only if it fits now and either ends
 //! by then or leaves the head enough room at that time.
 //!
+//! A normal lease with a minimum shrinks to fit: when its cores are not all free it starts on
+//! what is, down to its `min_cores`, and holds only those. The head waits only until its
+//! minimum fits, and a backfilled lease that would still run then may take only what the head
+//! leaves. Benchmarks and leases from before minimums were recorded never shrink; RAM, GPU and
+//! VRAM never do.
+//!
 //! A benchmark drains the machine and then runs alone, with two exceptions for normal leases.
 //! A low-impact one ([`JobProfile::is_low_impact`]) runs beside a benchmark at any stage and
 //! never counts toward its drain. A quick one ([`JobProfile::is_quick`]) may start while a
@@ -66,7 +72,7 @@ pub trait ProcessLiveness {
 }
 
 /// A state change the caller must persist.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Transition {
     /// The lease that changed.
     pub id: LeaseId,
@@ -74,6 +80,8 @@ pub struct Transition {
     pub to: LeaseState,
     /// Why, for the audit trail.
     pub reason: String,
+    /// The cores a grant shrank the lease to; `None` when it keeps the cores it asked for.
+    pub granted_cores: Option<f32>,
 }
 
 /// Requests the ledger refuses.
@@ -122,7 +130,10 @@ pub struct Ledger {
 
 #[derive(Debug, Clone)]
 struct Candidate<'a> {
+    /// The profile asked for.
     profile: &'a JobProfile,
+    /// The fewest cores it may start with.
+    min_cores: f32,
     kind: LeaseKind,
     label: String,
     requested_at_ms: i64,
@@ -130,7 +141,8 @@ struct Candidate<'a> {
 
 #[derive(Debug, Default)]
 struct Decision {
-    granted: bool,
+    /// What the candidate is granted, its cores possibly shrunk; `None` while it waits.
+    grant: Option<JobProfile>,
     reasons: Vec<String>,
     /// Where a waiting benchmark stands.
     progress: Option<BenchmarkProgress>,
@@ -364,7 +376,7 @@ impl Ledger {
         let drained = self
             .active()
             .iter()
-            .all(|lease| is_low_impact(lease.kind, &lease.profile));
+            .all(|lease| is_low_impact(lease.kind, &lease.asked_profile()));
         self.quiet
             .observe(now_ms, snapshot, drained, self.settings.quiet.window_ms);
         for meter in &mut self.meters {
@@ -373,21 +385,26 @@ impl Ledger {
 
         let candidates = self.queued_candidates();
         let decisions = self.plan(snapshot, now_ms, &candidates);
-        let granted: Vec<(LeaseId, Option<Quiet>)> = self
+        let granted: Vec<(LeaseId, JobProfile, Option<Quiet>)> = self
             .leases
             .iter()
             .filter(|lease| lease.state == LeaseState::Queued)
             .zip(decisions)
-            .filter(|(_, decision)| decision.granted)
-            .map(|(lease, decision)| (lease.id, decision.quiet))
+            .filter_map(|(lease, decision)| {
+                decision
+                    .grant
+                    .map(|profile| (lease.id, profile, decision.quiet))
+            })
             .collect();
 
-        for (id, quiet) in granted {
+        for (id, profile, quiet) in granted {
             let Some(lease) = self.leases.iter_mut().find(|lease| lease.id == id) else {
                 continue;
             };
+            let note = shrink_note(profile.cores, lease.asked_profile().cores);
             lease.state = LeaseState::Active;
             lease.granted_at_ms = Some(now_ms);
+            lease.profile = profile;
             let is_benchmark = lease.kind == LeaseKind::BenchmarkExclusive;
             let quiet_at_start = matches!(quiet, Some(Quiet::Quiet(_)));
             self.meters.push(RunMeter::start(
@@ -399,12 +416,13 @@ impl Ledger {
             let reason = if is_benchmark {
                 grant_reason(&self.settings.quiet, quiet)
             } else {
-                "granted".to_owned()
+                note.clone().unwrap_or_else(|| "granted".to_owned())
             };
             transitions.push(Transition {
                 id,
                 to: LeaseState::Active,
                 reason,
+                granted_cores: note.map(|_| profile.cores),
             });
         }
         self.mark_overlaps();
@@ -423,21 +441,25 @@ impl Ledger {
     }
 
     /// Whether a new request for `profile` would start now if it joined the back of the
-    /// queue, with the reasons when it would not.
+    /// queue, with the reasons when it would not. A request that would start with fewer
+    /// cores than `profile` asks for, down to `min_cores`, says how many.
     ///
     /// The wait estimate assumes active leases end when expected. It is `None` when the wait
     /// depends on the queue rather than on resources, or the request can never fit.
     pub fn can_fit(
         &self,
         profile: &JobProfile,
+        min_cores: f32,
         kind: LeaseKind,
         snapshot: &Snapshot,
         now_ms: i64,
     ) -> Verdict {
+        let min_cores = start_minimum(kind, profile, Some(min_cores));
         let mut candidates = self.queued_candidates();
         let queued_ahead = candidates.len();
         candidates.push(Candidate {
             profile,
+            min_cores,
             kind,
             label: "this request".to_owned(),
             requested_at_ms: now_ms,
@@ -446,27 +468,33 @@ impl Ledger {
             .plan(snapshot, now_ms, &candidates)
             .pop()
             .unwrap_or_default();
-        if decision.granted {
-            return fitting(decision.reasons);
-        }
         let mut reasons = decision.reasons;
+        if let Some(granted) = decision.grant {
+            reasons.extend(
+                shrink_note(granted.cores, profile.cores).map(|note| format!("would be {note}")),
+            );
+            return fitting(reasons);
+        }
         if queued_ahead > 0 {
             reasons.push(format!("{queued_ahead} lease(s) queued ahead"));
         }
         Verdict {
             fits: false,
             reasons,
-            wait_estimate_secs: self.wait_estimate(profile, kind, now_ms, snapshot, now_ms),
+            wait_estimate_secs: self
+                .wait_estimate(profile, min_cores, kind, now_ms, snapshot, now_ms),
             benchmark: decision.progress,
         }
     }
 
     /// Whether the tracked lease `id` would start now, with the reasons it waits. An active
-    /// lease always fits. `None` when the ledger does not track `id`.
+    /// lease always fits, and one whose grant shrank says so. `None` when the ledger does not
+    /// track `id`.
     pub fn verdict_for(&self, id: LeaseId, snapshot: &Snapshot, now_ms: i64) -> Option<Verdict> {
         let lease = self.leases.iter().find(|lease| lease.id == id)?;
         if lease.state != LeaseState::Queued {
-            return Some(fitting(Vec::new()));
+            let note = shrink_note(lease.profile.cores, lease.asked_profile().cores);
+            return Some(fitting(note.into_iter().collect()));
         }
         let position = self
             .leases
@@ -478,15 +506,20 @@ impl Ledger {
             .plan(snapshot, now_ms, &candidates)
             .into_iter()
             .nth(position)?;
-        if decision.granted {
-            return Some(fitting(decision.reasons));
-        }
         let mut reasons = decision.reasons;
+        if let Some(granted) = decision.grant {
+            reasons.extend(
+                shrink_note(granted.cores, lease.profile.cores)
+                    .map(|note| format!("would be {note}")),
+            );
+            return Some(fitting(reasons));
+        }
         if position > 0 {
             reasons.push(format!("{position} lease(s) queued ahead"));
         }
         let wait_estimate_secs = self.wait_estimate(
             &lease.profile,
+            start_minimum(lease.kind, &lease.profile, lease.min_cores),
             lease.kind,
             lease.requested_at_ms,
             snapshot,
@@ -550,6 +583,7 @@ impl Ledger {
                 id: lease.id,
                 to: LeaseState::Expired,
                 reason,
+                granted_cores: None,
             });
             false
         });
@@ -594,6 +628,7 @@ impl Ledger {
             .filter(|lease| lease.state == LeaseState::Queued)
             .map(|lease| Candidate {
                 profile: &lease.profile,
+                min_cores: start_minimum(lease.kind, &lease.profile, lease.min_cores),
                 kind: lease.kind,
                 label: format!("lease {}", lease.id.0),
                 requested_at_ms: lease.requested_at_ms,
@@ -614,11 +649,11 @@ impl Ledger {
             running: active.iter().map(|lease| Running::of(lease)).collect(),
             draining: active
                 .iter()
-                .filter(|lease| !is_low_impact(lease.kind, &lease.profile))
+                .filter(|lease| !is_low_impact(lease.kind, &lease.asked_profile()))
                 .count(),
             long: active
                 .iter()
-                .filter(|lease| is_long(lease.kind, &lease.profile))
+                .filter(|lease| is_long(lease.kind, &lease.asked_profile()))
                 .count(),
             exclusive: active
                 .iter()
@@ -677,28 +712,39 @@ impl Ledger {
                 quiet = Some(status);
             }
         }
-        reasons.extend(pass.room.shortfalls(candidate.profile));
+        let fit = match pass.room.fit(candidate.profile, candidate.min_cores) {
+            Ok(granted) if reasons.is_empty() => Some(granted),
+            Ok(_) => None,
+            Err(shortfalls) => {
+                reasons.extend(shortfalls);
+                None
+            }
+        };
 
-        if reasons.is_empty() {
+        if let Some(mut granted) = fit {
             if let Hold::Shadow {
                 label,
                 at_ms,
                 spare,
             } = &mut pass.hold
             {
-                let ends_ms = now_ms.saturating_add(admission::est_ms(candidate.profile));
+                let asked_cores = candidate.profile.cores;
+                let ends_ms = now_ms.saturating_add(admission::est_ms(&granted, asked_cores));
+                // A lease still running when the head starts may only take what the head
+                // leaves; shrinking further only makes it end later, so this stays true.
                 if ends_ms > *at_ms {
-                    if !spare.shortfalls(candidate.profile).is_empty() {
+                    let Ok(beside) = spare.fit(candidate.profile, candidate.min_cores) else {
                         return blocked(vec![format!(
                             "starting now would delay {label}, queued ahead"
                         )]);
-                    }
-                    spare.reserve(candidate.profile);
+                    };
+                    granted.cores = granted.cores.min(beside.cores);
+                    spare.reserve(&granted);
                 }
             }
-            pass.room.reserve(candidate.profile);
+            pass.room.reserve(&granted);
             pass.running
-                .push(Running::starting(now_ms, candidate.profile));
+                .push(Running::starting(now_ms, &granted, candidate.profile.cores));
             if !low_impact {
                 pass.draining += 1;
             }
@@ -709,7 +755,7 @@ impl Ledger {
                 pass.exclusive = Some(candidate.label.clone());
             }
             return Decision {
-                granted: true,
+                grant: Some(granted),
                 reasons,
                 progress: None,
                 quiet,
@@ -720,9 +766,18 @@ impl Ledger {
             pass.hold = if is_benchmark {
                 Hold::Exclusive(candidate.label.clone())
             } else {
-                match admission::first_fit(pass.room, &pass.running, candidate.profile, now_ms) {
+                match admission::first_fit(
+                    pass.room,
+                    &pass.running,
+                    candidate.profile,
+                    candidate.min_cores,
+                    now_ms,
+                ) {
                     Some((at_ms, mut spare)) => {
-                        spare.reserve(candidate.profile);
+                        // The head starts as soon as its minimum fits, with what is free then.
+                        if let Ok(granted) = spare.fit(candidate.profile, candidate.min_cores) {
+                            spare.reserve(&granted);
+                        }
                         Hold::Shadow {
                             label: candidate.label.clone(),
                             at_ms,
@@ -748,6 +803,7 @@ impl Ledger {
     fn wait_estimate(
         &self,
         profile: &JobProfile,
+        min_cores: f32,
         kind: LeaseKind,
         requested_at_ms: i64,
         snapshot: &Snapshot,
@@ -774,7 +830,8 @@ impl Ledger {
             return Some(admission::ms_to_secs_ceil(wait_ms)).filter(|&secs| secs > 0);
         }
         let room = Room::measure(snapshot, &active, self.settings.headroom_pct);
-        admission::wait_estimate_secs(room, &running, profile, now_ms).filter(|&secs| secs > 0)
+        admission::wait_estimate_secs(room, &running, profile, min_cores, now_ms)
+            .filter(|&secs| secs > 0)
     }
 }
 
@@ -846,6 +903,22 @@ fn grant_reason(limits: &QuietLimits, quiet: Option<Quiet>) -> String {
         ),
         _ => "granted".to_owned(),
     }
+}
+
+/// The fewest cores a request of `kind` for `profile` may start with: all of them for a
+/// benchmark, which keeps its full request so measurements stay comparable, and for a lease
+/// from before minimums were recorded, which has no `min_cores`.
+fn start_minimum(kind: LeaseKind, profile: &JobProfile, min_cores: Option<f32>) -> f32 {
+    match (kind, min_cores) {
+        (LeaseKind::Normal, Some(min_cores)) => min_cores.min(profile.cores),
+        _ => profile.cores,
+    }
+}
+
+/// "granted 3.8 of 4.0 cores" when a grant of `granted` cores shrank a request for `asked`,
+/// or `None` when it did not.
+fn shrink_note(granted: f32, asked: f32) -> Option<String> {
+    (granted < asked).then(|| format!("granted {granted:.1} of {asked:.1} cores"))
 }
 
 /// Whether a lease of `kind` and `profile` runs beside a benchmark.
@@ -958,7 +1031,7 @@ mod tests {
 
     fn can_fit_benchmark(ledger: &Ledger, now_ms: i64) -> Verdict {
         let kind = LeaseKind::BenchmarkExclusive;
-        ledger.can_fit(&profile(1.0, 1_000), kind, &idle(), now_ms)
+        ledger.can_fit(&profile(1.0, 1_000), 1.0, kind, &idle(), now_ms)
     }
 
     fn granted(transitions: &[Transition]) -> Vec<i64> {
@@ -1051,7 +1124,7 @@ mod tests {
         enqueue(&mut ledger, 5, 2.0, 600, 0);
         assert_eq!(granted(&ledger.tick(1_000, &idle(), &alive())), [3, 4]);
 
-        let verdict = ledger.can_fit(&timed(2.0, 600), LeaseKind::Normal, &idle(), 1_000);
+        let verdict = ledger.can_fit(&timed(2.0, 600), 2.0, LeaseKind::Normal, &idle(), 1_000);
         assert!(!verdict.fits);
         assert!(has_reason(&verdict, "delay lease 2"), "{verdict:?}");
     }
@@ -1393,7 +1466,13 @@ mod tests {
         enqueue(&mut ledger, 3, 1.0, 30, 0);
 
         assert!(granted(&ledger.tick(20_000, &idle(), &alive())).is_empty());
-        let waiting = ledger.can_fit(&profile(1.0, 1_000), LeaseKind::Normal, &idle(), 20_000);
+        let waiting = ledger.can_fit(
+            &profile(1.0, 1_000),
+            1.0,
+            LeaseKind::Normal,
+            &idle(),
+            20_000,
+        );
         assert!(
             has_reason(&waiting, "waiting for the machine to drain"),
             "{waiting:?}"
@@ -1409,7 +1488,13 @@ mod tests {
         assert!(tick_seconds(&mut ledger, 30, 39, 1.0).is_empty());
         assert_eq!(tick_seconds(&mut ledger, 40, 40, 1.0), [2]);
 
-        let held = ledger.can_fit(&profile(1.0, 1_000), LeaseKind::Normal, &idle(), 41_000);
+        let held = ledger.can_fit(
+            &profile(1.0, 1_000),
+            1.0,
+            LeaseKind::Normal,
+            &idle(),
+            41_000,
+        );
         assert!(!held.fits);
         assert!(
             has_reason(&held, "benchmark lease 2 holds the machine"),
@@ -1501,7 +1586,13 @@ mod tests {
         ledger.tick(0, &idle(), &alive());
         enqueue(&mut ledger, 2, 12.0, 300, 0);
 
-        let verdict = ledger.can_fit(&profile(8.0, 1_000), LeaseKind::Normal, &idle(), 100_000);
+        let verdict = ledger.can_fit(
+            &profile(8.0, 1_000),
+            8.0,
+            LeaseKind::Normal,
+            &idle(),
+            100_000,
+        );
         assert!(!verdict.fits);
         assert!(has_reason(&verdict, "cores:"), "{verdict:?}");
         assert!(
@@ -1510,14 +1601,14 @@ mod tests {
         );
         assert_eq!(verdict.wait_estimate_secs, Some(200));
 
-        let small = ledger.can_fit(&timed(1.0, 30), LeaseKind::Normal, &idle(), 100_000);
+        let small = ledger.can_fit(&timed(1.0, 30), 1.0, LeaseKind::Normal, &idle(), 100_000);
         assert_eq!((small.fits, small.wait_estimate_secs), (true, None));
     }
 
     #[test]
     fn test_can_fit_never_fitting_request_has_no_estimate() {
         let ledger = Ledger::new(settings());
-        let verdict = ledger.can_fit(&profile(64.0, 1_000), LeaseKind::Normal, &idle(), 0);
+        let verdict = ledger.can_fit(&profile(64.0, 1_000), 64.0, LeaseKind::Normal, &idle(), 0);
         assert!(!verdict.fits);
         assert!(has_reason(&verdict, REASON_BEYOND_LEASES), "{verdict:?}");
         assert_eq!(verdict.wait_estimate_secs, None);
@@ -1530,12 +1621,12 @@ mod tests {
         // A Mac at normal pressure with a model wired: only 12000 of the 31000 MB used is held.
         machine.memory.used_mb = 31_000;
         machine.memory.reclaimable_mb = 19_000;
-        let verdict = ledger.can_fit(&profile(4.0, 4_096), LeaseKind::Normal, &machine, 0);
+        let verdict = ledger.can_fit(&profile(4.0, 4_096), 4.0, LeaseKind::Normal, &machine, 0);
         assert!(verdict.fits, "{verdict:?}");
 
         // Under pressure the same machine reclaims nothing, and no lease can make room.
         machine.memory.reclaimable_mb = 0;
-        let verdict = ledger.can_fit(&profile(4.0, 4_096), LeaseKind::Normal, &machine, 0);
+        let verdict = ledger.can_fit(&profile(4.0, 4_096), 4.0, LeaseKind::Normal, &machine, 0);
         assert!(!verdict.fits);
         assert!(has_reason(&verdict, REASON_BEYOND_LEASES), "{verdict:?}");
         assert_eq!(verdict.wait_estimate_secs, None);
@@ -1554,6 +1645,7 @@ mod tests {
             id: LeaseId(id),
             to: LeaseState::Expired,
             reason: "no heartbeat for 60s".into(),
+            granted_cores: None,
         });
         assert_eq!(transitions, expired);
         assert!(ledger.leases().is_empty());
@@ -1585,6 +1677,7 @@ mod tests {
             id: LeaseId(1),
             to: LeaseState::Expired,
             reason: "holder process exited".into(),
+            granted_cores: None,
         };
         assert_eq!(transitions[0], reaped);
         assert_eq!(granted(&transitions), [2]);
@@ -1727,5 +1820,225 @@ mod tests {
         assert_eq!(settings.quiet.window_ms, 10_000);
         assert_eq!(settings.quiet.max_wait_ms, 60_000);
         assert_eq!(settings.headroom_pct, 15.0);
+    }
+
+    /// A normal lease asking for `profile` that may start with as few as `min_cores`.
+    fn shrinkable(id: i64, profile: JobProfile, min_cores: f32, now_ms: i64) -> Lease {
+        Lease {
+            asked_cores: Some(profile.cores),
+            min_cores: Some(min_cores),
+            ..queued_lease(id, "s", profile, LeaseKind::Normal, now_ms)
+        }
+    }
+
+    fn approx(actual: f32, expected: f32) -> bool {
+        (actual - expected).abs() < 1e-4
+    }
+
+    fn cores_of(ledger: &Ledger, id: i64) -> f32 {
+        let lease = ledger
+            .leases()
+            .iter()
+            .find(|lease| lease.id.0 == id)
+            .unwrap();
+        lease.profile.cores
+    }
+
+    #[test]
+    fn test_head_shrinks_to_the_free_cores() {
+        let mut ledger = Ledger::new(settings());
+        enqueue(&mut ledger, 1, 8.0, 300, 0);
+        ledger.tick(0, &idle(), &alive());
+        // 14.4 usable cores minus the 8.0 lease 1 holds.
+        ledger
+            .enqueue(shrinkable(2, timed(8.0, 300), 4.0, 0))
+            .unwrap();
+
+        let transitions = ledger.tick(1_000, &idle(), &alive());
+        assert_eq!(granted(&transitions), [2]);
+        assert_eq!(transitions[0].reason, "granted 6.4 of 8.0 cores");
+        assert!(approx(transitions[0].granted_cores.unwrap(), 6.4));
+        assert!(approx(cores_of(&ledger, 2), 6.4));
+        let lease = &ledger.leases()[1];
+        assert_eq!(lease.asked_cores, Some(8.0));
+        assert_eq!(lease.asked_profile().cores, 8.0);
+
+        let verdict = ledger.verdict_for(LeaseId(2), &idle(), 1_000).unwrap();
+        assert!(verdict.fits);
+        assert_eq!(verdict.reasons, ["granted 6.4 of 8.0 cores"]);
+    }
+
+    #[test]
+    fn test_full_grant_is_not_marked_as_shrunk() {
+        let mut ledger = Ledger::new(settings());
+        ledger
+            .enqueue(shrinkable(1, timed(8.0, 300), 4.0, 0))
+            .unwrap();
+        let transitions = ledger.tick(0, &idle(), &alive());
+        assert_eq!(transitions[0].reason, "granted");
+        assert_eq!(transitions[0].granted_cores, None);
+        assert_eq!(cores_of(&ledger, 1), 8.0);
+    }
+
+    #[test]
+    fn test_request_below_its_minimum_waits() {
+        let mut ledger = Ledger::new(settings());
+        enqueue(&mut ledger, 1, 12.0, 300, 0);
+        ledger.tick(0, &idle(), &alive());
+        ledger
+            .enqueue(shrinkable(2, timed(8.0, 300), 4.0, 0))
+            .unwrap();
+
+        assert!(granted(&ledger.tick(1_000, &idle(), &alive())).is_empty());
+        let verdict = ledger.verdict_for(LeaseId(2), &idle(), 1_000).unwrap();
+        assert!(!verdict.fits);
+        assert!(
+            has_reason(&verdict, "cores: 8.0 requested (at least 4.0), 2.4 free"),
+            "{verdict:?}"
+        );
+        assert_eq!(verdict.wait_estimate_secs, Some(299));
+    }
+
+    #[test]
+    fn test_lease_without_a_minimum_never_shrinks() {
+        let mut ledger = Ledger::new(settings());
+        enqueue(&mut ledger, 1, 8.0, 300, 0);
+        enqueue(&mut ledger, 2, 8.0, 300, 0);
+        assert_eq!(granted(&ledger.tick(0, &idle(), &alive())), [1]);
+        assert_eq!(states(&ledger)[1], (2, LeaseState::Queued));
+    }
+
+    #[test]
+    fn test_benchmark_never_shrinks() {
+        let ledger = Ledger::new(settings());
+        // Half the machine is busy outside leases: 6.4 of 14.4 cores are free.
+        let kind = LeaseKind::BenchmarkExclusive;
+        let verdict = ledger.can_fit(&profile(8.0, 1_000), 4.0, kind, &busy(), 0);
+        assert!(!verdict.fits);
+        assert!(
+            has_reason(&verdict, "cores: 8.0 requested, 6.4 free"),
+            "{verdict:?}"
+        );
+
+        let mut ledger = Ledger::new(settings());
+        let mut bench = shrinkable(1, profile(8.0, 1_000), 4.0, 0);
+        bench.kind = kind;
+        ledger.enqueue(bench).unwrap();
+        let verdict = ledger.verdict_for(LeaseId(1), &busy(), 0).unwrap();
+        assert!(
+            has_reason(&verdict, "cores: 8.0 requested, 6.4 free"),
+            "{verdict:?}"
+        );
+    }
+
+    #[test]
+    fn test_release_of_a_shrunk_lease_frees_what_it_held() {
+        let mut ledger = Ledger::new(settings());
+        enqueue(&mut ledger, 1, 8.0, 300, 0);
+        ledger
+            .enqueue(shrinkable(2, timed(8.0, 300), 4.0, 0))
+            .unwrap();
+        assert_eq!(granted(&ledger.tick(0, &idle(), &alive())), [1, 2]);
+        enqueue(&mut ledger, 3, 6.4, 300, 0);
+        assert!(granted(&ledger.tick(1_000, &idle(), &alive())).is_empty());
+
+        let released = ledger.release(LeaseId(2), &session("s"), 2_000).unwrap();
+        assert!(approx(released.lease.profile.cores, 6.4));
+        assert_eq!(released.lease.asked_cores, Some(8.0));
+        assert_eq!(granted(&ledger.tick(3_000, &idle(), &alive())), [3]);
+    }
+
+    #[test]
+    fn test_oldest_queued_lease_shrinks_first() {
+        let mut ledger = Ledger::new(settings());
+        enqueue(&mut ledger, 1, 8.0, 300, 0);
+        ledger.tick(0, &idle(), &alive());
+        ledger
+            .enqueue(shrinkable(2, timed(8.0, 300), 4.0, 0))
+            .unwrap();
+        ledger
+            .enqueue(shrinkable(3, timed(8.0, 300), 1.0, 0))
+            .unwrap();
+        // Lease 2 takes all 6.4 free cores; lease 3 would have started on fewer.
+        assert_eq!(granted(&ledger.tick(1_000, &idle(), &alive())), [2]);
+        assert!(approx(cores_of(&ledger, 2), 6.4));
+    }
+
+    #[test]
+    fn test_backfill_shrinks_only_into_room_the_head_leaves() {
+        let mut ledger = Ledger::new(settings());
+        enqueue(&mut ledger, 1, 8.0, 300, 0);
+        ledger.tick(0, &idle(), &alive());
+        // The head needs 10 cores, so it starts once lease 1 ends at 300 s, takes 12 of 14.4
+        // and leaves 2.4 for jobs still running then.
+        ledger
+            .enqueue(shrinkable(2, timed(12.0, 300), 10.0, 0))
+            .unwrap();
+        ledger
+            .enqueue(shrinkable(3, timed(6.0, 600), 1.0, 0))
+            .unwrap();
+        ledger
+            .enqueue(shrinkable(4, timed(2.0, 600), 1.0, 0))
+            .unwrap();
+
+        assert_eq!(granted(&ledger.tick(1_000, &idle(), &alive())), [3]);
+        assert!(approx(cores_of(&ledger, 3), 2.4));
+        let verdict = ledger.verdict_for(LeaseId(4), &idle(), 1_000).unwrap();
+        assert!(has_reason(&verdict, "delay lease 2"), "{verdict:?}");
+    }
+
+    #[test]
+    fn test_shrunk_backfill_is_expected_to_run_longer() {
+        let start = |est_secs: u64| {
+            let mut ledger = Ledger::new(settings());
+            enqueue(&mut ledger, 1, 8.0, 300, 0);
+            ledger.tick(0, &idle(), &alive());
+            // The head starts at 300 s with 14 of 14.4 cores, leaving 0.4.
+            ledger
+                .enqueue(shrinkable(2, timed(14.0, 300), 14.0, 0))
+                .unwrap();
+            ledger
+                .enqueue(shrinkable(3, timed(8.0, est_secs), 1.0, 0))
+                .unwrap();
+            granted(&ledger.tick(1_000, &idle(), &alive()))
+        };
+        // On 6.4 of 8 cores, 200 s become 250 s and end before the head starts; 250 s
+        // become 312.5 s and would delay it.
+        assert_eq!(start(200), [3]);
+        assert!(start(250).is_empty());
+    }
+
+    #[test]
+    fn test_can_fit_reports_the_cores_it_would_grant() {
+        let mut ledger = Ledger::new(settings());
+        enqueue(&mut ledger, 1, 8.0, 300, 0);
+        ledger.tick(0, &idle(), &alive());
+
+        let verdict = ledger.can_fit(&profile(8.0, 1_000), 4.0, LeaseKind::Normal, &idle(), 0);
+        assert!(verdict.fits);
+        assert_eq!(verdict.reasons, ["would be granted 6.4 of 8.0 cores"]);
+        let verdict = ledger.can_fit(&profile(8.0, 1_000), 8.0, LeaseKind::Normal, &idle(), 0);
+        assert!(!verdict.fits);
+    }
+
+    #[test]
+    fn test_shrunk_lease_counts_as_what_it_asked_for_beside_a_benchmark() {
+        let mut ledger = Ledger::new(settings());
+        let big = queued_lease(1, "big", profile(14.2, 0), LeaseKind::Normal, 0);
+        ledger.enqueue(big).unwrap();
+        ledger.tick(0, &idle(), &alive());
+        // Shrunk to 0.2 cores it looks low-impact, but it asked for a full core.
+        ledger
+            .enqueue(shrinkable(2, profile(1.0, 0), 0.1, 0))
+            .unwrap();
+        assert_eq!(granted(&ledger.tick(1_000, &idle(), &alive())), [2]);
+        assert!(approx(cores_of(&ledger, 2), 0.2));
+        ledger.release(LeaseId(1), &session("big"), 2_000).unwrap();
+
+        let verdict = can_fit_benchmark(&ledger, 3_000);
+        assert!(
+            has_reason(&verdict, "1 other lease(s) still active"),
+            "{verdict:?}"
+        );
     }
 }

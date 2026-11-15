@@ -509,6 +509,17 @@ pub struct Lease {
     pub isolation: Option<LeaseIsolation>,
 }
 
+impl Lease {
+    /// The profile the lease asked for: its reservation with the cores it asked for, which
+    /// differ only when the grant shrank it to fit.
+    pub fn asked_profile(&self) -> JobProfile {
+        JobProfile {
+            cores: self.asked_cores.unwrap_or(self.profile.cores),
+            ..self.profile
+        }
+    }
+}
+
 /// How a lease's command is accounted for and stopped.
 #[cfg_attr(any(feature = "schema", test), derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
