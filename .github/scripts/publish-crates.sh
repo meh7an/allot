@@ -43,15 +43,16 @@ published() {
     esac
 }
 
-# Rewrites the workspace version and every path dependency's version requirement from $1 to
-# $2, keeping copies to restore, then brings the lockfile's workspace entries in line.
+# Rewrites the workspace version from $1 to $2 and pins every path dependency to exactly $2,
+# keeping copies to restore, then brings the lockfile's workspace entries in line. The pin
+# matters: `^0.3.0-ci` also matches the published 0.3.0, which cargo would pick instead.
 stand_in() {
     local from=${1//./\\.} to=$2 file
     while read -r file; do
         mkdir -p "$work/backup/$(dirname "$file")"
         cp "$file" "$work/backup/$file"
         sed -e "s/^version = \"$from\"$/version = \"$to\"/" \
-            -e "s/version = \"$from\", path/version = \"$to\", path/" \
+            -e "s/version = \"$from\", path/version = \"=$to\", path/" \
             "$file" >"$work/manifest"
         cp "$work/manifest" "$file"
     done < <(git ls-files -- Cargo.toml '*/Cargo.toml')
