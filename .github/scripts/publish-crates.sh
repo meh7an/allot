@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 # Publishes every publishable workspace crate at the checked-out version, skipping any that
-# crates.io already has, so a failed run can be run again. A dry run skips none. One `cargo publish` takes them all,
+# crates.io already has, so a failed run can be run again. One `cargo publish` takes them all,
 # since a crate cannot be packaged alone while a sibling it needs is not on crates.io yet.
 #   publish-crates.sh [--dry-run]
+# A dry run packages every crate. When crates.io already has the version, cargo would build
+# against those published crates instead of these sources, so the dry run packages under a
+# throwaway pre-release of it (`<version>-ci`) and puts the manifests and lockfile back after.
 set -euo pipefail
 
 dry_run=
@@ -16,7 +19,13 @@ case ${1:-} in
 esac
 
 work=$(mktemp -d)
-trap 'rm -rf "$work"' EXIT
+restore() {
+    if [ -d "$work/backup" ]; then
+        cp -R "$work/backup/." .
+    fi
+    rm -rf "$work"
+}
+trap restore EXIT
 
 # True when crates.io's index lists this version; a 404 means the crate does not exist yet.
 published() {
@@ -34,25 +43,50 @@ published() {
     esac
 }
 
+# Rewrites the workspace version and every path dependency's version requirement from $1 to
+# $2, keeping copies to restore, then brings the lockfile's workspace entries in line.
+stand_in() {
+    local from=${1//./\\.} to=$2 file
+    while read -r file; do
+        mkdir -p "$work/backup/$(dirname "$file")"
+        cp "$file" "$work/backup/$file"
+        sed -e "s/^version = \"$from\"$/version = \"$to\"/" \
+            -e "s/version = \"$from\", path/version = \"$to\", path/" \
+            "$file" >"$work/manifest"
+        cp "$work/manifest" "$file"
+    done < <(git ls-files -- Cargo.toml '*/Cargo.toml')
+    cp Cargo.lock "$work/backup/Cargo.lock"
+    cargo update --workspace --quiet
+}
+
 # Crates with `publish = false` report an empty list; the others report null.
 packages=$(cargo metadata --no-deps --format-version 1 \
     | jq -r '.packages[] | select(.publish != []) | "\(.name) \(.version)"' | tr -d '\r')
 
-# A dry run packages every crate, published or not, so each one builds against its siblings'
-# sources on main rather than against an older release of them on crates.io.
 arguments=()
+release=
+any_published=
 while read -r name version; do
     [ -n "$name" ] || continue
-    if [ -z "$dry_run" ] && published "$name" "$version"; then
-        echo "::notice::crates.io already has $name $version"
-    else
-        arguments+=(--package "$name")
+    release=$version
+    if published "$name" "$version"; then
+        any_published=1
+        if [ -z "$dry_run" ]; then
+            echo "::notice::crates.io already has $name $version"
+            continue
+        fi
     fi
+    arguments+=(--package "$name")
 done <<<"$packages"
 
 if [ "${#arguments[@]}" -eq 0 ]; then
     echo "::notice::No crate to publish"
     exit 0
+fi
+
+if [ -n "$dry_run" ] && [ -n "$any_published" ]; then
+    echo "::notice::crates.io already has $release; packaging these sources as $release-ci"
+    stand_in "$release" "$release-ci"
 fi
 
 cargo publish --locked ${dry_run:+--dry-run} "${arguments[@]}"
