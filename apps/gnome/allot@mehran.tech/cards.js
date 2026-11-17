@@ -531,7 +531,19 @@ export class RecentView {
         row.add_child(label("allot-recent-id", line.shortId));
       }
       row.add_child(label("allot-recent-meta", line.meta));
-      this.#card.add_child(row);
+      if (line.stats === "") {
+        this.#card.add_child(row);
+        continue;
+      }
+      // A job with statistics reads as two lines: the run, then its job's median and max.
+      row.add_style_class_name("allot-recent-row-stats");
+      const both = new St.BoxLayout({
+        style_class: "allot-recent-line",
+        orientation: Clutter.Orientation.VERTICAL,
+      });
+      both.add_child(row);
+      both.add_child(label("allot-recent-stats", line.stats));
+      this.#card.add_child(both);
     }
   }
 }

@@ -533,15 +533,20 @@
       <DataTemplate x:Key="RecentLineTemplate" x:DataType="vm:RecentLine">
         <Grid
           MinHeight="36"
-          Padding="12,0,12,0"
+          Padding="12,10,12,10"
           BorderBrush="{ThemeResource AllotSeparatorBrush}"
           BorderThickness="{x:Bind local:FlyoutShell.TopLine(First)}"
-          ColumnSpacing="8">
+          ColumnSpacing="8"
+          RowSpacing="2">
           <Grid.ColumnDefinitions>
             <ColumnDefinition Width="*" />
             <ColumnDefinition Width="Auto" />
             <ColumnDefinition Width="Auto" />
           </Grid.ColumnDefinitions>
+          <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+          </Grid.RowDefinitions>
           <TextBlock
             VerticalAlignment="Center"
             Style="{StaticResource AllotCommandTextStyle}"
@@ -558,6 +563,14 @@
             Style="{StaticResource AllotBodyTextStyle}"
             Foreground="{ThemeResource AllotTextSecondaryBrush}"
             Text="{x:Bind Meta}" />
+          <TextBlock
+            Grid.Row="1"
+            Grid.ColumnSpan="3"
+            Style="{StaticResource AllotCaptionTextStyle}"
+            Text="{x:Bind Stats}"
+            TextTrimming="CharacterEllipsis"
+            ToolTipService.ToolTip="{x:Bind local:FlyoutShell.Tip(Stats)}"
+            Visibility="{x:Bind local:FlyoutShell.ShowsText(Stats)}" />
         </Grid>
       </DataTemplate>
 

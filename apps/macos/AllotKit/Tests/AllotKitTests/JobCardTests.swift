@@ -53,6 +53,20 @@ private func queued(
         #expect(card.exePath == nil)
     }
 
+    @Test func aShrunkGrantShowsTheAskedCores() throws {
+        let card = try cargo { object in
+            Edit.job(&object, "active", 0) { $0["process"] = NSNull() }
+            Edit.lease(&object, "active", 0) { lease in
+                var profile = lease["profile"] as? Edit.Object ?? [:]
+                profile["cores"] = 5.6
+                lease["profile"] = profile
+                lease["asked_cores"] = 8
+            }
+        }
+
+        #expect(card.detail == "5.6 of 8 cores · 4 GB")
+    }
+
     @Test func timesTickWithTheClock() throws {
         let state = try Handoff.state(run: ["cargo"], wait: ["npm"])
 
@@ -200,5 +214,27 @@ private func queued(
         let snapshot = PanelSnapshot.from(status: .running, state: state)
 
         #expect(snapshot.recent[0].shortId == "")
+    }
+
+    @Test func recentRunsShowTheirJobsStatisticsFromTwoRuns() throws {
+        let used: Edit.Object = [
+            "cores": 2.1, "ram_mb": 1229, "gpu_pct": 0, "vram_mb": 0, "est_secs": 190,
+        ]
+        func stats(_ runs: Int) -> Edit.Object {
+            ["runs": runs, "median": used, "p90": used, "max": used]
+        }
+        let state = try Edit.state(try Handoff.state(recent: true)) { object in
+            var runs = object["recent"] as? [Edit.Object] ?? []
+            runs[0]["stats"] = stats(2)
+            runs[1]["stats"] = stats(1)
+            object["recent"] = runs
+        }
+
+        let snapshot = PanelSnapshot.from(status: .running, state: state)
+
+        #expect(
+            snapshot.recent[0].stats
+                == "median 2.1 cores · 1.2 GB · 3:10   max 2.1 cores · 1.2 GB · 3:10")
+        #expect(snapshot.recent[1].stats == "")
     }
 }

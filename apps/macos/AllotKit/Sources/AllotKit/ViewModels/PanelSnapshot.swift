@@ -107,6 +107,10 @@ public struct RecentLine: Sendable, Equatable, Identifiable {
 
     /// Run time and age, for example `4:52 · 4 min ago`.
     public let meta: String
+
+    /// Median and max of the job's runs (`Format.stats(_:)`), or empty below
+    /// `PanelSnapshot.statsMinRuns` runs.
+    public let stats: String
 }
 
 /// What the first-run card needs from outside allotd's state.
@@ -149,6 +153,10 @@ public struct WelcomeCard: Sendable, Equatable {
 /// Everything the panel header and job list show for one poll, built by a pure function so
 /// that every string is testable. The Windows tray app's `FlyoutSnapshot`.
 public struct PanelSnapshot: Sendable, Equatable {
+    /// The fewest runs whose statistics a Recently finished row shows: the median and max of a
+    /// single run only repeat that run.
+    public static let statsMinRuns: UInt32 = 2
+
     // How long a benchmark that finished on its own keeps its card.
     private static let finishedHoldMs: Int64 = 60_000
 
@@ -405,7 +413,9 @@ public struct PanelSnapshot: Sendable, Equatable {
                 id: index,
                 command: run.command,
                 shortId: run.session.map(Format.shortId) ?? "",
-                meta: "\(ran) · \(ago)")
+                meta: "\(ran) · \(ago)",
+                stats: run.stats.flatMap { $0.runs >= statsMinRuns ? Format.stats($0) : nil }
+                    ?? "")
         }
     }
 

@@ -245,6 +245,11 @@ public sealed partial class FlyoutShell : UserControl, IFlyoutContent
     public static object? Tip(string text) => string.IsNullOrEmpty(text) ? null : text;
 
     /// <summary>
+    /// A line that only shows when it has text, such as a Recently finished row's statistics.
+    /// </summary>
+    public static Visibility ShowsText(string text) => Hides(string.IsNullOrEmpty(text));
+
+    /// <summary>
     /// The hairline above every Recently finished row but the first.
     /// </summary>
     public static Thickness TopLine(bool first) => new(0, first ? 0 : 1, 0, 0);

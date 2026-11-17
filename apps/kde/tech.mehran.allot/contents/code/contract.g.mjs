@@ -542,6 +542,9 @@
  *   Session that ran it; `null` for runs recorded before sessions were.
  * @property {number} started_at_ms
  *   Start of the run, in milliseconds since the Unix epoch.
+ * @property {RunStats | null} stats
+ *   Median, p90 and max of the job's runs, as `allot history` shows them; `null` when no run
+ *   of the job counts, and from older daemons.
  */
 
 /**
@@ -556,6 +559,23 @@
  *   Resident memory; on macOS the physical footprint, as Activity Monitor shows it.
  * @property {number} vram_mb
  *   Dedicated video memory.
+ */
+
+/**
+ * Median, p90 and max of what a job's runs used: the newest runs that neither overlapped
+ * another lease of their session nor were killed, at most as many as an estimate reads.
+ * Cores and GPU load are each run's average while its session was busy, RAM and VRAM its
+ * peak, and `est_secs` its run time.
+ *
+ * @typedef {object} RunStats
+ * @property {JobProfile} max
+ *   Highest of each value.
+ * @property {JobProfile} median
+ *   Nearest-rank median of each value.
+ * @property {JobProfile} p90
+ *   Nearest-rank 90th percentile of each value, which estimates raise and lower to.
+ * @property {number} runs
+ *   Runs the statistics come from.
  */
 
 /**
@@ -871,6 +891,7 @@ const TYPES = {
       noise: { type: "NoiseReport", nullable: true, absent: null },
       session: { type: "string", nullable: true, absent: null },
       started_at_ms: { type: "int64" },
+      stats: { type: "RunStats", nullable: true, absent: null },
     },
   },
   ResourceUsage: {
@@ -879,6 +900,14 @@ const TYPES = {
       gpu_pct: { type: "float" },
       ram_mb: { type: "uint64" },
       vram_mb: { type: "uint64" },
+    },
+  },
+  RunStats: {
+    fields: {
+      max: { type: "JobProfile" },
+      median: { type: "JobProfile" },
+      p90: { type: "JobProfile" },
+      runs: { type: "uint32" },
     },
   },
   UiSession: {

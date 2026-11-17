@@ -52,9 +52,66 @@ public static class Format
     /// A reservation as <c>8 cores · 4 GB</c> or <c>2 cores · 4 GB · GPU 80% · 4 GB VRAM</c>.
     /// Cores always show; RAM, GPU and VRAM only when reserved.
     /// </summary>
-    public static string Reservation(JobProfile profile)
+    public static string Reservation(JobProfile profile) =>
+        Reservation(profile, Cores(profile.Cores));
+
+    /// <summary>
+    /// A lease's reservation as <see cref="Reservation(JobProfile)"/>, with its cores as
+    /// <c>5.6 of 8 cores</c> when the grant shrank them below what it asked for.
+    /// </summary>
+    public static string Reservation(Lease lease) =>
+        Reservation(lease.Profile, Granted(lease.Profile.Cores, lease.AskedCores));
+
+    /// <summary>
+    /// <c>5.6 of 8 cores</c> when fewer cores were granted than asked for, otherwise
+    /// <see cref="Cores"/> of the grant. A lease from before minimums has no asked cores.
+    /// </summary>
+    public static string Granted(float granted, float? asked)
     {
-        var parts = new List<string>(4) { Cores(profile.Cores) };
+        var shown = CoreCount(granted);
+        if (asked is not { } wanted || wanted <= granted || CoreCount(wanted) == shown)
+        {
+            return Cores(granted);
+        }
+
+        return $"{shown} of {CoreCount(wanted)} cores";
+    }
+
+    /// <summary>
+    /// Median and max of a job's runs as
+    /// <c>median 2.1 cores · 1.2 GB · 3:10   max 3.4 cores · 2 GB · 4:52</c>. GPU and VRAM
+    /// show only when some run used them.
+    /// </summary>
+    public static string Stats(RunStats stats)
+    {
+        var gpu = stats.Max.GpuPct > 0;
+        var vram = stats.Max.VramMb > 0;
+        return $"median {Used(stats.Median, gpu, vram)}   max {Used(stats.Max, gpu, vram)}";
+    }
+
+    private static string Used(JobProfile used, bool gpu, bool vram)
+    {
+        var cores = used.Cores is > 0 and < 1
+            ? $"{used.Cores.ToString("0.##", CultureInfo.InvariantCulture)} cores"
+            : Cores(used.Cores);
+        var parts = new List<string>(5) { cores, $"{Size(used.RamMb)} GB" };
+        if (gpu)
+        {
+            parts.Add(string.Create(CultureInfo.InvariantCulture, $"GPU {used.GpuPct:0}%"));
+        }
+
+        if (vram)
+        {
+            parts.Add($"{Size(used.VramMb)} GB VRAM");
+        }
+
+        parts.Add(Duration((long)used.EstSecs));
+        return string.Join(" · ", parts);
+    }
+
+    private static string Reservation(JobProfile profile, string cores)
+    {
+        var parts = new List<string>(4) { cores };
         if (profile.RamMb > 0)
         {
             parts.Add($"{Size(profile.RamMb)} GB");
@@ -78,9 +135,12 @@ public static class Format
     /// </summary>
     public static string Cores(float cores)
     {
-        var number = cores.ToString("0.#", CultureInfo.InvariantCulture);
+        var number = CoreCount(cores);
         return number == "1" ? "1 core" : $"{number} cores";
     }
+
+    private static string CoreCount(float cores) =>
+        cores.ToString("0.#", CultureInfo.InvariantCulture);
 
     /// <summary>
     /// A duration as <c>3:06</c>, or <c>1:02:03</c> from one hour.

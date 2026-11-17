@@ -1256,6 +1256,17 @@
           "description": "Start of the run, in milliseconds since the Unix epoch.",
           "type": "integer",
           "format": "int64"
+        },
+        "stats": {
+          "description": "Median, p90 and max of the job's runs, as `allot history` shows them; `None` when no run\nof the job counts, and from older daemons.",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/RunStats"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
@@ -1298,6 +1309,48 @@
         "ram_mb",
         "gpu_pct",
         "vram_mb"
+      ]
+    },
+    "RunStats": {
+      "description": "Median, p90 and max of what a job's runs used: the newest runs that neither overlapped\nanother lease of their session nor were killed, at most as many as an estimate reads.\nCores and GPU load are each run's average while its session was busy, RAM and VRAM its\npeak, and `est_secs` its run time.",
+      "type": "object",
+      "properties": {
+        "max": {
+          "description": "Highest of each value.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/JobProfile"
+            }
+          ]
+        },
+        "median": {
+          "description": "Nearest-rank median of each value.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/JobProfile"
+            }
+          ]
+        },
+        "p90": {
+          "description": "Nearest-rank 90th percentile of each value, which estimates raise and lower to.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/JobProfile"
+            }
+          ]
+        },
+        "runs": {
+          "description": "Runs the statistics come from.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "runs",
+        "median",
+        "p90",
+        "max"
       ]
     },
     "SessionKey": {

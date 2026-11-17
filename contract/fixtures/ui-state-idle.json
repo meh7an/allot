@@ -94,7 +94,31 @@
       "started_at_ms": 1792824188000,
       "ended_at_ms": 1792824480000,
       "end_cause": "released",
-      "noise": null
+      "noise": null,
+      "stats": {
+        "runs": 12,
+        "median": {
+          "cores": 2.1,
+          "ram_mb": 1229,
+          "gpu_pct": 0.0,
+          "vram_mb": 0,
+          "est_secs": 190
+        },
+        "p90": {
+          "cores": 3.0,
+          "ram_mb": 1843,
+          "gpu_pct": 0.0,
+          "vram_mb": 0,
+          "est_secs": 260
+        },
+        "max": {
+          "cores": 3.4,
+          "ram_mb": 2048,
+          "gpu_pct": 0.0,
+          "vram_mb": 0,
+          "est_secs": 292
+        }
+      }
     },
     {
       "lease_id": 39,
@@ -111,7 +135,31 @@
       "started_at_ms": 1792823888000,
       "ended_at_ms": 1792824180000,
       "end_cause": "killed",
-      "noise": null
+      "noise": null,
+      "stats": {
+        "runs": 1,
+        "median": {
+          "cores": 0.85,
+          "ram_mb": 640,
+          "gpu_pct": 0.0,
+          "vram_mb": 0,
+          "est_secs": 41
+        },
+        "p90": {
+          "cores": 0.85,
+          "ram_mb": 640,
+          "gpu_pct": 0.0,
+          "vram_mb": 0,
+          "est_secs": 41
+        },
+        "max": {
+          "cores": 0.85,
+          "ram_mb": 640,
+          "gpu_pct": 0.0,
+          "vram_mb": 0,
+          "est_secs": 41
+        }
+      }
     },
     {
       "lease_id": 37,

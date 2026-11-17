@@ -170,7 +170,7 @@ fn emit_properties(
         .iter()
         .enumerate()
     {
-        let member = member_name(record, property.json_name);
+        let (member, pinned) = member_name(record, property.json_name);
         let cs_type = render(&property.ty);
         // The source generator sets every init-only property in its object initializer, so an
         // absent member would overwrite the default with null; a setter is only called when
@@ -195,6 +195,9 @@ fn emit_properties(
         }
         let inner = format!("{indent}    ");
         write_doc(out, &inner, property.schema);
+        if pinned {
+            writeln!(out, "{inner}[JsonPropertyName(\"{}\")]", property.json_name).unwrap();
+        }
         writeln!(
             out,
             "{inner}public {keyword}{cs_type} {member} {{ {accessors} }}{initializer}"
@@ -204,22 +207,30 @@ fn emit_properties(
     writeln!(out, "{indent}}}").unwrap();
 }
 
-/// PascalCase member name; the context's snake_case policy must map it back to `json_name`.
-fn member_name(record: &str, json_name: &str) -> String {
-    let words_only = json_name
-        .split('_')
-        .all(|word| !word.is_empty() && word.bytes().all(|byte| byte.is_ascii_lowercase()));
+/// PascalCase member name, and whether it needs its JSON name pinned. The context's snake_case
+/// policy maps a name of lowercase words back to `json_name`; a word with digits, such as
+/// `p90`, gets `[JsonPropertyName]` instead of relying on how the policy splits digits.
+fn member_name(record: &str, json_name: &str) -> (String, bool) {
+    let words_only = json_name.split('_').all(|word| {
+        word.bytes()
+            .next()
+            .is_some_and(|byte| byte.is_ascii_lowercase())
+            && word
+                .bytes()
+                .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit())
+    });
     assert!(
         words_only,
-        "{record}.{json_name}: only lowercase words joined by `_` round-trip through \
-         SnakeCaseLower"
+        "{record}.{json_name}: only lowercase words, digits after their first letter, joined \
+         by `_` map to C# members"
     );
     let member = pascal_case(json_name);
     assert!(
         member != record,
         "{record}.{json_name}: a C# member cannot share its record's name"
     );
-    member
+    let pinned = json_name.bytes().any(|byte| byte.is_ascii_digit());
+    (member, pinned)
 }
 
 fn emit_context(out: &mut String, root_names: &[&str]) {

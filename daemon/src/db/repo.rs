@@ -7,7 +7,7 @@
 use std::collections::HashMap;
 
 use allot_shared::{
-    api::LeaseQuery,
+    api::{LeaseQuery, RunStats},
     config::RetentionConfig,
     types::{
         EndCause, Holder, JobClass, JobProfile, JobRun, Lease, LeaseBinding, LeaseId, LeaseKind,
@@ -612,16 +612,35 @@ pub fn latest_job_runs(conn: &mut SqliteConnection, limit: u32) -> anyhow::Resul
         .collect()
 }
 
-/// Up to `limit` finished runs of any job, newest end first, as the flyout lists them.
+/// Up to `limit` finished runs of any job, newest end first, as the flyout lists them. Each
+/// carries `stats` of up to `scan` of its job's runs, read once per job.
 ///
 /// # Errors
 ///
 /// Returns an error when the query fails or a row holds values the shared types reject.
-pub fn recent_runs(conn: &mut SqliteConnection, limit: u32) -> anyhow::Result<Vec<RecentRun>> {
-    Ok(latest_job_runs(conn, limit)?
-        .into_iter()
-        .map(RecentRun::from)
-        .collect())
+pub fn recent_runs(
+    conn: &mut SqliteConnection,
+    limit: u32,
+    scan: u32,
+    stats: impl Fn(&[JobRun]) -> Option<RunStats>,
+) -> anyhow::Result<Vec<RecentRun>> {
+    let mut by_job: HashMap<String, Option<RunStats>> = HashMap::new();
+    let mut recent = Vec::new();
+    for run in latest_job_runs(conn, limit)? {
+        let job_stats = match by_job.get(&run.fingerprint) {
+            Some(known) => *known,
+            None => {
+                let computed = stats(&recent_job_runs(conn, &run.fingerprint, scan)?);
+                by_job.insert(run.fingerprint.clone(), computed);
+                computed
+            }
+        };
+        recent.push(RecentRun {
+            stats: job_stats,
+            ..RecentRun::from(run)
+        });
+    }
+    Ok(recent)
 }
 
 fn append_event(
@@ -1379,11 +1398,46 @@ mod tests {
             std::slice::from_ref(&killed)
         );
 
-        let recent = recent_runs(&mut conn, 10).unwrap();
+        let recent = recent_runs(&mut conn, 10, 10, |_| None).unwrap();
         let older = sample_run("f", 1_000, None);
         assert_eq!(recent, [RecentRun::from(killed), RecentRun::from(older)]);
         assert_eq!(recent[0].end_cause, Some(EndCause::Killed));
         assert_eq!(recent[1].session, None);
+    }
+
+    #[test]
+    fn test_recent_runs_carry_the_stats_of_their_own_job() {
+        let mut conn = memory_conn();
+        for (fingerprint, started_at_ms) in [("a", 1_000), ("b", 2_000), ("a", 3_000)] {
+            insert_job_run(&mut conn, &sample_run(fingerprint, started_at_ms, None)).unwrap();
+        }
+        // Stand-in statistics that record how many runs of which job they were given.
+        let stats = |runs: &[JobRun]| {
+            let cores = if runs[0].fingerprint == "a" { 1.0 } else { 2.0 };
+            let profile = JobProfile {
+                cores,
+                ..sample_draft("s1", 0).profile
+            };
+            Some(RunStats {
+                runs: u32::try_from(runs.len()).unwrap(),
+                median: profile,
+                p90: profile,
+                max: profile,
+            })
+        };
+
+        let recent = recent_runs(&mut conn, 10, 10, stats).unwrap();
+
+        let shown: Vec<(i64, u32, f32)> = recent
+            .iter()
+            .map(|run| {
+                let stats = run.stats.unwrap();
+                (run.started_at_ms, stats.runs, stats.median.cores)
+            })
+            .collect();
+        assert_eq!(shown, [(3_000, 2, 1.0), (2_000, 1, 2.0), (1_000, 2, 1.0)]);
+        let limited = recent_runs(&mut conn, 1, 1, stats).unwrap();
+        assert_eq!(limited[0].stats.unwrap().runs, 1);
     }
 
     #[test]

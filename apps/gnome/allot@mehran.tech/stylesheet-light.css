@@ -11,7 +11,8 @@
 .allot-idle-line,
 .allot-nothing,
 .allot-detail-line,
-.allot-recent-meta {
+.allot-recent-meta,
+.allot-recent-stats {
   color: rgba(0, 0, 0, 0.64);
 }
 

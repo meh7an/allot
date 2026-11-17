@@ -875,6 +875,10 @@ public struct RecentRun: Codable, Sendable, Equatable {
     /// Start of the run, in milliseconds since the Unix epoch.
     public let startedAtMs: Int64
 
+    /// Median, p90 and max of the job's runs, as `allot history` shows them; `nil` when no run
+    /// of the job counts, and from older daemons.
+    public let stats: RunStats?
+
     private enum CodingKeys: String, CodingKey {
         case command
         case cwd
@@ -885,6 +889,7 @@ public struct RecentRun: Codable, Sendable, Equatable {
         case noise
         case session
         case startedAtMs = "started_at_ms"
+        case stats
     }
 }
 
@@ -907,6 +912,31 @@ public struct ResourceUsage: Codable, Sendable, Equatable {
         case gpuPct = "gpu_pct"
         case ramMb = "ram_mb"
         case vramMb = "vram_mb"
+    }
+}
+
+/// Median, p90 and max of what a job's runs used: the newest runs that neither overlapped
+/// another lease of their session nor were killed, at most as many as an estimate reads.
+/// Cores and GPU load are each run's average while its session was busy, RAM and VRAM its
+/// peak, and `est_secs` its run time.
+public struct RunStats: Codable, Sendable, Equatable {
+    /// Highest of each value.
+    public let max: JobProfile
+
+    /// Nearest-rank median of each value.
+    public let median: JobProfile
+
+    /// Nearest-rank 90th percentile of each value, which estimates raise and lower to.
+    public let p90: JobProfile
+
+    /// Runs the statistics come from.
+    public let runs: UInt32
+
+    private enum CodingKeys: String, CodingKey {
+        case max
+        case median
+        case p90
+        case runs
     }
 }
 

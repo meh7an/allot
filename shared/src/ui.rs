@@ -6,7 +6,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    api::{HealthResponse, Verdict},
+    api::{HealthResponse, RunStats, Verdict},
     types::{
         Accuracy, DriveUsage, EndCause, JobProfile, JobRun, Lease, LeaseId, NoiseReport,
         ResourceUsage, SessionKey, is_default,
@@ -195,6 +195,10 @@ pub struct RecentRun {
     pub end_cause: Option<EndCause>,
     /// Background load during the run; present only for benchmark leases.
     pub noise: Option<NoiseReport>,
+    /// Median, p90 and max of the job's runs, as `allot history` shows them; `None` when no run
+    /// of the job counts, and from older daemons.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stats: Option<RunStats>,
 }
 
 impl From<JobRun> for RecentRun {
@@ -209,6 +213,7 @@ impl From<JobRun> for RecentRun {
             ended_at_ms: run.ended_at_ms,
             end_cause: run.end_cause,
             noise: run.noise,
+            stats: None,
         }
     }
 }

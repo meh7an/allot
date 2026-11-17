@@ -246,23 +246,36 @@ private struct RecentView: View {
     private var rows: some View {
         VStack(spacing: 0) {
             ForEach(lines) { line in
-                HStack(spacing: 8) {
-                    Text(line.command)
-                        .font(Tokens.Font.command)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                        .help(line.command)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    Text(line.shortId)
-                        .font(Tokens.Font.idInLine)
-                        .foregroundStyle(.secondary)
-                    Text(line.meta)
-                        .font(Tokens.Font.body)
-                        .monospacedDigit()
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 8) {
+                        Text(line.command)
+                            .font(Tokens.Font.command)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                            .help(line.command)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        Text(line.shortId)
+                            .font(Tokens.Font.idInLine)
+                            .foregroundStyle(.secondary)
+                        Text(line.meta)
+                            .font(Tokens.Font.body)
+                            .monospacedDigit()
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                    // The job's median and max, under the run, when the job has them.
+                    if !line.stats.isEmpty {
+                        Text(line.stats)
+                            .font(Tokens.Font.small)
+                            .monospacedDigit()
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                            .help(line.stats)
+                    }
                 }
                 .padding(.horizontal, 12)
+                .padding(.vertical, line.stats.isEmpty ? 0 : 8)
                 .frame(minHeight: 36)
                 .overlay(alignment: .top) {
                     if line.id > 0 {

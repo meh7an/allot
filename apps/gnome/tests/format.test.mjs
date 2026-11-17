@@ -123,3 +123,36 @@ test("a reservation shows only what is reserved", () => {
   assert.equal(format.reservation(profile(1, 1536, 0, 0)), "1 core · 1.5 GB");
   assert.equal(format.reservation(profile(4, 0, 0, 0)), "4 cores");
 });
+
+test("granted names the asked cores only when fewer", () => {
+  const cases = [
+    [5.6, 8, "5.6 of 8 cores"],
+    [0.5, 1, "0.5 of 1 cores"],
+    [8, 8, "8 cores"],
+    [7.96, 8, "8 cores"],
+    [1, null, "1 core"],
+  ];
+  for (const [granted, asked, expected] of cases) {
+    assert.equal(format.granted(Number(granted), asked === null ? null : Number(asked)), expected);
+  }
+});
+
+test("stats show median and max, with GPU and VRAM only when used", () => {
+  const median = { cores: 0.85, ram_mb: 1229, gpu_pct: 0, vram_mb: 0, est_secs: 190 };
+  const max = { ...median, cores: 3.4, ram_mb: 2048, est_secs: 292 };
+
+  assert.equal(
+    format.stats({ runs: 12, median, p90: max, max }),
+    "median 0.85 cores · 1.2 GB · 3:10   max 3.4 cores · 2 GB · 4:52",
+  );
+  assert.equal(
+    format.stats({
+      runs: 12,
+      median: { ...median, cores: 1 },
+      p90: max,
+      max: { ...max, gpu_pct: 40, vram_mb: 1024 },
+    }),
+    "median 1 core · 1.2 GB · GPU 0% · 0 GB VRAM · 3:10   " +
+      "max 3.4 cores · 2 GB · GPU 40% · 1 GB VRAM · 4:52",
+  );
+});

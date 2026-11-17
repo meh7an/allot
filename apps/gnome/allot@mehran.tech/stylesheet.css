@@ -422,6 +422,19 @@
   font-feature-settings: "tnum";
 }
 
+/* A run with statistics: 8 px above the run, its statistics 2 px under it, 8 px below. */
+
+.allot-recent-row-stats {
+  min-height: 18px;
+  padding-top: 8px;
+}
+
+.allot-recent-stats {
+  padding: 2px 0 8px;
+  font-size: 0.75em;
+  font-feature-settings: "tnum";
+}
+
 /* The keyboard's place, which a hover tint alone would not show. */
 
 .allot-action:focus,

@@ -282,6 +282,44 @@ public sealed class JobCardTests
     }
 
     [TestMethod]
+    public void RecentlyFinishedShowsStatsOfJobsWithTwoRunsOrMore()
+    {
+        var state = Handoff.State(recent: true);
+        var used = state.Recent[0].Declared with { Cores = 2.1f, RamMb = 1229, EstSecs = 190 };
+        RunStats Stats(uint runs) => new() { Runs = runs, Median = used, P90 = used, Max = used };
+        state = state with
+        {
+            Recent =
+            [
+                state.Recent[0] with { Stats = Stats(2) },
+                state.Recent[1] with { Stats = Stats(1) },
+            ],
+        };
+
+        var snapshot = FlyoutSnapshot.From(ServiceStatus.Running, state);
+
+        Assert.AreEqual(
+            "median 2.1 cores · 1.2 GB · 3:10   max 2.1 cores · 1.2 GB · 3:10",
+            snapshot.Recent[0].Stats);
+        Assert.AreEqual("", snapshot.Recent[1].Stats);
+    }
+
+    [TestMethod]
+    public void ShrunkActiveJobShowsGrantedOfAsked()
+    {
+        var state = Handoff.State(run: ["cargo"]);
+        var job = state.Active[0];
+        var lease = job.Lease with
+        {
+            Profile = job.Lease.Profile with { Cores = 5.6f },
+            AskedCores = 8,
+        };
+        state = state with { Active = [job with { Process = null, Lease = lease }] };
+
+        Assert.AreEqual("5.6 of 8 cores · 4 GB", CardOf(state, "cargo").Detail);
+    }
+
+    [TestMethod]
     public void RecentlyFinishedShowsOnlyWhileNothingRunsOrWaits()
     {
         var state = Handoff.State(run: ["cargo"], recent: true);

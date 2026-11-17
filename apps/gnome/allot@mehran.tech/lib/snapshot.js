@@ -95,6 +95,9 @@ import * as jobCard from "./job-card.js";
  *   The session's short ID, or empty for runs recorded before sessions were.
  * @property {string} meta
  *   Run time and age, for example `4:52 · 4 min ago`.
+ * @property {string} stats
+ *   Median and max of the job's runs ({@link format.stats}), or empty below
+ *   {@link STATS_MIN_RUNS} runs.
  */
 
 /**
@@ -160,6 +163,12 @@ export const WELCOME_BODY =
   "or GPU here first. Jobs that don't fit wait their turn. You'll see each one here and can " +
   "stop it.";
 export const DO_NOT_DISTURB_TEXT = "Do Not Disturb is on · banners are hidden";
+
+/**
+ * The fewest runs whose statistics a Recently finished row shows: the median and max of a single
+ * run only repeat that run.
+ */
+export const STATS_MIN_RUNS = 2;
 
 // How long a benchmark that finished on its own keeps its card.
 const FINISHED_HOLD_MS = 60_000;
@@ -433,6 +442,7 @@ function recentLines(state, now) {
       command: run.command,
       shortId: run.session === null ? "" : format.shortId(run.session),
       meta: `${ran} · ${ago}`,
+      stats: run.stats !== null && run.stats.runs >= STATS_MIN_RUNS ? format.stats(run.stats) : "",
     };
   });
 }

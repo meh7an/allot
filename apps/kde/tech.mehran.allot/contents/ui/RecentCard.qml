@@ -40,7 +40,8 @@ ColumnLayout {
             Repeater {
                 model: recent.lines
 
-                RowLayout {
+                // The run, then its job's median and max when the job has them.
+                ColumnLayout {
                     id: line
 
                     required property var modelData
@@ -48,35 +49,57 @@ ColumnLayout {
                     Layout.fillWidth: true
                     Layout.leftMargin: Kirigami.Units.largeSpacing + Kirigami.Units.smallSpacing
                     Layout.rightMargin: Kirigami.Units.largeSpacing + Kirigami.Units.smallSpacing
-                    Layout.minimumHeight: Kirigami.Units.iconSizes.medium + Kirigami.Units.smallSpacing
-                    spacing: Kirigami.Units.largeSpacing
+                    spacing: 0
 
-                    PlasmaComponents.Label {
+                    RowLayout {
                         Layout.fillWidth: true
-                        text: line.modelData.command
-                        font: Kirigami.Theme.fixedWidthFont
-                        elide: Text.ElideRight
-                        PlasmaComponents.ToolTip.text: line.modelData.command
-                        PlasmaComponents.ToolTip.visible: commandHover.hovered
+                        Layout.minimumHeight: Kirigami.Units.iconSizes.medium + Kirigami.Units.smallSpacing
+                        spacing: Kirigami.Units.largeSpacing
 
-                        HoverHandler {
-                            id: commandHover
+                        PlasmaComponents.Label {
+                            Layout.fillWidth: true
+                            text: line.modelData.command
+                            font: Kirigami.Theme.fixedWidthFont
+                            elide: Text.ElideRight
+                            PlasmaComponents.ToolTip.text: line.modelData.command
+                            PlasmaComponents.ToolTip.visible: commandHover.hovered
+
+                            HoverHandler {
+                                id: commandHover
+                            }
+                        }
+
+                        PlasmaComponents.Label {
+                            visible: text !== ""
+                            text: line.modelData.shortId
+                            font.family: Kirigami.Theme.fixedWidthFont.family
+                            font.pointSize: Kirigami.Theme.smallFont.pointSize
+                            opacity: 0.8
+                        }
+
+                        PlasmaComponents.Label {
+                            text: line.modelData.meta
+                            font.pointSize: Kirigami.Theme.smallFont.pointSize
+                            font.features: { "tnum": 1 }
+                            opacity: 0.8
                         }
                     }
 
                     PlasmaComponents.Label {
+                        Layout.fillWidth: true
+                        Layout.bottomMargin: Kirigami.Units.smallSpacing * 2
                         visible: text !== ""
-                        text: line.modelData.shortId
-                        font.family: Kirigami.Theme.fixedWidthFont.family
-                        font.pointSize: Kirigami.Theme.smallFont.pointSize
-                        opacity: 0.8
-                    }
-
-                    PlasmaComponents.Label {
-                        text: line.modelData.meta
+                        text: line.modelData.stats
                         font.pointSize: Kirigami.Theme.smallFont.pointSize
                         font.features: { "tnum": 1 }
+                        elide: Text.ElideRight
                         opacity: 0.8
+                        PlasmaComponents.ToolTip.text: text
+                        PlasmaComponents.ToolTip.visible: statsHover.hovered
+
+                        HoverHandler {
+                            id: statsHover
+                        }
                     }
                 }
             }

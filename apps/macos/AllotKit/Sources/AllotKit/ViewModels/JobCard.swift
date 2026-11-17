@@ -211,7 +211,7 @@ public struct JobCard: Sendable, Equatable {
                 action: .none)
         }
 
-        let detail = prefix + Format.reservation(lease.profile)
+        let detail = prefix + Format.reservation(lease)
         let name = process?.name ?? lease.label
         var card = JobCard(
             tile: tile,

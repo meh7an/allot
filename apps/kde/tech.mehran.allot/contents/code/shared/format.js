@@ -1,5 +1,5 @@
 // Generated from apps/gnome/allot@mehran.tech/lib/format.js by apps/kde/tools/emit.mjs (pnpm build); do not edit.
-/** @import { JobProfile, ResourceUsage } from "../contract.g.mjs" */
+/** @import { JobProfile, Lease, ResourceUsage, RunStats } from "../contract.g.mjs" */
 // Text shared by several view models. Numbers never follow the user's locale: the UI is
 // English, and a decimal comma would read as a list separator next to the handoff's middle dots.
 const SHORT_ID_LENGTH = 8;
@@ -51,7 +51,73 @@ export function gigabytes(megabytes) {
  * @returns {string}
  */
 export function reservation(profile) {
-    const parts = [cores(profile.cores)];
+    return reservationWith(profile, cores(profile.cores));
+}
+/**
+ * A lease's reservation as {@link reservation}, with its cores as `5.6 of 8 cores` when the
+ * grant shrank them below what it asked for.
+ *
+ * @param {Lease} lease
+ * @returns {string}
+ */
+export function leaseReservation(lease) {
+    return reservationWith(lease.profile, granted(lease.profile.cores, lease.asked_cores));
+}
+/**
+ * `5.6 of 8 cores` when fewer cores were granted than asked for, otherwise {@link cores} of the
+ * grant. A lease from before minimums has no asked cores.
+ *
+ * @param {number} grantedCores
+ * @param {number | null} askedCores
+ * @returns {string}
+ */
+export function granted(grantedCores, askedCores) {
+    const shown = upToOneDecimal(grantedCores);
+    if (askedCores === null || askedCores <= grantedCores || upToOneDecimal(askedCores) === shown) {
+        return cores(grantedCores);
+    }
+    return `${shown} of ${upToOneDecimal(askedCores)} cores`;
+}
+/**
+ * Median and max of a job's runs as
+ * `median 2.1 cores · 1.2 GB · 3:10   max 3.4 cores · 2 GB · 4:52`. GPU and VRAM show only when
+ * some run used them.
+ *
+ * @param {RunStats} runStats
+ * @returns {string}
+ */
+export function stats(runStats) {
+    const gpu = runStats.max.gpu_pct > 0;
+    const vram = runStats.max.vram_mb > 0;
+    return `median ${used(runStats.median, gpu, vram)}   max ${used(runStats.max, gpu, vram)}`;
+}
+/**
+ * @param {JobProfile} profile
+ * @param {boolean} gpu
+ * @param {boolean} vram
+ * @returns {string}
+ */
+function used(profile, gpu, vram) {
+    const count = profile.cores > 0 && profile.cores < 1
+        ? `${upToTwoDecimals(profile.cores)} cores`
+        : cores(profile.cores);
+    const parts = [count, `${size(profile.ram_mb)} GB`];
+    if (gpu) {
+        parts.push(`GPU ${whole(profile.gpu_pct)}%`);
+    }
+    if (vram) {
+        parts.push(`${size(profile.vram_mb)} GB VRAM`);
+    }
+    parts.push(duration(profile.est_secs));
+    return parts.join(" · ");
+}
+/**
+ * @param {JobProfile} profile
+ * @param {string} coresText
+ * @returns {string}
+ */
+function reservationWith(profile, coresText) {
+    const parts = [coresText];
     if (profile.ram_mb > 0) {
         parts.push(`${size(profile.ram_mb)} GB`);
     }

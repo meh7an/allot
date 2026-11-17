@@ -225,3 +225,28 @@ test("a recent run without a session has no id", () => {
 
   assert.equal(panelSnapshot("running", empty).recent[0]?.shortId, "");
 });
+
+test("a shrunk running job shows granted of asked cores", () => {
+  const shrunk = state({ run: ["cargo"] }, (json) => {
+    json.active[0].lease.profile.cores = 5.6;
+    json.active[0].lease.asked_cores = 8;
+    json.active[0].process = null;
+  });
+
+  const card = jobCard.forActive(firstActive(shrunk), NOW_MS, false, null);
+  assert.equal(card.detail, "5.6 of 8 cores · 4 GB");
+});
+
+test("recent runs show their job's statistics from two runs", () => {
+  const used = { cores: 2.1, ram_mb: 1229, gpu_pct: 0, vram_mb: 0, est_secs: 190 };
+  /** @param {number} runs */
+  const stats = (runs) => ({ runs, median: used, p90: used, max: used });
+  const idle = state({ recent: true }, (json) => {
+    json.recent[0].stats = stats(2);
+    json.recent[1].stats = stats(1);
+  });
+
+  const [first, second] = panelSnapshot("running", idle).recent;
+  assert.equal(first?.stats, "median 2.1 cores · 1.2 GB · 3:10   max 2.1 cores · 1.2 GB · 3:10");
+  assert.equal(second?.stats, "");
+});

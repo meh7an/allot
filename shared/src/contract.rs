@@ -20,7 +20,7 @@ use serde::Serialize;
 use crate::{
     api::{
         BenchmarkProgress, HealthResponse, JobSummary, KillResponse, KilledProcess, RemoveResponse,
-        UnkilledProcess, Verdict,
+        RunStats, UnkilledProcess, Verdict,
     },
     types::{
         Accuracy, BoundProcess, DriveUsage, EndCause, EnforcedLimits, Holder, IsolationKind,
@@ -448,11 +448,23 @@ fn recent_run(
         ended_at_ms,
         end_cause: Some(end_cause),
         noise: None,
+        stats: None,
     }
 }
 
-/// No jobs: idle sessions and recently finished runs, including a killed one, a benchmark
-/// that was granted without quiet, and one recorded before sessions and causes were.
+/// Statistics of `runs` runs that each used `profile`.
+fn same_runs(runs: u32, profile: JobProfile) -> RunStats {
+    RunStats {
+        runs,
+        median: profile,
+        p90: profile,
+        max: profile,
+    }
+}
+
+/// No jobs: idle sessions and recently finished runs: two with their job's statistics, one of
+/// those killed, a benchmark that was granted without quiet, and one recorded before sessions
+/// and causes were.
 fn idle() -> UiState {
     UiState {
         generated_at_ms: NOW_MS,
@@ -466,20 +478,31 @@ fn idle() -> UiState {
         queue: Vec::new(),
         meters: meters(4.0, 0.0, 0, vec![rtx(1.0, 0.0, 0)]),
         recent: vec![
-            recent_run(
-                41,
-                APP,
-                "cargo build --release",
-                4 * MINUTE_MS,
-                EndCause::Released,
-            ),
-            recent_run(
-                39,
-                APP,
-                "cargo clippy --workspace",
-                9 * MINUTE_MS,
-                EndCause::Killed,
-            ),
+            RecentRun {
+                stats: Some(RunStats {
+                    runs: 12,
+                    median: profile(2.1, 1229, 0.0, 0, 190),
+                    p90: profile(3.0, 1843, 0.0, 0, 260),
+                    max: profile(3.4, 2048, 0.0, 0, 292),
+                }),
+                ..recent_run(
+                    41,
+                    APP,
+                    "cargo build --release",
+                    4 * MINUTE_MS,
+                    EndCause::Released,
+                )
+            },
+            RecentRun {
+                stats: Some(same_runs(1, profile(0.85, 640, 0.0, 0, 41))),
+                ..recent_run(
+                    39,
+                    APP,
+                    "cargo clippy --workspace",
+                    9 * MINUTE_MS,
+                    EndCause::Killed,
+                )
+            },
             RecentRun {
                 declared: profile(16.0, 4096, 0.0, 0, 120),
                 noise: Some(NoiseReport {

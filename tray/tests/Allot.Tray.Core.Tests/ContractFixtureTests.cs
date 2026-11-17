@@ -125,6 +125,9 @@ public sealed class ContractFixtureTests
         Assert.IsNull(state.Recent[3].Session);
         Assert.IsNull(state.Recent[3].EndCause);
         Assert.IsNotNull(state.Notices[0].DeliveredAtMs);
+        Assert.AreEqual(12u, state.Recent[0].Stats?.Runs);
+        Assert.AreEqual(3.0f, state.Recent[0].Stats?.P90.Cores);
+        Assert.IsNull(state.Recent[2].Stats);
     }
 
     [TestMethod]

@@ -45,8 +45,9 @@ use crate::{
 // Longer waits risk client and proxy timeouts; the caller can heartbeat and ask again.
 const MAX_ACQUIRE_WAIT: Duration = Duration::from_secs(120);
 
-// Overlapped runs are skipped, so an estimate reads more rows than it uses.
-const ESTIMATE_SCAN: u32 = ESTIMATE_RUNS as u32 * 5;
+// Overlapped runs are skipped, so an estimate, and the statistics beside it, read more rows than
+// they use.
+pub(crate) const ESTIMATE_SCAN: u32 = ESTIMATE_RUNS as u32 * 5;
 
 // Rows the history summary groups; the default retention cap keeps the table at or below it.
 const SUMMARY_SCAN: u32 = 5_000;

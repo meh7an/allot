@@ -100,8 +100,15 @@ public sealed record IdleLine(string Label, string Ids, string Usage);
 /// <param name="ShortId">The session's short ID, or empty for runs recorded before sessions
 /// were.</param>
 /// <param name="Meta">Run time and age, for example <c>4:52 · 4 min ago</c>.</param>
+/// <param name="Stats">Median and max of the job's runs (<see cref="Format.Stats"/>), or empty
+/// below <see cref="FlyoutSnapshot.StatsMinRuns"/> runs.</param>
 /// <param name="First">The first row, which has no separator above it.</param>
-public sealed record RecentLine(string Command, string ShortId, string Meta, bool First);
+public sealed record RecentLine(
+    string Command,
+    string ShortId,
+    string Meta,
+    string Stats,
+    bool First);
 
 /// <summary>
 /// The tray app's side of the first-run card.
@@ -145,6 +152,12 @@ public sealed record FlyoutSnapshot(
     bool IsLastKnown,
     WelcomeCard? Welcome)
 {
+    /// <summary>
+    /// The fewest runs whose statistics a Recently finished row shows: the median and max of a
+    /// single run only repeat that run.
+    /// </summary>
+    public const uint StatsMinRuns = 2;
+
     // How long a benchmark that finished on its own keeps its card.
     private const long FinishedHoldMs = 60_000;
 
@@ -366,6 +379,7 @@ public sealed record FlyoutSnapshot(
                 run.Session is null ? "" : Format.ShortId(run.Session),
                 $"{Format.Duration((run.EndedAtMs - run.StartedAtMs) / 1000)} · "
                     + Format.Ago(Math.Max(0, now - run.EndedAtMs) / 1000),
+                run.Stats is { Runs: >= StatsMinRuns } stats ? Format.Stats(stats) : "",
                 index == 0))
             .ToList();
 

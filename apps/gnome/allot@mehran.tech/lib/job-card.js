@@ -216,7 +216,7 @@ function activeCard(job, nowMs, lastKnown, stop) {
     return { ...card, detail: `${prefix}was at ${time}`, barFraction: progress, barTone: "frozen" };
   }
 
-  const detail = prefix + format.reservation(lease.profile);
+  const detail = prefix + format.leaseReservation(lease);
   const name = process?.name ?? lease.label;
   Object.assign(card, {
     detail,

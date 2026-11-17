@@ -193,7 +193,7 @@ function activeCard(job, nowMs, lastKnown, stop) {
     if (lastKnown) {
         return Object.assign(Object.assign({}, card), { detail: `${prefix}was at ${time}`, barFraction: progress, barTone: "frozen" });
     }
-    const detail = prefix + format.reservation(lease.profile);
+    const detail = prefix + format.leaseReservation(lease);
     const name = (_d = process === null || process === void 0 ? void 0 : process.name) !== null && _d !== void 0 ? _d : lease.label;
     Object.assign(card, {
         detail,

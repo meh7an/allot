@@ -214,7 +214,7 @@ public sealed record JobCard(
                 false);
         }
 
-        var detail = prefix + Format.Reservation(lease.Profile);
+        var detail = prefix + Format.Reservation(lease);
         var name = process?.Name ?? lease.Label;
         var card = new JobCard(
             tile,

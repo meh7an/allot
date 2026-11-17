@@ -32,7 +32,52 @@ public enum Format {
     /// A reservation as `8 cores · 4 GB` or `2 cores · 4 GB · GPU 80% · 4 GB VRAM`. Cores always
     /// show; RAM, GPU and VRAM only when reserved.
     public static func reservation(_ profile: JobProfile) -> String {
-        var parts = [cores(profile.cores)]
+        reservation(profile, cores: cores(profile.cores))
+    }
+
+    /// A lease's reservation as `reservation(_:)` of its profile, with its cores as
+    /// `5.6 of 8 cores` when the grant shrank them below what it asked for.
+    public static func reservation(_ lease: Lease) -> String {
+        reservation(lease.profile, cores: granted(lease.profile.cores, asked: lease.askedCores))
+    }
+
+    /// `5.6 of 8 cores` when fewer cores were granted than asked for, otherwise `cores(_:)` of
+    /// the grant. A lease from before minimums has no asked cores.
+    public static func granted(_ granted: Float, asked: Float?) -> String {
+        let shown = upToOneDecimal(Double(granted))
+        guard let asked, asked > granted, upToOneDecimal(Double(asked)) != shown else {
+            return cores(granted)
+        }
+        return "\(shown) of \(upToOneDecimal(Double(asked))) cores"
+    }
+
+    /// Median and max of a job's runs as
+    /// `median 2.1 cores · 1.2 GB · 3:10   max 3.4 cores · 2 GB · 4:52`. GPU and VRAM show only
+    /// when some run used them.
+    public static func stats(_ stats: RunStats) -> String {
+        let gpu = stats.max.gpuPct > 0
+        let vram = stats.max.vramMb > 0
+        let median = used(stats.median, gpu: gpu, vram: vram)
+        return "median \(median)   max \(used(stats.max, gpu: gpu, vram: vram))"
+    }
+
+    private static func used(_ profile: JobProfile, gpu: Bool, vram: Bool) -> String {
+        let count = profile.cores > 0 && profile.cores < 1
+            ? "\(upToTwoDecimals(Double(profile.cores))) cores"
+            : cores(profile.cores)
+        var parts = [count, "\(size(profile.ramMb)) GB"]
+        if gpu {
+            parts.append("GPU \(whole(Double(profile.gpuPct)))%")
+        }
+        if vram {
+            parts.append("\(size(profile.vramMb)) GB VRAM")
+        }
+        parts.append(duration(Int64(profile.estSecs)))
+        return parts.joined(separator: " · ")
+    }
+
+    private static func reservation(_ profile: JobProfile, cores: String) -> String {
+        var parts = [cores]
         if profile.ramMb > 0 {
             parts.append("\(size(profile.ramMb)) GB")
         }
@@ -125,6 +170,19 @@ public enum Format {
         return rounded == rounded.rounded()
             ? String(format: "%.0f", rounded)
             : String(format: "%.1f", rounded)
+    }
+
+    // .NET's `0.##`: up to two decimals, without trailing zeros.
+    private static func upToTwoDecimals(_ value: Double) -> String {
+        let rounded = (value * 100).rounded(.toNearestOrAwayFromZero) / 100
+        var text = String(format: "%.2f", rounded)
+        while text.hasSuffix("0") {
+            text.removeLast()
+        }
+        if text.hasSuffix(".") {
+            text.removeLast()
+        }
+        return text
     }
 
     private static func twoDigits(_ value: Int64) -> String {

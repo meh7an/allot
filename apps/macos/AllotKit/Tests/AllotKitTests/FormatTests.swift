@@ -95,4 +95,37 @@ import Testing
 
         #expect(Format.reservation(profile) == expected)
     }
+
+    @Test(arguments: [
+        (5.6, 8, "5.6 of 8 cores"),
+        (0.5, 1, "0.5 of 1 cores"),
+        (8, 8, "8 cores"),
+        (7.96, 8, "8 cores"),
+        (1, nil, "1 core"),
+    ] as [(Float, Float?, String)])
+    func grantedNamesTheAskedCoresOnlyWhenFewer(granted: Float, asked: Float?, expected: String) {
+        #expect(Format.granted(granted, asked: asked) == expected)
+    }
+
+    @Test func statsShowMedianAndMaxWithGpuAndVramOnlyWhenUsed() throws {
+        func used(cores: Double, ramMb: Int, gpuPct: Int, vramMb: Int, secs: Int) -> String {
+            #"{"cores": \#(cores), "ram_mb": \#(ramMb), "gpu_pct": \#(gpuPct), "#
+                + #""vram_mb": \#(vramMb), "est_secs": \#(secs)}"#
+        }
+        func stats(median: String, max peak: String) throws -> RunStats {
+            let json = #"{"runs": 12, "median": \#(median), "p90": \#(peak), "max": \#(peak)}"#
+            return try JSONDecoder().decode(RunStats.self, from: Data(json.utf8))
+        }
+        let median = used(cores: 0.85, ramMb: 1229, gpuPct: 0, vramMb: 0, secs: 190)
+        let peak = used(cores: 3.4, ramMb: 2048, gpuPct: 0, vramMb: 0, secs: 292)
+        let gpu = used(cores: 3.4, ramMb: 2048, gpuPct: 40, vramMb: 1024, secs: 292)
+
+        #expect(
+            try Format.stats(stats(median: median, max: peak))
+                == "median 0.85 cores · 1.2 GB · 3:10   max 3.4 cores · 2 GB · 4:52")
+        #expect(
+            try Format.stats(stats(median: median, max: gpu))
+                == "median 0.85 cores · 1.2 GB · GPU 0% · 0 GB VRAM · 3:10   "
+                + "max 3.4 cores · 2 GB · GPU 40% · 1 GB VRAM · 4:52")
+    }
 }

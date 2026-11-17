@@ -1035,6 +1035,12 @@ public sealed record RecentRun
     /// Start of the run, in milliseconds since the Unix epoch.
     /// </summary>
     public required long StartedAtMs { get; init; }
+
+    /// <summary>
+    /// Median, p90 and max of the job's runs, as <c>allot history</c> shows them; <c>null</c> when no run
+    /// of the job counts, and from older daemons.
+    /// </summary>
+    public RunStats? Stats { get; init; }
 }
 
 /// <summary>
@@ -1061,6 +1067,36 @@ public sealed record ResourceUsage
     /// Dedicated video memory.
     /// </summary>
     public required ulong VramMb { get; init; }
+}
+
+/// <summary>
+/// Median, p90 and max of what a job's runs used: the newest runs that neither overlapped
+/// another lease of their session nor were killed, at most as many as an estimate reads.
+/// Cores and GPU load are each run's average while its session was busy, RAM and VRAM its
+/// peak, and <c>est_secs</c> its run time.
+/// </summary>
+public sealed record RunStats
+{
+    /// <summary>
+    /// Highest of each value.
+    /// </summary>
+    public required JobProfile Max { get; init; }
+
+    /// <summary>
+    /// Nearest-rank median of each value.
+    /// </summary>
+    public required JobProfile Median { get; init; }
+
+    /// <summary>
+    /// Nearest-rank 90th percentile of each value, which estimates raise and lower to.
+    /// </summary>
+    [JsonPropertyName("p90")]
+    public required JobProfile P90 { get; init; }
+
+    /// <summary>
+    /// Runs the statistics come from.
+    /// </summary>
+    public required uint Runs { get; init; }
 }
 
 /// <summary>

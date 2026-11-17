@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use allot_core::{admission, ancestry::ProcessNode, binding};
+use allot_core::{admission, ancestry::ProcessNode, binding, history};
 use allot_shared::{
     api::{HealthResponse, Verdict},
     types::{Holder, Lease, LeaseId, LeaseState, SessionKey, Snapshot},
@@ -15,6 +15,7 @@ use allot_shared::{
 use crate::{
     db::repo,
     error::AppError,
+    routes::ESTIMATE_SCAN,
     state::{AppState, Latest, now_ms},
 };
 
@@ -85,7 +86,7 @@ pub async fn ui_state(state: &AppState, service: HealthResponse) -> Result<UiSta
             Ok(Stored {
                 first_session_at_ms: repo::first_session_at_ms(conn)?,
                 cwds,
-                recent: repo::recent_runs(conn, RECENT_RUNS)?,
+                recent: repo::recent_runs(conn, RECENT_RUNS, ESTIMATE_SCAN, history::stats)?,
                 notices: repo::recent_notices(conn, RECENT_NOTICES)?,
                 ended: repo::recently_ended(conn, now - ENDED_WINDOW_MS, ENDED_LIMIT)?,
             })
