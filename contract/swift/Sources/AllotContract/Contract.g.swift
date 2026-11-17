@@ -567,6 +567,11 @@ public struct Lease: Codable, Sendable, Equatable {
     /// Working directory of the command, or empty when the requester did not say.
     public let cwd: String
 
+    /// Cores the request declared before history lowered them; `nil` when history did not
+    /// lower them. A lowered lease counts at these cores for its first seconds, before its
+    /// job's load shows in the 10 s averages.
+    public let declaredCores: Float?
+
     /// Why the lease ended; `nil` while it is queued or active, and for leases that ended
     /// before causes were recorded.
     public let endCause: EndCause?
@@ -615,6 +620,7 @@ public struct Lease: Codable, Sendable, Equatable {
         case binding
         case `class`
         case cwd
+        case declaredCores = "declared_cores"
         case endCause = "end_cause"
         case endedAtMs = "ended_at_ms"
         case expiresAtMs = "expires_at_ms"
@@ -636,6 +642,7 @@ public struct Lease: Codable, Sendable, Equatable {
         self.binding = try container.decodeIfPresent(LeaseBinding.self, forKey: .binding)
         self.`class` = try container.decodeIfPresent(JobClass.self, forKey: .`class`)
         self.cwd = try container.decodeIfPresent(String.self, forKey: .cwd) ?? ""
+        self.declaredCores = try container.decodeIfPresent(Float.self, forKey: .declaredCores)
         self.endCause = try container.decodeIfPresent(EndCause.self, forKey: .endCause)
         self.endedAtMs = try container.decodeIfPresent(Int64.self, forKey: .endedAtMs)
         self.expiresAtMs = try container.decode(Int64.self, forKey: .expiresAtMs)

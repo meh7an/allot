@@ -96,6 +96,7 @@ pub(crate) fn session_usage(session: &str, cores: f32) -> SessionUsage {
             cores,
             ..ResourceUsage::default()
         },
+        cores_10s: cores,
         processes: Vec::new(),
     }
 }
@@ -125,6 +126,7 @@ pub(crate) fn queued_lease(
         binding: None,
         asked_cores: None,
         min_cores: None,
+        declared_cores: None,
         isolation: None,
     }
 }

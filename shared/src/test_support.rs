@@ -52,6 +52,7 @@ pub(crate) fn sample_session_usage() -> SessionUsage {
             gpu_pct: 1.5,
             vram_mb: 64,
         },
+        cores_10s: 5.75,
         processes: vec![ProcessUsage {
             pid: 20_112,
             name: "cargo.exe".into(),
@@ -135,6 +136,7 @@ pub(crate) fn sample_lease() -> Lease {
         binding: None,
         asked_cores: None,
         min_cores: None,
+        declared_cores: None,
         isolation: None,
     }
 }

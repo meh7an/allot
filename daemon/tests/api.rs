@@ -840,6 +840,7 @@ fn stored_active_lease(conn: &mut SqliteConnection, holder: Holder, at_ms: i64) 
             est_secs: 300,
         },
         min_cores: 1.0,
+        declared_cores: None,
         label: "old build".into(),
         cwd: String::new(),
         requested_at_ms: at_ms,
@@ -1221,6 +1222,7 @@ async fn test_three_light_runs_lower_the_next_estimate_and_its_minimum() {
     assert_eq!(lowered.lease.profile.ram_mb, 1_100);
     assert_eq!(lowered.lease.min_cores, Some(lowered.lease.profile.cores));
     assert_eq!(lowered.lease.asked_cores, Some(lowered.lease.profile.cores));
+    assert_eq!(lowered.lease.declared_cores, Some(8.0));
     assert_eq!(
         lowered.verdict.reasons[..2],
         [
@@ -1234,6 +1236,7 @@ async fn test_three_light_runs_lower_the_next_estimate_and_its_minimum() {
     let named = daemon.acquire_build(bob(), 0).await;
     assert_eq!(named.lease.profile.cores, 8.0);
     assert_eq!(named.lease.profile.ram_mb, 1_100);
+    assert_eq!(named.lease.declared_cores, None);
     daemon.stop().await;
 }
 

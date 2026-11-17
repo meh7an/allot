@@ -74,6 +74,7 @@ diesel::table! {
         bound_pid_start_time -> Nullable<BigInt>,
         asked_cores -> Nullable<Float>,
         min_cores -> Nullable<Float>,
+        declared_cores -> Nullable<Float>,
     }
 }
 

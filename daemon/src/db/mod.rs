@@ -122,7 +122,7 @@ mod tests {
     // End causes, lease bindings, and the meta table.
     const V0_2_MIGRATIONS: usize = 3;
     // Migrations after v0.2's, reverted first to reach the schema before it.
-    const LATER_MIGRATIONS: usize = 1;
+    const LATER_MIGRATIONS: usize = 2;
 
     #[derive(QueryableByName)]
     struct TableName {

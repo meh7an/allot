@@ -610,6 +610,9 @@ mod tests {
             reserved_cores: 0.0,
             reservations: 0,
             background_cores: 0.0,
+            starting_cores: admission::Tally::default(),
+            overrun_cores: admission::Tally::default(),
+            overrun_ram_mb: admission::Tally::default(),
         }
     }
 

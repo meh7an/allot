@@ -455,6 +455,7 @@ mod tests {
             binding: None,
             asked_cores: None,
             min_cores: None,
+            declared_cores: None,
             isolation: None,
         }
     }
@@ -488,6 +489,7 @@ mod tests {
                     gpu_pct: 0.0,
                     vram_mb: 0,
                 },
+                cores_10s: 2.3,
                 processes: vec![],
             }],
             unattributed: ResourceUsage::default(),

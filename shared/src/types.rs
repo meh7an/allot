@@ -209,6 +209,11 @@ pub struct SessionUsage {
     pub holder: Holder,
     /// Sum over every process in the subtree.
     pub usage: ResourceUsage,
+    /// CPU load of the subtree averaged over the last 10 seconds, in logical cores, or over
+    /// the samples since the session was first seen. The machine's `avg_10s` covers the same
+    /// window, so the two can be subtracted.
+    #[serde(default)]
+    pub cores_10s: f32,
     /// The processes in the subtree, busiest first.
     pub processes: Vec<ProcessUsage>,
 }
@@ -482,6 +487,11 @@ pub struct Lease {
     /// recorded, which may not shrink.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub min_cores: Option<f32>,
+    /// Cores the request declared before history lowered them; `None` when history did not
+    /// lower them. A lowered lease counts at these cores for its first seconds, before its
+    /// job's load shows in the 10 s averages.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub declared_cores: Option<f32>,
     /// What the lease is for, usually the command that will run.
     pub label: String,
     /// Working directory of the command, or empty when the requester did not say.
@@ -732,6 +742,7 @@ mod tests {
         let lease = Lease {
             asked_cores: Some(8.0),
             min_cores: Some(4.0),
+            declared_cores: None,
             ..sample_lease()
         };
         assert_json_round_trip(&lease);

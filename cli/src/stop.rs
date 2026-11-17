@@ -115,6 +115,7 @@ mod tests {
             binding: None,
             asked_cores: None,
             min_cores: None,
+            declared_cores: None,
             isolation: None,
         }
     }

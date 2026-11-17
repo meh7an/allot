@@ -29,6 +29,7 @@ pub(crate) fn sample_draft(session: &str, requested_at_ms: i64) -> LeaseDraft {
             est_secs: 300,
         },
         min_cores: 4.0,
+        declared_cores: None,
         label: "cargo build --release".into(),
         cwd: r"E:\work\app".into(),
         requested_at_ms,

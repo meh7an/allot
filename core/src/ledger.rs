@@ -29,7 +29,7 @@ use allot_shared::{
 };
 
 use crate::{
-    admission::{self, Room, Running},
+    admission::{self, Extra, Room, Running},
     benchmark::{Quiet, QuietLimits, QuietWindow},
     meter::{MeteredRun, RunMeter, ScopeUsage},
 };
@@ -130,8 +130,12 @@ pub struct Ledger {
 
 #[derive(Debug, Clone)]
 struct Candidate<'a> {
+    /// The queued lease, or `None` for a request not stored yet.
+    id: Option<LeaseId>,
     /// The profile asked for.
     profile: &'a JobProfile,
+    /// Cores declared before history lowered them, held for a while after the grant.
+    declared_cores: Option<f32>,
     /// The fewest cores it may start with.
     min_cores: f32,
     kind: LeaseKind,
@@ -434,8 +438,8 @@ impl Ledger {
     pub fn ceiling(&self, snapshot: &Snapshot) -> Room {
         let active = self.active();
         let mut room = Room::measure(snapshot, &active, self.settings.headroom_pct);
-        for lease in &active {
-            room.release(&lease.profile);
+        for running in admission::running(snapshot, &active) {
+            room.end(&running);
         }
         room
     }
@@ -458,7 +462,9 @@ impl Ledger {
         let mut candidates = self.queued_candidates();
         let queued_ahead = candidates.len();
         candidates.push(Candidate {
+            id: None,
             profile,
+            declared_cores: None,
             min_cores,
             kind,
             label: "this request".to_owned(),
@@ -627,7 +633,9 @@ impl Ledger {
             .iter()
             .filter(|lease| lease.state == LeaseState::Queued)
             .map(|lease| Candidate {
+                id: Some(lease.id),
                 profile: &lease.profile,
+                declared_cores: lease.declared_cores,
                 min_cores: start_minimum(lease.kind, &lease.profile, lease.min_cores),
                 kind: lease.kind,
                 label: format!("lease {}", lease.id.0),
@@ -646,7 +654,7 @@ impl Ledger {
         let active = self.active();
         let mut pass = Pass {
             room: Room::measure(snapshot, &active, self.settings.headroom_pct),
-            running: active.iter().map(|lease| Running::of(lease)).collect(),
+            running: admission::running(snapshot, &active),
             draining: active
                 .iter()
                 .filter(|lease| !is_low_impact(lease.kind, &lease.asked_profile()))
@@ -742,9 +750,20 @@ impl Ledger {
                     spare.reserve(&granted);
                 }
             }
+            // A lowered lease holds its declared cores from its grant, so a later candidate in
+            // the same pass does not take room its load will need.
+            let extra = Extra {
+                starting_cores: admission::hold_cores(candidate.declared_cores, &granted),
+                ..Extra::default()
+            };
             pass.room.reserve(&granted);
-            pass.running
-                .push(Running::starting(now_ms, &granted, candidate.profile.cores));
+            if let Some(id) = candidate.id {
+                pass.room.count(id, &extra);
+            }
+            pass.running.push(Running {
+                extra,
+                ..Running::starting(now_ms, &granted, candidate.profile.cores)
+            });
             if !low_impact {
                 pass.draining += 1;
             }
@@ -810,7 +829,7 @@ impl Ledger {
         now_ms: i64,
     ) -> Option<u64> {
         let active = self.active();
-        let running: Vec<Running> = active.iter().map(|lease| Running::of(lease)).collect();
+        let running = admission::running(snapshot, &active);
         if kind == LeaseKind::BenchmarkExclusive {
             let quiet = &self.settings.quiet;
             let wait_ms = if running.is_empty() {
@@ -1084,6 +1103,35 @@ mod tests {
         enqueue(&mut ledger, 1, 8.0, 300, 0);
         assert!(granted(&ledger.tick(1_000, &busy(), &alive())).is_empty());
         assert_eq!(granted(&ledger.tick(2_000, &idle(), &alive())), [1]);
+    }
+
+    #[test]
+    fn test_tick_lowered_lease_holds_its_declared_cores_for_its_first_seconds() {
+        let mut ledger = Ledger::new(settings());
+        let lowered = Lease {
+            declared_cores: Some(8.0),
+            ..queued_lease(1, "s", timed(0.4, 600), LeaseKind::Normal, 0)
+        };
+        ledger.enqueue(lowered).unwrap();
+        enqueue(&mut ledger, 2, 8.0, 300, 0);
+
+        // Granted in the same pass, lease 1 already holds 8.0 of the 14.4 usable cores.
+        assert_eq!(granted(&ledger.tick(0, &sample(0, 0.0), &alive())), [1]);
+        assert!(granted(&ledger.tick(14_000, &sample(14_000, 0.0), &alive())).is_empty());
+        let verdict = ledger
+            .verdict_for(LeaseId(2), &sample(14_000, 0.0), 14_000)
+            .unwrap();
+        assert!(
+            verdict
+                .reasons
+                .iter()
+                .any(|reason| reason.contains("7.6 more held by lease 1 for its first 15 s")),
+            "{verdict:?}"
+        );
+        assert_eq!(
+            granted(&ledger.tick(15_000, &sample(15_000, 0.0), &alive())),
+            [2]
+        );
     }
 
     #[test]

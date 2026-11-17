@@ -355,6 +355,10 @@
  *   Class the profile was taken from, or `null` for a custom profile.
  * @property {string} cwd
  *   Working directory of the command, or empty when the requester did not say.
+ * @property {number | null} declared_cores
+ *   Cores the request declared before history lowered them; `null` when history did not
+ *   lower them. A lowered lease counts at these cores for its first seconds, before its
+ *   job's load shows in the 10 s averages.
  * @property {EndCause | null} end_cause
  *   Why the lease ended; `null` while it is queued or active, and for leases that ended
  *   before causes were recorded.
@@ -781,6 +785,7 @@ const TYPES = {
       binding: { type: "LeaseBinding", nullable: true, absent: null },
       class: { type: "JobClass", nullable: true, absent: null },
       cwd: { type: "string", absent: "" },
+      declared_cores: { type: "float", nullable: true, absent: null },
       end_cause: { type: "EndCause", nullable: true, absent: null },
       ended_at_ms: { type: "int64", nullable: true, absent: null },
       expires_at_ms: { type: "int64" },

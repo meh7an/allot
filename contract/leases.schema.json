@@ -236,6 +236,14 @@
           "type": "string",
           "default": ""
         },
+        "declared_cores": {
+          "description": "Cores the request declared before history lowered them; `None` when history did not\nlower them. A lowered lease counts at these cores for its first seconds, before its\njob's load shows in the 10 s averages.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float"
+        },
         "end_cause": {
           "description": "Why the lease ended; `None` while it is queued or active, and for leases that ended\nbefore causes were recorded.",
           "anyOf": [

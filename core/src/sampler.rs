@@ -9,7 +9,7 @@ use allot_shared::{
     Result,
     types::{
         Accuracy, CpuStats, DriveUsage, GpuAdapter, GpuEngines, GpuSource, Holder, MemStats,
-        ProcessUsage, ResourceUsage, Rolling, SessionUsage, Snapshot,
+        ProcessUsage, ResourceUsage, Rolling, SessionKey, SessionUsage, Snapshot,
     },
 };
 
@@ -178,6 +178,7 @@ impl EngineWindows {
 pub struct SnapshotBuilder {
     cpu: RollingWindow,
     gpus: HashMap<String, EngineWindows>,
+    sessions: HashMap<SessionKey, RollingWindow>,
 }
 
 impl SnapshotBuilder {
@@ -193,6 +194,7 @@ impl SnapshotBuilder {
             .retain(|luid, _| raw.gpus.iter().any(|gpu| &gpu.luid == luid));
         let (mut sessions, mut unattributed) = attribute(&raw.processes, sessions);
         reconcile_gpu(&raw.gpus, &mut sessions, &mut unattributed);
+        self.roll_sessions(&mut sessions);
         let gpus = raw
             .gpus
             .into_iter()
@@ -227,6 +229,24 @@ impl SnapshotBuilder {
             drives: raw.drives,
         }
     }
+
+    /// Folds each session's CPU load into its own window and fills in its 10 s average. A
+    /// session left out of a sample loses its window.
+    fn roll_sessions(&mut self, sessions: &mut [SessionUsage]) {
+        self.sessions.retain(|key, _| {
+            sessions
+                .iter()
+                .any(|session| &session.holder.session == key)
+        });
+        for session in sessions {
+            let window = self
+                .sessions
+                .entry(session.holder.session.clone())
+                .or_default();
+            window.push(session.usage.cores);
+            session.cores_10s = window.rolling().avg_10s;
+        }
+    }
 }
 
 /// Splits process usage between `sessions` and everything else.
@@ -259,6 +279,7 @@ pub fn attribute(
         .map(|holder| SessionUsage {
             holder: holder.clone(),
             usage: ResourceUsage::default(),
+            cores_10s: 0.0,
             processes: Vec::new(),
         })
         .collect();
@@ -536,6 +557,32 @@ mod tests {
             },
             ..process(pid, parent_pid, 10, 0.0)
         }
+    }
+
+    #[test]
+    fn test_snapshot_builder_averages_each_session_over_10_samples() {
+        let sample = |cores: f32| RawSample {
+            processes: vec![process(10, None, 1, cores)],
+            ..raw(0.0, vec![])
+        };
+        let session = [holder("a", 10, 1)];
+        let mut builder = SnapshotBuilder::new();
+        let first = builder.build(sample(4.0), &session);
+        assert_eq!(first.sessions[0].cores_10s, 4.0);
+        for _ in 0..9 {
+            builder.build(sample(0.0), &session);
+        }
+        let later = builder.build(sample(0.0), &session);
+        // The first sample has left the 10 s window; the latest is what the session uses now.
+        assert_eq!(later.sessions[0].cores_10s, 0.0);
+        let burst = builder.build(sample(5.0), &session);
+        assert_eq!(burst.sessions[0].usage.cores, 5.0);
+        assert_eq!(burst.sessions[0].cores_10s, 0.5);
+
+        // A session missing from one sample starts over.
+        builder.build(sample(5.0), &[]);
+        let again = builder.build(sample(1.0), &session);
+        assert_eq!(again.sessions[0].cores_10s, 1.0);
     }
 
     #[test]

@@ -40,6 +40,9 @@ pub struct LeaseDraft {
     pub profile: JobProfile,
     /// The fewest cores the lease may start with, at most `profile.cores`.
     pub min_cores: f32,
+    /// Cores the request declared before history lowered them; `None` when history did not
+    /// lower them.
+    pub declared_cores: Option<f32>,
     /// What the lease is for, usually the command that will run.
     pub label: String,
     /// Working directory of the command, or empty when unknown.
@@ -685,6 +688,7 @@ mod tests {
         assert_eq!(lease.profile, draft.profile);
         assert_eq!(lease.asked_cores, Some(draft.profile.cores));
         assert_eq!(lease.min_cores, Some(draft.min_cores));
+        assert_eq!(lease.declared_cores, None);
         assert_eq!(lease.cwd, draft.cwd);
         assert_eq!(lease.granted_at_ms, None);
         assert_eq!(get_lease(&mut conn, lease.id).unwrap(), Some(lease.clone()));
@@ -698,6 +702,18 @@ mod tests {
                 reason: "requested".into(),
             }]
         );
+    }
+
+    #[test]
+    fn test_insert_lease_keeps_the_cores_declared_before_lowering() {
+        let mut conn = memory_conn();
+        let draft = LeaseDraft {
+            declared_cores: Some(8.0),
+            ..sample_draft("s1", 1_000)
+        };
+        let lease = insert_lease(&mut conn, &draft).unwrap();
+        assert_eq!(lease.declared_cores, Some(8.0));
+        assert_eq!(get_lease(&mut conn, lease.id).unwrap(), Some(lease));
     }
 
     #[test]

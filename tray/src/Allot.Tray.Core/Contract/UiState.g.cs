@@ -664,6 +664,13 @@ public sealed record Lease
     public string Cwd { get; set; } = "";
 
     /// <summary>
+    /// Cores the request declared before history lowered them; <c>null</c> when history did not
+    /// lower them. A lowered lease counts at these cores for its first seconds, before its
+    /// job's load shows in the 10 s averages.
+    /// </summary>
+    public float? DeclaredCores { get; init; }
+
+    /// <summary>
     /// Why the lease ended; <c>null</c> while it is queued or active, and for leases that ended
     /// before causes were recorded.
     /// </summary>

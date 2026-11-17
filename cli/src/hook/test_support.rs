@@ -155,6 +155,7 @@ pub fn lease(id: i64, state: LeaseState, profile: JobProfile) -> Lease {
         binding: None,
         asked_cores: None,
         min_cores: None,
+        declared_cores: None,
         isolation: None,
     }
 }

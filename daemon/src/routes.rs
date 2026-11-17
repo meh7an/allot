@@ -276,6 +276,10 @@ async fn acquire(
         request.min_cores,
     );
     let estimate = estimate(&state, resolved.profile, &request.label, &cwd, lowering).await?;
+    // History only raises cores up to the ceiling, never below the declared cores, so fewer
+    // cores here means they were lowered.
+    let declared_cores =
+        (estimate.profile.cores < resolved.profile.cores).then_some(resolved.profile.cores);
     // A benchmark keeps its full request, so its measurements stay comparable.
     let min_cores = match request.kind {
         LeaseKind::BenchmarkExclusive => estimate.profile.cores,
@@ -291,6 +295,7 @@ async fn acquire(
         class: resolved.class,
         profile: estimate.profile,
         min_cores,
+        declared_cores,
         label: request.label,
         cwd,
         requested_at_ms: now,

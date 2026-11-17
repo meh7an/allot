@@ -43,6 +43,7 @@ pub(crate) fn snapshot() -> Snapshot {
             cores,
             ..ResourceUsage::default()
         },
+        cores_10s: cores,
         processes: vec![ProcessUsage {
             pid: 7,
             name: "cargo.exe".into(),
@@ -234,6 +235,7 @@ pub(crate) fn lease(id: i64, holder: Holder, state: LeaseState) -> Lease {
         binding: None,
         asked_cores: None,
         min_cores: None,
+        declared_cores: None,
         isolation: None,
     }
 }
