@@ -14,10 +14,10 @@ use allot_core::{
     sampler::{RawSample, Sampler, SnapshotBuilder},
 };
 use allot_shared::types::{
-    BoundProcess, EndCause, JobRun, LeaseBinding, LeaseId, LeaseState, SessionKey,
+    BoundProcess, EndCause, Holder, JobRun, LeaseBinding, LeaseId, LeaseState, SessionKey,
 };
 use anyhow::Context;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, watch};
 
 use crate::{
     db::repo,
@@ -34,7 +34,8 @@ pub type SamplerFactory = Box<dyn FnOnce() -> allot_shared::Result<Box<dyn Sampl
 
 type SampleResult = allot_shared::Result<RawSample>;
 
-/// Starts the sampling thread. It samples every `interval` until the receiver is dropped.
+/// Starts the sampling thread. It samples every `interval` until the receiver is dropped, and
+/// before each sample hands the sampler the latest `holders`.
 ///
 /// # Errors
 ///
@@ -42,6 +43,7 @@ type SampleResult = allot_shared::Result<RawSample>;
 pub fn spawn_sampler(
     factory: SamplerFactory,
     interval: Duration,
+    holders: watch::Receiver<Vec<Holder>>,
 ) -> anyhow::Result<mpsc::Receiver<SampleResult>> {
     let (sender, receiver) = mpsc::channel(4);
     thread::Builder::new()
@@ -59,6 +61,8 @@ pub fn spawn_sampler(
             loop {
                 next += interval;
                 thread::sleep(next.saturating_duration_since(Instant::now()));
+                let tracked = holders.borrow().clone();
+                sampler.track_holders(&tracked);
                 if sender.blocking_send(sampler.sample()).is_err() {
                     return;
                 }
@@ -69,14 +73,22 @@ pub fn spawn_sampler(
 }
 
 /// Folds samples into snapshots, ticks the ledger, finds the processes of bound commands, and
-/// ends leases their holder forgot after each one, until the sampling thread stops.
-pub async fn run(state: AppState, mut samples: mpsc::Receiver<SampleResult>) {
+/// ends leases their holder forgot after each one, until the sampling thread stops. Sends the
+/// live sessions' holders to the sampling thread through `holders`.
+pub async fn run(
+    state: AppState,
+    mut samples: mpsc::Receiver<SampleResult>,
+    holders: watch::Sender<Vec<Holder>>,
+) {
     let mut builder = SnapshotBuilder::new();
     let mut cpu_history = VecDeque::with_capacity(CPU_HISTORY);
     let mut idle = IdleWatch::new();
     while let Some(sample) = samples.recv().await {
         match sample {
-            Ok(raw) => ingest(&state, &mut builder, &mut cpu_history, &mut idle, raw).await,
+            Ok(raw) => {
+                let sessions = ingest(&state, &mut builder, &mut cpu_history, &mut idle, raw).await;
+                holders.send_replace(sessions);
+            }
             Err(error) => tracing::warn!("sampling failed: {error}"),
         }
     }
@@ -89,7 +101,7 @@ async fn ingest(
     cpu_history: &mut VecDeque<f32>,
     idle: &mut IdleWatch,
     raw: RawSample,
-) {
+) -> Vec<Holder> {
     let processes = ProcessTable::new(&raw.processes);
     let sessions = state.live_sessions(&processes);
     let snapshot = builder.build(raw, &sessions);
@@ -127,6 +139,7 @@ async fn ingest(
     for run in runs {
         routes::store_job_run(state, run).await;
     }
+    sessions
 }
 
 /// Ends, as expired, the active leases whose command has ended and whose holder's session

@@ -6,7 +6,10 @@ mod drives;
 mod dxgi;
 mod exe;
 mod gpu;
+mod jobs;
 mod kill;
+#[cfg(test)]
+mod measure;
 mod pdh;
 mod process;
 
@@ -20,13 +23,13 @@ use std::{
 use allot_core::sampler::{RawGpu, RawProcess, RawSample, Sampler};
 use allot_shared::{
     Result,
-    types::{Accuracy, GpuSource, MemStats, ResourceUsage},
+    types::{Accuracy, GpuSource, Holder, MemStats, ResourceUsage},
 };
 use sysinfo::{Pid, Process, ProcessRefreshKind, ProcessesToUpdate, System};
 
 use crate::{
     cpu::{CpuTimes, ProcessTime},
-    windows::{drives::Drives, exe::ExeCache},
+    windows::{drives::Drives, exe::ExeCache, jobs::HolderJobs},
 };
 
 const BYTES_PER_MB: u64 = 1024 * 1024;
@@ -51,6 +54,8 @@ pub struct SystemSampler {
     /// process it could not open when it first listed it and never reads it again, so a
     /// session's `claude.exe` would read as exited, and its leases expire, while it runs.
     start_times: HashMap<u32, u64>,
+    /// Holder jobs, whose exited members' CPU time is added to the holder's own load.
+    jobs: HolderJobs,
 }
 
 #[derive(Debug)]
@@ -110,6 +115,7 @@ impl SystemSampler {
             process_cores: HashMap::new(),
             exe_paths: ExeCache::default(),
             start_times: HashMap::new(),
+            jobs: HolderJobs::default(),
         };
         sampler.refresh()?;
         Ok(sampler)
@@ -154,6 +160,13 @@ impl SystemSampler {
         let now = Instant::now();
         let logical_cores = self.system.cpus().len().max(1) as f32;
         self.process_cores = self.cpu_times.update(now, &times, logical_cores);
+        let credits = self
+            .jobs
+            .unseen_cores(self.cpu_times.interval_ms(), &self.process_cores);
+        for (pid, cores) in credits {
+            let holder = self.process_cores.entry(pid).or_default();
+            *holder = (*holder + cores).min(logical_cores);
+        }
         self.drives.refresh(now);
         self.query.collect()
     }
@@ -237,6 +250,10 @@ impl SystemSampler {
 }
 
 impl Sampler for SystemSampler {
+    fn track_holders(&mut self, holders: &[Holder]) {
+        self.jobs.track(holders);
+    }
+
     fn sample(&mut self) -> Result<RawSample> {
         self.refresh()?;
         let gpu = match &self.gpu {

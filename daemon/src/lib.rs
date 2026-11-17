@@ -19,7 +19,7 @@ use allot_shared::{
     config::Config,
     types::{LeaseId, LeaseState},
 };
-use tokio::net::TcpListener;
+use tokio::{net::TcpListener, sync::watch};
 
 use crate::{
     db::{DbPool, repo},
@@ -69,8 +69,9 @@ pub async fn serve(
     ));
     restore_leftovers(&state).await?;
     adopt_scopes(&state).await;
-    let samples = sampling::spawn_sampler(options.sampler, options.sample_interval)?;
-    let sampling = tokio::spawn(sampling::run(state.clone(), samples));
+    let (holders, tracked) = watch::channel(Vec::new());
+    let samples = sampling::spawn_sampler(options.sampler, options.sample_interval, tracked)?;
+    let sampling = tokio::spawn(sampling::run(state.clone(), samples, holders));
     let upkeep = tokio::spawn(maintenance::run(state.clone(), options.maintenance));
 
     let mut requested = state.shutdown.subscribe();

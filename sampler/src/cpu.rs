@@ -25,6 +25,7 @@ pub(crate) struct ProcessTime {
 pub(crate) struct CpuTimes {
     previous: HashMap<u32, ProcessTime>,
     previous_at: Option<Instant>,
+    interval_ms: Option<f64>,
 }
 
 #[cfg(any(windows, test))]
@@ -37,11 +38,12 @@ impl CpuTimes {
         processes: &[ProcessTime],
         max_cores: f32,
     ) -> HashMap<u32, f32> {
-        let interval_ms = self
+        self.interval_ms = self
             .previous_at
-            .map(|at| now.saturating_duration_since(at).as_secs_f64() * 1_000.0);
+            .map(|at| now.saturating_duration_since(at).as_secs_f64() * 1_000.0)
+            .filter(|&ms| ms > 0.0);
         let mut rates = HashMap::new();
-        if let Some(interval_ms) = interval_ms.filter(|&ms| ms > 0.0) {
+        if let Some(interval_ms) = self.interval_ms {
             for process in processes {
                 let used_ms = match self.previous.get(&process.pid) {
                     Some(before) if before.start_time == process.start_time => {
@@ -60,6 +62,12 @@ impl CpuTimes {
             .collect();
         self.previous_at = Some(now);
         rates
+    }
+
+    /// Milliseconds the rates of the last [`CpuTimes::update`] cover; `None` after the first.
+    #[cfg(windows)]
+    pub(crate) fn interval_ms(&self) -> Option<f64> {
+        self.interval_ms
     }
 }
 

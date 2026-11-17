@@ -6,6 +6,14 @@ All notable changes to this project are documented in this file. The format foll
 
 ## [Unreleased]
 
+### Fixed
+
+- Windows: a session's CPU load now counts processes that start and exit between two samples,
+  and the last stretch of those that exit. allotd puts each session's `claude.exe` in a Job
+  Object without limits and credits the job's CPU time that no sampled process accounts for to
+  the session. A clean `cargo build --workspace` measured 74 to 77% of its CPU time in its
+  session before and 100% after; the rest had counted as load from outside any lease.
+
 ## [0.4.0] - 2026-11-15
 
 ### Added

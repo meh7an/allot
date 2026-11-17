@@ -25,6 +25,11 @@ pub trait Sampler {
     ///
     /// Returns [`allot_shared::Error::Sampler`] when the OS counters cannot be read.
     fn sample(&mut self) -> Result<RawSample>;
+
+    /// Names the live sessions' holders before a [`Sampler::sample`], so a sampler that can
+    /// count a holder's descendants more exactly than per process may do so for them. A
+    /// holder left out of a later call is no longer tracked. The default does nothing.
+    fn track_holders(&mut self, _holders: &[Holder]) {}
 }
 
 /// One reading of the machine, before averaging and session attribution.
