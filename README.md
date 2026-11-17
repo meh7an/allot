@@ -40,7 +40,8 @@ None of the sessions can see the others.
 
 Allot gives them a shared view of the machine and a ledger of who is using what. A session
 reserves the cores, RAM, GPU, and VRAM a job needs before running it; when they are not free, it
-waits in a queue and is told what is ahead and roughly how long. Everything stays on your machine.
+starts on fewer cores or waits in a queue and is told what is ahead and roughly how long. A job
+that ran before reserves what it used then, not what was guessed. Everything stays on your machine.
 
 ## Install
 
@@ -137,18 +138,29 @@ queue, telling it to go ahead:
 }
 ```
 
-Each session ran its build and released its lease. Allot then knew what those jobs really needed,
-and estimates their next runs from that, not only from what the session declared:
+Each session ran its build and released its lease, and Allot recorded what each build used. A run
+that needs more than its session declares reserves what earlier runs needed. From the third run of
+the same command in the same folder, a run that needs less reserves what earlier runs used plus
+10%, here about 4 cores instead of 19.2. `release_lease` tells the session what its next run will
+reserve, and `allot history` shows the median, p90, and max of each job:
 
 ```console
 $ allot history
-learned needs: p90 of peak memory and of the load while busy over the newest runs without an overlapping lease
+median, p90 and max over the newest runs without an overlapping lease: cores and GPU while busy, peak RAM and VRAM, run time
+
 cargo build --release|/home/mehran/allot-sample/api-server
   1 run(s), last ended 1s ago: cargo build --release
-  needs 3.9 cores, 0.2 GB, 1m 03s (from 1 run(s))
+  from 1 run(s)   cores      RAM  time
+  median            3.9   0.2 GB  1m 03s
+  p90               3.9   0.2 GB  1m 03s
+  max               3.9   0.2 GB  1m 03s
+
 cargo build --release|/home/mehran/allot-sample/web-app
   1 run(s), last ended 1m 04s ago: cargo build --release
-  needs 3.9 cores, 0.3 GB, 1m 04s (from 1 run(s))
+  from 1 run(s)   cores      RAM  time
+  median            3.9   0.3 GB  1m 04s
+  p90               3.9   0.3 GB  1m 04s
+  max               3.9   0.3 GB  1m 04s
 ```
 
 ## The panel
@@ -173,7 +185,7 @@ retries on its own.
 |---------|---------------|
 | `allot status [--watch]` | Machine usage, sessions, and their leases, once or redrawn every 2 s. Starts allotd if it is down. |
 | `allot leases [--all]` | Active and queued leases, or the most recent ones in any state. |
-| `allot history [FINGERPRINT]` | What past jobs needed, or the runs of one job. |
+| `allot history [FINGERPRINT]` | Median, p90, and max of what past jobs used, or the runs of one job. |
 | `allot classes` | The heavy-command rules, class profiles, and presets in effect. |
 | `allot kill ID` / `allot remove ID` | Stop a running job, or take a queued one out of the queue. |
 | `allot daemon start\|stop\|status` | Control allotd. `status` never starts it. |
@@ -207,7 +219,8 @@ Every key, the class profiles, and the classifier rules are in the
 - [Install guide](docs/install.md): every option, upgrades, uninstalling, and building from source.
 - [How it works](docs/how-it-works.md): the parts, admission, learned profiles, benchmarks, files,
   and platform support.
-- [Runbook](docs/runbook.md): health checks, stopping jobs, crash recovery, and
+- [Runbook](docs/runbook.md): health checks, stopping jobs, [admission](docs/runbook.md#admission)
+  (minimum cores, learned estimates, overruns), crash recovery, and
   [troubleshooting](docs/runbook.md#troubleshooting).
 - [Changelog](CHANGELOG.md).
 

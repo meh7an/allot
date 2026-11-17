@@ -6,6 +6,38 @@ All notable changes to this project are documented in this file. The format foll
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-17
+
+### Added
+
+- Run statistics: the median, p90 and max of cores, RAM, GPU, VRAM and run time over a job's
+  newest 20 clean runs. `allot history` shows them as a table per job and above a job's runs,
+  and they are in `/history` and `/history/runs` (`stats`). `release_lease` says what the run
+  used (`run`) and what the next run of the command would reserve (`next`).
+- The panels on Windows, macOS, GNOME and KDE show "5.6 of 8 cores" on a running lease that
+  started with fewer cores, and a median and max line under a recently finished job with 2 or
+  more runs.
+- `[estimates]` in `config.toml`: `lower` (true), `min_runs` (3) and `margin_pct` (10).
+- The runbook's Admission section explains the room, minimum cores, learned estimates, live
+  overruns and how to read a queued lease's reasons. Its Configuration table now lists every
+  key, `min_cores` and `[presets.*]` included.
+
+### Changed
+
+- Learned estimates lower as well as raise. After 3 clean runs of the same command in the same
+  directory, a lease reserves what they used plus 10% (p90 of cores, GPU and VRAM; the highest
+  peak of RAM) instead of its declared profile, never below 0.25 cores, 256 MB or a `min_cores`
+  the request names. Run time never lowers, benchmarks never lower, and lowering never makes a
+  lease low impact. The reasons say what changed, for example "cores 2.2 from p90 of 3 past
+  run(s) plus 10% (declared 8.0)". A job whose work runs outside its Claude session, such as
+  tests in containers, no longer counts twice: once as its reservation and once as background.
+- Admission counts each session that holds leases at the larger of its reservations and what
+  it uses (its 10 s average cores and its RAM), so a job running hotter than it reserved holds
+  back new grants, and background load is the machine's 10 s average less those sessions' own.
+  For its first 15 s, a lease that history lowered counts at its declared cores. Queued reasons
+  name the lease: "3.5 more in use by lease 1", "7.6 more held by lease 1 for its first 15 s".
+- Leases carry `declared_cores` when history lowered their cores.
+
 ### Fixed
 
 - Windows: a session's CPU load now counts processes that start and exit between two samples,
@@ -212,7 +244,8 @@ First public release.
 - A logon task for autostart, and a runbook for health checks, troubleshooting, and
   configuration.
 
-[Unreleased]: https://github.com/meh7an/allot/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/meh7an/allot/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/meh7an/allot/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/meh7an/allot/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/meh7an/allot/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/meh7an/allot/compare/v0.1.0...v0.2.0

@@ -90,6 +90,8 @@ needs: a `class`, a `preset` (table above), or a custom profile (`cores` and `ra
 A custom profile counts as quick when `est_secs` is 15 or less, and as low impact when it has
 at most 0.25 cores and 256 MB and no GPU or VRAM. History raises a lease to what earlier runs
 of the same command needed, so a command that ran bigger before loses either status by itself.
+History also lowers a lease to what earlier runs used, but never into either status: run time
+never lowers, and a lowered lease keeps at least 257 MB unless it was declared low impact.
 
 ### Starting with fewer cores
 
@@ -219,9 +221,11 @@ or in a tool result whose `end_cause` is `killed` or `removed` (`acquire_lease`,
 - `sessions`: each Claude session's summed `cores`, `ram_mb`, `gpu_pct`, `vram_mb`;
   `is_current` marks yours. `other` is load from everything outside the sessions.
 
-Admission uses reservations, not just measured load: a granted lease keeps its granted
-profile reserved even before its processes ramp up, and a headroom (15% by default) of each
-resource is never handed out.
+Admission counts each session that holds leases at the larger of its reservations and its
+measured use (10 s average cores, current RAM): a granted lease keeps its profile reserved
+even before its processes ramp up, a job that uses more than it reserved holds back new
+grants ("3.5 more in use by lease 42"), and a headroom (15% by default) of each resource is
+never handed out.
 So `can_fit` is the authority on whether a job starts; the snapshot explains why (who is
 busy, whether the load is another session's lease or unrelated background like a game).
 Mention it to the user when unrelated background load is what blocks you.
@@ -232,8 +236,11 @@ runs of the same command needed more than the declared class, the lease reserves
 values (p90 of past runs, capped at what the machine can free), and the first `reasons` say
 so, for example "cores 11.2 from p90 of 4 past run(s) (declared 8.0)". After 3 runs that used
 less, it reserves less: what they used plus 10%, for example "cores 2.2 from p90 of 3 past
-run(s) plus 10% (declared 8.0)", never below a `min_cores` you give. Both are expected, not
-errors; keep naming the class. `allot history` shows what each job needed.
+run(s) plus 10% (declared 8.0)", never below a `min_cores` you give. For its first 15 s a
+lowered lease still holds back its declared cores ("7.6 more held by lease 42 for its first
+15 s"). All of this is expected, not errors; keep naming the class. `release_lease` returns
+what the run used (`run`) and what the next run would reserve (`next`), and `allot history`
+shows the median, p90 and max of each job.
 
 ## Benchmarks
 

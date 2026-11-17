@@ -165,6 +165,100 @@ The hook also never blocks on its own failures: unreadable input, an invalid con
 wrong arguments produce a warning and let the command through. It always exits 0, so a
 broken `allot.exe` cannot block every shell call.
 
+## Admission
+
+A lease starts when its profile fits in the room, and queues otherwise. allotd measures the room
+from each one-second sample:
+
+- **Usable capacity**: each resource's total, less `admission.headroom_pct` (15% by default),
+  which no lease gets.
+- **Background**: the machine's 10 s average CPU load, and the RAM, GPU load and VRAM in use,
+  outside the sessions that hold active leases. Memory the OS can reclaim does not count.
+- **Leases**: each active lease's reservation, plus what its session uses beyond it (see Live
+  overrun below).
+
+What is left is free. The queue is first in, first out: a later, smaller lease starts ahead of
+a waiting one only when that does not delay it (backfill), so nothing starves. `can_fit`
+answers from the same room without reserving anything.
+
+### Minimum cores
+
+Only cores shrink. When not all the cores a normal lease asks for are free, it starts on the
+free cores, rounded down to a tenth, as long as that is at least its minimum. Its reasons say
+"granted 5.6 of 8.0 cores", `allot status` shows "5.6 of 8.0 cores", and the panels "5.6 of 8
+cores". Nothing caps the command: it runs all its threads on fewer reserved cores and takes
+longer, and its expected run time stretches by asked over granted cores. A shrunk lease does
+not grow when cores free up later. Below its minimum the lease waits, and the reason says
+"cores: 8.0 requested (at least 4.0), 2.4 free (...)". RAM, GPU and VRAM are all or nothing,
+and a `benchmark_exclusive` lease always waits for its full request.
+
+The minimum is the first of:
+
+1. `min_cores` in the `acquire_lease` or `can_fit` request;
+2. `min_cores` of the class or preset in `config.toml`;
+3. half the class or preset's cores, at least 1 core (all of them under 1 core).
+
+A custom profile without `min_cores` keeps all its cores. `allot classes` shows each minimum
+(light 1, cpu_heavy 4, gpu_heavy 1, mixed 3, cpu_small 1, cpu_medium 2, gpu_small 1, quick 2,
+low_impact 0.25 by default).
+
+### Learned estimates
+
+Every released lease records what its session used, keyed by the command and its directory
+(the fingerprint in `allot history`). The next request with the same fingerprint, from
+`acquire_lease` or `can_fit`, is estimated from that job's newest 20 clean runs: runs that did
+not overlap another lease of their session and were not killed.
+
+- **Raising.** A value whose p90 over those runs is above the request is raised to that p90,
+  capped at what the machine can free: "cores 11.2 from p90 of 4 past run(s) (declared 8.0)".
+- **Lowering.** With `estimates.lower` on and at least `estimates.min_runs` (3) clean runs, a
+  value the runs used less of is lowered to what they used plus `estimates.margin_pct` (10%):
+  cores, GPU and VRAM from their p90, RAM from the highest peak. "cores 2.2 from p90 of 3 past
+  run(s) plus 10% (declared 8.0)". With fewer runs the reason says "2 past run(s) stayed within
+  the declared profile; lowering waits for 3 runs".
+
+Lowering never goes below 0.25 cores and 256 MB, or below a `min_cores` the request itself
+named; a class or preset's minimum does not bound it ("cores 0.25, the floor (...)"). Run time
+never lowers. GPU and VRAM lower only when some run measured them, since macOS reports no
+per-process VRAM. Lowering never makes a request low impact: if it would, RAM stops at 257 MB.
+A benchmark never lowers. The minimum of a lowered lease is the lower of its minimum and its
+lowered cores, so it rarely shrinks further.
+
+Lowering also corrects jobs whose work runs outside their Claude session, such as tests in
+Docker or WSL containers: that load already counts as background, and a reservation lowered to
+what the session measured stops it from counting twice.
+
+`release_lease` returns what the run used (`run`) and what the next run of the command would
+reserve (`next`). `allot history` shows the median, p90 and max of each job, and the panels show
+the median and max under a recently finished job with 2 or more runs.
+
+### Live overrun
+
+A reservation is an estimate, and a job can use more. Each session that holds active leases
+counts at the larger of its leases' cores and its 10 s average cores, and at the larger of their
+RAM and its current RAM (only the part the OS cannot reclaim). What it uses beyond its
+reservations is taken from the room and charged to its lease granted last, until that lease
+ends. Use below a reservation gives nothing back: the reservation stays held. GPU load and VRAM
+count at their reservations, with no overrun.
+
+For its first 15 s after the grant, a lease whose cores history lowered counts at its declared
+cores, because the 10 s average has not caught up with its load yet.
+
+### Reading a queued reason
+
+A shortfall names each part of what is not free. On 16 cores, for example: "cores: 10.0
+requested (at least 6.0), 5.7 free (2.0 held by 1 lease, 3.5 more in use by lease 1, 2.4 in use
+outside leases)".
+
+| Part | Meaning |
+|------|---------|
+| `(at least 6.0)` | The lease's minimum cores; even those do not fit yet. |
+| `2.0 held by 1 lease` | Reservations of active leases. |
+| `3.5 more in use by lease 1` | That lease's session uses more than it reserved (live overrun). "by lease 2 and 1 other" when several do. |
+| `7.6 more held by lease 1 for its first 15 s` | A lowered lease's start-up hold. |
+| `2.4 in use outside leases` | Background: load from no leased session, such as another program or a job's containers. |
+| `RAM: ... MB free (2000 MB more in use by lease 1)` | A session holds more RAM than its leases reserved. |
+
 ## Troubleshooting
 
 | Symptom | Cause and fix |
@@ -175,7 +269,7 @@ broken `allot.exe` cannot block every shell call.
 | `config REJECTED` in `allot status` | `config.toml` has an invalid value; allotd keeps the previous config until the file is valid again (checked every 5 s). The message names the key. |
 | Nothing can reach allotd after a port change | allotd keeps its old port until it restarts, but clients read the new one at once, `allot daemon stop` included. End `allotd.exe` in Task Manager, then run `allot daemon start`. |
 | 401 errors | The token in `token` does not match allotd's. Clients re-read the file once. If it persists, restart allotd: it reads `token` at startup. |
-| A lease stays queued | `allot leases` shows what is ahead. A `benchmark_exclusive` lease drains the machine and then waits up to `benchmark.max_quiet_wait_secs` for quiet. Leases of sessions that ended expire within a second (holder process gone) or after the heartbeat TTL (60 s). |
+| A lease stays queued | `allot leases` shows what is ahead, and its reasons what is not free (see Reading a queued reason). A `benchmark_exclusive` lease drains the machine and then waits up to `benchmark.max_quiet_wait_secs` for quiet. Leases of sessions that ended expire within a second (holder process gone) or after the heartbeat TTL (60 s). |
 | `allot install` lists files "still in use" | Old binaries that running sessions or allotd still hold. They are harmless and are deleted by the next install once nothing uses them. |
 | `%USERPROFILE%\.resources-helper\` is still there after the upgrade from Resources Helper | Sessions that were open during the upgrade still run its `rh-mcp.exe`, which reads its `token` and `config.toml`. Restart them and run `allot install` again; it deletes the folder once nothing runs from it. A "kept ... exists already" line means the new folder already had that file, so the old one was left for you to compare. |
 | A session started before the upgrade says its tools come from `resources-helper` | That is its old MCP server, which works against the new allotd until the session restarts. New sessions get the `allot` server. |
@@ -212,22 +306,25 @@ are rejected. `allot classes` prints the classifier rules and class profiles in 
 | Key | Default | Meaning |
 |-----|---------|---------|
 | `daemon.port` | 47823 | Port on 127.0.0.1. A change needs an allotd restart. |
-| `admission.headroom_pct` | 15 | Capacity kept free of leases. |
+| `admission.headroom_pct` | 15 | Capacity kept free of leases (see Admission). |
 | `estimates.lower` | true | Lower a request below what it declares once its past runs used less. Benchmarks never lower. |
 | `estimates.min_runs` | 3 | Clean past runs of the same command in the same directory needed before anything lowers. |
-| `estimates.margin_pct` | 10 | Added to what the runs used (p90 of cores, GPU and VRAM; highest peak of RAM). Never below 0.25 cores, 256 MB, or a `min_cores` the request names; run time never lowers. |
+| `estimates.margin_pct` | 10 | Added to what the runs used (p90 of cores, GPU and VRAM; highest peak of RAM). Never below 0.25 cores, 256 MB, or a `min_cores` the request names; run time never lowers (see Learned estimates). |
 | `benchmark.quiet_cpu_pct`, `quiet_gpu_pct` | 10, 10 | Load a benchmark waits under. |
 | `benchmark.quiet_secs` | 10 | How long the machine must stay quiet. |
 | `benchmark.max_quiet_wait_secs` | 60 | After this, a benchmark is granted without quiet. |
 | `leases.heartbeat_ttl_secs` | 60 | A lease without a heartbeat for this long expires. |
+| `leases.idle_release_secs` | 180 | An active lease ends once no command runs under it and its session has been idle this long, for holders that forget `release_lease`. 0 turns it off. |
 | `retention.lease_days`, `history_days` | 30, 90 | Age at which ended leases and job runs are pruned (hourly). |
 | `retention.keep_runs_per_job`, `max_job_runs` | 20, 5000 | Runs kept per job regardless of age, and in total. |
 | `hook.fail_open` | true | See Fail-open behavior. |
 | `linux.scopes` | true | Linux: run each lease's command in a systemd scope of its own (`allot-<id>-<grant time>-<tag>.scope`), which gives its exact CPU time and memory and a kill that ends it at once. Needs cgroup v2 and a systemd user session; without them leases follow their process tree. |
 | `linux.enforce_cpu` | false | Linux: cap a lease's scope at its reserved cores (`CPUQuota`). |
 | `linux.enforce_memory` | false | Linux: throttle a lease's scope above its reserved RAM (`MemoryHigh`); it is never killed for memory. |
-| `[classes.<class>]` | built in | Profiles of `light`, `cpu_heavy`, `gpu_heavy`, `mixed`. |
+| `[classes.<class>]` | built in | Profiles of `light`, `cpu_heavy`, `gpu_heavy`, `mixed`: `cores`, `ram_mb`, `gpu_pct`, `vram_mb`, `est_secs`, and `min_cores` (see Minimum cores). A table changes only the keys it names; without `min_cores`, the minimum follows `cores`. |
+| `[presets.<name>]` | built in | `cpu_small`, `cpu_medium`, `gpu_small`, `quick`, `low_impact`, with the same keys as a class. A new name adds a preset, which needs at least `cores` and `ram_mb` (GPU and VRAM default to 0, the run time to 300 s). |
 | `[[classifier.rules]]` | built in | Heavy-command rules. A list here replaces the default list. |
+| `classifier.light_flags` | `--help`, `-h`, `--version`, `-V`, `/?` | A command with any of these arguments only prints and exits, so it is light even when a rule matches it. A list here replaces the default list. |
 
 ## Resetting the database
 

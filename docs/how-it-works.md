@@ -39,11 +39,16 @@ flowchart LR
 ## What the daemon does with a request
 
 - **Admission.** A lease is granted when its profile fits in what the machine has free, keeping
-  a headroom (15% by default). Otherwise it queues; smaller jobs may backfill ahead of a
-  queued one only when that does not delay it, so nothing starves.
+  a headroom (15% by default). Each session that holds leases counts at the larger of what they
+  reserve and what it uses, so a job that runs hotter than it reserved holds back new grants.
+  When not all the cores a lease asks for are free, it starts on the free cores, down to a
+  minimum; RAM, GPU and VRAM are all or nothing. Otherwise it queues; smaller jobs may backfill
+  ahead of a queued one only when that does not delay it, so nothing starves.
 - **Learned profiles.** Every released lease records what the job really used. The next run
   of the same command in the same folder is estimated from that history, not only from what
-  the session declared.
+  the session declared: it reserves more when earlier runs needed more, and after 3 runs it
+  reserves less when they used less (what they used plus 10%). `allot history` shows the
+  median, p90 and max of each job.
 - **Benchmarks.** A `benchmark_exclusive` lease drains the machine and waits for it to stay
   quiet before it is granted, so measurements are not disturbed. The background noise during
   the run is recorded on release.
@@ -51,6 +56,9 @@ flowchart LR
   session that ends or crashes loses its leases within a second or two, so they never leak.
 - **Fail-open.** If allotd is down, the hook lets commands run with a warning instead of
   blocking every shell call.
+
+The runbook's [Admission](runbook.md#admission) section has the rules, the defaults and how to
+read a queued lease's reasons.
 
 The classes are `light`, `cpu_heavy`, `gpu_heavy`, and `mixed`; timing work adds the lease
 kind `benchmark_exclusive`. `allot classes` prints the class profiles and the rules that decide

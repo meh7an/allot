@@ -165,7 +165,7 @@ No root needed. Linux packages are published from v0.3.0 on.
 The [install script](#the-install-script) does this for you. By hand:
 
 ```bash
-version=0.4.0
+version=0.5.0
 target=x86_64-unknown-linux-gnu    # or aarch64-unknown-linux-gnu
 base=https://github.com/meh7an/allot/releases/download/v$version
 curl -fLO "$base/allot-$version-$target.tar.gz"
