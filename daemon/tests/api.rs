@@ -1189,6 +1189,54 @@ async fn test_short_burst_in_a_long_lease_raises_the_next_estimate_to_the_burst(
     daemon.stop().await;
 }
 
+#[tokio::test]
+async fn test_three_light_runs_lower_the_next_estimate_and_its_minimum() {
+    let daemon = Daemon::start().await;
+    {
+        let mut machine = daemon.machine.lock().unwrap();
+        machine.processes[0].usage = ResourceUsage {
+            cores: 2.0,
+            ram_mb: 1_000,
+            ..ResourceUsage::default()
+        };
+    }
+    for _ in 0..3 {
+        let run = daemon.acquire_build(alice(), 0).await;
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        daemon.release_response(run.lease.id, "alice").await;
+    }
+    daemon.machine.lock().unwrap().processes[0].usage = ResourceUsage::default();
+
+    // Without a minimum of its own, the class default (4) does not hold the lowering back,
+    // and the minimum it may shrink to follows the lowered cores.
+    let response = daemon
+        .acquire(bob(), ProfileSpec::Class(JobClass::CpuHeavy), 0)
+        .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let lowered: AcquireResponse = response.json().await.unwrap();
+    assert!(
+        (lowered.lease.profile.cores - 2.2).abs() < 1e-4,
+        "{lowered:?}"
+    );
+    assert_eq!(lowered.lease.profile.ram_mb, 1_100);
+    assert_eq!(lowered.lease.min_cores, Some(lowered.lease.profile.cores));
+    assert_eq!(lowered.lease.asked_cores, Some(lowered.lease.profile.cores));
+    assert_eq!(
+        lowered.verdict.reasons[..2],
+        [
+            "cores 2.2 from p90 of 3 past run(s) plus 10% (declared 8.0)",
+            "RAM 1100 MB from the highest peak of 3 past run(s) plus 10% (declared 4096 MB)",
+        ]
+    );
+    daemon.release_response(lowered.lease.id, "bob").await;
+
+    // A minimum the request names bounds the lowering: 8 of 8 cores stay.
+    let named = daemon.acquire_build(bob(), 0).await;
+    assert_eq!(named.lease.profile.cores, 8.0);
+    assert_eq!(named.lease.profile.ram_mb, 1_100);
+    daemon.stop().await;
+}
+
 /// Holds an active lease for alice and starts bob's acquire, which waits up to 60 s behind it.
 async fn open_acquire_wait(daemon: &Daemon) -> JoinHandle<Response> {
     daemon.acquire_build(alice(), 0).await;

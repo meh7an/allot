@@ -19,6 +19,8 @@ pub struct Config {
     pub daemon: DaemonConfig,
     /// How much of the machine the admission engine keeps free.
     pub admission: AdmissionConfig,
+    /// How past runs change a request's estimate.
+    pub estimates: EstimatesConfig,
     /// When the machine counts as quiet enough for a benchmark.
     pub benchmark: BenchmarkConfig,
     /// Lease lifetime settings.
@@ -78,6 +80,14 @@ impl Config {
         ensure(
             (0.0..100.0).contains(&self.admission.headroom_pct),
             "admission.headroom_pct must be at least 0 and below 100",
+        )?;
+        ensure(
+            self.estimates.min_runs > 0,
+            "estimates.min_runs must be positive",
+        )?;
+        ensure(
+            is_pct(self.estimates.margin_pct),
+            "estimates.margin_pct must be 0 to 100",
         )?;
         ensure(
             is_pct(self.benchmark.quiet_cpu_pct),
@@ -196,6 +206,30 @@ pub struct AdmissionConfig {
 impl Default for AdmissionConfig {
     fn default() -> Self {
         Self { headroom_pct: 15.0 }
+    }
+}
+
+/// How past runs change a request's estimate. Raising to what similar runs used always
+/// happens; lowering is what these keys control.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct EstimatesConfig {
+    /// Whether a request may reserve less than it declares once its runs used less.
+    pub lower: bool,
+    /// Clean runs needed before a value lowers.
+    pub min_runs: u32,
+    /// Added on top of what the runs used, so a run slightly heavier than the last ones
+    /// still fits its reservation.
+    pub margin_pct: f32,
+}
+
+impl Default for EstimatesConfig {
+    fn default() -> Self {
+        Self {
+            lower: true,
+            min_runs: 3,
+            margin_pct: 10.0,
+        }
     }
 }
 
@@ -770,6 +804,29 @@ mod tests {
     }
 
     #[test]
+    fn test_config_estimates_default_and_override_field_by_field() {
+        let defaults = EstimatesConfig::default();
+        assert_eq!(
+            (defaults.lower, defaults.min_runs, defaults.margin_pct),
+            (true, 3, 10.0)
+        );
+        assert_eq!(Config::from_toml("").unwrap().estimates, defaults);
+        let config = Config::from_toml("[estimates]\nmin_runs = 5\n").unwrap();
+        assert_eq!(
+            config.estimates,
+            EstimatesConfig {
+                min_runs: 5,
+                ..defaults
+            }
+        );
+        let config = Config::from_toml("[estimates]\nlower = false\nmargin_pct = 0\n").unwrap();
+        assert!(!config.estimates.lower);
+        assert_eq!(config.estimates.margin_pct, 0.0);
+        let result = Config::from_toml("[estimates]\nlower_ram = false\n");
+        assert!(matches!(result, Err(Error::ConfigParse(_))));
+    }
+
+    #[test]
     fn test_config_integer_percentage_parses_as_float() {
         let config = Config::from_toml("[admission]\nheadroom_pct = 20\n").unwrap();
         assert_eq!(config.admission.headroom_pct, 20.0);
@@ -831,6 +888,8 @@ mod tests {
     fn test_config_out_of_range_values_name_the_key() {
         assert!(config_error("[daemon]\nport = 0\n").contains("daemon.port"));
         assert!(config_error("[admission]\nheadroom_pct = 100\n").contains("headroom_pct"));
+        assert!(config_error("[estimates]\nmin_runs = 0\n").contains("estimates.min_runs"));
+        assert!(config_error("[estimates]\nmargin_pct = -5\n").contains("estimates.margin_pct"));
         assert!(config_error("[benchmark]\nquiet_cpu_pct = 120\n").contains("quiet_cpu_pct"));
         assert!(config_error("[benchmark]\nquiet_secs = 0\n").contains("quiet_secs"));
         let short_wait = "[benchmark]\nquiet_secs = 30\nmax_quiet_wait_secs = 20\n";

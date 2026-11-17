@@ -3,7 +3,7 @@
 use std::time::{Duration, Instant};
 
 use allot_core::{
-    history::{self, ESTIMATE_RUNS, Estimate},
+    history::{self, ESTIMATE_RUNS, Estimate, Lowering},
     kill::{KillPlan, KillRefusal, KillReport, Protected, SpareReason},
     ledger::{Ledger, LedgerError, Transition},
     meter::MeteredRun,
@@ -163,7 +163,12 @@ async fn can_fit(
     let estimate = match &request.label {
         Some(label) => {
             let cwd = request.cwd.as_deref().unwrap_or_default();
-            estimate(&state, declared, label, cwd).await?
+            let lowering = Lowering::for_request(
+                &state.settings().config.estimates,
+                request.kind,
+                request.min_cores,
+            );
+            estimate(&state, declared, label, cwd, lowering).await?
         }
         None => Estimate {
             profile: declared,
@@ -173,7 +178,7 @@ async fn can_fit(
     let ledger = state.ledger.lock().await;
     let mut verdict = ledger.can_fit(
         &estimate.profile,
-        resolved.min_cores,
+        start_minimum(resolved.min_cores, &estimate.profile),
         request.kind,
         &latest.snapshot,
         now_ms(),
@@ -182,13 +187,22 @@ async fn can_fit(
     Ok(Json(verdict))
 }
 
-/// `declared` raised by what similar past runs of `label` in `cwd` used. Before the first
-/// sample there is no ceiling to cap at, so history is left out.
+/// The fewest cores a request may start with once history changed its cores: its resolved
+/// minimum, but never above the cores it now asks for. A class or preset's default minimum
+/// does not bound lowering, so a lowered request may ask for fewer cores than that default.
+fn start_minimum(min_cores: f32, estimated: &JobProfile) -> f32 {
+    min_cores.min(estimated.cores)
+}
+
+/// `declared` changed by what similar past runs of `label` in `cwd` used: raised, and lowered
+/// as far as `lowering` allows. Before the first sample there is no ceiling to cap at, so
+/// history is left out.
 async fn estimate(
     state: &AppState,
     declared: JobProfile,
     label: &str,
     cwd: &str,
+    lowering: Option<Lowering>,
 ) -> Result<Estimate, AppError> {
     let unchanged = Estimate {
         profile: declared,
@@ -205,7 +219,12 @@ async fn estimate(
         return Ok(unchanged);
     };
     let ceiling = state.ledger.lock().await.ceiling(&latest.snapshot);
-    Ok(history::estimate(&declared, Some(&learned), &ceiling))
+    Ok(history::estimate(
+        &declared,
+        Some(&learned),
+        &ceiling,
+        lowering.as_ref(),
+    ))
 }
 
 async fn job_history(State(state): State<AppState>) -> Result<Json<HistoryResponse>, AppError> {
@@ -251,11 +270,16 @@ async fn acquire(
         request.min_cores,
     )?;
     let cwd = request.cwd.unwrap_or_default();
-    let estimate = estimate(&state, resolved.profile, &request.label, &cwd).await?;
+    let lowering = Lowering::for_request(
+        &state.settings().config.estimates,
+        request.kind,
+        request.min_cores,
+    );
+    let estimate = estimate(&state, resolved.profile, &request.label, &cwd, lowering).await?;
     // A benchmark keeps its full request, so its measurements stay comparable.
     let min_cores = match request.kind {
         LeaseKind::BenchmarkExclusive => estimate.profile.cores,
-        _ => resolved.min_cores,
+        _ => start_minimum(resolved.min_cores, &estimate.profile),
     };
     state.connect(request.holder.clone()).await;
     let session = request.holder.session.clone();

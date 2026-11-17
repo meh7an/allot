@@ -213,6 +213,9 @@ are rejected. `allot classes` prints the classifier rules and class profiles in 
 |-----|---------|---------|
 | `daemon.port` | 47823 | Port on 127.0.0.1. A change needs an allotd restart. |
 | `admission.headroom_pct` | 15 | Capacity kept free of leases. |
+| `estimates.lower` | true | Lower a request below what it declares once its past runs used less. Benchmarks never lower. |
+| `estimates.min_runs` | 3 | Clean past runs of the same command in the same directory needed before anything lowers. |
+| `estimates.margin_pct` | 10 | Added to what the runs used (p90 of cores, GPU and VRAM; highest peak of RAM). Never below 0.25 cores, 256 MB, or a `min_cores` the request names; run time never lowers. |
 | `benchmark.quiet_cpu_pct`, `quiet_gpu_pct` | 10, 10 | Load a benchmark waits under. |
 | `benchmark.quiet_secs` | 10 | How long the machine must stay quiet. |
 | `benchmark.max_quiet_wait_secs` | 60 | After this, a benchmark is granted without quiet. |

@@ -230,8 +230,10 @@ The daemon also learns from history. Every released lease records what its sessi
 keyed by the command and its directory, so `label` must be the real command. When earlier
 runs of the same command needed more than the declared class, the lease reserves the larger
 values (p90 of past runs, capped at what the machine can free), and the first `reasons` say
-so, for example "cores 11.2 from p90 of 4 past run(s) (declared 8.0)". That is expected, not
-an error. `allot history` shows what each job needed.
+so, for example "cores 11.2 from p90 of 4 past run(s) (declared 8.0)". After 3 runs that used
+less, it reserves less: what they used plus 10%, for example "cores 2.2 from p90 of 3 past
+run(s) plus 10% (declared 8.0)", never below a `min_cores` you give. Both are expected, not
+errors; keep naming the class. `allot history` shows what each job needed.
 
 ## Benchmarks
 
