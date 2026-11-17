@@ -11,12 +11,13 @@ use std::{
 
 use allot_core::{
     classifier::Classifier,
+    history::Lowering,
     ledger::{Ledger, LedgerSettings, ProcessLiveness, Transition},
     process::ProcessTable,
 };
 use allot_shared::{
     config::Config,
-    types::{Holder, SessionKey, Snapshot},
+    types::{Holder, JobProfile, Lease, LeaseId, SessionKey, Snapshot},
 };
 use diesel::{Connection, sqlite::SqliteConnection};
 use tokio::sync::{Mutex as AsyncMutex, watch};
@@ -56,6 +57,16 @@ impl Settings {
     }
 }
 
+/// What a lease's request asked for before history changed it, which the release needs to say
+/// what the next run of the same request would reserve.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Requested {
+    /// The resolved class, preset or custom profile.
+    pub declared: JobProfile,
+    /// How far history may lower it.
+    pub lowering: Option<Lowering>,
+}
+
 /// Everything the daemon shares between tasks.
 #[derive(Debug)]
 pub struct Shared {
@@ -78,6 +89,9 @@ pub struct Shared {
     config_error: Mutex<Option<String>>,
     latest: RwLock<Option<Arc<Latest>>>,
     sessions: Mutex<HashMap<SessionKey, Holder>>,
+    /// The request of each lease acquired since the daemon started, until its release. Kept
+    /// in memory only: a lease restored across a restart has none.
+    requests: Mutex<HashMap<LeaseId, Requested>>,
     /// Whether this run already recorded a first session, which spares a write per acquire.
     first_session_noted: AtomicBool,
 }
@@ -98,6 +112,7 @@ impl Shared {
             config_error: Mutex::new(None),
             latest: RwLock::new(None),
             sessions: Mutex::new(HashMap::new()),
+            requests: Mutex::new(HashMap::new()),
             first_session_noted: AtomicBool::new(false),
         }
     }
@@ -198,6 +213,22 @@ impl Shared {
         let mut sessions = self.sessions.lock().unwrap_or_else(PoisonError::into_inner);
         sessions.retain(|_, holder| processes.is_alive(holder));
         sessions.values().cloned().collect()
+    }
+
+    /// Keeps the request of lease `id`, and forgets those of leases no longer in `tracked`,
+    /// which ended without a release.
+    pub fn remember_request(&self, id: LeaseId, requested: Requested, tracked: &[Lease]) {
+        let mut requests = self.requests.lock().unwrap_or_else(PoisonError::into_inner);
+        requests.retain(|kept, _| tracked.iter().any(|lease| lease.id == *kept));
+        requests.insert(id, requested);
+    }
+
+    /// Takes the request of lease `id`, if this daemon run still has it.
+    pub fn take_request(&self, id: LeaseId) -> Option<Requested> {
+        self.requests
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .remove(&id)
     }
 
     /// Wakes every request waiting for a lease transition.

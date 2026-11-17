@@ -399,11 +399,24 @@ impl Client {
     ///
     /// Any [`ClientError`].
     pub async fn history_runs(&self, fingerprint: &str, limit: Option<u32>) -> Result<Vec<JobRun>> {
+        Ok(self.history_runs_with_stats(fingerprint, limit).await?.runs)
+    }
+
+    /// `GET /history/runs`: as [`Client::history_runs`], with the fingerprint's statistics.
+    ///
+    /// # Errors
+    ///
+    /// Any [`ClientError`].
+    pub async fn history_runs_with_stats(
+        &self,
+        fingerprint: &str,
+        limit: Option<u32>,
+    ) -> Result<HistoryRunsResponse> {
         let mut path = format!("/history/runs?fingerprint={}", encode(fingerprint));
         if let Some(limit) = limit {
             path.push_str(&format!("&limit={limit}"));
         }
-        Ok(self.get::<HistoryRunsResponse>(&path).await?.runs)
+        self.get::<HistoryRunsResponse>(&path).await
     }
 
     /// `GET /sessions`.

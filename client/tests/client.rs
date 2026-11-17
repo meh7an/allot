@@ -261,6 +261,11 @@ async fn test_client_reads_empty_history_with_an_encoded_fingerprint() {
         .await
         .unwrap();
     assert!(runs.is_empty());
+    let with_stats = client
+        .history_runs_with_stats(r"cargo build -p a&b|e:\work\app", None)
+        .await
+        .unwrap();
+    assert_eq!((with_stats.runs.len(), with_stats.stats), (0, None));
     daemon.stop().await;
 }
 

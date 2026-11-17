@@ -12,9 +12,9 @@ use allot_shared::{
     api::{
         AcquireRequest, AcquireResponse, BindRequest, CanFitRequest, DeliveredResponse,
         HealthResponse, HeartbeatResponse, HistoryResponse, HistoryRunsQuery, HistoryRunsResponse,
-        KillResponse, KilledProcess, LeaseOwner, LeaseQuery, LeasesResponse, NoticesResponse,
-        ProfileSpec, RegisterSessionRequest, ReleaseResponse, RemoveResponse, SessionsResponse,
-        UnkilledProcess, Verdict, WaitRequest,
+        KillResponse, KilledProcess, LeaseOwner, LeaseQuery, LeasesResponse, NextReservation,
+        NoticesResponse, ProfileSpec, RegisterSessionRequest, ReleaseResponse, RemoveResponse,
+        RunReport, SessionsResponse, UnkilledProcess, Verdict, WaitRequest,
     },
     config::{Config, Sizing},
     types::{
@@ -38,7 +38,7 @@ use crate::{
     db::repo::{self, LeaseDraft},
     error::AppError,
     scopes,
-    state::{AppState, Latest, Shared, now_ms},
+    state::{AppState, Latest, Requested, Shared, now_ms},
     ui,
 };
 
@@ -244,10 +244,16 @@ async fn history_runs(
         .limit
         .unwrap_or(DEFAULT_HISTORY_RUNS)
         .min(MAX_HISTORY_RUNS);
-    let runs = state
-        .with_db(move |conn| repo::recent_job_runs(conn, &query.fingerprint, limit))
+    // The statistics read as many runs as an estimate, which may be more than the caller asked
+    // to see.
+    let mut runs = state
+        .with_db(move |conn| {
+            repo::recent_job_runs(conn, &query.fingerprint, limit.max(ESTIMATE_SCAN))
+        })
         .await?;
-    Ok(Json(HistoryRunsResponse { runs }))
+    let stats = history::stats(&runs);
+    runs.truncate(usize::try_from(limit).unwrap_or(usize::MAX));
+    Ok(Json(HistoryRunsResponse { runs, stats }))
 }
 
 async fn list_leases(
@@ -307,9 +313,14 @@ async fn acquire(
         .with_db(move |conn| repo::insert_lease(conn, &draft))
         .await?;
     let id = lease.id;
+    let requested = Requested {
+        declared: resolved.profile,
+        lowering,
+    };
     {
         let mut ledger = state.ledger.lock().await;
         ledger.enqueue(lease)?;
+        state.remember_request(id, requested, ledger.leases());
         state.tick(&mut ledger).await?;
     }
     let Json(mut response) =
@@ -460,12 +471,56 @@ async fn release(
     };
     drop(ledger);
 
+    let requested = state.take_request(id);
     let noise = finished.as_ref().and_then(|job| job.noise);
+    let run = finished.as_ref().map(|job| RunReport {
+        used: history::used(job),
+        counted: history::counts(job),
+    });
     if let Some(job) = finished {
         store_job_run(&state, job).await;
     }
     let lease = stored_lease(&state, id, &owner.session).await?;
-    Ok(Json(ReleaseResponse { lease, noise }))
+    let next = match requested.filter(|_| run.is_some()) {
+        Some(requested) => next_reservation(&state, &lease, requested).await,
+        None => None,
+    };
+    Ok(Json(ReleaseResponse {
+        lease,
+        noise,
+        run,
+        next,
+    }))
+}
+
+/// What `lease`'s request would reserve if made again now, its run included: the estimate
+/// acquire makes. The lease already ended, so a failed read is logged, not returned.
+async fn next_reservation(
+    state: &AppState,
+    lease: &Lease,
+    requested: Requested,
+) -> Option<NextReservation> {
+    match estimate(
+        state,
+        requested.declared,
+        &lease.label,
+        &lease.cwd,
+        requested.lowering,
+    )
+    .await
+    {
+        Ok(estimate) => Some(NextReservation {
+            profile: estimate.profile,
+            reasons: estimate.reasons,
+        }),
+        Err(error) => {
+            tracing::error!(
+                lease = lease.id.0,
+                "estimating the next run failed: {error}"
+            );
+            None
+        }
+    }
 }
 
 /// Records that the PreToolUse hook let a command run under an active lease. The command's

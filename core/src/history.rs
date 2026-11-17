@@ -14,7 +14,7 @@
 //! memory crashes a job where too few cores only slow it. Run time never lowers.
 
 use allot_shared::{
-    api::JobSummary,
+    api::{JobSummary, RunStats},
     config::EstimatesConfig,
     platform::{PATH_STYLE, PathStyle},
     types::{EndCause, JobProfile, JobRun, LOW_IMPACT_MAX_RAM_MB, LeaseKind},
@@ -192,51 +192,82 @@ fn normalize_windows_cwd(cwd: &str) -> String {
     path
 }
 
-/// What up to [`ESTIMATE_RUNS`] of `runs` (newest first) needed, skipping runs that
-/// overlapped another lease of their session and runs the user killed, which stopped short of
-/// what the job needs. `None` when no run is left.
-pub fn learned(runs: &[JobRun]) -> Option<Learned> {
-    let clean: Vec<&JobRun> = runs
+/// Whether estimates and statistics count `run`: a run that overlapped another lease of its
+/// session measured that lease too, and one the user killed stopped short of what the job
+/// needs.
+pub fn counts(run: &JobRun) -> bool {
+    !run.overlapped && run.end_cause != Some(EndCause::Killed)
+}
+
+/// What `run` used as estimates read it: cores and GPU load while its session was busy, peak
+/// RAM and VRAM, and its run time in whole seconds. Runs recorded before busy load was
+/// measured use their whole-lease average.
+pub fn used(run: &JobRun) -> JobProfile {
+    JobProfile {
+        cores: run.busy.map_or(run.avg.cores, |busy| busy.cores),
+        ram_mb: run.peak.ram_mb,
+        gpu_pct: run
+            .busy
+            .map_or(run.avg.gpu_pct, |busy| busy.gpu_pct)
+            .min(100.0),
+        vram_mb: run.peak.vram_mb,
+        est_secs: admission::ms_to_secs_ceil(run.ended_at_ms - run.started_at_ms),
+    }
+}
+
+/// Median, p90 and max of up to [`ESTIMATE_RUNS`] of `runs` (newest first) that [`counts`],
+/// or `None` when no run is left. Estimates and every report read these same numbers.
+pub fn stats(runs: &[JobRun]) -> Option<RunStats> {
+    let used: Vec<JobProfile> = runs
         .iter()
-        .filter(|run| !run.overlapped && run.end_cause != Some(EndCause::Killed))
+        .filter(|run| counts(run))
         .take(ESTIMATE_RUNS)
+        .map(used)
         .collect();
-    if clean.is_empty() {
+    if used.is_empty() {
         return None;
     }
-    Some(Learned {
-        profile: profile_of(&clean, p90),
-        max: profile_of(&clean, max),
-        runs: clean.len(),
+    Some(RunStats {
+        runs: u32::try_from(used.len()).unwrap_or(u32::MAX),
+        median: percentile_of(&used, 50),
+        p90: percentile_of(&used, 90),
+        max: percentile_of(&used, 100),
     })
 }
 
-/// `pick` applied to each value of the non-empty `runs`.
-fn profile_of(runs: &[&JobRun], pick: fn(Vec<f64>) -> f64) -> JobProfile {
-    let pick_of = |value: fn(&JobRun) -> f64| pick(runs.iter().map(|run| value(run)).collect());
-    JobProfile {
-        cores: pick_of(|run| f64::from(run.busy.map_or(run.avg.cores, |busy| busy.cores))) as f32,
-        ram_mb: pick_of(|run| run.peak.ram_mb as f64).round() as u64,
-        gpu_pct: (pick_of(|run| f64::from(run.busy.map_or(run.avg.gpu_pct, |busy| busy.gpu_pct)))
-            as f32)
-            .min(100.0),
-        vram_mb: pick_of(|run| run.peak.vram_mb as f64).round() as u64,
-        est_secs: pick_of(|run| {
-            admission::ms_to_secs_ceil(run.ended_at_ms - run.started_at_ms) as f64
-        }) as u64,
+/// What up to [`ESTIMATE_RUNS`] of `runs` (newest first) needed, from their [`stats`].
+pub fn learned(runs: &[JobRun]) -> Option<Learned> {
+    stats(runs).map(|stats| Learned::from(&stats))
+}
+
+impl From<&RunStats> for Learned {
+    fn from(stats: &RunStats) -> Self {
+        Self {
+            profile: stats.p90,
+            max: stats.max,
+            runs: usize::try_from(stats.runs).unwrap_or(usize::MAX),
+        }
     }
 }
 
-/// Nearest-rank 90th percentile of a non-empty list.
-fn p90(mut values: Vec<f64>) -> f64 {
-    values.sort_by(f64::total_cmp);
-    let rank = (values.len() * 9).div_ceil(10).max(1);
-    values[rank - 1]
+/// The nearest-rank `pct`th percentile of each value of the non-empty `used`.
+fn percentile_of(used: &[JobProfile], pct: usize) -> JobProfile {
+    let of = |value: fn(&JobProfile) -> f64| percentile(used.iter().map(value).collect(), pct);
+    JobProfile {
+        cores: of(|profile| f64::from(profile.cores)) as f32,
+        ram_mb: of(|profile| profile.ram_mb as f64) as u64,
+        gpu_pct: of(|profile| f64::from(profile.gpu_pct)) as f32,
+        vram_mb: of(|profile| profile.vram_mb as f64) as u64,
+        est_secs: of(|profile| profile.est_secs as f64) as u64,
+    }
 }
 
-/// Largest value of a non-empty list.
-fn max(values: Vec<f64>) -> f64 {
-    values.into_iter().fold(f64::MIN, f64::max)
+/// Nearest-rank `pct`th percentile of a non-empty list: the value at rank `ceil(len * pct /
+/// 100)`, so the median of an even count is the lower middle value and the 100th is the max.
+fn percentile(mut values: Vec<f64>, pct: usize) -> f64 {
+    values.sort_by(f64::total_cmp);
+    let rank = (values.len() * pct).div_ceil(100).max(1);
+    values[rank - 1]
 }
 
 /// Raises `declared` to `learned` value by value, each capped at what `ceiling` (the room
@@ -396,17 +427,17 @@ pub fn summarize(runs: &[JobRun]) -> Vec<JobSummary> {
     groups
         .into_iter()
         .map(|(fingerprint, group)| {
-            let learned = learned(&group);
+            let stats = stats(&group);
             let newest = &group[0];
             JobSummary {
                 fingerprint: fingerprint.to_owned(),
                 command: newest.command.clone(),
                 cwd: newest.cwd.clone(),
                 runs: u32::try_from(group.len()).unwrap_or(u32::MAX),
-                estimate_runs: learned
-                    .map_or(0, |learned| u32::try_from(learned.runs).unwrap_or(u32::MAX)),
+                estimate_runs: stats.map_or(0, |stats| stats.runs),
                 last_ended_at_ms: newest.ended_at_ms,
-                learned: learned.map(|learned| learned.profile),
+                learned: stats.map(|stats| stats.p90),
+                stats,
             }
         })
         .collect()
@@ -876,7 +907,102 @@ mod tests {
         assert_eq!(summaries[0].learned, None);
         assert_eq!((summaries[1].runs, summaries[1].estimate_runs), (2, 2));
         assert_eq!(summaries[1].learned.map(|profile| profile.cores), Some(6.0));
+        assert_eq!(summaries[0].stats, None);
+        let stats = summaries[1].stats.unwrap();
+        assert_eq!(Some(stats.p90), summaries[1].learned);
+        assert_eq!((stats.median.cores, stats.max.cores), (4.0, 6.0));
         assert!(summarize(&[]).is_empty());
+    }
+
+    #[test]
+    fn test_stats_take_nearest_rank_median_p90_and_max_of_each_value() {
+        // Ten runs, newest first: 10..=1 cores, 10000..=1000 MB, 100..=10 s.
+        let runs: Vec<JobRun> = (1..=10)
+            .rev()
+            .map(|step| JobRun {
+                busy: Some(BusyUsage {
+                    cores: step as f32,
+                    gpu_pct: step as f32 * 10.0,
+                }),
+                peak: ResourceUsage {
+                    vram_mb: step * 100,
+                    ..run(0.0, step * 1_000, 0).peak
+                },
+                ..run(0.1, step * 1_000, step as i64 * 10)
+            })
+            .collect();
+        let stats = stats(&runs).unwrap();
+        assert_eq!(stats.runs, 10);
+        let values = |profile: JobProfile| {
+            (
+                profile.cores,
+                profile.ram_mb,
+                profile.gpu_pct,
+                profile.vram_mb,
+                profile.est_secs,
+            )
+        };
+        assert_eq!(values(stats.median), (5.0, 5_000, 50.0, 500, 50));
+        assert_eq!(values(stats.p90), (9.0, 9_000, 90.0, 900, 90));
+        assert_eq!(values(stats.max), (10.0, 10_000, 100.0, 1_000, 100));
+        assert_eq!(learned(&runs).unwrap(), Learned::from(&stats));
+    }
+
+    #[test]
+    fn test_stats_median_of_an_even_count_is_the_lower_middle_and_one_run_is_itself() {
+        let runs = [
+            run(4.0, 400, 40),
+            run(1.0, 100, 10),
+            run(3.0, 300, 30),
+            run(2.0, 200, 20),
+        ];
+        let stats = stats(&runs).unwrap();
+        assert_eq!(
+            (stats.median.cores, stats.p90.cores, stats.max.cores),
+            (2.0, 4.0, 4.0)
+        );
+        let one = super::stats(&[run(5.5, 2_500, 42)]).unwrap();
+        assert_eq!((one.median, one.p90), (one.max, one.max));
+        assert_eq!(one.max, used(&run(5.5, 2_500, 42)));
+    }
+
+    #[test]
+    fn test_stats_count_only_clean_runs_of_the_estimate_window() {
+        let mut runs = vec![
+            JobRun {
+                overlapped: true,
+                ..run(15.0, 30_000, 900)
+            },
+            JobRun {
+                end_cause: Some(EndCause::Killed),
+                ..run(14.0, 20_000, 800)
+            },
+        ];
+        runs.extend((0..ESTIMATE_RUNS).map(|_| run(2.0, 1_000, 10)));
+        runs.push(run(15.0, 30_000, 900));
+        let stats = stats(&runs).unwrap();
+        assert_eq!(stats.runs as usize, ESTIMATE_RUNS);
+        assert_eq!(stats.max.cores, 2.0);
+        assert!(!counts(&runs[0]) && !counts(&runs[1]) && counts(&runs[2]));
+        assert_eq!(super::stats(&runs[..2]), None);
+    }
+
+    #[test]
+    fn test_used_reads_busy_load_peaks_and_the_run_time_in_whole_seconds() {
+        let mut burst = burst_run(0.6, 1.7);
+        burst.ended_at_ms = burst.started_at_ms + 20_001;
+        burst.busy = Some(BusyUsage {
+            cores: 1.7,
+            gpu_pct: 130.0,
+        });
+        let used = used(&burst);
+        assert_eq!((used.cores, used.gpu_pct), (1.7, 100.0));
+        assert_eq!((used.ram_mb, used.est_secs), (900, 21));
+        let older = JobRun {
+            busy: None,
+            ..run(0.6, 900, 20)
+        };
+        assert_eq!(super::used(&older).cores, 0.6);
     }
 
     #[test]

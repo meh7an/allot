@@ -914,6 +914,8 @@ async fn test_restart_keeps_active_and_queued_leases_in_their_order() {
     assert_eq!(waiting.lease.state, LeaseState::Queued);
     let released = daemon.release_response(first.id, "alice").await;
     assert_eq!(released.lease.state, LeaseState::Released);
+    // The request was acquired before the restart, so this daemon does not know it.
+    assert_eq!(released.next, None);
     assert_eq!(
         daemon.heartbeat_state(second.id, "bob").await,
         LeaseState::Active
@@ -1117,18 +1119,34 @@ async fn test_released_run_raises_the_next_estimate_and_shows_in_history() {
     // Only after the release, or a sample of the run may see the reset.
     set_alice_usage(0.0, 0);
     assert_eq!(released.noise, None);
+    let run = released.run.expect("what the run used");
+    assert!(run.counted);
+    assert_eq!((run.used.cores, run.used.ram_mb), (12.0, 6_000));
+    let next = released.next.expect("what the next run reserves");
+    assert_eq!((next.profile.cores, next.profile.ram_mb), (12.0, 6_000));
+    assert_eq!(
+        next.reasons,
+        [
+            "cores 12.0 from p90 of 1 past run(s) (declared 8.0)",
+            "RAM 6000 MB from p90 of 1 past run(s) (declared 4096 MB)",
+        ]
+    );
 
     let history: HistoryResponse = daemon.get("/history").await.json().await.unwrap();
     assert_eq!(history.jobs.len(), 1);
     let job = &history.jobs[0];
     assert_eq!((job.fingerprint.as_str(), job.runs), ("cargo build|", 1));
     assert_eq!(job.learned.map(|profile| profile.ram_mb), Some(6_000));
+    let stats = job.stats.expect("statistics of the run");
+    assert_eq!((stats.runs, Some(stats.p90)), (1, job.learned));
+    assert_eq!((stats.median, stats.max), (run.used, run.used));
 
     let path = "/history/runs?fingerprint=cargo%20build%7C&limit=5";
     let runs: HistoryRunsResponse = daemon.get(path).await.json().await.unwrap();
     assert_eq!(runs.runs.len(), 1);
     assert_eq!(runs.runs[0].lease_id, Some(first.lease.id));
     assert!(!runs.runs[0].overlapped);
+    assert_eq!(runs.stats, Some(stats));
 
     // A differently written command line of the same job finds the run.
     let request = CanFitRequest {
@@ -1201,12 +1219,25 @@ async fn test_three_light_runs_lower_the_next_estimate_and_its_minimum() {
             ..ResourceUsage::default()
         };
     }
+    let mut last = None;
     for _ in 0..3 {
         let run = daemon.acquire_build(alice(), 0).await;
         tokio::time::sleep(Duration::from_millis(200)).await;
-        daemon.release_response(run.lease.id, "alice").await;
+        last = Some(daemon.release_response(run.lease.id, "alice").await);
     }
     daemon.machine.lock().unwrap().processes[0].usage = ResourceUsage::default();
+    let last = last.unwrap();
+    let used = last.run.expect("what the last run used").used;
+    assert_eq!((used.cores, used.ram_mb), (2.0, 1_000));
+    // The third run makes lowering start, so the release already says the next run lowers.
+    let next = last.next.expect("what the next run reserves");
+    assert!(
+        next.reasons.contains(
+            &"RAM 1100 MB from the highest peak of 3 past run(s) plus 10% (declared 4096 MB)"
+                .to_owned()
+        ),
+        "{next:?}"
+    );
 
     // Without a minimum of its own, the class default (4) does not hold the lowering back,
     // and the minimum it may shrink to follows the lowered cores.
@@ -1237,6 +1268,8 @@ async fn test_three_light_runs_lower_the_next_estimate_and_its_minimum() {
     assert_eq!(named.lease.profile.cores, 8.0);
     assert_eq!(named.lease.profile.ram_mb, 1_100);
     assert_eq!(named.lease.declared_cores, None);
+    // The same request as alice's runs reserves what her last release predicted.
+    assert_eq!(named.lease.profile, next.profile);
     daemon.stop().await;
 }
 

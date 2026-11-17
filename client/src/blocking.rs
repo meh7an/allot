@@ -3,8 +3,8 @@
 use allot_shared::{
     api::{
         AcquireRequest, AcquireResponse, BindRequest, CanFitRequest, HealthResponse,
-        HeartbeatResponse, JobSummary, KillResponse, LeaseQuery, ReleaseResponse, RemoveResponse,
-        Verdict,
+        HeartbeatResponse, HistoryRunsResponse, JobSummary, KillResponse, LeaseQuery,
+        ReleaseResponse, RemoveResponse, Verdict,
     },
     types::{Holder, JobRun, Lease, LeaseId, SessionKey, SessionUsage, Snapshot},
     ui::{Notice, UiState},
@@ -197,6 +197,20 @@ impl BlockingClient {
     pub fn history_runs(&self, fingerprint: &str, limit: Option<u32>) -> Result<Vec<JobRun>> {
         self.runtime
             .block_on(self.client.history_runs(fingerprint, limit))
+    }
+
+    /// See [`Client::history_runs_with_stats`].
+    ///
+    /// # Errors
+    ///
+    /// As [`Client::history_runs_with_stats`].
+    pub fn history_runs_with_stats(
+        &self,
+        fingerprint: &str,
+        limit: Option<u32>,
+    ) -> Result<HistoryRunsResponse> {
+        self.runtime
+            .block_on(self.client.history_runs_with_stats(fingerprint, limit))
     }
 
     /// See [`Client::sessions`].

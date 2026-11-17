@@ -6,8 +6,8 @@ use std::{
 use allot_client::{ClientError, Result};
 use allot_shared::{
     api::{
-        AcquireRequest, AcquireResponse, CanFitRequest, HeartbeatResponse, LeaseQuery, ProfileSpec,
-        ReleaseResponse, Verdict,
+        AcquireRequest, AcquireResponse, CanFitRequest, HeartbeatResponse, LeaseQuery,
+        NextReservation, ProfileSpec, ReleaseResponse, RunReport, Verdict,
     },
     types::{
         Accuracy, CpuStats, EndCause, GpuAdapter, GpuEngines, GpuSource, Holder, JobClass,
@@ -338,7 +338,8 @@ impl DaemonApi for MockDaemon {
         async move { result }
     }
 
-    /// Benchmark leases come back with a small noise report.
+    /// An active lease comes back with what its run used and a lowered next reservation, a
+    /// benchmark lease also with a small noise report.
     fn release(
         &self,
         id: LeaseId,
@@ -348,10 +349,16 @@ impl DaemonApi for MockDaemon {
             state.releases.push(id);
             let lease = state.leases.iter_mut().find(|lease| lease.id == id);
             let lease = lease.ok_or_else(|| not_found(id))?;
+            let ran = lease.state == LeaseState::Active;
             if !matches!(lease.state, LeaseState::Released | LeaseState::Expired) {
                 lease.state = LeaseState::Released;
                 lease.end_cause = Some(EndCause::Released);
             }
+            let used = JobProfile {
+                cores: 2.0,
+                ram_mb: 1_000,
+                ..lease.profile
+            };
             let noise = (lease.kind == LeaseKind::BenchmarkExclusive).then_some(NoiseReport {
                 avg_cpu_pct: 1.5,
                 peak_cpu_pct: 4.0,
@@ -362,6 +369,20 @@ impl DaemonApi for MockDaemon {
             Ok(ReleaseResponse {
                 lease: lease.clone(),
                 noise,
+                run: ran.then_some(RunReport {
+                    used,
+                    counted: true,
+                }),
+                next: ran.then(|| NextReservation {
+                    profile: JobProfile {
+                        cores: 2.2,
+                        ram_mb: 1_100,
+                        ..used
+                    },
+                    reasons: vec![
+                        "cores 2.2 from p90 of 3 past run(s) plus 10% (declared 8.0)".into(),
+                    ],
+                }),
             })
         });
         async move { result }

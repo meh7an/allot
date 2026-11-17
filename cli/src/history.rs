@@ -2,7 +2,7 @@
 
 use allot_client::BlockingClient;
 use allot_shared::{
-    api::JobSummary,
+    api::{JobSummary, RunStats},
     types::{BusyUsage, JobProfile, JobRun},
 };
 
@@ -22,11 +22,11 @@ pub fn history(fingerprint: Option<&str>, limit: Option<u32>, json: bool) -> any
     let now = now_ms();
     let text = match fingerprint {
         Some(fingerprint) => {
-            let runs = client.history_runs(fingerprint, limit)?;
+            let response = client.history_runs_with_stats(fingerprint, limit)?;
             if json {
-                return print_json(&runs);
+                return print_json(&response.runs);
             }
-            format_runs(fingerprint, &runs, now)
+            format_runs(fingerprint, &response.runs, response.stats.as_ref(), now)
         }
         None => {
             let jobs = client.history()?;
@@ -45,8 +45,8 @@ fn format_jobs(jobs: &[JobSummary], now_ms: i64) -> String {
         return "no job history yet\n".to_owned();
     }
     let mut text = String::from(
-        "learned needs: p90 of peak memory and of the load while busy over the newest runs \
-         without an overlapping lease\n",
+        "median, p90 and max over the newest runs without an overlapping lease: cores and GPU \
+         while busy, peak RAM and VRAM, run time\n",
     );
     for job in jobs {
         text.push_str(&format!(
@@ -56,16 +56,62 @@ fn format_jobs(jobs: &[JobSummary], now_ms: i64) -> String {
             duration(now_ms - job.last_ended_at_ms),
             job.command
         ));
-        match &job.learned {
-            Some(profile) => text.push_str(&format!(
+        match (&job.stats, &job.learned) {
+            (Some(stats), _) => text.push_str(&format_stats(stats)),
+            // An older allotd sends the p90 alone.
+            (None, Some(profile)) => text.push_str(&format!(
                 "  needs {} (from {} run(s))\n",
                 format_profile(profile),
                 job.estimate_runs
             )),
-            None => text.push_str("  no estimate: every run overlapped another lease\n"),
+            (None, None) => {
+                text.push_str("  no statistics: every run overlapped another lease or was killed\n")
+            }
         }
     }
     text
+}
+
+/// Median, p90 and max as a small table; GPU and VRAM columns only when some run measured
+/// them.
+fn format_stats(stats: &RunStats) -> String {
+    let gpu = stats.max.gpu_pct > 0.0 || stats.max.vram_mb > 0;
+    let header = ["cores", "RAM", "GPU", "VRAM", "time"].map(str::to_owned);
+    let mut text = stats_row(&format!("from {} run(s)", stats.runs), header, gpu);
+    for (name, profile) in [
+        ("median", stats.median),
+        ("p90", stats.p90),
+        ("max", stats.max),
+    ] {
+        let cells = [
+            cores(profile.cores),
+            gb(profile.ram_mb),
+            format!("{:.0}%", profile.gpu_pct),
+            gb(profile.vram_mb),
+            duration(secs_to_ms(profile.est_secs)),
+        ];
+        text.push_str(&stats_row(name, cells, gpu));
+    }
+    text
+}
+
+fn stats_row(label: &str, cells: [String; 5], gpu: bool) -> String {
+    let [cores, ram, gpu_pct, vram, time] = cells;
+    let mut row = format!("  {label:<14}  {cores:>5}  {ram:>7}");
+    if gpu {
+        row.push_str(&format!("  {gpu_pct:>4}  {vram:>7}"));
+    }
+    row.push_str(&format!("  {time}\n"));
+    row
+}
+
+/// Two decimals under one core, where a job whose work runs outside its session shows.
+fn cores(cores: f32) -> String {
+    if cores < 1.0 {
+        format!("{cores:.2}")
+    } else {
+        format!("{cores:.1}")
+    }
 }
 
 fn format_profile(profile: &JobProfile) -> String {
@@ -81,11 +127,20 @@ fn format_profile(profile: &JobProfile) -> String {
     text
 }
 
-fn format_runs(fingerprint: &str, runs: &[JobRun], now_ms: i64) -> String {
+fn format_runs(
+    fingerprint: &str,
+    runs: &[JobRun],
+    stats: Option<&RunStats>,
+    now_ms: i64,
+) -> String {
     if runs.is_empty() {
         return format!("no runs of {fingerprint}\n");
     }
     let mut text = format!("{}\n", paint(HEADING, fingerprint));
+    if let Some(stats) = stats {
+        text.push_str(&format_stats(stats));
+        text.push('\n');
+    }
     for run in runs {
         let lease = run
             .lease_id
@@ -171,34 +226,116 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_format_jobs_shows_the_learned_needs_or_why_there_are_none() {
-        let job = JobSummary {
-            fingerprint: "cargo build|e:\\app".into(),
-            command: "cargo build 2>&1".into(),
-            cwd: "E:\\app".into(),
+    fn stats() -> RunStats {
+        RunStats {
+            runs: 10,
+            median: JobProfile {
+                cores: 4.3,
+                ram_mb: 1_843,
+                est_secs: 70,
+                ..profile()
+            },
+            p90: profile(),
+            max: JobProfile {
+                cores: 7.1,
+                ram_mb: 3_174,
+                est_secs: 122,
+                ..profile()
+            },
+        }
+    }
+
+    fn gpu_stats() -> RunStats {
+        let gpu = |gpu_pct, vram_mb, cores| JobProfile {
+            cores,
+            gpu_pct,
+            vram_mb,
+            ..profile()
+        };
+        RunStats {
             runs: 3,
-            estimate_runs: 2,
+            median: gpu(40.0, 2_048, 0.28),
+            p90: gpu(85.0, 6_144, 1.5),
+            max: gpu(100.0, 7_680, 2.0),
+        }
+    }
+
+    #[test]
+    fn test_format_jobs_snapshot_shows_median_p90_and_max_per_job() {
+        let job = JobSummary {
+            fingerprint: r"cargo build|e:\app".into(),
+            command: "cargo build 2>&1".into(),
+            cwd: r"E:\app".into(),
+            runs: 12,
+            estimate_runs: 10,
             last_ended_at_ms: 95_000,
             learned: Some(profile()),
+            stats: Some(stats()),
+        };
+        let trainer = JobSummary {
+            fingerprint: r"python train.py|e:\ml".into(),
+            command: "python train.py".into(),
+            runs: 3,
+            estimate_runs: 3,
+            learned: Some(gpu_stats().p90),
+            stats: Some(gpu_stats()),
+            ..job.clone()
+        };
+        let older_daemon = JobSummary {
+            stats: None,
+            ..job.clone()
         };
         let unknown = JobSummary {
             learned: None,
+            stats: None,
             estimate_runs: 0,
             ..job.clone()
         };
-        let text = plain(format_jobs(&[job, unknown], 397_000));
-        assert!(text.contains("\ncargo build|e:\\app\n"), "{text}");
+        let text = plain(format_jobs(&[job, trainer, older_daemon, unknown], 397_000));
+        let (legend, jobs) = text.split_once("\n\n").unwrap();
         assert!(
-            text.contains("  3 run(s), last ended 5m 02s ago: cargo build 2>&1\n"),
-            "{text}"
+            legend.starts_with("median, p90 and max over the newest runs without an overlapping"),
+            "{legend}"
         );
-        assert!(
-            text.contains("  needs 6.2 cores, 2.4 GB, 1m 35s (from 2 run(s))\n"),
-            "{text}"
-        );
-        assert!(text.contains("no estimate: every run overlapped"), "{text}");
+        let expected = r"cargo build|e:\app
+  12 run(s), last ended 5m 02s ago: cargo build 2>&1
+  from 10 run(s)  cores      RAM  time
+  median            4.3   1.8 GB  1m 10s
+  p90               6.2   2.4 GB  1m 35s
+  max               7.1   3.1 GB  2m 02s
+
+python train.py|e:\ml
+  3 run(s), last ended 5m 02s ago: python train.py
+  from 3 run(s)   cores      RAM   GPU     VRAM  time
+  median           0.28   2.4 GB   40%   2.0 GB  1m 35s
+  p90               1.5   2.4 GB   85%   6.0 GB  1m 35s
+  max               2.0   2.4 GB  100%   7.5 GB  1m 35s
+
+cargo build|e:\app
+  12 run(s), last ended 5m 02s ago: cargo build 2>&1
+  needs 6.2 cores, 2.4 GB, 1m 35s (from 10 run(s))
+
+cargo build|e:\app
+  12 run(s), last ended 5m 02s ago: cargo build 2>&1
+  no statistics: every run overlapped another lease or was killed
+";
+        assert_eq!(jobs, expected);
         assert_eq!(format_jobs(&[], 0), "no job history yet\n");
+    }
+
+    #[test]
+    fn test_format_runs_puts_the_statistics_above_the_runs() {
+        let text = plain(format_runs(
+            r"cargo build|e:\app",
+            &[run(false)],
+            Some(&stats()),
+            155_000,
+        ));
+        let lines: Vec<&str> = text.lines().collect();
+        assert_eq!(lines[1], "  from 10 run(s)  cores      RAM  time");
+        assert_eq!(lines[3], "  p90               6.2   2.4 GB  1m 35s");
+        assert_eq!(lines[5], "");
+        assert!(lines[6].starts_with("  lease 41"), "{text}");
     }
 
     #[test]
@@ -210,6 +347,7 @@ mod tests {
         let text = plain(format_runs(
             "cargo build|e:\\app",
             &[run(false), run(true), older],
+            None,
             155_000,
         ));
         let lines: Vec<&str> = text.lines().collect();
@@ -224,6 +362,6 @@ mod tests {
             lines[3].contains("cores avg 6.2 busy - peak 14.0"),
             "{text}"
         );
-        assert_eq!(format_runs("x|", &[], 0), "no runs of x|\n");
+        assert_eq!(format_runs("x|", &[], None, 0), "no runs of x|\n");
     }
 }

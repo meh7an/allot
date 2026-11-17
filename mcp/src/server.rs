@@ -4,7 +4,10 @@ use std::sync::Arc;
 
 use allot_client::ClientError;
 use allot_shared::{
-    api::{AcquireRequest, CanFitRequest, LeaseQuery, REASON_BEYOND_LEASES, Verdict},
+    api::{
+        AcquireRequest, CanFitRequest, LeaseQuery, NextReservation, REASON_BEYOND_LEASES,
+        RunReport, Verdict,
+    },
     types::{EndCause, Holder, JobProfile, Lease, LeaseId, LeaseKind, LeaseState, NoiseReport},
 };
 use rmcp::{
@@ -71,13 +74,18 @@ fn queued_next_step(verdict: &Verdict) -> &'static str {
     }
 }
 
-/// What `release_lease` reports: the lease, plus the noise report of a benchmark.
+/// What `release_lease` reports: the lease, what its run used and what the next run would
+/// reserve, plus the noise report of a benchmark.
 #[derive(Debug, Serialize)]
 struct ReleaseOutcome {
     #[serde(flatten)]
     lease: Lease,
     #[serde(skip_serializing_if = "Option::is_none")]
     noise: Option<NoiseReport>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    run: Option<RunReport>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    next: Option<NextReservation>,
     /// What the user did to the lease, when they stopped it.
     #[serde(skip_serializing_if = "Option::is_none")]
     note: Option<&'static str>,
@@ -265,9 +273,12 @@ impl<C: DaemonApi> AllotServer<C> {
 
     #[tool(
         description = "Ends a lease once its command has finished (or to give up a queued \
-                          one). Releasing an ended lease is harmless. Ending a benchmark lease \
-                          returns its noise report: load from outside this session while it \
-                          ran."
+                          one). Releasing an ended lease is harmless. Ending an active lease \
+                          returns what its run used (run.used: busy cores and GPU, peak RAM \
+                          and VRAM, run time in est_secs) and what the next run of the same \
+                          request would reserve (next.profile, with reasons). Ending a \
+                          benchmark lease also returns its noise report: load from outside \
+                          this session while it ran."
     )]
     async fn release_lease(
         &self,
@@ -285,6 +296,8 @@ impl<C: DaemonApi> AllotServer<C> {
         to_json(&ReleaseOutcome {
             lease: response.lease,
             noise: response.noise,
+            run: response.run,
+            next: response.next,
             note,
         })
     }
@@ -754,6 +767,22 @@ mod tests {
         assert!(released.get("noise").is_none());
         assert!(server.held.ids().is_empty());
         assert_eq!(daemon.releases(), [LeaseId(1)]);
+        assert_eq!(released["run"]["used"]["cores"], 2.0);
+        assert_eq!(released["run"]["counted"], true);
+        assert_eq!(released["next"]["profile"]["ram_mb"], 1_100);
+        assert!(
+            released["next"]["reasons"][0]
+                .as_str()
+                .unwrap()
+                .starts_with("cores 2.2 from p90")
+        );
+
+        let again = json(
+            server
+                .release_lease(Parameters(ReleaseParams { lease_id: 1 }))
+                .await,
+        );
+        assert!(again.get("run").is_none() && again.get("next").is_none());
     }
 
     #[tokio::test]

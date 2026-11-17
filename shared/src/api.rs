@@ -185,6 +185,34 @@ pub struct ReleaseResponse {
     /// lease carries it, and only when at least one sample was taken during the lease.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub noise: Option<NoiseReport>,
+    /// What the run used. Only the release that ends an active lease carries it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub run: Option<RunReport>,
+    /// What the next run of the same request would reserve, now that this run counts. Only
+    /// with `run`, and only while allotd still knows the request, which a lease restored
+    /// across a daemon restart it does not.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub next: Option<NextReservation>,
+}
+
+/// What one finished run used.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct RunReport {
+    /// Cores and GPU load while its session was busy, peak RAM and VRAM, and run time in
+    /// `est_secs`: the values [`RunStats`] takes of each run.
+    pub used: JobProfile,
+    /// Whether estimates count the run; one that overlapped another lease of its session or
+    /// that the user killed does not.
+    pub counted: bool,
+}
+
+/// What a request would reserve if it were made again now.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct NextReservation {
+    /// The profile acquire would reserve, before any shrink to fit.
+    pub profile: JobProfile,
+    /// What history changed, worded as acquire words it; empty when nothing changed.
+    pub reasons: Vec<String>,
 }
 
 /// Response of `POST /leases/{id}/kill`.
@@ -314,8 +342,29 @@ pub struct JobSummary {
     /// End of the most recent run, in milliseconds since the Unix epoch.
     pub last_ended_at_ms: i64,
     /// What the runs needed: p90 of peak memory, of CPU and GPU load while busy, and of run
-    /// time. `None` when every run overlapped another lease.
+    /// time. `None` when every run overlapped another lease. The same as `stats.p90`.
     pub learned: Option<JobProfile>,
+    /// Median, p90 and max over the runs the estimate is based on; `None` when every run
+    /// overlapped another lease, and from older daemons.
+    #[serde(default)]
+    pub stats: Option<RunStats>,
+}
+
+/// Median, p90 and max of what a job's runs used: the newest runs that neither overlapped
+/// another lease of their session nor were killed, at most as many as an estimate reads.
+/// Cores and GPU load are each run's average while its session was busy, RAM and VRAM its
+/// peak, and `est_secs` its run time.
+#[cfg_attr(any(feature = "schema", test), derive(schemars::JsonSchema))]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct RunStats {
+    /// Runs the statistics come from.
+    pub runs: u32,
+    /// Nearest-rank median of each value.
+    pub median: JobProfile,
+    /// Nearest-rank 90th percentile of each value, which estimates raise and lower to.
+    pub p90: JobProfile,
+    /// Highest of each value.
+    pub max: JobProfile,
 }
 
 /// Query string of `GET /history/runs`.
@@ -332,6 +381,10 @@ pub struct HistoryRunsQuery {
 pub struct HistoryRunsResponse {
     /// Runs with the fingerprint, newest first.
     pub runs: Vec<JobRun>,
+    /// Statistics of the fingerprint over the runs an estimate reads, which may reach past
+    /// `runs`; `None` when no run counts, and from older daemons.
+    #[serde(default)]
+    pub stats: Option<RunStats>,
 }
 
 #[cfg(test)]
@@ -507,7 +560,10 @@ mod tests {
         assert_json_round_trip(&ReleaseResponse {
             lease: sample_lease(),
             noise: None,
+            run: None,
+            next: None,
         });
+        let profile = sample_lease().profile;
         assert_json_round_trip(&ReleaseResponse {
             lease: sample_lease(),
             noise: Some(NoiseReport {
@@ -517,7 +573,33 @@ mod tests {
                 peak_gpu_pct: 2.0,
                 quiet_at_start: true,
             }),
+            run: Some(RunReport {
+                used: profile,
+                counted: true,
+            }),
+            next: Some(NextReservation {
+                profile,
+                reasons: vec!["cores 2.2 from p90 of 3 past run(s) plus 10% (declared 8.0)".into()],
+            }),
         });
+    }
+
+    #[test]
+    fn test_release_response_from_an_older_allotd_has_no_run_or_next() {
+        let mut json = serde_json::to_value(ReleaseResponse {
+            lease: sample_lease(),
+            noise: None,
+            run: None,
+            next: None,
+        })
+        .unwrap();
+        assert!(
+            json.get("run").is_none() && json.get("next").is_none(),
+            "{json}"
+        );
+        json.as_object_mut().unwrap().remove("noise");
+        let old: ReleaseResponse = serde_json::from_value(json).unwrap();
+        assert_eq!((old.run, old.next), (None, None));
     }
 
     #[test]
@@ -558,6 +640,22 @@ mod tests {
 
     #[test]
     fn test_history_dtos_json_round_trip_preserve_every_field() {
+        let ProfileSpec::Custom(p90) = custom_profile() else {
+            panic!("the custom profile fixture is not custom");
+        };
+        let stats = RunStats {
+            runs: 4,
+            median: JobProfile {
+                cores: 2.5,
+                ram_mb: 900,
+                ..p90
+            },
+            p90,
+            max: JobProfile {
+                est_secs: p90.est_secs * 2,
+                ..p90
+            },
+        };
         let summary = JobSummary {
             fingerprint: r"cargo build|e:\work\app".into(),
             command: "cargo build".into(),
@@ -565,16 +663,15 @@ mod tests {
             runs: 5,
             estimate_runs: 4,
             last_ended_at_ms: 1_793_000_095_000,
-            learned: match custom_profile() {
-                ProfileSpec::Custom(profile) => Some(profile),
-                _ => None,
-            },
+            learned: Some(stats.p90),
+            stats: Some(stats),
         };
         assert_json_round_trip(&HistoryResponse {
             jobs: vec![
                 summary.clone(),
                 JobSummary {
                     learned: None,
+                    stats: None,
                     ..summary
                 },
             ],
@@ -583,7 +680,26 @@ mod tests {
             fingerprint: "cargo build|".into(),
             limit: Some(10),
         });
-        assert_json_round_trip(&HistoryRunsResponse { runs: Vec::new() });
+        assert_json_round_trip(&HistoryRunsResponse {
+            runs: Vec::new(),
+            stats: None,
+        });
+        assert_json_round_trip(&HistoryRunsResponse {
+            runs: Vec::new(),
+            stats: Some(stats),
+        });
+    }
+
+    #[test]
+    fn test_history_responses_from_an_older_allotd_have_no_stats() {
+        let summary: JobSummary = serde_json::from_str(
+            r#"{"fingerprint":"x|","command":"x","cwd":"","runs":1,"estimate_runs":0,
+                "last_ended_at_ms":5,"learned":null}"#,
+        )
+        .unwrap();
+        assert_eq!(summary.stats, None);
+        let runs: HistoryRunsResponse = serde_json::from_str(r#"{"runs":[]}"#).unwrap();
+        assert_eq!(runs.stats, None);
     }
 
     #[test]
