@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<kcfg xmlns="http://www.kde.org/standards/kcfg/1.0"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="http://www.kde.org/standards/kcfg/1.0 http://www.kde.org/standards/kcfg/1.0/kcfg.xsd">
+  <kcfgfile name=""/>
+  <group name="General">
+    <!-- A stand-in for the widget's own settings, which live in its config, not in allotd. -->
+    <entry name="showCpu" type="Bool">
+      <default>true</default>
+    </entry>
+    <!-- Whether the dialog's Apply hands allotd's changes to the widget instead of sending them. -->
+    <entry name="sendThroughWidget" type="Bool">
+      <default>false</default>
+    </entry>
+    <!-- The hand-off: one write as JSON, which the widget sends and then shows the outcome of. -->
+    <entry name="pendingWrite" type="String">
+      <default></default>
+    </entry>
+  </group>
+</kcfg>

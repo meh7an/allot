@@ -1,0 +1,12 @@
+{
+  "name": "Allot Settings Spike",
+  "description": "Throwaway M0.3 spike: a libadwaita Settings window that edits allotd's settings.",
+  "uuid": "allot-settings-spike@mehran.tech",
+  "shell-version": [
+    "48",
+    "49",
+    "50",
+    "51"
+  ],
+  "url": "https://github.com/meh7an/allot"
+}

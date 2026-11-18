@@ -1,0 +1,19 @@
+{
+    "KPackageStructure": "Plasma/Applet",
+    "KPlugin": {
+        "Authors": [
+            {
+                "Email": "hi@mehran.tech",
+                "Name": "Mehran"
+            }
+        ],
+        "Category": "System Information",
+        "Description": "Throwaway M0.3 spike: allotd's settings in the widget's config dialog and in a window of its own.",
+        "Icon": "preferences-system",
+        "Id": "tech.mehran.allot.settingsspike",
+        "License": "MIT OR Apache-2.0",
+        "Name": "Allot Settings Spike",
+        "Website": "https://github.com/meh7an/allot"
+    },
+    "X-Plasma-API-Minimum-Version": "6.0"
+}
