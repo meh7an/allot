@@ -1,4 +1,5 @@
-# The README demo: two sessions lease `cargo build --release`, and the second one queues.
+# The README demo: two sessions lease `cargo build --release`, and the second one starts on
+# the cores left free.
 # Run it through record.sh, which adds Output and Theme and starts the sessions.
 
 Set Shell powershell

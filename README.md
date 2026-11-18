@@ -18,10 +18,10 @@ the machine is busy, instead of all compiling at once.
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/images/demo-dark.gif">
-    <img src="docs/images/demo-light.gif" alt="allot status --watch while two sessions each lease cargo build --release: the second lease waits in the queue, then starts as soon as the first build ends" width="800">
+    <img src="docs/images/demo-light.gif" alt="allot status --watch while two sessions each lease cargo build --release: the first gets 8 cores, the second starts at once on the cores left free, and both builds run side by side" width="800">
   </picture>
   <br>
-  <sub>A real run: two sessions ask for the same build, and the second waits its turn.
+  <sub>A real run: two sessions ask for 8 cores each, and the second starts on what is left.
   Recorded by <a href="docs/demo/record.sh">docs/demo/record.sh</a>.</sub>
 </p>
 

@@ -1,18 +1,22 @@
 #!/usr/bin/env bash
 # Records the README demo (docs/images/demo-{dark,light}.gif) from real output, on Windows in
 # Git Bash. Two sessions (session.mjs, each with the real allot-mcp) lease a real
-# `cargo build --release` of a crate whose build script keeps four threads busy, and the second
-# one queues; the recording shows `allot status --watch` meanwhile. allotd runs under a
-# throwaway USERPROFILE on its own port, so a live allotd and ~/.allot are untouched.
-# Needs vhs, ttyd and ffmpeg on PATH, node, cargo, and `cargo build --release` done first.
+# `cargo build --release` of a crate whose build script keeps four threads busy, and the
+# second one starts at once on the cores left free; the recording shows
+# `allot status --watch` meanwhile. allotd runs under a throwaway USERPROFILE on its own port,
+# so a live allotd and ~/.allot are untouched.
+# Needs vhs, ttyd and ffmpeg on PATH, node, cargo, and the binaries in ALLOT_DEMO_FROM
+# (default target/release, so `cargo build --release` first; ~/.allot/bin takes the installed ones).
 #   record.sh setup | take [dark|light] | stop
 set -eu
 HERE=$(cd "$(dirname "$0")" && pwd)
 REPO=$(cd "$HERE/../.." && pwd)
 DEMO=${ALLOT_DEMO_DIR:-$HOME/allot-demo}
+FROM=${ALLOT_DEMO_FROM:-$REPO/target/release}
 BIN=$DEMO/.allot/bin
 PORT=47921
-BUILD_SECS=4
+# Long enough that the first build is still running when the second session asks.
+BUILD_SECS=8
 BUILD_THREADS=4
 # Seconds after the tape's trigger that each session starts; each asks 2.5 s after it starts.
 FIRST_DELAY=0
@@ -46,18 +50,18 @@ setup() {
     fi
     mkdir -p "$BIN"
     for name in allot allotd allot-mcp; do
-        cp "$REPO/target/release/$name.exe" "$BIN/"
+        cp "$FROM/$name.exe" "$BIN/"
     done
-    cores=$(nproc)
-    # Two cpu_heavy leases must not fit together, so the second one queues, while one still
-    # fits beside the machine's own load; a small RAM profile keeps memory out of the story.
-    heavy=$(awk -v cores="$cores" 'BEGIN { printf "%.1f", cores * 0.55 }')
-    printf '[daemon]\nport = %s\n\n[classes.cpu_heavy]\ncores = %s\nram_mb = 1024\n' \
-        "$PORT" "$heavy" > "$DEMO/.allot/config.toml"
+    # Two cpu_heavy leases (8 cores by default) do not both fit whole, so the second shrinks.
+    # Recording loads the machine too, which can leave less than the default minimum of 4
+    # free, so the demo's builds can start on 2.
+    printf '[daemon]\nport = %s\n\n[classes.cpu_heavy]\nmin_cores = 2\n' "$PORT" \
+        > "$DEMO/.allot/config.toml"
     make_crate web-app
     make_crate api-server
-    in_demo_home "$BIN/allot.exe" daemon start
-    echo "setup: $cores cores, cpu_heavy $heavy, allotd on $PORT"
+    # allotd keeps the handles it starts with, so leave none open to a caller that captures them.
+    in_demo_home "$BIN/allot.exe" daemon start < /dev/null > /dev/null 2>&1
+    echo "setup: $(nproc) cores, cpu_heavy min_cores 2, allotd on $PORT"
 }
 
 # Cargo and rustup find their homes through USERPROFILE too, so they keep the real ones.
