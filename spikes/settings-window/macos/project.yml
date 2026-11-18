@@ -1,0 +1,38 @@
+# M0.2 throwaway spike (Settings roadmap): a Settings window from an accessory (menu bar) app.
+# `xcodegen generate` writes AllotSettingsSpike.xcodeproj (not committed). No AllotKit, no allotd:
+# it only proves the window. M5.1 deletes this folder.
+name: AllotSettingsSpike
+options:
+  deploymentTarget:
+    macOS: "14.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    MARKETING_VERSION: "0.0.1"
+    CURRENT_PROJECT_VERSION: "1"
+targets:
+  AllotSettingsSpike:
+    type: application
+    platform: macOS
+    sources:
+      - path: Sources
+    scheme: {}
+    info:
+      path: Generated/Info.plist
+      properties:
+        CFBundleDisplayName: Allot Settings Spike
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        LSMinimumSystemVersion: $(MACOSX_DEPLOYMENT_TARGET)
+        # Accessory app, as the real Allot.app: no Dock icon and no menu bar of its own.
+        LSUIElement: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: tech.mehran.allot.settings-spike
+        PRODUCT_NAME: AllotSettingsSpike
+        CODE_SIGN_IDENTITY: "-"
+        CODE_SIGN_STYLE: Manual
+        DEVELOPMENT_TEAM: ""
+        ENABLE_HARDENED_RUNTIME: YES
+        GENERATE_INFOPLIST_FILE: NO

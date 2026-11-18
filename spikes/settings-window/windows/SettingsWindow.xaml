@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!--
+  The spike's Settings window: Mica, a content-extended title bar, NavigationView with Frame
+  pages (Frame.Navigate under AOT). No x:Bind on the Window itself (BoundWindow probes that, see
+  microsoft-ui-xaml#9063); the pages use x:Bind. The footer shows the live scale and placement.
+-->
+<Window
+  x:Class="SettingsSpike.SettingsWindow"
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  Title="Allot Settings (spike)">
+  <Window.SystemBackdrop>
+    <MicaBackdrop />
+  </Window.SystemBackdrop>
+
+  <Grid x:Name="Root" Loaded="OnRootLoaded">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="*" />
+      <RowDefinition Height="Auto" />
+    </Grid.RowDefinitions>
+
+    <TitleBar x:Name="AppTitleBar" Subtitle="M0.2 spike">
+      <TitleBar.IconSource>
+        <ImageIconSource ImageSource="Assets/AppIcon.ico" />
+      </TitleBar.IconSource>
+    </TitleBar>
+
+    <NavigationView
+      x:Name="Nav"
+      Grid.Row="1"
+      IsBackButtonVisible="Collapsed"
+      IsSettingsVisible="False"
+      PaneDisplayMode="Left"
+      SelectionChanged="OnNavSelectionChanged">
+      <NavigationView.MenuItems>
+        <NavigationViewItem Content="General" Tag="general" Icon="Setting" />
+        <NavigationViewItem Content="Admission" Tag="admission" Icon="Library" />
+      </NavigationView.MenuItems>
+      <Frame x:Name="ContentFrame" />
+    </NavigationView>
+
+    <Grid Grid.Row="2" Padding="16,8" ColumnSpacing="8">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="*" />
+        <ColumnDefinition Width="Auto" />
+        <ColumnDefinition Width="Auto" />
+        <ColumnDefinition Width="Auto" />
+      </Grid.ColumnDefinitions>
+      <TextBlock
+        x:Name="Diagnostics"
+        VerticalAlignment="Center"
+        FontFamily="Consolas"
+        FontSize="12"
+        IsTextSelectionEnabled="True"
+        TextWrapping="Wrap" />
+      <ComboBox
+        x:Name="BackdropBox"
+        Grid.Column="1"
+        VerticalAlignment="Center"
+        AutomationProperties.Name="Backdrop"
+        SelectedIndex="0"
+        SelectionChanged="OnBackdropChanged">
+        <x:String>Mica</x:String>
+        <x:String>Mica Alt</x:String>
+        <x:String>Acrylic</x:String>
+        <x:String>None</x:String>
+      </ComboBox>
+      <Button Grid.Column="2" VerticalAlignment="Center" Content="Show launcher" Click="OnShowLauncherClick" />
+      <Button Grid.Column="3" VerticalAlignment="Center" Content="Quit spike" Click="OnQuitClick" />
+    </Grid>
+  </Grid>
+</Window>

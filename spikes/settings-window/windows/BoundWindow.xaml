@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!-- Leak probe: a Window whose only feature is an x:Bind in its own XAML (microsoft-ui-xaml#9063). -->
+<Window
+  x:Class="SettingsSpike.BoundWindow"
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  Title="x:Bind probe">
+  <TextBlock Margin="24" Text="{x:Bind Caption}" />
+</Window>
