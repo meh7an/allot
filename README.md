@@ -104,63 +104,79 @@ allot install
 Once installed, there is nothing to call by hand. The skill and the CLAUDE.md rule make each session
 lease before a heavy command, and a hook stops the ones that forget.
 
-This is a real run on a 32-core Linux machine. Two sessions were each asked to run
-`cargo build --release` in their own project, and a build script kept four threads busy for a
-minute. `cpu_heavy` was set to 60% of the cores so that the two builds could not fit together.
+This is a real run of 0.5.0 on a 16-core Windows PC with the default settings. Two sessions, each
+with its own `allot-mcp`, ran `cargo build --release` in their own project, and a build script kept
+four threads busy for 45 seconds. `cpu_heavy` asks for 8 cores and can start on 4.
 
-The first session got its lease at once. The second one's `acquire_lease` waited in the queue:
-
-```console
-$ allot status
-allotd 0.3.0 (pid 222638, up 25s)
-cpu      13.0% (10s 13.0%, 60s 10.7%) of 32 logical cores
-ram     6.8 GB / 23.4 GB, commit 6.8 GB / 55.4 GB
-gpu0    NVIDIA GeForce GTX 970: busiest engine 0%, vram 0.4 GB / 4.0 GB
-sessions
-  527c454e  pid 222504  4.01 cores  ram 0.3 GB  gpu   0%  vram 0.0 GB
-    lease 1    active   cpu_heavy 19.2 cores, 4.0 GB for 20s  cargo build --release
-  d7429ca2  pid 222833  0.01 cores  ram 0.2 GB  gpu   0%  vram 0.0 GB
-    lease 2    queued   cpu_heavy 19.2 cores, 4.0 GB for 15s  cargo build --release
-```
-
-When the first build released its lease, the second session's call returned after 57 seconds in the
-queue, telling it to go ahead:
+The first session got its 8 cores at once. The second asked for 8 too, but after the headroom, the
+first lease, and what the rest of the PC was using, 4.7 were free, so it started on those right
+away instead of waiting in the queue:
 
 ```json
 {
-  "lease_id": 2,
+  "lease_id": 3,
   "state": "active",
   "kind": "normal",
-  "profile": { "cores": 19.2, "ram_mb": 4096, "gpu_pct": 0.0, "vram_mb": 0, "est_secs": 300 },
+  "profile": { "cores": 4.7, "ram_mb": 4096, "gpu_pct": 0.0, "vram_mb": 0, "est_secs": 300 },
   "label": "cargo build --release",
-  "verdict": { "fits": true, "reasons": [], "wait_estimate_secs": null },
+  "verdict": { "fits": true, "reasons": ["granted 4.7 of 8.0 cores"], "wait_estimate_secs": null },
   "next_step": "Run the command now, then call release_lease with this lease_id."
 }
 ```
 
-Each session ran its build and released its lease, and Allot recorded what each build used. A run
-that needs more than its session declares reserves what earlier runs needed. From the third run of
-the same command in the same folder, a run that needs less reserves what earlier runs used plus
-10%, here about 4 cores instead of 19.2. `release_lease` tells the session what its next run will
-reserve, and `allot history` shows the median, p90, and max of each job:
+Both builds then ran side by side:
 
 ```console
-$ allot history
+> allot status
+allotd 0.5.0 (pid 14500, up 11m 29s)
+cpu      63.4% (10s 73.4%, 60s 39.2%) of 16 logical cores
+ram     32.0 GB / 63.9 GB, commit 54.1 GB / 85.9 GB
+gpu0    NVIDIA GeForce RTX 2080 Ti: busiest engine 3%, vram 2.5 GB / 10.8 GB
+
+sessions
+  04bcc2cd  pid 67200   3.96 cores  ram 0.1 GB  gpu   0%  vram 0.0 GB
+    lease 2    active   cpu_heavy 8.0 cores, 4.0 GB for 18s  cargo build --release
+  ceea41b8  pid 32304   3.96 cores  ram 0.1 GB  gpu   0%  vram 0.0 GB
+    lease 3    active   cpu_heavy 4.7 of 8.0 cores, 4.0 GB for 15s  cargo build --release
+other               1.64 cores  ram 30.3 GB  gpu   3%  vram 2.5 GB
+```
+
+Each session released its lease, and Allot recorded what each build used: under 4 cores and
+0.2 GB, far less than it reserved. A run that needs more than its session declares reserves what
+earlier runs needed. After three runs of the same command in the same folder, a run that needs
+less reserves what they used plus 10%. `api-server` was built three more times, and after its
+third run `release_lease` told the session what the next run would reserve:
+
+```json
+"next": {
+  "profile": { "cores": 4.3, "ram_mb": 256, "gpu_pct": 0.0, "vram_mb": 0, "est_secs": 300 },
+  "reasons": [
+    "cores 4.3 from p90 of 3 past run(s) plus 10% (declared 8.0)",
+    "RAM 256 MB, the floor (the highest peak of 3 past run(s): 160 MB, declared 4096 MB)"
+  ]
+}
+```
+
+The next build got 4.3 cores and 256 MB instead of 8 cores and 4 GB. `allot history` shows the
+median, p90, and max of each job:
+
+```console
+> allot history
 median, p90 and max over the newest runs without an overlapping lease: cores and GPU while busy, peak RAM and VRAM, run time
 
-cargo build --release|/home/mehran/allot-sample/api-server
-  1 run(s), last ended 1s ago: cargo build --release
-  from 1 run(s)   cores      RAM  time
-  median            3.9   0.2 GB  1m 03s
-  p90               3.9   0.2 GB  1m 03s
-  max               3.9   0.2 GB  1m 03s
+cargo build --release|c:\users\mehran\allot-sample\api-server
+  4 run(s), last ended 0s ago: cargo build --release
+  from 4 run(s)   cores      RAM  time
+  median            3.9   0.1 GB  47s
+  p90               3.9   0.2 GB  47s
+  max               3.9   0.2 GB  47s
 
-cargo build --release|/home/mehran/allot-sample/web-app
-  1 run(s), last ended 1m 04s ago: cargo build --release
+cargo build --release|c:\users\mehran\allot-sample\web-app
+  1 run(s), last ended 2m 23s ago: cargo build --release
   from 1 run(s)   cores      RAM  time
-  median            3.9   0.3 GB  1m 04s
-  p90               3.9   0.3 GB  1m 04s
-  max               3.9   0.3 GB  1m 04s
+  median            3.8   0.2 GB  47s
+  p90               3.8   0.2 GB  47s
+  max               3.8   0.2 GB  47s
 ```
 
 ## The panel
