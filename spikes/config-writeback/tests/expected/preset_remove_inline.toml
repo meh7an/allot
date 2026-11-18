@@ -1,0 +1,59 @@
+#   ~/.allot/config.toml  --  my settings, edited by hand
+#
+# Notes to self:
+#   * keep the gaming headroom high
+#   * rules are below the presets, on purpose
+
+
+
+# Heavy commands first, because I change them most.
+[classifier]
+light_flags = ["--help", "-h", "--version"]   # no -V, I use it for verbose
+
+
+# cargo: everything that compiles
+[[classifier.rules]]
+program = "cargo"
+args    = ["build", "test", "run", "bench", "nextest"]   # nextest added 2026-10
+class   = "cpu_heavy"
+
+# The node monorepo
+[[classifier.rules]]
+program = "pnpm"
+args = ["build*", "test*"]
+class = "cpu_heavy"
+
+[[classifier.rules]]
+	# tabs on purpose, the old editor did this
+	program = "blender"
+	class = "gpu_heavy"
+
+
+[presets.cpu_small]
+cores = 3          # one more than the default
+ram_mb = 1536
+
+[presets]
+
+[presets.render]   # my own preset
+cores = 6
+ram_mb = 8192
+gpu_pct = 60.0
+vram_mb = 6144
+min_cores = 3
+est_secs = 900
+
+[estimates]
+# Do not shrink my builds yet.
+lower = false
+
+[admission]
+headroom_pct   =   20.0    # was 15; raised while gaming
+
+[leases]
+idle_release_secs = 240
+# heartbeat_ttl_secs = 90   (left at the default)
+
+[daemon]
+port = 47823
+# trailing comment at the very end, after the last key

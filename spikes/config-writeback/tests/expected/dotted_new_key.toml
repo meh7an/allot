@@ -1,0 +1,15 @@
+# Everything as dotted keys and inline arrays, no table headers for most of it.
+admission.headroom_pct = 25.0
+estimates.min_runs = 4  # four runs before lowering
+estimates.margin_pct = 5.0
+
+classes.cpu_heavy = { cores = 10, min_cores = 6 }
+
+[classifier]
+rules = [
+    # compilers
+    { program = "cargo", args = ["build", "test"], class = "cpu_heavy" },
+    { program = "make", class = "cpu_heavy" },  # make -j everything
+    # GPU
+    { program = "python*", args = ["train*.py"], class = "gpu_heavy" },
+]
