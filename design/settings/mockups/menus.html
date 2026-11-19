@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Allot Settings, menus</title>
+<link rel="stylesheet" href="mockups.css">
+<script src="https://unpkg.com/lucide@0.469.0/dist/umd/lucide.min.js"></script>
+<style>
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: var(--s5);
+    padding: var(--s5) var(--s4);
+    max-width: 1040px;
+    margin: 0 auto;
+  }
+
+  .grid h2 {
+    font-size: 14px;
+    margin: 0 0 var(--s1);
+  }
+
+  .grid .mock-note {
+    margin-bottom: var(--s3);
+  }
+
+  .m {
+    list-style: none;
+    margin: 0;
+    padding: 4px;
+    border: 1px solid var(--card-stroke);
+    border-radius: 8px;
+    background: var(--card);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.16);
+  }
+
+  .m li {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    min-height: 32px;
+    padding: 0 10px;
+    border-radius: 4px;
+  }
+
+  .m li.sep {
+    min-height: 0;
+    padding: 0;
+    margin: 4px 0;
+    border-top: 1px solid var(--card-stroke);
+    border-radius: 0;
+  }
+
+  .m kbd {
+    margin-left: auto;
+    font: 12px var(--font);
+    color: var(--text-2);
+  }
+
+  .m svg {
+    width: 16px;
+    height: 16px;
+  }
+
+  .m.mac {
+    font-family: -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+    font-size: 13px;
+    border-radius: 6px;
+  }
+
+  .m.gnome {
+    font-family: "Adwaita Sans", Cantarell, system-ui, sans-serif;
+    border-radius: 12px;
+  }
+
+  .m.kde {
+    font-family: "Noto Sans", system-ui, sans-serif;
+    font-size: 13px;
+    border-radius: 3px;
+  }
+
+  .moved {
+    max-width: 1040px;
+    margin: 0 auto;
+    padding: 0 var(--s4) var(--s6);
+  }
+
+  .moved h2 {
+    font-size: 14px;
+  }
+</style>
+</head>
+<body>
+
+<div class="mock-bar">
+  <h1>Allot Settings, the shrunk More options menu</h1>
+  <label>Theme
+    <select id="theme-picker">
+      <option value="">System</option>
+      <option value="light">Light</option>
+      <option value="dark">Dark</option>
+    </select>
+  </label>
+  <a href="index.html">All mockups</a>
+</div>
+
+<main>
+  <div class="grid">
+    <section aria-labelledby="w">
+      <h2 id="w">Windows flyout ⋯</h2>
+      <p class="mock-note">Sentence case. Ctrl+, from the flyout.</p>
+      <ul class="m" role="menu" aria-label="More options, Windows">
+        <li role="menuitem"><i data-lucide="settings" aria-hidden="true"></i>Settings<kbd>Ctrl+,</kbd></li>
+        <li role="menuitem"><i data-lucide="circle-stop" aria-hidden="true"></i>Stop service</li>
+        <li class="sep" role="separator"></li>
+        <li role="menuitem"><i data-lucide="folder-open" aria-hidden="true"></i>Open logs</li>
+      </ul>
+    </section>
+    <section aria-labelledby="mc">
+      <h2 id="mc">macOS panel gear</h2>
+      <p class="mock-note">Title case, ellipsis on Settings…, Quit stays.</p>
+      <ul class="m mac" role="menu" aria-label="More options, macOS">
+        <li role="menuitem">Settings…<kbd>⌘,</kbd></li>
+        <li role="menuitem">Stop Service</li>
+        <li class="sep" role="separator"></li>
+        <li role="menuitem">Open Logs</li>
+        <li class="sep" role="separator"></li>
+        <li role="menuitem">Quit Allot<kbd>⌘Q</kbd></li>
+      </ul>
+    </section>
+    <section aria-labelledby="g">
+      <h2 id="g">GNOME panel menu</h2>
+      <p class="mock-note">Sentence case. Settings raises an open window first.</p>
+      <ul class="m gnome" role="menu" aria-label="More options, GNOME">
+        <li role="menuitem">Settings</li>
+        <li role="menuitem">Stop service</li>
+        <li class="sep" role="separator"></li>
+        <li role="menuitem">Open logs</li>
+      </ul>
+    </section>
+    <section aria-labelledby="k">
+      <h2 id="k">KDE popup and context menu</h2>
+      <p class="mock-note">KDE's own wording and title case.</p>
+      <ul class="m kde" role="menu" aria-label="More options, KDE">
+        <li role="menuitem"><i data-lucide="settings" aria-hidden="true"></i>Configure Allot…</li>
+        <li role="menuitem"><i data-lucide="circle-stop" aria-hidden="true"></i>Stop Service</li>
+        <li class="sep" role="separator"></li>
+        <li role="menuitem"><i data-lucide="folder-open" aria-hidden="true"></i>Open Logs</li>
+      </ul>
+    </section>
+  </div>
+  <section class="moved" aria-labelledby="mv">
+    <h2 id="mv">What moved out of the menu</h2>
+    <p>Meters, Notifications and Launch at logon now live on the Panel page of Settings. With the service stopped, the second item reads "Start service" ("Start Service" on macOS and KDE), as today.</p>
+  </section>
+</main>
+
+<script>
+  if (window.lucide) window.lucide.createIcons();
+  document.getElementById("theme-picker").addEventListener("change", (e) => {
+    if (e.target.value) document.documentElement.dataset.theme = e.target.value;
+    else delete document.documentElement.dataset.theme;
+  });
+</script>
+</body>
+</html>

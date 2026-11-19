@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Allot Settings mockups</title>
+<link rel="stylesheet" href="mockups.css">
+<style>
+  main {
+    max-width: 720px;
+    margin: 0 auto;
+    padding: var(--s6) var(--s4);
+  }
+
+  h1 {
+    font-size: 28px;
+    line-height: 36px;
+    margin: 0 0 var(--s2);
+  }
+
+  ul.links {
+    list-style: none;
+    padding: 0;
+    margin: var(--s5) 0;
+    display: grid;
+    gap: var(--s3);
+  }
+
+  ul.links a {
+    display: block;
+    padding: var(--s4);
+    border: 1px solid var(--card-stroke);
+    border-radius: var(--r-card);
+    background: var(--card);
+    color: var(--text);
+    text-decoration: none;
+  }
+
+  ul.links a:hover {
+    border-color: var(--accent);
+  }
+
+  ul.links strong {
+    display: block;
+    color: var(--accent);
+  }
+
+  .muted {
+    color: var(--text-2);
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>Allot Settings mockups</h1>
+  <p class="muted">M0.4 design. The spec is <code>design/settings/DESIGN.md</code>; these pages show its structure, copy and states. They approximate each platform's look, and the real panels use their own native controls.</p>
+  <ul class="links">
+    <li><a href="windows.html"><strong>Windows reference</strong>All seven pages, the size and rule dialogs, a working "test a command" box, and a state switcher for every state in DESIGN.md section 7.</a></li>
+    <li><a href="platforms.html"><strong>macOS, GNOME and KDE</strong>The Admission page adapted to each platform, with the stopped and conflict banners.</a></li>
+    <li><a href="menus.html"><strong>Shrunk menus</strong>More options on each platform: Settings, Stop or Start service, Open logs.</a></li>
+  </ul>
+  <p class="muted">Machine numbers in the mockups are a sample (16 cores, 32 GB, one GPU with 8 GB), not real data.</p>
+</main>
+</body>
+</html>

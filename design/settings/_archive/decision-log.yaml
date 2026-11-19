@@ -1,0 +1,118 @@
+# Decision log for the Allot Settings design (M0.4), design-wizard format, light.
+# Stages that the platforms fix (style, color, type, spacing, depth, icons, motion) are recorded
+# as fixed by the host, not asked.
+
+project: Allot Settings window
+date: 2026-11-20
+host: claude-code
+mode: wizard
+brief: >
+  A Settings window for allotd's config.toml and each panel's own settings, on four native
+  panels (WinUI 3, SwiftUI, libadwaita prefs, Kirigami), opened from a shrunk More options menu.
+inputs:
+  - plan/settings/ROADMAP.md (M0.4)
+  - plan/settings/PROGRESS.md (M0.1 to M0.3 notes)
+  - spikes/settings-window/FINDINGS.md
+  - shared/src/config.rs, shared/src/types.rs, core/src/history.rs
+  - docs/runbook.md (Configuration)
+
+decisions:
+  - id: S2
+    stage: Platform and surface strategy
+    choice: fixed.native-four-panels
+    decided_by: auto
+    door: one-way
+    reason: Fixed by the roadmap; Windows is the reference.
+  - id: S2.kde
+    stage: Platform and surface strategy
+    choice: kde.own-window
+    decided_by: user
+    door: one-way
+    reason: Same instant model as the other panels, errors shown in place, no write lost on OK.
+    revisit_if: KDE checklist items 1 to 4 fail (focus from a real click on Wayland).
+  - id: S3
+    stage: Accessibility level
+    choice: a11y.wcag22-aa
+    decided_by: auto
+    door: one-way
+    reason: The panels' existing floor (M7.1 checks it per platform).
+  - id: S5
+    stage: Core flow (apply model)
+    choice: instant-scalars-row-commit
+    decided_by: user
+    door: two-way
+    reason: Matches the spikes and platform settings conventions; a half-typed rule is never written.
+  - id: S6
+    stage: Information architecture
+    choice: seven-task-pages
+    decided_by: user
+    door: one-way
+    reason: Pages follow what people want to change, not the TOML tables.
+  - id: S6.keys
+    stage: Information architecture
+    choice: key-in-help
+    decided_by: user
+    door: two-way
+    reason: Maps labels to config.toml and the runbook without a separate lookup.
+  - id: S6.gnome
+    stage: Navigation (GNOME)
+    choice: stock-view-switcher-seven
+    decided_by: user
+    door: two-way
+    revisit_if: Seven pages do not fit at 760 px (R8).
+  - id: S6.macos
+    stage: Navigation (macOS)
+    choice: toolbar-tabs
+    decided_by: user
+    door: two-way
+  - id: S7
+    stage: Key screens
+    choice: windows-reference-plus-adaptations
+    decided_by: auto
+    door: two-way
+  - id: S8
+    stage: Disclosure
+    choice: advanced-group-last-on-page
+    decided_by: auto
+    door: two-way
+    reason: Seven pages already split by task; an Advanced page would split groups again.
+  - id: S9-S15
+    stage: Visual system
+    choice: fixed.platform-native
+    decided_by: auto
+    door: two-way
+    reason: Each panel uses stock controls and theme resources; mockups only approximate them.
+  - id: S16.tables
+    stage: Components
+    choice: table-plus-edit-dialog
+    decided_by: user
+    door: one-way
+    reason: Rows stay comparable, dialogs commit a row whole, no grid dependency.
+  - id: S16.test-box
+    stage: Components
+    choice: test-box-above-rules
+    decided_by: user
+    door: two-way
+  - id: S16.signature
+    stage: Components
+    choice: live-what-this-means-sentence
+    decided_by: auto
+    door: two-way
+    reason: The roadmap's live explanations, given one consistent place in every group.
+  - id: S17
+    stage: Copy voice
+    choice: plain-calm-precise
+    decided_by: auto
+    door: two-way
+    reason: Matches the runbook and the panels' existing copy; platform casing per D15.
+  - id: S18
+    stage: Data visualization
+    choice: skipped
+    decided_by: auto
+    reason: No charts; the fit preview is a small table and sentences.
+  - id: S19
+    stage: Handoff
+    choice: design-md-plus-html-mockups
+    decided_by: auto
+    door: two-way
+    reason: Named by the roadmap; M1.1 copies the key catalog into SettingsSpec.

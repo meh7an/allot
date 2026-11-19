@@ -1,0 +1,609 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Allot Settings, platforms</title>
+<link rel="stylesheet" href="mockups.css">
+<script src="https://unpkg.com/lucide@0.469.0/dist/umd/lucide.min.js"></script>
+<style>
+  .frames {
+    display: grid;
+    gap: var(--s6);
+    padding: var(--s5) var(--s4);
+    max-width: 1040px;
+    margin: 0 auto;
+  }
+
+  .frame-title {
+    font-size: 16px;
+    margin: 0 0 var(--s1);
+  }
+
+  .frame-note {
+    margin: 0 0 var(--s3);
+    color: var(--text-2);
+    font-size: 13px;
+  }
+
+  .shot {
+    border: 1px solid var(--card-stroke);
+    border-radius: 10px;
+    overflow: hidden;
+    background: var(--bg);
+    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.16);
+  }
+
+  .shot svg {
+    width: 16px;
+    height: 16px;
+  }
+
+  /* macOS: toolbar tabs, grouped form */
+
+  .mac {
+    font-family: -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+    font-size: 13px;
+  }
+
+  .mac-bar {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    padding: var(--s2) var(--s3) var(--s1);
+    border-bottom: 1px solid var(--card-stroke);
+    background: var(--card);
+  }
+
+  .mac-lights {
+    display: flex;
+    gap: 8px;
+  }
+
+  .mac-lights span {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: var(--subtle-strong);
+    border: 1px solid var(--card-stroke);
+  }
+
+  .mac-title {
+    text-align: center;
+    font-weight: 600;
+  }
+
+  .mac-tabs {
+    grid-column: 1 / -1;
+    display: flex;
+    justify-content: center;
+    gap: 2px;
+    flex-wrap: wrap;
+    margin-top: var(--s2);
+  }
+
+  .mac-tabs button {
+    font: inherit;
+    font-size: 11px;
+    display: grid;
+    justify-items: center;
+    gap: 2px;
+    min-width: 72px;
+    padding: 4px 6px;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-2);
+  }
+
+  .mac-tabs button svg {
+    width: 20px;
+    height: 20px;
+  }
+
+  .mac-tabs button[aria-current="page"] {
+    background: var(--subtle-strong);
+    color: var(--accent);
+  }
+
+  .mac-form {
+    padding: var(--s5);
+    max-width: 640px;
+    margin: 0 auto;
+  }
+
+  .mac-section {
+    margin-bottom: var(--s5);
+  }
+
+  .mac-section h2 {
+    font-size: 13px;
+    font-weight: 600;
+    margin: 0 0 6px 10px;
+  }
+
+  .mac-box {
+    background: var(--card);
+    border: 1px solid var(--card-stroke);
+    border-radius: 10px;
+  }
+
+  .mac-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--s2) var(--s3);
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 12px;
+  }
+
+  .mac-row + .mac-row {
+    border-top: 1px solid var(--card-stroke);
+  }
+
+  .mac-foot {
+    font-size: 12px;
+    color: var(--text-2);
+    margin: 6px 10px 0;
+  }
+
+  .mac-status {
+    display: flex;
+    justify-content: space-between;
+    padding: 6px 12px;
+    border-top: 1px solid var(--card-stroke);
+    color: var(--text-2);
+    font-size: 11px;
+    background: var(--card);
+  }
+
+  /* GNOME: libadwaita preferences window */
+
+  .gnome {
+    font-family: "Adwaita Sans", Cantarell, system-ui, sans-serif;
+    font-size: 15px;
+  }
+
+  .adw-header {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    flex-wrap: wrap;
+    padding: 6px;
+    background: var(--card);
+    border-bottom: 1px solid var(--card-stroke);
+    position: relative;
+  }
+
+  .adw-header button {
+    font: inherit;
+    font-size: 13px;
+    display: inline-flex;
+    gap: 6px;
+    align-items: center;
+    padding: 6px 10px;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text);
+  }
+
+  .adw-header button[aria-current="page"] {
+    background: var(--subtle-strong);
+    font-weight: 700;
+  }
+
+  .adw-close {
+    position: absolute;
+    right: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+  }
+
+  .adw-banner {
+    display: flex;
+    justify-content: center;
+    gap: var(--s3);
+    align-items: center;
+    flex-wrap: wrap;
+    padding: 8px 12px;
+    background: var(--info-bg);
+    font-size: 14px;
+  }
+
+  .adw-page {
+    max-width: 600px;
+    margin: 0 auto;
+    padding: var(--s5) var(--s3);
+  }
+
+  .adw-group {
+    margin-bottom: var(--s5);
+  }
+
+  .adw-group h2 {
+    font-size: 15px;
+    font-weight: 700;
+    margin: 0 0 var(--s2);
+  }
+
+  .adw-list {
+    background: var(--card);
+    border: 1px solid var(--card-stroke);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+
+  .adw-row {
+    display: flex;
+    gap: var(--s3);
+    align-items: center;
+    justify-content: space-between;
+    min-height: 56px;
+    padding: 8px 12px;
+  }
+
+  .adw-row + .adw-row {
+    border-top: 1px solid var(--card-stroke);
+  }
+
+  .adw-sub {
+    display: block;
+    font-size: 13px;
+    color: var(--text-2);
+  }
+
+  .adw-desc {
+    margin: var(--s2) 2px 0;
+    font-size: 13px;
+    color: var(--text-2);
+  }
+
+  .spin {
+    display: inline-flex;
+    align-items: center;
+    border: 1px solid var(--control-stroke);
+    border-radius: 6px;
+    overflow: hidden;
+  }
+
+  .spin input {
+    border: 0;
+    width: 60px;
+    border-radius: 0;
+  }
+
+  .spin span {
+    display: grid;
+    place-items: center;
+    width: 32px;
+    height: 32px;
+    border-left: 1px solid var(--card-stroke);
+  }
+
+  .adw-button-row {
+    display: block;
+    width: 100%;
+    font: inherit;
+    padding: 14px;
+    border: 0;
+    background: var(--card);
+    color: var(--accent);
+    font-weight: 700;
+  }
+
+  /* KDE: Kirigami window with a sidebar and FormLayout */
+
+  .kde {
+    font-family: "Noto Sans", system-ui, sans-serif;
+    font-size: 13px;
+  }
+
+  .kde-title {
+    display: flex;
+    justify-content: space-between;
+    padding: 6px 10px;
+    background: var(--card);
+    border-bottom: 1px solid var(--card-stroke);
+  }
+
+  .kde-body {
+    display: flex;
+    min-height: 420px;
+  }
+
+  .kde-side {
+    width: 200px;
+    flex: none;
+    border-right: 1px solid var(--card-stroke);
+    background: var(--card);
+    padding: 6px;
+  }
+
+  .kde-side ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .kde-side button {
+    font: inherit;
+    width: 100%;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    padding: 6px 8px;
+    border: 0;
+    border-radius: 3px;
+    background: transparent;
+    color: var(--text);
+    text-align: left;
+  }
+
+  .kde-side button[aria-current="page"] {
+    background: var(--accent);
+    color: var(--on-accent);
+  }
+
+  .kde-main {
+    flex: 1 1 auto;
+    padding: var(--s4) var(--s5);
+    min-width: 0;
+  }
+
+  .kde-main h2 {
+    font-size: 16px;
+    margin: 0 0 var(--s3);
+  }
+
+  .form {
+    display: grid;
+    grid-template-columns: minmax(140px, 40%) 1fr;
+    gap: 10px var(--s3);
+    align-items: center;
+    margin-bottom: var(--s3);
+  }
+
+  .form .lbl {
+    text-align: right;
+  }
+
+  .form .hint {
+    grid-column: 2;
+    margin-top: -6px;
+    font-size: 12px;
+    color: var(--text-2);
+  }
+
+  .kde-sep {
+    border: 0;
+    border-top: 1px solid var(--card-stroke);
+    margin: var(--s4) 0;
+  }
+
+  .kde-heading {
+    font-weight: 700;
+    margin: 0 0 var(--s2);
+  }
+
+  .kde-msg {
+    border-left: 4px solid var(--accent);
+    background: var(--info-bg);
+    padding: 8px 12px;
+    margin-bottom: var(--s4);
+    display: flex;
+    gap: var(--s3);
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  @media (max-width: 640px) {
+    .kde-side {
+      width: 52px;
+    }
+
+    .kde-side .t {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip: rect(0 0 0 0);
+    }
+
+    .form {
+      grid-template-columns: 1fr;
+    }
+
+    .form .lbl {
+      text-align: left;
+    }
+
+    .form .hint {
+      grid-column: 1;
+    }
+
+    .adw-header button span {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip: rect(0 0 0 0);
+    }
+  }
+</style>
+</head>
+<body>
+
+<div class="mock-bar">
+  <h1>Allot Settings, Admission on macOS, GNOME and KDE</h1>
+  <label>Theme
+    <select id="theme-picker">
+      <option value="">System</option>
+      <option value="light">Light</option>
+      <option value="dark">Dark</option>
+    </select>
+  </label>
+  <a href="index.html">All mockups</a>
+  <p class="mock-note">Static. Icons are Lucide stand-ins for SF Symbols and Breeze; numbers are a sample machine.</p>
+</div>
+
+<main class="frames">
+
+  <section aria-labelledby="mac-h">
+    <h2 class="frame-title" id="mac-h">macOS: toolbar tabs, grouped form</h2>
+    <p class="frame-note">NSWindow with a SwiftUI Form (grouped). Title case on buttons. The window resizes per page. Dock and Cmd-Tab while open: Revisit R4.</p>
+    <div class="shot mac">
+      <div class="mac-bar">
+        <div class="mac-lights" aria-hidden="true"><span></span><span></span><span></span></div>
+        <div class="mac-title">Admission</div>
+        <div></div>
+        <div class="mac-tabs" role="tablist" aria-label="Settings pages">
+          <button role="tab"><i data-lucide="gauge" aria-hidden="true"></i>Panel</button>
+          <button role="tab" aria-current="page" aria-selected="true"><i data-lucide="scale" aria-hidden="true"></i>Admission</button>
+          <button role="tab"><i data-lucide="layers" aria-hidden="true"></i>Sizes</button>
+          <button role="tab"><i data-lucide="terminal" aria-hidden="true"></i>Commands</button>
+          <button role="tab"><i data-lucide="timer" aria-hidden="true"></i>Benchmarks</button>
+          <button role="tab"><i data-lucide="key-round" aria-hidden="true"></i>Leases</button>
+          <button role="tab"><i data-lucide="server" aria-hidden="true"></i>Service</button>
+        </div>
+      </div>
+      <div class="mac-form">
+        <div class="mac-section">
+          <h2>Keep free for your desktop</h2>
+          <div class="mac-box">
+            <div class="mac-row">
+              <div class="row-text"><label class="row-label" for="m-head">Headroom</label>
+                <p class="row-help">Share of cores, memory, GPU and video memory that jobs never get, so your desktop stays responsive.<code>admission.headroom_pct</code></p></div>
+              <div class="row-control"><input type="range" min="0" max="99" value="15" aria-label="Headroom slider" tabindex="-1"><input type="number" id="m-head" value="15"><span class="unit">%</span></div>
+            </div>
+          </div>
+          <p class="mac-foot">Keeps 2.4 of 16 cores, 4.8 of 32 GB memory, 15 % of the GPU and 1.2 of 8 GB video memory free.</p>
+        </div>
+        <div class="mac-section">
+          <h2>Learn from past runs</h2>
+          <div class="mac-box">
+            <div class="mac-row">
+              <div class="row-text"><label class="row-label" for="m-lower">Lower requests that past runs show are too big</label>
+                <p class="row-help">Once a command has used less than it asks for, reserve what it really uses.<code>estimates.lower</code></p></div>
+              <input type="checkbox" role="switch" id="m-lower" checked>
+            </div>
+            <div class="mac-row">
+              <div class="row-text"><label class="row-label" for="m-runs">Runs before lowering</label>
+                <p class="row-help">Clean past runs of the same command in the same folder.<code>estimates.min_runs</code></p></div>
+              <div class="row-control"><input type="number" id="m-runs" value="3"><span class="unit">runs</span></div>
+            </div>
+            <div class="mac-row">
+              <div class="row-text"><label class="row-label" for="m-margin">Safety margin</label>
+                <p class="row-help">Added on top of what past runs used.<code>estimates.margin_pct</code></p></div>
+              <div class="row-control"><input type="number" id="m-margin" value="10"><span class="unit">%</span></div>
+            </div>
+          </div>
+          <p class="mac-foot">A command that asks for 8 cores but used about 3 in its last 3 runs is reserved 3.3 cores.</p>
+        </div>
+        <div class="row-control" style="justify-content:flex-end"><button class="btn">Reset Page…</button></div>
+      </div>
+      <div class="mac-status" role="status"><span>All changes saved</span><span>Service running</span></div>
+    </div>
+  </section>
+
+  <section aria-labelledby="gnome-h">
+    <h2 class="frame-title" id="gnome-h">GNOME: the extension's preferences window</h2>
+    <p class="frame-note">Adw.PreferencesWindow from prefs.js, seven pages in the stock view switcher (Revisit R8). Numbers as ActionRow with a SpinButton, not SpinRow (Revisit R7). Banner for lasting states. Shown here with the service stopped.</p>
+    <div class="shot gnome">
+      <div class="adw-header" role="tablist" aria-label="Settings pages">
+        <button role="tab"><i data-lucide="gauge" aria-hidden="true"></i><span>Panel</span></button>
+        <button role="tab" aria-current="page" aria-selected="true"><i data-lucide="scale" aria-hidden="true"></i><span>Admission</span></button>
+        <button role="tab"><i data-lucide="layers" aria-hidden="true"></i><span>Sizes</span></button>
+        <button role="tab"><i data-lucide="terminal" aria-hidden="true"></i><span>Commands</span></button>
+        <button role="tab"><i data-lucide="timer" aria-hidden="true"></i><span>Benchmarks</span></button>
+        <button role="tab"><i data-lucide="key-round" aria-hidden="true"></i><span>Leases</span></button>
+        <button role="tab"><i data-lucide="server" aria-hidden="true"></i><span>Service</span></button>
+        <button class="icon-btn adw-close" aria-label="Close"><i data-lucide="x"></i></button>
+      </div>
+      <div class="adw-banner" role="status"><span>The service is stopped. Start it to change these settings.</span><button class="btn">Start service</button></div>
+      <div class="adw-page">
+        <div class="adw-group">
+          <h2>Keep free for your desktop</h2>
+          <div class="adw-list">
+            <div class="adw-row">
+              <div><span id="g-head-l">Headroom</span><span class="adw-sub">Share of cores, memory, GPU and video memory that jobs never get. <code>admission.headroom_pct</code></span></div>
+              <span class="spin"><input type="number" value="15" aria-labelledby="g-head-l" disabled><span aria-hidden="true">−</span><span aria-hidden="true">+</span></span>
+            </div>
+          </div>
+          <p class="adw-desc">Can't work this out while the service is stopped.</p>
+        </div>
+        <div class="adw-group">
+          <h2>Learn from past runs</h2>
+          <div class="adw-list">
+            <div class="adw-row">
+              <div><span id="g-lower-l">Lower requests that past runs show are too big</span><span class="adw-sub">Benchmarks never lower. <code>estimates.lower</code></span></div>
+              <input type="checkbox" role="switch" checked disabled aria-labelledby="g-lower-l">
+            </div>
+            <div class="adw-row">
+              <div><span id="g-runs-l">Runs before lowering</span><span class="adw-sub"><code>estimates.min_runs</code></span></div>
+              <span class="spin"><input type="number" value="3" aria-labelledby="g-runs-l" disabled><span aria-hidden="true">−</span><span aria-hidden="true">+</span></span>
+            </div>
+          </div>
+          <p class="adw-desc">A command that asks for 8 cores but used about 3 in its last 3 runs is reserved 3.3 cores.</p>
+        </div>
+        <div class="adw-list"><button class="adw-button-row" disabled>Reset page…</button></div>
+      </div>
+    </div>
+  </section>
+
+  <section aria-labelledby="kde-h">
+    <h2 class="frame-title" id="kde-h">KDE: the widget's own Kirigami window</h2>
+    <p class="frame-note">Kirigami.ApplicationWindow (decision D1), sidebar of pages, FormLayout with labels on the left, CheckBox for on/off. Shown with a hand-edit conflict as an InlineMessage. Focus from a click on Wayland: Revisit R10.</p>
+    <div class="shot kde">
+      <div class="kde-title"><span>Admission — Allot Settings</span><span aria-hidden="true">— ▢ ✕</span></div>
+      <div class="kde-body">
+        <nav class="kde-side" aria-label="Settings pages"><ul>
+          <li><button><i data-lucide="gauge" aria-hidden="true"></i><span class="t">Panel</span></button></li>
+          <li><button aria-current="page"><i data-lucide="scale" aria-hidden="true"></i><span class="t">Admission</span></button></li>
+          <li><button><i data-lucide="layers" aria-hidden="true"></i><span class="t">Sizes</span></button></li>
+          <li><button><i data-lucide="terminal" aria-hidden="true"></i><span class="t">Commands</span></button></li>
+          <li><button><i data-lucide="timer" aria-hidden="true"></i><span class="t">Benchmarks</span></button></li>
+          <li><button><i data-lucide="key-round" aria-hidden="true"></i><span class="t">Leases</span></button></li>
+          <li><button><i data-lucide="server" aria-hidden="true"></i><span class="t">Service</span></button></li>
+        </ul></nav>
+        <div class="kde-main">
+          <div class="kde-msg" role="alert"><span>config.toml changed outside Settings. Showing the file's values. Your change to Safety margin (15 %) was not saved.</span>
+            <span class="row-control"><button class="btn">Apply My Change</button><button class="btn">Keep File's Values</button></span></div>
+          <p class="kde-heading">Keep free for your desktop</p>
+          <div class="form">
+            <label class="lbl" for="k-head">Headroom:</label>
+            <span class="row-control"><input type="range" min="0" max="99" value="15" aria-label="Headroom slider" tabindex="-1"><input type="number" id="k-head" value="15"><span class="unit">%</span></span>
+            <span class="hint">Share of cores, memory, GPU and video memory that jobs never get. <code>admission.headroom_pct</code></span>
+          </div>
+          <p class="adw-desc" style="margin:0">Keeps 2.4 of 16 cores, 4.8 of 32 GB memory, 15 % of the GPU and 1.2 of 8 GB video memory free.</p>
+          <hr class="kde-sep">
+          <p class="kde-heading">Learn from past runs</p>
+          <div class="form">
+            <span class="lbl" aria-hidden="true"></span>
+            <label class="row-control"><input type="checkbox" checked> Lower requests that past runs show are too big</label>
+            <label class="lbl" for="k-runs">Runs before lowering:</label>
+            <span class="row-control"><input type="number" id="k-runs" value="3"><span class="unit">runs</span></span>
+            <label class="lbl" for="k-margin">Safety margin:</label>
+            <span class="row-control"><input type="number" id="k-margin" value="10"><span class="unit">%</span></span>
+          </div>
+          <p class="adw-desc" style="margin:0">A command that asks for 8 cores but used about 3 in its last 3 runs is reserved 3.3 cores.</p>
+          <hr class="kde-sep">
+          <div class="row-control" style="justify-content:flex-end"><button class="btn">Reset Page…</button></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<script>
+  if (window.lucide) window.lucide.createIcons();
+  document.getElementById("theme-picker").addEventListener("change", (e) => {
+    if (e.target.value) document.documentElement.dataset.theme = e.target.value;
+    else delete document.documentElement.dataset.theme;
+  });
+</script>
+</body>
+</html>
