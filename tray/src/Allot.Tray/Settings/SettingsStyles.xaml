@@ -50,6 +50,35 @@
     <Setter Property="TextWrapping" Value="WrapWholeWords" />
   </Style>
 
+  <Style x:Key="SettingsChipStyle" TargetType="Border">
+    <Setter Property="Background" Value="{ThemeResource SubtleFillColorSecondaryBrush}" />
+    <Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="12" />
+    <Setter Property="Padding" Value="10,0,0,0" />
+  </Style>
+
+  <Style x:Key="SettingsTagStyle" TargetType="Border">
+    <Setter Property="Background" Value="{ThemeResource AccentFillColorDefaultBrush}" />
+    <Setter Property="CornerRadius" Value="{ThemeResource ControlCornerRadius}" />
+    <Setter Property="Padding" Value="6,1,6,2" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+
+  <Style x:Key="SettingsTagTextStyle" TargetType="TextBlock" BasedOn="{StaticResource CaptionTextBlockStyle}">
+    <Setter Property="Foreground" Value="{ThemeResource TextOnAccentFillColorPrimaryBrush}" />
+  </Style>
+
+  <Style x:Key="SettingsMatchedRowStyle" TargetType="Border">
+    <Setter Property="Background" Value="{ThemeResource SubtleFillColorSecondaryBrush}" />
+    <Setter Property="CornerRadius" Value="{ThemeResource ControlCornerRadius}" />
+  </Style>
+
+  <Style x:Key="SettingsPlainRowStyle" TargetType="Border">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="CornerRadius" Value="{ThemeResource ControlCornerRadius}" />
+  </Style>
+
   <Style x:Key="SettingsSeparatorStyle" TargetType="Border">
     <Setter Property="Height" Value="1" />
     <Setter Property="Margin" Value="-16,12,-16,12" />

@@ -38,6 +38,11 @@ public sealed class StringListModel(SettingSpec spec, IValueHost host, IReadOnly
         return true;
     }
 
+    /// <summary>
+    /// Writes <paramref name="entries"/> as they are, such as the list before a reset for Undo.
+    /// </summary>
+    public void Replace(IReadOnlyList<string> entries) => Save(entries);
+
     public void Remove(int index)
     {
         if (index >= 0 && index < Value.Count)

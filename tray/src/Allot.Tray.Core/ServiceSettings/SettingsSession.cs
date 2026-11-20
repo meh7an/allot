@@ -302,11 +302,21 @@ public sealed class SettingsSession : Observable, IValueHost, IDisposable
     }
 
     /// <summary>
-    /// What fits with the shown values, unsaved edits included.
+    /// What fits with the shown values, unsaved edits included, and <paramref name="changes"/>,
+    /// such as a row edited in a dialog.
     /// </summary>
     public Task<SettingsReply<FitPreview>> PreviewAsync(
-        CancellationToken cancellationToken = default) =>
-        _client.PreviewSettingsAsync(Unsaved(), cancellationToken);
+        IReadOnlyList<Change>? changes = null,
+        CancellationToken cancellationToken = default)
+    {
+        var all = Unsaved();
+        if (changes is not null)
+        {
+            all.AddRange(changes);
+        }
+
+        return _client.PreviewSettingsAsync(all, cancellationToken);
+    }
 
     /// <summary>
     /// How the hook treats <paramref name="line"/>, under the shown values and

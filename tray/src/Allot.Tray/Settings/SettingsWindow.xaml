@@ -47,6 +47,16 @@
             <FontIcon Glyph="&#xE9E9;" />
           </NavigationViewItem.Icon>
         </NavigationViewItem>
+        <NavigationViewItem Content="Sizes" Tag="sizes">
+          <NavigationViewItem.Icon>
+            <FontIcon Glyph="&#xE7B8;" />
+          </NavigationViewItem.Icon>
+        </NavigationViewItem>
+        <NavigationViewItem Content="Commands" Tag="commands">
+          <NavigationViewItem.Icon>
+            <FontIcon Glyph="&#xE756;" />
+          </NavigationViewItem.Icon>
+        </NavigationViewItem>
         <NavigationViewItem Content="Benchmarks" Tag="benchmarks">
           <NavigationViewItem.Icon>
             <FontIcon Glyph="&#xE916;" />

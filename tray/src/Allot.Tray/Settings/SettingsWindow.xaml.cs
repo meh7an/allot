@@ -37,6 +37,7 @@ public sealed partial class SettingsWindow : Window
     private readonly PageContext _context;
     private readonly PanelPage _panel;
     private readonly Dictionary<string, AllotdPage> _pages = new(StringComparer.Ordinal);
+    private readonly FitPreviews _fits;
     private readonly AdmissionPreview _preview;
     private readonly DispatcherQueueTimer _noticeTimer;
     private ContentDialog? _dialog;
@@ -60,7 +61,8 @@ public sealed partial class SettingsWindow : Window
             services.Session,
             SettingsText.Numbers(CultureInfo.CurrentCulture),
             ShowNotice,
-            ConfirmAsync);
+            ConfirmAsync,
+            ShowDialogAsync);
         _noticeTimer = DispatcherQueue.CreateTimer();
         _noticeTimer.Interval = NoticeTime;
         _noticeTimer.IsRepeating = false;
@@ -69,7 +71,8 @@ public sealed partial class SettingsWindow : Window
         Notice.Closed += (_, _) => _noticeTimer.Stop();
 
         _panel = new PanelPage(services.Panel, ConfirmAsync);
-        _preview = new AdmissionPreview(_context, DispatcherQueue);
+        _fits = new FitPreviews(services.Session, DispatcherQueue);
+        _preview = new AdmissionPreview(_context, _fits);
         BuildPages();
 
         services.Session.PropertyChanged += (_, _) => ShowSessionState();
@@ -109,7 +112,7 @@ public sealed partial class SettingsWindow : Window
     {
         _visible = visible;
         _services.Session.SetVisible(visible);
-        _preview.SetActive(visible && _pageId == "admission");
+        _fits.SetActive(visible && ShowsFits(_pageId));
         if (visible)
         {
             _panel.Sync();
@@ -127,7 +130,21 @@ public sealed partial class SettingsWindow : Window
         admission.Live["keep_free"] = _preview.HeadroomText;
         admission.Live["learn"] = () => EstimatesText();
         admission.After["learn"] = [_preview.Card];
-        _preview.Updated += admission.Refresh;
+        _fits.Updated += admission.Refresh;
+
+        var sizes = Page("sizes", "Sizes");
+        sizes.Cards["classes"] = group => SizeTable(group);
+        sizes.Cards["presets"] = group => SizeTable(group);
+
+        var commands = Page("commands", "Commands");
+        commands.Cards["rules"] = group =>
+        {
+            var card = new RuleListCard(_context, (RuleListModel)group.Settings[0]);
+            return new StackPanel
+            {
+                Children = { card.TestCard, SettingsUi.Heading(group.Spec.Label), card.Rules },
+            };
+        };
 
         var benchmarks = Page("benchmarks", "Benchmarks");
         benchmarks.Live["quiet"] = () => BenchmarksText();
@@ -155,6 +172,15 @@ public sealed partial class SettingsWindow : Window
         var page = new AllotdPage(id, title, _context);
         _pages[id] = page;
         return page;
+    }
+
+    // The fit preview runs while a page that shows it is open.
+    private static bool ShowsFits(string pageId) => pageId is "admission" or "sizes";
+
+    private StackPanel SizeTable(GroupModel group)
+    {
+        var table = new SizeTableCard(_context, _fits, (SizeTableModel)group.Settings[0]);
+        return new StackPanel { Children = { SettingsUi.Heading(group.Spec.Label), table.Root } };
     }
 
     private string EstimatesText()
@@ -195,7 +221,7 @@ public sealed partial class SettingsWindow : Window
         _pageId = (args.SelectedItem as NavigationViewItem)?.Tag as string
             ?? SettingsBanners.PanelPage;
         PageHost.Content = _pages.TryGetValue(_pageId, out var page) ? page.Root : _panel.Root;
-        _preview.SetActive(_visible && _pageId == "admission");
+        _fits.SetActive(_visible && ShowsFits(_pageId));
         ShowBanners();
     }
 
@@ -330,14 +356,8 @@ public sealed partial class SettingsWindow : Window
 
     private async Task<bool> ConfirmAsync(Confirmation confirmation)
     {
-        if (_dialog is not null || Content.XamlRoot is null)
+        var dialog = new ContentDialog
         {
-            return false;
-        }
-
-        _dialog = new ContentDialog
-        {
-            XamlRoot = Content.XamlRoot,
             Title = confirmation.Title,
             Content = new TextBlock
             {
@@ -348,9 +368,22 @@ public sealed partial class SettingsWindow : Window
             CloseButtonText = "Cancel",
             DefaultButton = ContentDialogButton.Close,
         };
+        return await ShowDialogAsync(dialog).ConfigureAwait(true) == ContentDialogResult.Primary;
+    }
+
+    // One dialog at a time; SetVisible(false) hides the open one.
+    private async Task<ContentDialogResult> ShowDialogAsync(ContentDialog dialog)
+    {
+        if (_dialog is not null || Content.XamlRoot is null)
+        {
+            return ContentDialogResult.None;
+        }
+
+        dialog.XamlRoot = Content.XamlRoot;
+        _dialog = dialog;
         try
         {
-            return await _dialog.ShowAsync() == ContentDialogResult.Primary;
+            return await dialog.ShowAsync();
         }
         finally
         {

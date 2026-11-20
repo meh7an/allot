@@ -58,6 +58,14 @@ public sealed class RowDraft : Observable, IValueHost
     /// </summary>
     public RowName? NameSpec => _table.Control.NewRowName;
 
+    /// <summary>
+    /// Whether the row could be saved now, without showing any issue.
+    /// </summary>
+    public bool Ready =>
+        FindNameIssue() is null
+        && Fields.All(model => model.Issue is null
+            && (model.Value is not null || model.Control.Automatic is not null));
+
     public NumberModel? Field(string key) => Fields.FirstOrDefault(field => field.Key == key);
 
     public void SetName(string text)

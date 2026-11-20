@@ -75,23 +75,26 @@ public sealed class SizeTableModel : ValueModel<IReadOnlyList<SizeRow>>
         }
 
         var row = draft.ToRow();
-        var changes = new List<Change>();
-        if (draft.Original is { } original && original != row.Name)
-        {
-            changes.Add(new Change.ResetRow { Table = Key, Name = original });
-        }
-
-        changes.Add(new Change.SetRow
-        {
-            Table = Key,
-            Name = row.Name,
-            Profile = row.Profile,
-            MinCores = row.MinCores,
-        });
         var others = Value.Where(
             candidate => candidate.Name != draft.Original && candidate.Name != row.Name);
-        Write(SortRows([.. others, row]), changes);
+        Write(SortRows([.. others, row]), ChangesFor(draft.Original, row));
         return true;
+    }
+
+    /// <summary>
+    /// What the table would be with the draft saved, for the dialog's fit preview.
+    /// </summary>
+    /// <returns><c>null</c> while the draft could not be saved.</returns>
+    public IReadOnlyList<Change>? Proposal(RowDraft draft) =>
+        draft.Ready ? ChangesFor(draft.Original, draft.ToRow()) : null;
+
+    /// <summary>
+    /// Writes <paramref name="row"/> back as it was, such as before a reset or delete for Undo.
+    /// </summary>
+    public void Restore(SizeRow row)
+    {
+        var others = Value.Where(candidate => candidate.Name != row.Name);
+        Write(SortRows([.. others, row]), ChangesFor(null, row));
     }
 
     /// <summary>
@@ -181,6 +184,25 @@ public sealed class SizeTableModel : ValueModel<IReadOnlyList<SizeRow>>
             spec?.Label ?? row.Name,
             spec is not null,
             spec is null || row != BuiltInRow(spec));
+    }
+
+    // A rename removes the old row in the same write.
+    private List<Change> ChangesFor(string? original, SizeRow row)
+    {
+        var changes = new List<Change>();
+        if (original is not null && original != row.Name)
+        {
+            changes.Add(new Change.ResetRow { Table = Key, Name = original });
+        }
+
+        changes.Add(new Change.SetRow
+        {
+            Table = Key,
+            Name = row.Name,
+            Profile = row.Profile,
+            MinCores = row.MinCores,
+        });
+        return changes;
     }
 
     private void Write(IReadOnlyList<SizeRow> rows, IReadOnlyList<Change> changes)

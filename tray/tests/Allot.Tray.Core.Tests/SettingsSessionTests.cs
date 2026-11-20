@@ -506,7 +506,7 @@ public sealed class SettingsSessionTests
         var harness = await LoadAsync();
         As<NumberModel>(harness.Session.Setting("admission.headroom_pct")).Commit(30);
 
-        _ = await harness.Session.PreviewAsync(TestContext.CancellationToken);
+        _ = await harness.Session.PreviewAsync(cancellationToken: TestContext.CancellationToken);
 
         AssertChanges(
             harness.Client.Previews.Single(),

@@ -22,7 +22,7 @@ public sealed class RuleDraft : Observable, IValueHost
         _fields = fields;
         Index = index;
         _program = rule?.Program ?? string.Empty;
-        _ruleClass = rule is null ? Choice()?.Default : ClassName(rule.Class);
+        _ruleClass = rule is null ? Choice()?.Default : ClassNames.Of(rule.Class);
         Args = new StringListModel(Field("args"), this, rule?.Args ?? []);
     }
 
@@ -79,13 +79,18 @@ public sealed class RuleDraft : Observable, IValueHost
         Raise(null);
     }
 
+    /// <summary>
+    /// The rule as it would be saved now, without showing any issue; <c>null</c> while it could
+    /// not be saved.
+    /// </summary>
+    public HeavyRule? Proposed =>
+        FindProgramIssue() is null && ClassNames.Parse(_ruleClass) is not null ? ToRule() : null;
+
     /// <returns>Whether the rule can be saved.</returns>
     public bool Check()
     {
         _programIssue = FindProgramIssue();
-        _classIssue = _ruleClass is not null && ParseClass(_ruleClass) is not null
-            ? null
-            : ValueIssue.Required;
+        _classIssue = ClassNames.Parse(_ruleClass) is not null ? null : ValueIssue.Required;
         Raise(null);
         return _programIssue is null && _classIssue is null;
     }
@@ -97,7 +102,7 @@ public sealed class RuleDraft : Observable, IValueHost
     {
         Program = _program,
         Args = Args.Value,
-        Class = ParseClass(_ruleClass) ?? JobClass.Light,
+        Class = ClassNames.Parse(_ruleClass) ?? JobClass.Light,
     };
 
     bool? IValueHost.SwitchOf(string key) => null;
@@ -110,24 +115,6 @@ public sealed class RuleDraft : Observable, IValueHost
 
     void IValueHost.Edited(ValueModel model, IReadOnlyList<Change> changes, bool now) =>
         Raise(null);
-
-    private static JobClass? ParseClass(string? name) => name switch
-    {
-        "light" => JobClass.Light,
-        "cpu_heavy" => JobClass.CpuHeavy,
-        "gpu_heavy" => JobClass.GpuHeavy,
-        "mixed" => JobClass.Mixed,
-        _ => null,
-    };
-
-    private static string ClassName(JobClass jobClass) => jobClass switch
-    {
-        JobClass.Light => "light",
-        JobClass.CpuHeavy => "cpu_heavy",
-        JobClass.GpuHeavy => "gpu_heavy",
-        JobClass.Mixed => "mixed",
-        _ => throw new ArgumentOutOfRangeException(nameof(jobClass), jobClass, null),
-    };
 
     private ValueIssue? FindProgramIssue()
     {

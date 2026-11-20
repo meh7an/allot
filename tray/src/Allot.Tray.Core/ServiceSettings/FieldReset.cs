@@ -26,8 +26,12 @@ public static class FieldReset
         // The unit is read when Undo runs: the reset may have changed it.
         NumberModel { Saved: { } saved } number => () => number.Commit(saved / number.Unit.Factor),
         NumberModel number => () => number.SetAutomatic(true),
+        StringListModel list => Replace(list, list.Saved),
         _ => null,
     };
 
     private static Action TurnBack(SwitchModel model, bool saved) => () => model.Turn(saved);
+
+    private static Action Replace(StringListModel model, IReadOnlyList<string> saved) =>
+        () => model.Replace(saved);
 }

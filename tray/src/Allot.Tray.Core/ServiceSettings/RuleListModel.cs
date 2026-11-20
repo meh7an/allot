@@ -69,19 +69,24 @@ public sealed partial class RuleListModel : ValueModel<IReadOnlyList<HeavyRule>>
             return false;
         }
 
-        var rules = new List<HeavyRule>(Value);
-        if (draft.Index is { } index)
-        {
-            rules[index] = draft.ToRule();
-        }
-        else
-        {
-            rules.Add(draft.ToRule());
-        }
-
-        Write(rules);
+        Write(WithRule(draft.Index, draft.ToRule()));
         return true;
     }
+
+    /// <summary>
+    /// What the list would be with the draft saved, for testing a command against it before
+    /// Save.
+    /// </summary>
+    /// <returns><c>null</c> while the draft could not be saved.</returns>
+    public IReadOnlyList<Change>? Proposal(RuleDraft draft) =>
+        draft.Proposed is { } rule
+            ? [new Change.SetRules { Rules = WithRule(draft.Index, rule) }]
+            : null;
+
+    /// <summary>
+    /// Writes <paramref name="rules"/> as they are, such as the list before a delete for Undo.
+    /// </summary>
+    public void Replace(IReadOnlyList<HeavyRule> rules) => Write(rules);
 
     /// <summary>
     /// Moves a rule; rules match in list order.
@@ -137,6 +142,22 @@ public sealed partial class RuleListModel : ValueModel<IReadOnlyList<HeavyRule>>
         left.Program == right.Program
         && left.Class == right.Class
         && left.Args.SequenceEqual(right.Args);
+
+    // A list that shrank on a refresh while the dialog was open gets the rule at its end.
+    private List<HeavyRule> WithRule(int? index, HeavyRule rule)
+    {
+        var rules = new List<HeavyRule>(Value);
+        if (index is { } at && at < rules.Count)
+        {
+            rules[at] = rule;
+        }
+        else
+        {
+            rules.Add(rule);
+        }
+
+        return rules;
+    }
 
     private void Write(IReadOnlyList<HeavyRule> rules) =>
         Apply(rules, null, new Change.SetRules { Rules = rules }, true);

@@ -90,6 +90,41 @@ internal static class SettingsUi
             ?.RaiseAutomationEvent(AutomationEvents.LiveRegionChanged);
 
     /// <summary>
+    /// Code text, such as a TOML key, a program or a flag.
+    /// </summary>
+    public static FontFamily Mono { get; } = new("Cascadia Mono, Consolas");
+
+    /// <summary>
+    /// A borderless button showing a Segoe Fluent glyph, such as reset or delete.
+    /// </summary>
+    /// <param name="glyph">The glyph's character.</param>
+    /// <param name="name">The accessible name and tooltip, such as "Delete preset render".</param>
+    /// <param name="onClick">What it does.</param>
+    /// <param name="size">The button's width and height.</param>
+    public static Button IconButton(string glyph, string name, Action onClick, double size = 32)
+    {
+        var button = new Button
+        {
+            Width = size,
+            Height = size,
+            Padding = new Thickness(0),
+            VerticalAlignment = VerticalAlignment.Center,
+            Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
+            BorderThickness = new Thickness(0),
+            Content = new FontIcon
+            {
+                Glyph = glyph,
+                FontSize = size > 24 ? 14 : 10,
+                FontFamily = SymbolFont,
+            },
+        };
+        AutomationProperties.SetName(button, name);
+        ToolTipService.SetToolTip(button, name);
+        button.Click += (_, _) => onClick();
+        return button;
+    }
+
+    /// <summary>
     /// A button; the first of a group uses the accent style.
     /// </summary>
     public static Button Button(string text, Action onClick, bool accent = false)

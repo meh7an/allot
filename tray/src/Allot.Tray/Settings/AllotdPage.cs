@@ -56,6 +56,13 @@ internal sealed class AllotdPage
     public Dictionary<string, List<UIElement>> After { get; } = new(StringComparer.Ordinal);
 
     /// <summary>
+    /// A group the page builds itself, by group id, such as the Classes table: its heading and
+    /// card, and anything that goes right before them, such as Test a command.
+    /// </summary>
+    public Dictionary<string, Func<GroupModel, UIElement>> Cards { get; } =
+        new(StringComparer.Ordinal);
+
+    /// <summary>
     /// Cards after the groups and before Advanced, such as Files.
     /// </summary>
     public List<UIElement> End { get; } = [];
@@ -113,6 +120,12 @@ internal sealed class AllotdPage
         var advanced = new List<(GroupModel Group, List<ValueModel> Settings)>();
         foreach (var group in page.Groups)
         {
+            if (Cards.TryGetValue(group.Spec.Id, out var card))
+            {
+                _panel.Children.Add(card(group));
+                continue;
+            }
+
             var normal = group.Settings.Where(model => !model.Spec.Advanced).ToList();
             var rare = group.Settings.Where(model => model.Spec.Advanced).ToList();
             if (normal.Count > 0)
