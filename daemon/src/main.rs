@@ -56,6 +56,9 @@ async fn run(paths: &Paths) -> anyhow::Result<()> {
     let config = Config::load(&config_file)?;
     let token = startup::load_or_create_token(&paths.token_file())?;
     let pool = db::open_pool(&paths.database_file())?;
+    // Before the bind: once the port answers, `kill` must find the handler, not the default
+    // action that ends allotd without its graceful shutdown.
+    let shutdown = shutdown_signal();
     let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, config.daemon.port))
         .await
         .with_context(|| {
@@ -76,42 +79,70 @@ async fn run(paths: &Paths) -> anyhow::Result<()> {
         scopes: Scopes::detect(paths.root()).await,
         stop_file: Some(paths.stop_file()),
     };
-    allotd::serve(listener, options, shutdown_signal()).await
+    allotd::serve(listener, options, shutdown).await
 }
 
-async fn shutdown_signal() {
-    tokio::select! {
-        () = interrupt() => {}
-        () = terminate() => {}
+/// Installs the stop handlers when called, not when first polled, and resolves once one fires.
+fn shutdown_signal() -> impl Future<Output = ()> + Send + 'static {
+    let interrupt = interrupt();
+    let terminate = terminate();
+    async move {
+        tokio::select! {
+            () = interrupt => {}
+            () = terminate => {}
+        }
+        tracing::info!("shutdown requested");
     }
-    tracing::info!("shutdown requested");
 }
 
-async fn interrupt() {
-    if let Err(error) = tokio::signal::ctrl_c().await {
-        tracing::error!("listening for Ctrl+C failed: {error}");
-        std::future::pending::<()>().await;
-    }
+#[cfg(unix)]
+fn interrupt() -> impl Future<Output = ()> + Send + 'static {
+    listen(tokio::signal::unix::SignalKind::interrupt(), "Ctrl+C")
 }
 
 /// SIGTERM, which `kill`, systemd and launchd send to stop a service.
 #[cfg(unix)]
-async fn terminate() {
-    use tokio::signal::unix::{SignalKind, signal};
+fn terminate() -> impl Future<Output = ()> + Send + 'static {
+    listen(tokio::signal::unix::SignalKind::terminate(), "SIGTERM")
+}
 
-    match signal(SignalKind::terminate()) {
-        Ok(mut terminate) => {
-            terminate.recv().await;
+#[cfg(unix)]
+fn listen(
+    kind: tokio::signal::unix::SignalKind,
+    name: &'static str,
+) -> impl Future<Output = ()> + Send + 'static {
+    let registered = tokio::signal::unix::signal(kind);
+    async move {
+        match registered {
+            Ok(mut signal) => {
+                signal.recv().await;
+            }
+            Err(error) => {
+                tracing::error!("listening for {name} failed: {error}");
+                std::future::pending::<()>().await;
+            }
         }
-        Err(error) => {
-            tracing::error!("listening for SIGTERM failed: {error}");
-            std::future::pending::<()>().await;
+    }
+}
+
+#[cfg(windows)]
+fn interrupt() -> impl Future<Output = ()> + Send + 'static {
+    let registered = tokio::signal::windows::ctrl_c();
+    async move {
+        match registered {
+            Ok(mut ctrl_c) => {
+                ctrl_c.recv().await;
+            }
+            Err(error) => {
+                tracing::error!("listening for Ctrl+C failed: {error}");
+                std::future::pending::<()>().await;
+            }
         }
     }
 }
 
 /// Windows has no SIGTERM; allotd stops through `POST /shutdown` or Ctrl+C.
-#[cfg(not(unix))]
-async fn terminate() {
-    std::future::pending::<()>().await;
+#[cfg(windows)]
+fn terminate() -> impl Future<Output = ()> + Send + 'static {
+    std::future::pending()
 }
