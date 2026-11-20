@@ -1,3 +1,0 @@
-# Share the workspace's build directory so the spike reuses its compiled dependencies.
-[build]
-target-dir = "../../target"

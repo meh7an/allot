@@ -3,6 +3,7 @@
 pub mod api;
 pub mod autostart;
 pub mod config;
+pub mod config_write;
 #[cfg(test)]
 mod contract;
 mod error;

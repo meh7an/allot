@@ -1,10 +1,10 @@
-use std::{collections::BTreeMap, fs, io, path::Path};
+use std::{collections::BTreeMap, fmt, fs, io, path::Path};
 
 use serde::{Deserialize, Deserializer, Serialize, de};
 
 use crate::{
     Error, Result,
-    types::{JobClass, JobProfile},
+    types::{JobClass, JobProfile, RangeIssue},
 };
 
 /// Daemon configuration, read from `config.toml`.
@@ -74,105 +74,163 @@ impl Config {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::Config`] naming the first invalid value.
+    /// Returns [`Error::Config`] naming every invalid value, as [`Config::problems`] lists them.
     pub fn validate(&self) -> Result<()> {
-        ensure(self.daemon.port != 0, "daemon.port must not be 0")?;
-        ensure(
+        let problems = self.problems();
+        if problems.is_empty() {
+            return Ok(());
+        }
+        let text: Vec<String> = problems.iter().map(ToString::to_string).collect();
+        Err(Error::Config(text.join("; ")))
+    }
+
+    /// Every value outside its allowed range, each with its key and what it must be, in file
+    /// order; empty when the configuration is valid.
+    pub fn problems(&self) -> Vec<FieldError> {
+        let mut problems = Vec::new();
+        let mut check = |valid: bool, key: &str, message: &str| {
+            if !valid {
+                problems.push(FieldError::new(key, message));
+            }
+        };
+        check(self.daemon.port != 0, "daemon.port", "must not be 0");
+        check(
             (0.0..100.0).contains(&self.admission.headroom_pct),
-            "admission.headroom_pct must be at least 0 and below 100",
-        )?;
-        ensure(
+            "admission.headroom_pct",
+            "must be at least 0 and below 100",
+        );
+        check(
             self.estimates.min_runs > 0,
-            "estimates.min_runs must be positive",
-        )?;
-        ensure(
+            "estimates.min_runs",
+            "must be positive",
+        );
+        check(
             is_pct(self.estimates.margin_pct),
-            "estimates.margin_pct must be 0 to 100",
-        )?;
-        ensure(
-            is_pct(self.benchmark.quiet_cpu_pct),
-            "benchmark.quiet_cpu_pct must be 0 to 100",
-        )?;
-        ensure(
-            is_pct(self.benchmark.quiet_gpu_pct),
-            "benchmark.quiet_gpu_pct must be 0 to 100",
-        )?;
-        ensure(
-            self.benchmark.quiet_secs > 0,
-            "benchmark.quiet_secs must be positive",
-        )?;
-        ensure(
-            self.benchmark.max_quiet_wait_secs >= self.benchmark.quiet_secs,
-            "benchmark.max_quiet_wait_secs must be at least quiet_secs",
-        )?;
-        ensure(
+            "estimates.margin_pct",
+            "must be 0 to 100",
+        );
+        let benchmark = &self.benchmark;
+        check(
+            is_pct(benchmark.quiet_cpu_pct),
+            "benchmark.quiet_cpu_pct",
+            "must be 0 to 100",
+        );
+        check(
+            is_pct(benchmark.quiet_gpu_pct),
+            "benchmark.quiet_gpu_pct",
+            "must be 0 to 100",
+        );
+        check(
+            benchmark.quiet_secs > 0,
+            "benchmark.quiet_secs",
+            "must be positive",
+        );
+        check(
+            benchmark.max_quiet_wait_secs >= benchmark.quiet_secs,
+            "benchmark.max_quiet_wait_secs",
+            "must be at least quiet_secs",
+        );
+        check(
             self.leases.heartbeat_ttl_secs > 0,
-            "leases.heartbeat_ttl_secs must be positive",
-        )?;
+            "leases.heartbeat_ttl_secs",
+            "must be positive",
+        );
         let retention = &self.retention;
-        ensure(
+        check(
             retention.lease_days > 0,
-            "retention.lease_days must be positive",
-        )?;
-        ensure(
+            "retention.lease_days",
+            "must be positive",
+        );
+        check(
             retention.history_days > 0,
-            "retention.history_days must be positive",
-        )?;
-        ensure(
+            "retention.history_days",
+            "must be positive",
+        );
+        check(
             retention.keep_runs_per_job > 0,
-            "retention.keep_runs_per_job must be positive",
-        )?;
-        ensure(
+            "retention.keep_runs_per_job",
+            "must be positive",
+        );
+        check(
             retention.max_job_runs >= retention.keep_runs_per_job,
-            "retention.max_job_runs must be at least keep_runs_per_job",
-        )?;
+            "retention.max_job_runs",
+            "must be at least keep_runs_per_job",
+        );
         for class in JobClass::ALL {
-            if let Some(reason) = self.classes.get(class).invalid_reason() {
-                return Err(Error::Config(format!(
-                    "classes.{}: {reason}",
-                    class.as_str()
-                )));
+            let row = format!("classes.{}", class.as_str());
+            for issue in self.classes.get(class).range_issues() {
+                check(false, &format!("{row}.{}", issue.field), issue.allowed);
             }
         }
         for (name, sizing) in &self.presets.0 {
+            let row = format!("presets.{name}");
             let well_formed = !name.is_empty()
                 && name
                     .bytes()
                     .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_');
-            ensure(
+            check(
                 well_formed,
-                format!("presets.{name}: names use only a-z, 0-9 and _"),
-            )?;
-            ensure(
+                &row,
+                "is not a valid name: use only a-z, 0-9 and _",
+            );
+            check(
                 JobClass::ALL.iter().all(|class| class.as_str() != name),
-                format!("presets.{name}: a class already has this name"),
-            )?;
-            if let Some(reason) = sizing.invalid_reason() {
-                return Err(Error::Config(format!("presets.{name}: {reason}")));
+                &row,
+                "is the name of a class",
+            );
+            for issue in sizing.range_issues() {
+                check(false, &format!("{row}.{}", issue.field), issue.allowed);
             }
         }
         for (index, rule) in self.classifier.rules.iter().enumerate() {
-            let has_blank =
-                rule.program.trim().is_empty() || rule.args.iter().any(|arg| arg.trim().is_empty());
-            ensure(
-                !has_blank,
-                format!("classifier.rules[{index}] has a blank program or arg"),
-            )?;
+            let rule_key = format!("classifier.rules[{index}]");
+            check(
+                !rule.program.trim().is_empty(),
+                &format!("{rule_key}.program"),
+                "must not be blank",
+            );
+            check(
+                rule.args.iter().all(|arg| !arg.trim().is_empty()),
+                &format!("{rule_key}.args"),
+                "must not contain blank entries",
+            );
         }
-        let flags = &self.classifier.light_flags;
-        ensure(
-            flags.iter().all(|flag| !flag.trim().is_empty()),
-            "classifier.light_flags must not contain blank entries",
-        )?;
-        Ok(())
+        check(
+            self.classifier
+                .light_flags
+                .iter()
+                .all(|flag| !flag.trim().is_empty()),
+            "classifier.light_flags",
+            "must not contain blank entries",
+        );
+        problems
     }
 }
 
-fn ensure(condition: bool, message: impl Into<String>) -> Result<()> {
-    if condition {
-        Ok(())
-    } else {
-        Err(Error::Config(message.into()))
+/// A value of the configuration outside what it allows: its key and what it must be.
+#[cfg_attr(any(feature = "schema", test), derive(schemars::JsonSchema))]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FieldError {
+    /// The value's dotted key, such as `admission.headroom_pct`, `presets.big.min_cores` or
+    /// `classifier.rules[2].program`. A preset's name is reported as `presets.<name>`.
+    pub key: String,
+    /// What the value must be, such as `must be at least 0 and below 100`.
+    pub message: String,
+}
+
+impl FieldError {
+    /// The error for `key`, saying what it must be.
+    pub fn new(key: impl Into<String>, message: impl Into<String>) -> Self {
+        Self {
+            key: key.into(),
+            message: message.into(),
+        }
+    }
+}
+
+impl fmt::Display for FieldError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} {}", self.key, self.message)
     }
 }
 
@@ -378,12 +436,14 @@ impl Sizing {
             .unwrap_or_else(|| self.profile.default_min_cores())
     }
 
-    /// Why the profile or its minimum is unusable, or `None` when both are in range.
-    pub fn invalid_reason(&self) -> Option<&'static str> {
-        self.profile.invalid_reason().or_else(|| {
+    /// Every value of the profile or its minimum out of range; empty when all are in range.
+    pub fn range_issues(&self) -> Vec<RangeIssue> {
+        let mut issues = self.profile.range_issues();
+        issues.extend(
             self.min_cores
-                .and_then(|min_cores| self.profile.min_cores_reason(min_cores))
-        })
+                .and_then(|min_cores| self.profile.min_cores_reason(min_cores)),
+        );
+        issues
     }
 }
 
@@ -951,6 +1011,31 @@ mod tests {
             }
         }
         assert!(checked > 50, "only {checked} rejections were checked");
+    }
+
+    #[test]
+    fn test_config_problems_lists_every_invalid_value_with_its_key() {
+        let config: Config = toml::from_str(
+            "[daemon]\nport = 0\n\n[classes.mixed]\ncores = -1.0\ngpu_pct = 101.0\n\n\
+             [presets.light]\ncores = 1.0\nram_mb = 1\n\n\
+             [[classifier.rules]]\nprogram = \"cargo\"\nargs = [\"\"]\nclass = \"cpu_heavy\"\n",
+        )
+        .unwrap();
+        let problems: Vec<String> = config.problems().iter().map(ToString::to_string).collect();
+        assert_eq!(
+            problems,
+            [
+                "daemon.port must not be 0",
+                "classes.mixed.cores must be a finite number of at least 0",
+                "classes.mixed.gpu_pct must be between 0 and 100",
+                "presets.light is the name of a class",
+                "classifier.rules[0].args must not contain blank entries",
+            ]
+        );
+        assert_eq!(
+            config.validate().unwrap_err().to_string(),
+            format!("invalid configuration: {}", problems.join("; "))
+        );
     }
 
     #[test]

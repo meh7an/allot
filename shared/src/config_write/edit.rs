@@ -1,26 +1,26 @@
-//! Comment-preserving edits of single values and whole tables.
+//! Comment-preserving edits of single values, and the file's line endings and byte order mark.
 //!
 //! `toml_edit` keeps every byte it parsed, but two of its conveniences drop what the user
 //! wrote: `Table::insert` over an existing key resets that key's formatting, which deletes
 //! the comments above it, and a value built with `value(..)` has default decor, which drops
 //! a trailing comment. These functions change values in place instead.
 
-use toml_edit::{DocumentMut, Item, Table, TableLike, Value};
+use toml_edit::{Decor, DocumentMut, Item, RawString, Table, TableLike, Value};
 
 /// How a file was saved, beyond its TOML: `toml_edit` reads Windows line endings and a byte
 /// order mark but prints `\n` everywhere and no mark, so an untouched CRLF file would come
 /// back with every line changed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Layout {
+pub(super) struct Layout {
     /// Starts with a UTF-8 byte order mark.
-    pub bom: bool,
+    bom: bool,
     /// Every line ends in `\r\n`. A file with mixed endings counts as `\n` and is written so.
-    pub crlf: bool,
+    crlf: bool,
 }
 
 impl Layout {
     /// The layout of `text`.
-    pub fn of(text: &str) -> Self {
+    pub(super) fn of(text: &str) -> Self {
         let body = text.strip_prefix('\u{feff}');
         let lines = body.unwrap_or(text);
         Self {
@@ -30,7 +30,7 @@ impl Layout {
     }
 
     /// `doc` as text in this layout.
-    pub fn render(self, doc: &DocumentMut) -> String {
+    pub(super) fn render(self, doc: &DocumentMut) -> String {
         let text = doc.to_string();
         let text = if self.crlf {
             text.replace('\n', "\r\n")
@@ -45,17 +45,27 @@ impl Layout {
     }
 }
 
+/// A table an edit has to go through holds a plain value in the file, such as
+/// `estimates = 3` under an edit of `estimates.min_runs`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct NotATable {
+    /// The dotted path of that value.
+    pub(super) path: String,
+}
+
 /// Sets the value at `path`, for example `["estimates", "min_runs"]`, creating missing
 /// tables. An existing value keeps its spacing and trailing comment, and its key keeps the
-/// comments above it.
+/// comments above it. An empty `path` changes nothing.
 ///
-/// # Panics
+/// # Errors
 ///
-/// Panics when `path` is empty or runs through a value that is not a table.
-pub fn set(doc: &mut DocumentMut, path: &[&str], value: impl Into<Value>) {
-    let (key, parents) = path.split_last().expect("a path names at least one key");
-    let table = table_at(doc, parents);
-    let mut value = value.into();
+/// [`NotATable`] when `path` runs through a value that is not a table.
+pub(super) fn set(doc: &mut DocumentMut, path: &[&str], value: Value) -> Result<(), NotATable> {
+    let Some((key, parents)) = path.split_last() else {
+        return Ok(());
+    };
+    let table = table_at(doc, parents)?;
+    let mut value = value;
     match table.get_mut(key) {
         Some(Item::Value(old)) if same_value(old, &value) => {}
         Some(Item::Value(old)) => {
@@ -67,12 +77,13 @@ pub fn set(doc: &mut DocumentMut, path: &[&str], value: impl Into<Value>) {
             table.insert(key, Item::Value(value));
         }
     }
+    Ok(())
 }
 
 /// Removes the key or table at `path` so its default applies again, with the comments
 /// directly above it. Tables left empty are removed too, unless they carry a comment.
 /// Returns whether anything was removed.
-pub fn remove(doc: &mut DocumentMut, path: &[&str]) -> bool {
+pub(super) fn remove(doc: &mut DocumentMut, path: &[&str]) -> bool {
     let Some((key, parents)) = path.split_last() else {
         return false;
     };
@@ -84,6 +95,21 @@ pub fn remove(doc: &mut DocumentMut, path: &[&str]) -> bool {
     }
     prune_empty(doc.as_table_mut(), parents);
     true
+}
+
+/// Whether the file has a key or table at `path`.
+pub(super) fn contains(doc: &DocumentMut, path: &[&str]) -> bool {
+    let Some((key, parents)) = path.split_last() else {
+        return false;
+    };
+    let mut table: &dyn TableLike = doc.as_table();
+    for name in parents {
+        match table.get(name).and_then(Item::as_table_like) {
+            Some(child) => table = child,
+            None => return false,
+        }
+    }
+    table.contains_key(key)
 }
 
 /// Whether `new` means what `old` already says, so the user's spelling (`6` rather than
@@ -102,67 +128,61 @@ fn same_value(old: &Value, new: &Value) -> bool {
     }
 }
 
-/// Makes the table at `path` hold exactly `entries`: existing keys change in place, missing
-/// ones are appended in the given order, and keys not listed are removed.
-pub fn set_table(doc: &mut DocumentMut, path: &[&str], entries: &[(&str, Value)]) {
-    let mut full = path.to_vec();
-    for (key, value) in entries {
-        full.push(key);
-        set(doc, &full, value.clone());
-        full.pop();
-    }
-    let table = table_at(doc, path);
-    let stale: Vec<String> = table
-        .iter()
-        .map(|(key, _)| key.to_owned())
-        .filter(|key| entries.iter().all(|(wanted, _)| wanted != key))
-        .collect();
-    for key in stale {
-        table.remove(&key);
-    }
+/// The position after every table in the document, so a table given it prints last.
+pub(super) fn next_position(doc: &DocumentMut) -> isize {
+    highest_position(doc.as_table(), None).unwrap_or(0) + 1
 }
 
-/// The position after every table in the document, so a table given it prints last.
-pub fn next_position(doc: &DocumentMut) -> isize {
-    fn highest(table: &Table) -> isize {
-        let own = table.position().unwrap_or(0);
-        table.iter().fold(own, |high, (_, item)| match item {
-            Item::Table(child) => high.max(highest(child)),
-            Item::ArrayOfTables(array) => array.iter().map(highest).fold(high, isize::max),
-            _ => high,
-        })
-    }
-    highest(doc.as_table()) + 1
+/// The highest position of a table in `table`'s subtree, counting `own`, the position of
+/// `table` itself; `None` when no table there has one.
+fn highest_position(table: &dyn TableLike, own: Option<isize>) -> Option<isize> {
+    table.iter().fold(own, |high, (_, item)| match item {
+        Item::Table(child) => high.max(highest_position(child, child.position())),
+        Item::ArrayOfTables(array) => array
+            .iter()
+            .map(|child| highest_position(child, child.position()))
+            .fold(high, Option::max),
+        _ => high,
+    })
 }
 
 /// The table at `parents`, created where missing.
 ///
 /// A new table directly under the root goes to the end of the file; left without a position,
 /// `toml_edit` would print it after whichever table it visited last, which can be mid-file.
-/// A new table under an existing one keeps no position, so it prints after its siblings.
-fn table_at<'a>(doc: &'a mut DocumentMut, parents: &[&str]) -> &'a mut dyn TableLike {
+/// A new table under an existing one takes the highest position in that table's subtree, so
+/// it prints right after the table's last block: tables print in position order, and a later
+/// one keeps its place among equal positions.
+fn table_at<'a>(
+    doc: &'a mut DocumentMut,
+    parents: &[&str],
+) -> Result<&'a mut dyn TableLike, NotATable> {
     let end = next_position(doc);
     let mut table: &mut dyn TableLike = doc.as_table_mut();
+    let mut own_position = None;
     let mut created_parent = false;
     for (depth, name) in parents.iter().enumerate() {
         let is_leaf = depth + 1 == parents.len();
-        let at_root = depth == 0;
+        let position = if depth == 0 || created_parent {
+            Some(end)
+        } else {
+            highest_position(&*table, own_position)
+        };
         let mut created = false;
         let item = table.entry(name).or_insert_with(|| {
             created = true;
             let mut new = Table::new();
             new.set_implicit(!is_leaf);
-            if at_root || created_parent {
-                new.set_position(Some(end));
-            }
+            new.set_position(position);
             Item::Table(new)
         });
         created_parent = created;
-        table = item
-            .as_table_like_mut()
-            .unwrap_or_else(|| panic!("`{name}` is a value, not a table"));
+        own_position = item.as_table().and_then(Table::position);
+        table = item.as_table_like_mut().ok_or_else(|| NotATable {
+            path: parents[..=depth].join("."),
+        })?;
     }
-    table
+    Ok(table)
 }
 
 fn existing_table<'a>(root: &'a mut Table, parents: &[&str]) -> Option<&'a mut dyn TableLike> {
@@ -176,7 +196,9 @@ fn existing_table<'a>(root: &'a mut Table, parents: &[&str]) -> Option<&'a mut d
 /// Removes the tables along `parents` that are now empty and hold no comment, deepest first.
 fn prune_empty(root: &mut Table, parents: &[&str]) {
     for depth in (1..=parents.len()).rev() {
-        let (name, above) = parents[..depth].split_last().expect("depth is at least 1");
+        let Some((name, above)) = parents[..depth].split_last() else {
+            return;
+        };
         let Some(parent) = existing_table(root, above) else {
             return;
         };
@@ -195,8 +217,8 @@ fn prune_empty(root: &mut Table, parents: &[&str]) {
     }
 }
 
-fn has_comment(decor: &toml_edit::Decor) -> bool {
-    let text = |raw: Option<&toml_edit::RawString>| {
+fn has_comment(decor: &Decor) -> bool {
+    let text = |raw: Option<&RawString>| {
         raw.and_then(|raw| raw.as_str())
             .is_some_and(|text| text.contains('#'))
     };

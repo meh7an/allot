@@ -1,4 +1,4 @@
-use std::ops::AddAssign;
+use std::{fmt, ops::AddAssign};
 
 use serde::{Deserialize, Serialize};
 
@@ -271,16 +271,44 @@ pub struct JobProfile {
     pub est_secs: u64,
 }
 
+/// A value outside its range: the field, and what it must be. Displays as one sentence, such
+/// as `gpu_pct must be between 0 and 100`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RangeIssue {
+    /// The field's key, such as `cores`.
+    pub field: &'static str,
+    /// What the field must be, such as `must be at most cores`.
+    pub allowed: &'static str,
+}
+
+impl fmt::Display for RangeIssue {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} {}", self.field, self.allowed)
+    }
+}
+
 impl JobProfile {
-    /// Returns why the profile is unusable, or `None` when every value is in range.
-    pub fn invalid_reason(&self) -> Option<&'static str> {
+    /// Every value out of range, in field order; empty when the profile is usable.
+    pub fn range_issues(&self) -> Vec<RangeIssue> {
+        let mut issues = Vec::new();
         if !(self.cores.is_finite() && self.cores >= 0.0) {
-            Some("cores must be a finite number of at least 0")
-        } else if !(0.0..=100.0).contains(&self.gpu_pct) {
-            Some("gpu_pct must be between 0 and 100")
-        } else {
-            None
+            issues.push(RangeIssue {
+                field: "cores",
+                allowed: "must be a finite number of at least 0",
+            });
         }
+        if !(0.0..=100.0).contains(&self.gpu_pct) {
+            issues.push(RangeIssue {
+                field: "gpu_pct",
+                allowed: "must be between 0 and 100",
+            });
+        }
+        issues
+    }
+
+    /// Returns why the profile is unusable, or `None` when every value is in range.
+    pub fn invalid_reason(&self) -> Option<RangeIssue> {
+        self.range_issues().into_iter().next()
     }
 
     /// The minimum of a class or preset that names none: half the cores, but at least one
@@ -291,14 +319,18 @@ impl JobProfile {
 
     /// Returns why `min_cores` cannot be the fewest cores this profile starts with, or `None`
     /// when `0 < min_cores <= cores`.
-    pub fn min_cores_reason(&self, min_cores: f32) -> Option<&'static str> {
-        if !(min_cores.is_finite() && min_cores > 0.0) {
-            Some("min_cores must be a finite number above 0")
+    pub fn min_cores_reason(&self, min_cores: f32) -> Option<RangeIssue> {
+        let allowed = if !(min_cores.is_finite() && min_cores > 0.0) {
+            "must be a finite number above 0"
         } else if min_cores > self.cores {
-            Some("min_cores must be at most cores")
+            "must be at most cores"
         } else {
-            None
-        }
+            return None;
+        };
+        Some(RangeIssue {
+            field: "min_cores",
+            allowed,
+        })
     }
 
     /// Whether a job of this profile ends within [`QUICK_MAX_SECS`]: a normal lease for it may
@@ -991,29 +1023,20 @@ mod tests {
 
     #[test]
     fn test_job_profile_invalid_reason_out_of_range_names_field() {
-        assert!(
-            profile_with(-1.0, 0.0)
-                .invalid_reason()
-                .unwrap()
-                .contains("cores")
-        );
-        assert!(
-            profile_with(f32::NAN, 0.0)
-                .invalid_reason()
-                .unwrap()
-                .contains("cores")
-        );
-        assert!(
-            profile_with(1.0, 101.0)
-                .invalid_reason()
-                .unwrap()
-                .contains("gpu_pct")
-        );
-        assert!(
-            profile_with(1.0, f32::NAN)
-                .invalid_reason()
-                .unwrap()
-                .contains("gpu_pct")
-        );
+        let field = |cores, gpu_pct| profile_with(cores, gpu_pct).invalid_reason().unwrap().field;
+        assert_eq!(field(-1.0, 0.0), "cores");
+        assert_eq!(field(f32::NAN, 0.0), "cores");
+        assert_eq!(field(1.0, 101.0), "gpu_pct");
+        assert_eq!(field(1.0, f32::NAN), "gpu_pct");
+    }
+
+    #[test]
+    fn test_job_profile_range_issues_lists_every_field_and_keeps_the_old_text() {
+        let issues = profile_with(-1.0, 101.0).range_issues();
+        let fields: Vec<_> = issues.iter().map(|issue| issue.field).collect();
+        assert_eq!(fields, ["cores", "gpu_pct"]);
+        assert_eq!(issues[1].to_string(), "gpu_pct must be between 0 and 100");
+        let min = profile_with(2.0, 0.0).min_cores_reason(3.0).unwrap();
+        assert_eq!(min.to_string(), "min_cores must be at most cores");
     }
 }

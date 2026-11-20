@@ -4,46 +4,55 @@
 //! included; a new rule is written plainly; a dropped rule goes with its comments. The list
 //! keeps the form the user chose: `[[classifier.rules]]` tables or an inline array.
 
-use allot_shared::{config::HeavyRule, types::JobClass};
 use toml_edit::{Array, ArrayOfTables, DocumentMut, InlineTable, Item, Table, TableLike, Value};
 
-use crate::edit;
+use super::edit::{self, NotATable};
+use crate::{config::HeavyRule, types::JobClass};
+
+const CLASSIFIER: &str = "classifier";
 
 /// Writes `rules` as the whole `classifier.rules` list. An empty list is written as
 /// `rules = []`, since leaving the key out would bring back the built-in rules.
 ///
-/// # Panics
+/// # Errors
 ///
-/// Panics when `classifier` or `classifier.rules` holds something other than a table and a
-/// list.
-pub fn set(doc: &mut DocumentMut, rules: &[HeavyRule]) {
+/// [`NotATable`] when `classifier` is not a table, or `classifier.rules` is neither tables
+/// nor an array.
+pub(super) fn set(doc: &mut DocumentMut, rules: &[HeavyRule]) -> Result<(), NotATable> {
     if rules.is_empty() {
         return set_empty(doc);
     }
     let end = edit::next_position(doc);
-    let classifier = classifier(doc, end);
+    let classifier = classifier(doc, end)?;
     let classifier_position = classifier.position();
     match classifier.get_mut("rules") {
         Some(Item::ArrayOfTables(tables)) => rewrite_tables(tables, rules, end),
         Some(Item::Value(Value::Array(array))) => rewrite_inline(array, rules),
-        Some(_) => panic!("classifier.rules is neither tables nor an array"),
+        Some(_) => return Err(rules_not_a_list()),
         None => {
             let mut tables = ArrayOfTables::new();
             rewrite_tables(&mut tables, rules, classifier_position.unwrap_or(end));
             classifier.insert("rules", Item::ArrayOfTables(tables));
         }
     }
+    Ok(())
 }
 
 /// Removes `classifier.rules`, so the built-in rules apply again.
-pub fn reset(doc: &mut DocumentMut) -> bool {
-    edit::remove(doc, &["classifier", "rules"])
+pub(super) fn reset(doc: &mut DocumentMut) -> bool {
+    edit::remove(doc, &[CLASSIFIER, "rules"])
+}
+
+fn rules_not_a_list() -> NotATable {
+    NotATable {
+        path: format!("{CLASSIFIER}.rules"),
+    }
 }
 
 /// The `[classifier]` table, created at `end` when missing.
-fn classifier(doc: &mut DocumentMut, end: isize) -> &mut Table {
+fn classifier(doc: &mut DocumentMut, end: isize) -> Result<&mut Table, NotATable> {
     doc.as_table_mut()
-        .entry("classifier")
+        .entry(CLASSIFIER)
         .or_insert_with(|| {
             let mut table = Table::new();
             table.set_implicit(true);
@@ -51,12 +60,14 @@ fn classifier(doc: &mut DocumentMut, end: isize) -> &mut Table {
             Item::Table(table)
         })
         .as_table_mut()
-        .expect("classifier is a table")
+        .ok_or_else(|| NotATable {
+            path: CLASSIFIER.to_owned(),
+        })
 }
 
-fn set_empty(doc: &mut DocumentMut) {
+fn set_empty(doc: &mut DocumentMut) -> Result<(), NotATable> {
     let end = edit::next_position(doc);
-    let classifier = classifier(doc, end);
+    let classifier = classifier(doc, end)?;
     let first_rule = classifier
         .get("rules")
         .and_then(Item::as_array_of_tables)
@@ -68,11 +79,13 @@ fn set_empty(doc: &mut DocumentMut) {
     }
     match classifier.get_mut("rules") {
         Some(Item::Value(Value::Array(array))) => array.clear(),
+        Some(Item::Value(_)) => return Err(rules_not_a_list()),
         _ => {
             classifier.remove("rules");
             classifier.insert("rules", Item::Value(Value::Array(Array::new())));
         }
     }
+    Ok(())
 }
 
 /// Rewrites `[[classifier.rules]]`. Every table gets one position, the first old table's (or

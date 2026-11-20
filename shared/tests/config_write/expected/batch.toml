@@ -1,0 +1,13 @@
+# Everything as dotted keys and inline arrays, no table headers for most of it.
+admission.headroom_pct = 12.5
+
+classes.cpu_heavy = { cores = 10, min_cores = 6 }
+
+[classifier]
+rules = [
+    # compilers
+    { program = "cargo", args = ["build", "test"], class = "cpu_heavy" },
+    # GPU
+    { program = "python*", args = ["train*.py"], class = "gpu_heavy" },
+    { program = "ninja", args = ["-j*"], class = "cpu_heavy" },
+]
