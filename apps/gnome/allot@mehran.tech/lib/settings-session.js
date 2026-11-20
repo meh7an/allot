@@ -324,12 +324,14 @@ export class SettingsSession {
   }
 
   /**
-   * What fits with the shown values, unsaved edits included.
+   * What fits with the shown values, unsaved edits included, and `changes`, such as a row edited
+   * in a dialog.
    *
+   * @param {Change[]} [changes]
    * @returns {Promise<SettingsReply<FitPreview>>} Rejects only with `CancelledError`.
    */
-  preview() {
-    return this.#client.previewSettings(this.#unsaved());
+  preview(changes = []) {
+    return this.#client.previewSettings([...this.#unsaved(), ...changes]);
   }
 
   /**

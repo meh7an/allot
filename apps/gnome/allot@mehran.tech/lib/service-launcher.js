@@ -73,12 +73,77 @@ export class SystemdServiceLauncher {
     }
   }
 
+  /**
+   * Restarts allotd through the systemd user unit, when that unit runs this install's allotd.
+   * Needs no token, so it also mends a refused one, and writes no stop record.
+   *
+   * @returns {Promise<boolean>} Whether systemd restarted it; false leaves allotd as it was.
+   */
+  async restartThroughUnit() {
+    if (!(await this.#unitRunsThisDaemon())) {
+      return false;
+    }
+    return this.#system.run(["systemctl", "--user", "restart", SYSTEMD_UNIT]);
+  }
+
   // The unit of another install (a dev build, another home) must not be started for this one.
   async #unitRunsThisDaemon() {
     const file = systemdUnitFile(this.#paths.home, this.#paths.configHome);
     const unit = await this.#system.readText(file);
     return unit !== null && systemdUnitExec(unit) === this.daemonExe;
   }
+}
+
+/** How long a restart waits for the old allotd to stop answering. */
+export const RESTART_WAIT_MS = 10_000;
+
+const RESTART_POLL_MS = 250;
+
+/**
+ * What Restart Service needs from the client: `DaemonClient`, or a fake in tests.
+ *
+ * @typedef {object} RestartClient
+ * @property {(options: { record: boolean }) => Promise<string | null>} shutdown
+ * @property {() => Promise<string | null>} healthVersion
+ * @property {(port: number) => void} usePort
+ */
+
+/**
+ * What Restart Service needs from the launcher.
+ *
+ * @typedef {object} RestartLauncher
+ * @property {() => Promise<boolean>} restartThroughUnit
+ * @property {() => Promise<string | null>} start
+ */
+
+/**
+ * Restarts allotd, for a new port or a refused token: through the systemd unit when it runs this
+ * allotd, else `POST /shutdown` with no stop record, a wait of up to 10 s for `/health` to stop
+ * answering, and a start. Every later request then goes to `port`.
+ *
+ * @param {RestartClient} client
+ * @param {RestartLauncher} launcher
+ * @param {import("./poller.js").Timers} timers
+ * @param {number} port The port in `config.toml`, which the new allotd listens on.
+ * @returns {Promise<string | null>} `null` when allotd was started again, else why not.
+ */
+export async function restartService(client, launcher, timers, port) {
+  if (await launcher.restartThroughUnit()) {
+    client.usePort(port);
+    return null;
+  }
+  const problem = await client.shutdown({ record: false });
+  if (problem !== null) {
+    return problem;
+  }
+  for (let waited = 0; waited < RESTART_WAIT_MS; waited += RESTART_POLL_MS) {
+    if ((await client.healthVersion()) === null) {
+      break;
+    }
+    await new Promise((resolve) => timers.setTimeout(() => resolve(undefined), RESTART_POLL_MS));
+  }
+  client.usePort(port);
+  return launcher.start();
 }
 
 /**

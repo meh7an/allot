@@ -35,6 +35,12 @@ import { confirmStop } from "./stop-dialog.js";
 const TICK_MS = 1000;
 const NOTIFICATION_SCHEMA = "org.gnome.desktop.notifications";
 const SHOW_BANNERS = "show-banners";
+// The gnome-shell service that runs every extension's prefs.js.
+const PREFS_APP_ID = "org.gnome.Shell.Extensions";
+const OTHER_PREFS_TEXT =
+  "Another extension's settings are open. Close them first, then open Settings again.";
+// Lets a write's burst of monitor events end before the file is read.
+const SETTINGS_READ_DELAY_MS = 100;
 
 export default class AllotExtension extends Extension {
   enable() {
@@ -76,6 +82,8 @@ export default class AllotExtension extends Extension {
       },
       onChanged: () => this._showChange({ snapshot: true, indicator: true }),
       onStartService: () => this._startService(),
+      onSettings: () => this._openSettings(),
+      onService: () => this._pressServiceItem(),
     });
     this._notifier = new Notifier({
       onButton: (button, target) => this._pressNotificationButton(button, target),
@@ -84,6 +92,7 @@ export default class AllotExtension extends Extension {
     });
     this._contextMenu = new PanelContextMenu({
       source: this._indicator,
+      onSettings: () => this._openSettings(),
       onService: () => this._pressServiceItem(),
       onOpenLogs: () => this._popup?.openLogs(),
     });
@@ -102,10 +111,16 @@ export default class AllotExtension extends Extension {
     this._indicator.showStatus(this._model.indicator);
     Main.panel.addToStatusArea(this.uuid, this._indicator);
     this._lastStatus = null;
+    this._followingPort = false;
+    this._watchSettings(paths);
     this._startPolling(paths, this._transport, this._files);
   }
 
   disable() {
+    this._settingsMonitor?.cancel();
+    if (this._settingsReadId) {
+      GLib.source_remove(this._settingsReadId);
+    }
     this._clearFirstOpenWait();
     this._clearShowIdle();
     this._stopDialog?.close();
@@ -130,6 +145,9 @@ export default class AllotExtension extends Extension {
     this._indicator = null;
     this._rules = null;
     this._model = null;
+    this._client = null;
+    this._settingsMonitor = null;
+    this._settingsReadId = 0;
   }
 
   /**
@@ -157,6 +175,7 @@ export default class AllotExtension extends Extension {
       readToken: () => readTextFile(paths.token, files),
     });
     this._model.stopper = client;
+    this._client = client;
     const launcher = new SystemdServiceLauncher(
       {
         home: GLib.get_home_dir(),
@@ -181,6 +200,9 @@ export default class AllotExtension extends Extension {
 
   /** @param {PollResult} result */
   _show(result) {
+    if (result.status === "stopped") {
+      this._followPort();
+    }
     if (result.status !== this._lastStatus) {
       this._lastStatus = result.status;
       const detail = result.version ?? result.detail ?? "";
@@ -274,6 +296,95 @@ export default class AllotExtension extends Extension {
   _readDoNotDisturb() {
     const shows = this._notificationSettings.get_boolean(SHOW_BANNERS);
     this._showChange(this._model.setDoNotDisturb(!shows));
+  }
+
+  /**
+   * Raises the open Settings window, since `openPreferences()` refuses to while one is open and
+   * does not raise it (M0.3); opens one otherwise.
+   */
+  _openSettings() {
+    this._popup?.close();
+    const prefsWindows = global
+      .get_window_actors()
+      .map((actor) => actor.meta_window)
+      .filter((window) => isPrefsService(window));
+    const ours = prefsWindows.find((window) => window.get_title() === this.metadata.name);
+    if (ours !== undefined) {
+      Main.activateWindow(ours);
+      return;
+    }
+    if (prefsWindows.length > 0) {
+      // Only one preferences window exists for all extensions (DESIGN.md R6).
+      Main.notify(this.metadata.name, OTHER_PREFS_TEXT);
+      return;
+    }
+    // GNOME 50 returns undefined and reports a refusal as an unhandled rejection; older shells
+    // return a promise.
+    const opened = /** @type {unknown} */ (this.openPreferences());
+    if (opened instanceof Promise) {
+      opened.catch((error) => console.warn(`Allot: cannot open Settings: ${error}`));
+    }
+  }
+
+  /**
+   * Follows `tray.json` while the Settings window, in its own process, changes the panel's
+   * settings: its atomic writes reach the monitor at once (M0.3). Each burst of events is read
+   * once.
+   *
+   * @param {import("./lib/config.js").DataPaths} paths
+   */
+  _watchSettings(paths) {
+    this._settingsReadId = 0;
+    this._settingsMonitor = Gio.File.new_for_path(paths.settings).monitor_file(
+      Gio.FileMonitorFlags.WATCH_MOVES,
+      null,
+    );
+    this._settingsMonitor.connect("changed", () => {
+      if (this._settingsReadId) {
+        GLib.source_remove(this._settingsReadId);
+      }
+      this._settingsReadId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, SETTINGS_READ_DELAY_MS, () => {
+        this._settingsReadId = 0;
+        this._readSettings(paths);
+        return GLib.SOURCE_REMOVE;
+      });
+    });
+  }
+
+  /** @param {import("./lib/config.js").DataPaths} paths */
+  async _readSettings(paths) {
+    const files = this._files;
+    const text = await readTextFile(paths.settings, files);
+    if (this._files !== files || this._model === null || text === null) {
+      return;
+    }
+    const settings = decodeSettings(text);
+    if (JSON.stringify(settings) !== JSON.stringify(this._model.settings)) {
+      this._showChange(this._model.loadSettings(settings));
+    }
+  }
+
+  /**
+   * While allotd does not answer, reads the port from `config.toml` again: after Settings
+   * restarted allotd on a new port, the old one stays silent.
+   */
+  async _followPort() {
+    const client = this._client;
+    if (this._followingPort || client === null || client === undefined) {
+      return;
+    }
+    this._followingPort = true;
+    try {
+      const toml = await readTextFile(dataPaths(GLib.get_home_dir()).config, this._files);
+      const port = toml === null ? DEFAULT_PORT : portFromToml(toml);
+      if (this._client === client && port !== client.port) {
+        console.log(`Allot: following the service to port ${port}`);
+        client.usePort(port);
+        this._poller?.pollNow();
+      }
+    } finally {
+      this._followingPort = false;
+    }
   }
 
   _openContextMenu() {
@@ -410,4 +521,17 @@ export default class AllotExtension extends Extension {
       this._tickId = 0;
     }
   }
+}
+
+/**
+ * Whether a window is the preferences service's. On Wayland the app id arrives as the window
+ * class; the GTK application id may stay unset (M0.3).
+ *
+ * @param {import("gi://Meta").default.Window} window
+ * @returns {boolean}
+ */
+function isPrefsService(window) {
+  return (
+    window.get_wm_class() === PREFS_APP_ID || window.get_gtk_application_id() === PREFS_APP_ID
+  );
 }

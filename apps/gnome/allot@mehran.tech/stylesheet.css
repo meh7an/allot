@@ -386,17 +386,6 @@
   font-size: 0.85em;
 }
 
-/* Menus */
-
-.allot-menu-count {
-  margin-right: 8px;
-  font-size: 0.85em;
-}
-
-.allot-menu-indented {
-  padding-left: 28px;
-}
-
 /* Recently finished */
 
 .allot-recent-view {

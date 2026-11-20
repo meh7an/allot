@@ -117,6 +117,8 @@ export class AllotPopup {
    * @param {(open: boolean) => void} options.onOpenChanged
    * @param {() => void} options.onChanged A press or Esc changed the model's stops.
    * @param {() => void} options.onStartService The banner's Start Service was pressed.
+   * @param {() => void} options.onSettings More options > Settings was pressed.
+   * @param {() => void} options.onService More options > Stop or Start Service was pressed.
    */
   constructor(options) {
     this.#model = options.model;
@@ -218,8 +220,9 @@ export class AllotPopup {
     this.#more = new MoreOptionsMenu({
       source: this.#moreButton,
       model: this.#model,
+      onSettings: options.onSettings,
+      onService: options.onService,
       onOpenLogs: () => this.openLogs(),
-      onChanged: () => this.#onChanged(),
     });
     Main.uiGroup.add_child(this.#more.menu.actor);
     this.#more.menu.actor.hide();
@@ -297,7 +300,7 @@ export class AllotPopup {
     });
   }
 
-  /** Shows the settings' current state in the menu, for a change from outside it. */
+  /** Shows the service item's current state in the More options menu. */
   syncMenu() {
     this.#more.sync();
   }

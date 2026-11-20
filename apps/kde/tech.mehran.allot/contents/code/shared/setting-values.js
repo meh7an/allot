@@ -508,6 +508,14 @@ export class StringListModel extends ValueModel {
             this._save(this.value.filter((_, at) => at !== index));
         }
     }
+    /**
+     * Writes `entries` as they are, such as the list before a reset for Undo.
+     *
+     * @param {string[]} entries
+     */
+    replace(entries) {
+        this._save([...entries]);
+    }
     /** @param {string[]} entries */
     _save(entries) {
         this.apply(entries, null, { kind: "set_list", key: this.key, value: entries }, true);
@@ -597,21 +605,27 @@ export class SizeTableModel extends ValueModel {
             return false;
         }
         const row = draft.row();
-        /** @type {Change[]} */
-        const changes = [];
-        if (draft.original !== null && draft.original !== row.name) {
-            changes.push({ kind: "reset_row", table: this.key, name: draft.original });
-        }
-        changes.push({
-            kind: "set_row",
-            table: this.key,
-            name: row.name,
-            profile: row.profile,
-            min_cores: row.min_cores,
-        });
         const rows = this.value.filter((candidate) => candidate.name !== draft.original && candidate.name !== row.name);
-        this._write(sortRows(this.key, [...rows, row], this.control.rows), changes);
+        this._write(sortRows(this.key, [...rows, row], this.control.rows), this._changesFor(draft.original, row));
         return true;
+    }
+    /**
+     * The changes saving the draft would make, for the dialog's fit preview; no issue is shown.
+     *
+     * @param {RowDraft} draft
+     * @returns {Change[] | null} `null` while the draft could not be saved.
+     */
+    proposal(draft) {
+        return draft.ready ? this._changesFor(draft.original, draft.row()) : null;
+    }
+    /**
+     * Writes `row` back as it was, such as before a reset or delete for Undo.
+     *
+     * @param {SizeRow} row
+     */
+    restore(row) {
+        const others = this.value.filter((candidate) => candidate.name !== row.name);
+        this._write(sortRows(this.key, [...others, row], this.control.rows), this._changesFor(null, row));
     }
     /**
      * Deletes a row the user added; a built-in row is reset instead.
@@ -662,6 +676,26 @@ export class SizeTableModel extends ValueModel {
             }
         }
         return names;
+    }
+    /**
+     * @param {string | null} original The row's name before the edit, or `null`.
+     * @param {SizeRow} row
+     * @returns {Change[]}
+     */
+    _changesFor(original, row) {
+        /** @type {Change[]} */
+        const changes = [];
+        if (original !== null && original !== row.name) {
+            changes.push({ kind: "reset_row", table: this.key, name: original });
+        }
+        changes.push({
+            kind: "set_row",
+            table: this.key,
+            name: row.name,
+            profile: row.profile,
+            min_cores: row.min_cores,
+        });
+        return changes;
     }
     /**
      * @param {SizeRow[]} rows
@@ -725,6 +759,11 @@ export class RowDraft {
         this.name = text.trim();
         this.nameIssue = this._nameIssue();
         (_a = this.onChange) === null || _a === void 0 ? void 0 : _a.call(this);
+    }
+    /** Whether the row could be saved now, without showing any issue. */
+    get ready() {
+        return (this._nameIssue() === null &&
+            this.fields.every((field) => field.issue === null && (field.value !== null || field.control.automatic !== null)));
     }
     /**
      * Checks every field and the name, showing each issue.
@@ -854,15 +893,26 @@ export class RuleListModel extends ValueModel {
         if (!draft.check()) {
             return false;
         }
-        const rules = [...this.value];
-        if (draft.index === null) {
-            rules.push(draft.rule());
-        }
-        else {
-            rules[draft.index] = draft.rule();
-        }
-        this._write(rules);
+        this._write(this._withRule(draft.index, draft.rule()));
         return true;
+    }
+    /**
+     * The changes saving the draft would make, for testing a command against it before Save.
+     *
+     * @param {RuleDraft} draft
+     * @returns {Change[] | null} `null` while the draft could not be saved.
+     */
+    proposal(draft) {
+        const rule = draft.proposed;
+        return rule === null ? null : [{ kind: "set_rules", rules: this._withRule(draft.index, rule) }];
+    }
+    /**
+     * Writes `rules` as they are, such as the list before a delete for Undo.
+     *
+     * @param {HeavyRule[]} rules
+     */
+    replace(rules) {
+        this._write([...rules]);
     }
     /**
      * Moves a rule; rules match in list order.
@@ -884,6 +934,23 @@ export class RuleListModel extends ValueModel {
         if (index >= 0 && index < this.value.length) {
             this._write(this.value.filter((_, at) => at !== index));
         }
+    }
+    /**
+     * The list with `rule` at `index`, or added at the end for a new rule.
+     *
+     * @param {number | null} index
+     * @param {HeavyRule} rule
+     * @returns {HeavyRule[]}
+     */
+    _withRule(index, rule) {
+        const rules = [...this.value];
+        if (index === null || index >= rules.length) {
+            rules.push(rule);
+        }
+        else {
+            rules[index] = rule;
+        }
+        return rules;
     }
     /** @param {HeavyRule[]} rules */
     _write(rules) {
@@ -945,6 +1012,14 @@ export class RuleDraft {
         this.ruleClass = value;
         this.classIssue = null;
         (_a = this.onChange) === null || _a === void 0 ? void 0 : _a.call(this);
+    }
+    /**
+     * The rule the fields describe when it could be saved now, without showing any issue.
+     *
+     * @returns {HeavyRule | null}
+     */
+    get proposed() {
+        return this._programIssue() === null && this.ruleClass !== null ? this.rule() : null;
     }
     /** @returns {boolean} Whether the rule can be saved. */
     check() {

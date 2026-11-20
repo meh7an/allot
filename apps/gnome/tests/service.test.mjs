@@ -98,7 +98,7 @@ test("stopping asks only while jobs run or wait", () => {
   assert.ok(stopConfirmation(scenario("one").state)?.startsWith("1 job is running.\n\n"));
   assert.ok(
     stopConfirmation(scenario("several").state)?.startsWith(
-      "2 jobs are running and 1 request is waiting.\n\nHeavy commands run unchecked",
+      "2 jobs are running and 1 request is waiting.\n\nJobs keep running",
     ),
   );
   assert.ok(stopConfirmation(scenario("c-queued").state)?.startsWith("2 requests are waiting."));

@@ -572,7 +572,8 @@ Checked against the mockups (section 13) and required of every panel:
 
 ## 12. Copy rules for this window
 
-- Sentence case, except macOS buttons and menus and KDE buttons and menus (title case).
+- Sentence case, except buttons and menu items on macOS, GNOME and KDE (title case; GNOME follows
+  its HIG and its existing menus, Mehran at M6.1).
 - Buttons name the action: Save, Add rule…, Reset 3 settings, Use built-in rules, Start service.
   "…" only when a dialog follows.
 - Errors say what is wrong and what is allowed, next to the field; no codes alone; no blame.
@@ -619,3 +620,4 @@ copy pixel for pixel; each panel uses its own platform controls.
 ## Change log
 
 - 2026-11-20: First draft (M0.4), approved by Mehran the same day.
+- 2026-11-20: M6.1: GNOME buttons and menu items are title case, like macOS and KDE (section 12).

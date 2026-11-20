@@ -313,12 +313,14 @@ export class SettingsSession {
         void this.flush();
     }
     /**
-     * What fits with the shown values, unsaved edits included.
+     * What fits with the shown values, unsaved edits included, and `changes`, such as a row edited
+     * in a dialog.
      *
+     * @param {Change[]} [changes]
      * @returns {Promise<SettingsReply<FitPreview>>} Rejects only with `CancelledError`.
      */
-    preview() {
-        return this._client.previewSettings(this._unsaved());
+    preview(changes = []) {
+        return this._client.previewSettings([...this._unsaved(), ...changes]);
     }
     /**
      * How the hook treats `line`, under the shown values and `changes`, such as a rule list

@@ -17,7 +17,10 @@
  * @property {ServiceAction} action
  */
 
-export const STOP_CONFIRM_TITLE = "Stop Allot?";
+export const STOP_CONFIRM_TITLE = "Stop the service?";
+
+/** The menu item that opens the Settings window. */
+export const SETTINGS_TITLE = "Settings";
 
 /**
  * @param {ServiceStatus} status
@@ -36,8 +39,8 @@ export function serviceMenuItem(status) {
 }
 
 /**
- * The confirmation shown before stopping allotd. Every Claude session's MCP server starts allotd
- * again on its next call, so the text says the stop lasts only until then.
+ * The confirmation shown before stopping allotd. The stop lasts until the user starts allotd again
+ * (the stop record).
  *
  * @param {UiState | null} state
  * @returns {string | null} `null` when no lease is running or waiting, so no question is needed.
@@ -57,7 +60,7 @@ export function stopConfirmation(state) {
   }
   return (
     `${parts.join(" and ")}.\n\n` +
-    "Heavy commands run unchecked while the service is stopped. A Claude session " +
-    "starts it again the next time it asks for resources."
+    "Jobs keep running, and new heavy commands run without leases until you start the " +
+    "service again."
   );
 }

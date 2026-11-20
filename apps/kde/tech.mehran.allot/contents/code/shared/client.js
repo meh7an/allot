@@ -141,6 +141,7 @@ export class DaemonClient {
     constructor(options) {
         /** @type {string | null} */
         this._token = null;
+        this._port = options.port;
         this._base = `http://127.0.0.1:${options.port}/`;
         this._send = options.send;
         this._readToken = options.readToken;
@@ -209,16 +210,20 @@ export class DaemonClient {
     /**
      * `POST /shutdown` from Stop service: allotd writes the stop record, so no session starts it
      * again, then accepts and stops. Start service needs nothing of the kind, since every start of
-     * allotd clears the record.
+     * allotd clears the record. A restart sends no body, so no record is written.
      *
+     * @param {object} [options]
+     * @param {boolean} [options.record] Whether allotd writes the stop record; true unless a
+     *   restart follows.
      * @returns {Promise<string | null>} `null` when allotd accepted, else why not. Rejects only
      *   with `CancelledError`.
      */
     shutdown() {
-        return __awaiter(this, void 0, void 0, function* () {
+        return __awaiter(this, arguments, void 0, function* (options = {}) {
+            const body = options.record === false ? undefined : PANEL_STOP;
             let response;
             try {
-                response = yield this._sendWithToken("shutdown", "POST", REQUEST_TIMEOUT_SECS, PANEL_STOP);
+                response = yield this._sendWithToken("shutdown", "POST", REQUEST_TIMEOUT_SECS, body);
             }
             catch (error) {
                 rethrowCancelled(error);
@@ -229,6 +234,19 @@ export class DaemonClient {
             }
             return response.status === 202 ? null : `POST /shutdown answered ${response.status}`;
         });
+    }
+    /**
+     * Sends every later request to `port`, such as after a restart on a new port.
+     *
+     * @param {number} port
+     */
+    usePort(port) {
+        this._port = port;
+        this._base = `http://127.0.0.1:${port}/`;
+    }
+    /** The port requests go to. */
+    get port() {
+        return this._port;
     }
     /**
      * `GET /settings`: every setting with its spec, value and the file's revision.

@@ -163,8 +163,7 @@
 .allot-resources-summary,
 .allot-resources-off,
 .allot-drive-activity,
-.allot-legend-label,
-.allot-menu-count {
+.allot-legend-label {
   color: rgba(0, 0, 0, 0.64);
 }
 

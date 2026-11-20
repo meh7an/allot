@@ -148,6 +148,7 @@ const PANEL_STOP = { by: "panel" };
  * is the user's Start service.
  */
 export class DaemonClient {
+  #port;
   #base;
   #send;
   #readToken;
@@ -161,6 +162,7 @@ export class DaemonClient {
    * @param {ReadText} options.readToken Read on first use and after a 401.
    */
   constructor(options) {
+    this.#port = options.port;
     this.#base = `http://127.0.0.1:${options.port}/`;
     this.#send = options.send;
     this.#readToken = options.readToken;
@@ -225,15 +227,19 @@ export class DaemonClient {
   /**
    * `POST /shutdown` from Stop service: allotd writes the stop record, so no session starts it
    * again, then accepts and stops. Start service needs nothing of the kind, since every start of
-   * allotd clears the record.
+   * allotd clears the record. A restart sends no body, so no record is written.
    *
+   * @param {object} [options]
+   * @param {boolean} [options.record] Whether allotd writes the stop record; true unless a
+   *   restart follows.
    * @returns {Promise<string | null>} `null` when allotd accepted, else why not. Rejects only
    *   with `CancelledError`.
    */
-  async shutdown() {
+  async shutdown(options = {}) {
+    const body = options.record === false ? undefined : PANEL_STOP;
     let response;
     try {
-      response = await this.#sendWithToken("shutdown", "POST", REQUEST_TIMEOUT_SECS, PANEL_STOP);
+      response = await this.#sendWithToken("shutdown", "POST", REQUEST_TIMEOUT_SECS, body);
     } catch (error) {
       rethrowCancelled(error);
       return error instanceof Error ? error.message : String(error);
@@ -242,6 +248,21 @@ export class DaemonClient {
       return "no token in ~/.allot/token";
     }
     return response.status === 202 ? null : `POST /shutdown answered ${response.status}`;
+  }
+
+  /**
+   * Sends every later request to `port`, such as after a restart on a new port.
+   *
+   * @param {number} port
+   */
+  usePort(port) {
+    this.#port = port;
+    this.#base = `http://127.0.0.1:${port}/`;
+  }
+
+  /** The port requests go to. */
+  get port() {
+    return this.#port;
   }
 
   /**

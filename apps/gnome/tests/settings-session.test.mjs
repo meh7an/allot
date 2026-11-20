@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { decodeSettingsState } from "../allot@mehran.tech/contract.g.mjs";
 import {
   DurationModel,
   MemoryModel,
@@ -16,126 +15,22 @@ import {
 import {
   REFRESH_INTERVAL_MS,
   SAVE_DELAY_MS,
-  SettingsSession,
   parseStopRecord,
 } from "../allot@mehran.tech/lib/settings-session.js";
-import { FakeTimers, fixtureText, settle } from "./support.mjs";
+import {
+  as,
+  failure,
+  fire,
+  fixtureState,
+  loaded,
+  withRender,
+} from "./settings-support.mjs";
+import { fixtureText } from "./support.mjs";
 
-/**
- * @import { Change, SettingsState } from "../allot@mehran.tech/contract.g.mjs"
- * @import { SettingsFailure, SettingsReply } from "../allot@mehran.tech/lib/client.js"
- * @import { ValueModel } from "../allot@mehran.tech/lib/setting-values.js"
- */
+/** @import { SettingsSession } from "../allot@mehran.tech/lib/settings-session.js" */
 
-/** @returns {SettingsState} */
-function fixtureState() {
-  return decodeSettingsState(JSON.parse(fixtureText("settings-state.json")));
-}
-
-/**
- * The fixture's state with a preset of the user's own, `render`.
- *
- * @returns {SettingsState}
- */
-function stateWithRender() {
-  const json = JSON.parse(fixtureText("settings-state.json"));
-  const presets = json.values.find((/** @type {{ key: string }} */ value) =>
-    value.key === "presets"
-  );
-  presets.value.push({
-    name: "render",
-    profile: { cores: 6, ram_mb: 8192, gpu_pct: 40, vram_mb: 4096, est_secs: 900 },
-  });
-  return decodeSettingsState(json);
-}
-
-/**
- * @param {SettingsFailure["kind"]} kind
- * @param {Partial<SettingsFailure>} [fields]
- * @returns {{ ok: false, failure: SettingsFailure }}
- */
-function failure(kind, fields = {}) {
-  return {
-    ok: false,
-    failure: { kind, message: fields.message ?? kind, problems: fields.problems ?? [],
-      revision: fields.revision ?? null },
-  };
-}
-
-/** A settings client whose answers each test queues; it records every patch. */
-class FakeSettings {
-  /** @type {SettingsReply<SettingsState>[]} */
-  reads = [];
-  /** @type {SettingsReply<SettingsState>[]} */
-  writes = [];
-  /** @type {{ revision: string, changes: Change[] }[]} */
-  patches = [];
-  /** @type {Change[][]} */
-  previews = [];
-  state = fixtureState();
-
-  settings = async () => this.reads.shift() ?? { ok: true, value: this.state };
-
-  /** @param {{ revision: string, changes: Change[] }} patch */
-  changeSettings = async (patch) => {
-    this.patches.push(patch);
-    return this.writes.shift() ?? { ok: true, value: this.state };
-  };
-
-  /** @param {Change[]} changes */
-  previewSettings = async (changes) => {
-    this.previews.push(changes);
-    return failure("unavailable");
-  };
-
-  classify = async () => failure("unavailable");
-}
-
-/**
- * A session loaded from the settings-state fixture.
- *
- * @param {object} [options]
- * @param {"windows" | "macos" | "linux"} [options.platform]
- * @param {string | null} [options.stopRecord]
- * @param {SettingsState} [options.state]
- */
-async function loaded(options = {}) {
-  const client = new FakeSettings();
-  if (options.state !== undefined) {
-    client.state = options.state;
-  }
-  const timers = new FakeTimers();
-  const session = new SettingsSession(client, timers, {
-    platform: options.platform ?? "linux",
-    readStopRecord: async () => options.stopRecord ?? null,
-  });
-  await session.refresh();
-  return { session, client, timers };
-}
-
-/** Lets a save in flight finish, fires the burst timer, and lets that save finish. */
-async function fire(/** @type {FakeTimers} */ timers) {
-  await settleAll();
-  timers.fireAll();
-  await settleAll();
-}
-
-async function settleAll() {
-  for (let round = 0; round < 5; round += 1) {
-    await settle();
-  }
-}
-
-/**
- * @template T
- * @param {ValueModel<unknown> | undefined} model
- * @param {new (...args: never[]) => T} type
- * @returns {T}
- */
-function as(model, type) {
-  assert.ok(model instanceof type, `${model?.key} is a ${type.name}`);
-  return model;
-}
+/** The fixture's state with a preset of the user's own, `render`. */
+const stateWithRender = () => fixtureState(withRender);
 
 /** @param {number} value */
 const plain = (value) => String(value);
