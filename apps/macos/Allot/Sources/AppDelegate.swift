@@ -109,7 +109,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             data: data,
             actions: SettingsActions(
                 startService: { [weak self] in self?.startService() },
-                stopConfirmation: controls.stopConfirmation,
+                stopConfirmation: { controls.stopConfirmation() },
                 stopService: { [weak self] in self?.stopService() },
                 restartService: { [weak self] in await self?.restartService() },
                 openLogs: { [weak panel] in panel?.openLogs() },
