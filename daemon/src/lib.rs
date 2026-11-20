@@ -13,7 +13,7 @@ pub mod startup;
 mod state;
 mod ui;
 
-use std::{future::Future, sync::Arc, time::Duration};
+use std::{future::Future, path::PathBuf, sync::Arc, time::Duration};
 
 use allot_shared::{
     api::LeaseQuery,
@@ -45,6 +45,8 @@ pub struct DaemonOptions {
     pub maintenance: Maintenance,
     /// Cgroup scopes for Linux leases; [`Scopes::disabled`] follows process trees only.
     pub scopes: Scopes,
+    /// Where a panel's Stop service writes the stop record; `None` refuses such a stop.
+    pub stop_file: Option<PathBuf>,
 }
 
 /// Serves the API on `listener` until `shutdown` resolves or a client calls
@@ -65,6 +67,7 @@ pub async fn serve(
     let service = Service {
         config_path: options.maintenance.config_path.clone(),
         listening_port: listener.local_addr()?.port(),
+        stop_file: options.stop_file,
     };
     let state = Arc::new(Shared::new(
         options.config,

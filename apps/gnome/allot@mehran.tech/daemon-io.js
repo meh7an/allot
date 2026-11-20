@@ -30,6 +30,10 @@ export class SoupTransport {
     if (request.token !== null) {
       message.request_headers.append("Authorization", `Bearer ${request.token}`);
     }
+    if (request.body !== undefined) {
+      const bytes = new GLib.Bytes(new TextEncoder().encode(request.body));
+      message.set_request_body_from_bytes("application/json", bytes);
+    }
     try {
       const bytes = await this.#session(request.timeoutSecs).send_and_read_async(
         message,

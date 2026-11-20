@@ -294,6 +294,18 @@ public sealed record SettingsRefusal
 }
 
 /// <summary>
+/// Body of <c>POST /shutdown</c> from a panel's Stop service. allotd writes the stop record before
+/// it stops, so no session starts it again; a request with no body stops it without one.
+/// </summary>
+public sealed record ShutdownRequest
+{
+    /// <summary>
+    /// Who stopped it, for the record.
+    /// </summary>
+    public required StoppedBy By { get; init; }
+}
+
+/// <summary>
 /// How well a GPU source measures something per process.
 /// </summary>
 [JsonConverter(typeof(StrictEnumConverter<Accuracy>))]
@@ -2318,6 +2330,7 @@ public sealed class StrictEnumConverter<TEnum> : JsonStringEnumConverter<TEnum>
 [JsonSerializable(typeof(ClassifyRequest))]
 [JsonSerializable(typeof(CommandTest))]
 [JsonSerializable(typeof(SettingsRefusal))]
+[JsonSerializable(typeof(ShutdownRequest))]
 public sealed partial class ContractJsonContext : JsonSerializerContext
 {
 }

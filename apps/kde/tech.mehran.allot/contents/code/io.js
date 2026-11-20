@@ -32,7 +32,7 @@ import { CancelledError, TimeoutError } from "./shared/client.js";
  * @property {(() => void) | null} onreadystatechange
  * @property {(method: string, url: string) => void} open
  * @property {(name: string, value: string) => void} setRequestHeader
- * @property {() => void} send
+ * @property {(body?: string) => void} send
  * @property {() => void} abort
  */
 /**
@@ -41,7 +41,8 @@ import { CancelledError, TimeoutError } from "./shared/client.js";
  *
  * @typedef {object} XhrFactory
  * @property {() => Xhr} create
- * @property {(xhr: Xhr) => void} send
+ * @property {(xhr: Xhr, body: string | null) => void} send
+ *   Sends `body` when it is set, else no body.
  */
 const XHR_DONE = 4;
 /**
@@ -209,6 +210,7 @@ export class XhrTransport {
          * @returns {Promise<HttpResponse>}
          */
         this.send = (request) => new Promise((resolve, reject) => {
+            var _a;
             const timers = this._timers;
             const inFlight = this._inFlight;
             const xhr = this._requests.create();
@@ -252,7 +254,10 @@ export class XhrTransport {
             if (request.token !== null) {
                 xhr.setRequestHeader("Authorization", `Bearer ${request.token}`);
             }
-            this._requests.send(xhr);
+            if (request.body !== undefined) {
+                xhr.setRequestHeader("Content-Type", "application/json");
+            }
+            this._requests.send(xhr, (_a = request.body) !== null && _a !== void 0 ? _a : null);
         });
         this._requests = requests;
         this._timers = timers;

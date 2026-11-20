@@ -91,6 +91,8 @@ pub struct Shared {
     pub config_path: Option<PathBuf>,
     /// The port the daemon listens on until it restarts.
     pub listening_port: u16,
+    /// Where `POST /shutdown` writes the stop record, or `None` when it cannot.
+    pub stop_file: Option<PathBuf>,
     /// Held while the settings routes write the config file, so two writes from this daemon
     /// never race between the revision check and the rename.
     pub config_writes: AsyncMutex<()>,
@@ -112,6 +114,8 @@ pub struct Service {
     pub config_path: Option<PathBuf>,
     /// The port the listener is bound to.
     pub listening_port: u16,
+    /// The stop record's file.
+    pub stop_file: Option<PathBuf>,
 }
 
 impl Shared {
@@ -134,6 +138,7 @@ impl Shared {
             scopes,
             config_path: service.config_path,
             listening_port: service.listening_port,
+            stop_file: service.stop_file,
             config_writes: AsyncMutex::new(()),
             settings: RwLock::new(Arc::new(Settings::new(config))),
             config_error: Mutex::new(None),

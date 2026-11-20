@@ -26,7 +26,7 @@ import { CancelledError, TimeoutError } from "../../gnome/allot@mehran.tech/lib/
  * @property {(() => void) | null} onreadystatechange
  * @property {(method: string, url: string) => void} open
  * @property {(name: string, value: string) => void} setRequestHeader
- * @property {() => void} send
+ * @property {(body?: string) => void} send
  * @property {() => void} abort
  */
 
@@ -36,7 +36,8 @@ import { CancelledError, TimeoutError } from "../../gnome/allot@mehran.tech/lib/
  *
  * @typedef {object} XhrFactory
  * @property {() => Xhr} create
- * @property {(xhr: Xhr) => void} send
+ * @property {(xhr: Xhr, body: string | null) => void} send
+ *   Sends `body` when it is set, else no body.
  */
 
 const XHR_DONE = 4;
@@ -268,7 +269,10 @@ export class XhrTransport {
       if (request.token !== null) {
         xhr.setRequestHeader("Authorization", `Bearer ${request.token}`);
       }
-      this.#requests.send(xhr);
+      if (request.body !== undefined) {
+        xhr.setRequestHeader("Content-Type", "application/json");
+      }
+      this.#requests.send(xhr, request.body ?? null);
     });
 
   cancel() {

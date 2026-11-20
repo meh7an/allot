@@ -1,0 +1,36 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ShutdownRequest",
+  "description": "Body of `POST /shutdown` from a panel's Stop service. allotd writes the stop record before\nit stops, so no session starts it again; a request with no body stops it without one.",
+  "type": "object",
+  "properties": {
+    "by": {
+      "description": "Who stopped it, for the record.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/StoppedBy"
+        }
+      ]
+    }
+  },
+  "required": [
+    "by"
+  ],
+  "definitions": {
+    "StoppedBy": {
+      "description": "Where the stop came from.",
+      "oneOf": [
+        {
+          "description": "`allot daemon stop`.",
+          "type": "string",
+          "const": "cli"
+        },
+        {
+          "description": "Stop service in a panel.",
+          "type": "string",
+          "const": "panel"
+        }
+      ]
+    }
+  }
+}

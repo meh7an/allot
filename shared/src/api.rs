@@ -5,6 +5,7 @@ use crate::{
     config_write::{Change, Revision},
     explain::Shell,
     settings::{SettingValue, SettingsSpec},
+    stop::StoppedBy,
     types::{
         EndCause, Holder, JobClass, JobProfile, JobRun, Lease, LeaseKind, LeaseState, NoiseReport,
         SessionKey, SessionUsage,
@@ -410,6 +411,15 @@ pub struct SettingsState {
     pub listening_port: u32,
     /// Keys whose saved value takes effect only once allotd restarts, such as `daemon.port`.
     pub pending_restart: Vec<String>,
+}
+
+/// Body of `POST /shutdown` from a panel's Stop service. allotd writes the stop record before
+/// it stops, so no session starts it again; a request with no body stops it without one.
+#[cfg_attr(any(feature = "schema", test), derive(schemars::JsonSchema))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ShutdownRequest {
+    /// Who stopped it, for the record.
+    pub by: StoppedBy,
 }
 
 /// Body of `PATCH /settings`.

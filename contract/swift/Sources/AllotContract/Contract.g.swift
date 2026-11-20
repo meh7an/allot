@@ -270,6 +270,17 @@ public struct SettingsRefusal: Codable, Sendable, Equatable {
     }
 }
 
+/// Body of `POST /shutdown` from a panel's Stop service. allotd writes the stop record before
+/// it stops, so no session starts it again; a request with no body stops it without one.
+public struct ShutdownRequest: Codable, Sendable, Equatable {
+    /// Who stopped it, for the record.
+    public let by: StoppedBy
+
+    private enum CodingKeys: String, CodingKey {
+        case by
+    }
+}
+
 /// How well a GPU source measures something per process.
 public enum Accuracy: String, Codable, Sendable, Equatable {
     /// Measured per process.

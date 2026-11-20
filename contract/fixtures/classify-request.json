@@ -1,0 +1,10 @@
+{
+  "line": "cargo build --release && cargo fmt",
+  "shell": "powershell",
+  "changes": [
+    {
+      "kind": "reset",
+      "key": "classifier.rules"
+    }
+  ]
+}

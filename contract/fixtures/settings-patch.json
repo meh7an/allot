@@ -1,0 +1,58 @@
+{
+  "revision": "69fd99abe4f654c7",
+  "changes": [
+    {
+      "kind": "set_switch",
+      "key": "estimates.lower",
+      "value": false
+    },
+    {
+      "kind": "set_number",
+      "key": "admission.headroom_pct",
+      "value": 20.5
+    },
+    {
+      "kind": "set_list",
+      "key": "classifier.light_flags",
+      "value": [
+        "--help",
+        "--dry-run"
+      ]
+    },
+    {
+      "kind": "set_rules",
+      "rules": [
+        {
+          "program": "cargo",
+          "args": [
+            "build",
+            "test"
+          ],
+          "class": "cpu_heavy"
+        }
+      ]
+    },
+    {
+      "kind": "set_row",
+      "table": "presets",
+      "name": "render",
+      "profile": {
+        "cores": 6.0,
+        "ram_mb": 8192,
+        "gpu_pct": 40.0,
+        "vram_mb": 4096,
+        "est_secs": 900
+      },
+      "min_cores": 2.0
+    },
+    {
+      "kind": "reset_row",
+      "table": "presets",
+      "name": "quick"
+    },
+    {
+      "kind": "reset",
+      "key": "daemon.port"
+    }
+  ]
+}

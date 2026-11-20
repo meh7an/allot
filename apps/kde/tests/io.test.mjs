@@ -145,6 +145,20 @@ test("a request sends the bearer token and resolves with status and body", async
   assert.equal(timers.pending.size, 0, "the timeout is cleared");
 });
 
+test("a request with a body sends it as JSON", async () => {
+  const { subject, requests } = transport(() => ({ status: 202, body: "" }));
+  const body = '{"by":"panel"}';
+
+  await subject.send({ method: "POST", url: REQUEST.url, token: "t", timeoutSecs: 3, body });
+
+  assert.deepEqual(requests[0]?.sent, {
+    method: "POST",
+    url: REQUEST.url,
+    headers: { Authorization: "Bearer t", "Content-Type": "application/json" },
+    body,
+  });
+});
+
 test("a request without a token sends no Authorization header", async () => {
   const { subject, requests } = transport(() => ({ status: 200, body: "" }));
 

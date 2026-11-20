@@ -58,6 +58,15 @@ private func reencode(_ name: String) throws -> Data {
     if name.hasPrefix("command-test") {
         return try reencode(CommandTest.self)
     }
+    if name.hasPrefix("settings-patch") {
+        return try reencode(SettingsPatch.self)
+    }
+    if name.hasPrefix("classify-request") {
+        return try reencode(ClassifyRequest.self)
+    }
+    if name.hasPrefix("shutdown-request") {
+        return try reencode(ShutdownRequest.self)
+    }
     throw CocoaError(.fileReadUnknown, userInfo: [NSFilePathErrorKey: name])
 }
 

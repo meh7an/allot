@@ -1,3 +1,4 @@
+import AllotContract
 import Foundation
 import Testing
 
@@ -184,5 +185,22 @@ private func stoppedPoller(
         #expect(await poller.stopService() == nil)
         #expect(transport.requests.first?.url?.path == "/shutdown")
         #expect(transport.requests.first?.httpMethod == "POST")
+    }
+
+    @Test func stopServiceSendsThePanelsStopRecordRequest() async throws {
+        let home = try TemporaryHome()
+        try home.write("t", to: home.data.tokenFile)
+        let transport = FakeTransport { _ in (202, Data()) }
+        let poller = DaemonPoller(
+            client: DaemonClient(port: 1, tokenFile: home.data.tokenFile, transport: transport))
+
+        #expect(await poller.stopService() == nil)
+
+        let request = try #require(transport.requests.first)
+        let body = try #require(request.httpBody)
+        let expected = try JSONDecoder().decode(
+            ShutdownRequest.self, from: Fixtures.data("shutdown-request.json"))
+        #expect(try JSONDecoder().decode(ShutdownRequest.self, from: body) == expected)
+        #expect(request.value(forHTTPHeaderField: "Content-Type") == "application/json")
     }
 }

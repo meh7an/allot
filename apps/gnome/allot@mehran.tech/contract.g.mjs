@@ -169,6 +169,15 @@
  */
 
 /**
+ * Body of `POST /shutdown` from a panel's Stop service. allotd writes the stop record before
+ * it stops, so no session starts it again; a request with no body stops it without one.
+ *
+ * @typedef {object} ShutdownRequest
+ * @property {StoppedBy} by
+ *   Who stopped it, for the record.
+ */
+
+/**
  * How well a GPU source measures something per process.
  *
  * - `exact`: Measured per process.
@@ -1396,6 +1405,11 @@ const TYPES = {
       revision: { type: "string", nullable: true, absent: null },
     },
   },
+  ShutdownRequest: {
+    fields: {
+      by: { type: "StoppedBy" },
+    },
+  },
   Accuracy: { values: ["exact", "estimated", "unavailable"] },
   ActiveJob: {
     fields: {
@@ -2230,4 +2244,15 @@ export function decodeCommandTest(json) {
  */
 export function decodeSettingsRefusal(json) {
   return /** @type {SettingsRefusal} */ (decodeType(json, "SettingsRefusal", "SettingsRefusal"));
+}
+
+/**
+ * Decodes a parsed `ShutdownRequest` body.
+ *
+ * @param {unknown} json The value `JSON.parse` returned.
+ * @returns {ShutdownRequest}
+ * @throws {ContractError} When the value does not match the contract.
+ */
+export function decodeShutdownRequest(json) {
+  return /** @type {ShutdownRequest} */ (decodeType(json, "ShutdownRequest", "ShutdownRequest"));
 }

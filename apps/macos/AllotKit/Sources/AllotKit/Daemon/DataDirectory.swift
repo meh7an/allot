@@ -34,6 +34,12 @@ public struct DataDirectory: Sendable, Equatable {
         root.appendingPathComponent("config.toml")
     }
 
+    /// The stop record: allotd writes it when a panel or the CLI stops it, and every start
+    /// clears it. Its presence tells a stopped service from a failed one.
+    public var stopFile: URL {
+        root.appendingPathComponent("stopped.json")
+    }
+
     public var logDirectory: URL {
         root.appendingPathComponent("logs", isDirectory: true)
     }

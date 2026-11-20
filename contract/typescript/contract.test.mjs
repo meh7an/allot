@@ -4,13 +4,16 @@ import { test } from "node:test";
 
 import {
   ContractError,
+  decodeClassifyRequest,
   decodeCommandTest,
   decodeFitPreview,
   decodeKillResponse,
   decodeRemoveResponse,
+  decodeSettingsPatch,
   decodeSettingsRefusal,
   decodeSettingsSpec,
   decodeSettingsState,
+  decodeShutdownRequest,
   decodeStopRecord,
   decodeUiState,
 } from "./contract.g.mjs";
@@ -28,6 +31,9 @@ const DECODERS = [
   ["settings-refusal-", decodeSettingsRefusal],
   ["fit-preview", decodeFitPreview],
   ["command-test", decodeCommandTest],
+  ["settings-patch", decodeSettingsPatch],
+  ["classify-request", decodeClassifyRequest],
+  ["shutdown-request", decodeShutdownRequest],
 ];
 
 /**

@@ -175,6 +175,7 @@ impl Daemon {
                 prune_every: Duration::from_secs(3_600),
             },
             scopes: Scopes::disabled(),
+            stop_file: Some(dir.path().join("stopped.json")),
         };
         let (stop, stopped) = oneshot::channel::<()>();
         let server = tokio::spawn(allotd::serve(listener, options, async {

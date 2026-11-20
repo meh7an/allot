@@ -33,6 +33,12 @@ public sealed record DataDirectory(string Root)
     public string TokenFile => Path.Combine(Root, "token");
 
     /// <summary>
+    /// The stop record allotd writes when the user stops it, so no session starts it again; every
+    /// start of allotd removes it.
+    /// </summary>
+    public string StopFile => Path.Combine(Root, "stopped.json");
+
+    /// <summary>
     /// The daemon config, which holds the port. Optional; the daemon runs on defaults without it.
     /// </summary>
     public string ConfigFile => Path.Combine(Root, "config.toml");

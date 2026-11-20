@@ -23,6 +23,20 @@ internal sealed class FakeHttpHandler(Func<HttpRequestMessage, HttpResponseMessa
     public static HttpRequestException Refused() =>
         new("No connection could be made because the target machine actively refused it.");
 
+    /// <summary>
+    /// The body of a request, read while the handler runs; <c>null</c> without one.
+    /// </summary>
+    public static string? BodyOf(HttpRequestMessage request)
+    {
+        if (request.Content is null)
+        {
+            return null;
+        }
+
+        using var reader = new StreamReader(request.Content.ReadAsStream());
+        return reader.ReadToEnd();
+    }
+
     protected override Task<HttpResponseMessage> SendAsync(
         HttpRequestMessage request,
         CancellationToken cancellationToken)

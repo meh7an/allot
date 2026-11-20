@@ -121,6 +121,7 @@ impl Daemon {
             sample_interval: Duration::from_millis(20),
             maintenance: Maintenance::default(),
             scopes: Scopes::disabled(),
+            stop_file: None,
         };
         let (stop, stopped) = oneshot::channel::<()>();
         let server = tokio::spawn(async move {

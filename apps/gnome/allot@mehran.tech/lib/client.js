@@ -1,7 +1,27 @@
-import { decodeKillResponse, decodeRemoveResponse, decodeUiState } from "../contract.g.mjs";
+import {
+  decodeCommandTest,
+  decodeFitPreview,
+  decodeKillResponse,
+  decodeRemoveResponse,
+  decodeSettingsRefusal,
+  decodeSettingsState,
+  decodeUiState,
+} from "../contract.g.mjs";
 import * as stopResult from "./stop-result.js";
 
-/** @import { UiState } from "../contract.g.mjs" */
+/**
+ * @import {
+ *   Change,
+ *   ClassifyRequest,
+ *   CommandTest,
+ *   FieldError,
+ *   FitPreview,
+ *   SettingsPatch,
+ *   SettingsState,
+ *   ShutdownRequest,
+ *   UiState,
+ * } from "../contract.g.mjs"
+ */
 /** @import { StopResult } from "./stop-result.js" */
 
 /**
@@ -28,13 +48,17 @@ import * as stopResult from "./stop-result.js";
  *   Why the service is not running, for logs and the service-down view.
  */
 
+/** @typedef {"GET" | "POST" | "PATCH"} HttpMethod */
+
 /**
  * @typedef {object} HttpRequest
- * @property {"GET" | "POST"} method
+ * @property {HttpMethod} method
  * @property {string} url
  * @property {string | null} token
  *   Sent as a bearer token when set.
  * @property {number} timeoutSecs
+ * @property {string} [body]
+ *   JSON, sent with its content type, when the route takes a body.
  */
 
 /**
@@ -57,6 +81,39 @@ import * as stopResult from "./stop-result.js";
  *
  * @callback ReadText
  * @returns {Promise<string | null>}
+ */
+
+/**
+ * Why a settings route did not answer as asked:
+ *
+ * - `conflict`: 409, `config.toml` changed since its revision was read; `revision` is the
+ *   file's now.
+ * - `invalid`: 422, nothing written. With `problems`, the values that were refused (or the
+ *   file's own problems); without, the file is not TOML or not UTF-8.
+ * - `held`: 423, another program holds `config.toml`.
+ * - `unavailable`: 503, allotd has no machine sample or no config file yet.
+ * - `token`: no token file, or allotd refused the token after one fresh read.
+ * - `unreachable`: nothing answered in time.
+ * - `failed`: anything else, such as a 500 or an answer that does not decode.
+ *
+ * @typedef {"conflict" | "invalid" | "held" | "unavailable" | "token" | "unreachable" | "failed"}
+ *   SettingsFailureKind
+ */
+
+/**
+ * @typedef {object} SettingsFailure
+ * @property {SettingsFailureKind} kind
+ * @property {string} message
+ *   allotd's sentence, or what went wrong on the way.
+ * @property {FieldError[]} problems
+ * @property {string | null} revision
+ */
+
+/**
+ * The answer of a settings route: the decoded value, or why there is none.
+ *
+ * @template T
+ * @typedef {{ ok: true, value: T } | { ok: false, failure: SettingsFailure }} SettingsReply
  */
 
 /** A request was cancelled; it must never read as a stopped service. */
@@ -82,6 +139,9 @@ const REQUEST_TIMEOUT_SECS = 3;
 const STOP_TIMEOUT_SECS = 10;
 
 const NOT_KILLED = " was not killed: ";
+
+/** @type {ShutdownRequest} */
+const PANEL_STOP = { by: "panel" };
 
 /**
  * HTTP client for the daemon routes the extension uses. It never starts allotd by itself; that
@@ -163,7 +223,9 @@ export class DaemonClient {
   }
 
   /**
-   * `POST /shutdown`, which allotd accepts before it stops.
+   * `POST /shutdown` from Stop service: allotd writes the stop record, so no session starts it
+   * again, then accepts and stops. Start service needs nothing of the kind, since every start of
+   * allotd clears the record.
    *
    * @returns {Promise<string | null>} `null` when allotd accepted, else why not. Rejects only
    *   with `CancelledError`.
@@ -171,7 +233,7 @@ export class DaemonClient {
   async shutdown() {
     let response;
     try {
-      response = await this.#sendWithToken("shutdown", "POST");
+      response = await this.#sendWithToken("shutdown", "POST", REQUEST_TIMEOUT_SECS, PANEL_STOP);
     } catch (error) {
       rethrowCancelled(error);
       return error instanceof Error ? error.message : String(error);
@@ -180,6 +242,47 @@ export class DaemonClient {
       return "no token in ~/.allot/token";
     }
     return response.status === 202 ? null : `POST /shutdown answered ${response.status}`;
+  }
+
+  /**
+   * `GET /settings`: every setting with its spec, value and the file's revision.
+   *
+   * @returns {Promise<SettingsReply<SettingsState>>} Rejects only with `CancelledError`.
+   */
+  settings() {
+    return this.#settingsRoute("settings", "GET", undefined, decodeSettingsState);
+  }
+
+  /**
+   * `PATCH /settings`: writes the changes together or not at all.
+   *
+   * @param {SettingsPatch} patch
+   * @returns {Promise<SettingsReply<SettingsState>>} The new state. Rejects only with
+   *   `CancelledError`.
+   */
+  changeSettings(patch) {
+    return this.#settingsRoute("settings", "PATCH", patch, decodeSettingsState);
+  }
+
+  /**
+   * `POST /settings/preview`: what fits with unsaved changes on top of the file.
+   *
+   * @param {Change[]} changes
+   * @returns {Promise<SettingsReply<FitPreview>>} Rejects only with `CancelledError`.
+   */
+  previewSettings(changes) {
+    return this.#settingsRoute("settings/preview", "POST", { changes }, decodeFitPreview);
+  }
+
+  /**
+   * `POST /classify`: how the hook treats a command line under the file's rules, or under
+   * unsaved changes to them.
+   *
+   * @param {ClassifyRequest} request
+   * @returns {Promise<SettingsReply<CommandTest>>} Rejects only with `CancelledError`.
+   */
+  classify(request) {
+    return this.#settingsRoute("classify", "POST", request, decodeCommandTest);
   }
 
   /**
@@ -236,6 +339,38 @@ export class DaemonClient {
     }
   }
 
+  /**
+   * @template T
+   * @param {string} path
+   * @param {HttpMethod} method
+   * @param {object | undefined} body
+   * @param {(json: unknown) => T} decodeValue Throws when the answer is not a `T`.
+   * @returns {Promise<SettingsReply<T>>}
+   */
+  async #settingsRoute(path, method, body, decodeValue) {
+    let response;
+    try {
+      response = await this.#sendWithToken(path, method, REQUEST_TIMEOUT_SECS, body);
+    } catch (error) {
+      rethrowCancelled(error);
+      return settingsFailure("unreachable", error instanceof Error ? error.message : String(error));
+    }
+    if (response === null) {
+      return settingsFailure("token", "no token in ~/.allot/token");
+    }
+    if (response.status === 200) {
+      try {
+        return { ok: true, value: decodeValue(JSON.parse(response.body)) };
+      } catch (error) {
+        return settingsFailure("failed", `the service's answer could not be read: ${error}`);
+      }
+    }
+    if (response.status === 401) {
+      return settingsFailure("token", "the service refused the token");
+    }
+    return { ok: false, failure: settingsRefusal(response) };
+  }
+
   // allotd v0.1 has no /ui/state, and answers 404 for it.
   async #withoutUiState() {
     const version = await this.healthVersion();
@@ -247,16 +382,18 @@ export class DaemonClient {
 
   /**
    * @param {string} path
-   * @param {"GET" | "POST"} [method]
+   * @param {HttpMethod} [method]
    * @param {number} [timeoutSecs]
+   * @param {object} [body] Sent as JSON.
    * @returns {Promise<HttpResponse | null>} `null` when there is no token to send.
    */
-  async #sendWithToken(path, method = "GET", timeoutSecs = REQUEST_TIMEOUT_SECS) {
+  async #sendWithToken(path, method = "GET", timeoutSecs = REQUEST_TIMEOUT_SECS, body) {
     const token = await this.#currentToken();
     if (token === null) {
       return null;
     }
-    const response = await this.#request(path, token, method, timeoutSecs);
+    const json = body === undefined ? undefined : JSON.stringify(body);
+    const response = await this.#request(path, token, method, timeoutSecs, json);
     if (response.status !== 401) {
       return response;
     }
@@ -265,18 +402,24 @@ export class DaemonClient {
     // the old one.
     this.#token = null;
     const fresh = await this.#currentToken();
-    return fresh === null ? null : this.#request(path, fresh, method, timeoutSecs);
+    return fresh === null ? null : this.#request(path, fresh, method, timeoutSecs, json);
   }
 
   /**
    * @param {string} path
    * @param {string | null} token
-   * @param {"GET" | "POST"} [method]
+   * @param {HttpMethod} [method]
    * @param {number} [timeoutSecs]
+   * @param {string} [body]
    * @returns {Promise<HttpResponse>}
    */
-  #request(path, token, method = "GET", timeoutSecs = REQUEST_TIMEOUT_SECS) {
-    return this.#send({ method, url: this.#base + path, token, timeoutSecs });
+  #request(path, token, method = "GET", timeoutSecs = REQUEST_TIMEOUT_SECS, body) {
+    /** @type {HttpRequest} */
+    const request = { method, url: this.#base + path, token, timeoutSecs };
+    if (body !== undefined) {
+      request.body = body;
+    }
+    return this.#send(request);
   }
 
   /** @returns {Promise<string | null>} */
@@ -325,6 +468,46 @@ function stopRefusal(status, body) {
       return "the service refused the token";
     default:
       return `the service answered ${status}`;
+  }
+}
+
+/**
+ * @param {SettingsFailureKind} kind
+ * @param {string} message
+ * @returns {{ ok: false, failure: SettingsFailure }}
+ */
+function settingsFailure(kind, message) {
+  return { ok: false, failure: { kind, message, problems: [], revision: null } };
+}
+
+/** @type {Readonly<Record<number, SettingsFailureKind>>} */
+const REFUSAL_KINDS = { 409: "conflict", 422: "invalid", 423: "held", 503: "unavailable" };
+
+/**
+ * A refused settings request. Settings routes refuse with a `SettingsRefusal`; a body that is
+ * not one, such as a 500's plain text, keeps its text as the message.
+ *
+ * @param {HttpResponse} response
+ * @returns {SettingsFailure}
+ */
+function settingsRefusal(response) {
+  const kind = REFUSAL_KINDS[response.status] ?? "failed";
+  try {
+    const refusal = decodeSettingsRefusal(JSON.parse(response.body));
+    return {
+      kind,
+      message: refusal.message,
+      problems: refusal.problems,
+      revision: refusal.revision,
+    };
+  } catch {
+    const text = response.body.trim();
+    return {
+      kind,
+      message: text === "" ? `the service answered ${response.status}` : text,
+      problems: [],
+      revision: null,
+    };
   }
 }
 

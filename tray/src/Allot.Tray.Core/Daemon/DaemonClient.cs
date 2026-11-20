@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Net;
 using System.Net.Http.Headers;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 
@@ -15,7 +16,8 @@ namespace Allot.Tray.Core.Daemon;
 /// <param name="http">Client with its base address set to the daemon; disposed with this
 /// one. Each request sets its own timeout.</param>
 /// <param name="tokenFile">The bearer token file, read on first use and after a 401.</param>
-public sealed class DaemonClient(HttpClient http, string tokenFile) : IDisposable, IJobStopper
+public sealed class DaemonClient(HttpClient http, string tokenFile)
+    : IDisposable, IJobStopper, ISettingsClient
 {
     private static readonly TimeSpan ConnectTimeout = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(3);
@@ -49,7 +51,7 @@ public sealed class DaemonClient(HttpClient http, string tokenFile) : IDisposabl
         try
         {
             using var response = await SendWithTokenAsync(
-                    HttpMethod.Get, "ui/state", RequestTimeout, cancellationToken)
+                    HttpMethod.Get, "ui/state", RequestTimeout, null, cancellationToken)
                 .ConfigureAwait(false);
             if (response is null)
             {
@@ -113,15 +115,20 @@ public sealed class DaemonClient(HttpClient http, string tokenFile) : IDisposabl
     }
 
     /// <summary>
-    /// <c>POST /shutdown</c>: allotd answers 202, then stops gracefully. Only cancellation throws.
+    /// <c>POST /shutdown</c> from Stop service: allotd writes the stop record, so no session
+    /// starts it again, answers 202, then stops gracefully. Start service needs nothing of the
+    /// kind, since every start of allotd clears the record. Only cancellation throws.
     /// </summary>
     /// <returns><c>null</c> when allotd accepted, else why not.</returns>
     public async Task<string?> ShutdownAsync(CancellationToken cancellationToken)
     {
+        var body = JsonSerializer.Serialize(
+            new ShutdownRequest { By = StoppedBy.Panel },
+            ContractJsonContext.Default.ShutdownRequest);
         try
         {
             using var response = await SendWithTokenAsync(
-                    HttpMethod.Post, "shutdown", RequestTimeout, cancellationToken)
+                    HttpMethod.Post, "shutdown", RequestTimeout, body, cancellationToken)
                 .ConfigureAwait(false);
             return response switch
             {
@@ -135,6 +142,50 @@ public sealed class DaemonClient(HttpClient http, string tokenFile) : IDisposabl
             return error.Message;
         }
     }
+
+    /// <inheritdoc/>
+    public Task<SettingsReply<SettingsState>> SettingsAsync(CancellationToken cancellationToken) =>
+        SettingsRouteAsync(
+            HttpMethod.Get,
+            "settings",
+            null,
+            ContractJsonContext.Default.SettingsState,
+            cancellationToken);
+
+    /// <inheritdoc/>
+    public Task<SettingsReply<SettingsState>> ChangeSettingsAsync(
+        SettingsPatch patch,
+        CancellationToken cancellationToken) =>
+        SettingsRouteAsync(
+            HttpMethod.Patch,
+            "settings",
+            JsonSerializer.Serialize(patch, ContractJsonContext.Default.SettingsPatch),
+            ContractJsonContext.Default.SettingsState,
+            cancellationToken);
+
+    /// <inheritdoc/>
+    public Task<SettingsReply<FitPreview>> PreviewSettingsAsync(
+        IReadOnlyList<Change> changes,
+        CancellationToken cancellationToken) =>
+        SettingsRouteAsync(
+            HttpMethod.Post,
+            "settings/preview",
+            JsonSerializer.Serialize(
+                new PreviewRequest { Changes = changes },
+                ContractJsonContext.Default.PreviewRequest),
+            ContractJsonContext.Default.FitPreview,
+            cancellationToken);
+
+    /// <inheritdoc/>
+    public Task<SettingsReply<CommandTest>> ClassifyAsync(
+        ClassifyRequest request,
+        CancellationToken cancellationToken) =>
+        SettingsRouteAsync(
+            HttpMethod.Post,
+            "classify",
+            JsonSerializer.Serialize(request, ContractJsonContext.Default.ClassifyRequest),
+            ContractJsonContext.Default.CommandTest,
+            cancellationToken);
 
     public Task<StopResult> KillAsync(long lease, CancellationToken cancellationToken) =>
         StopAsync(
@@ -213,7 +264,7 @@ public sealed class DaemonClient(HttpClient http, string tokenFile) : IDisposabl
         try
         {
             using var response = await SendWithTokenAsync(
-                    HttpMethod.Post, path, StopTimeout, cancellationToken)
+                    HttpMethod.Post, path, StopTimeout, null, cancellationToken)
                 .ConfigureAwait(false);
             if (response is null)
             {
@@ -258,6 +309,107 @@ public sealed class DaemonClient(HttpClient http, string tokenFile) : IDisposabl
         }
     }
 
+    private static SettingsReply<T> Failed<T>(SettingsFailureKind kind, string message)
+        where T : class =>
+        new(new SettingsFailure(kind, message, [], null));
+
+    // Settings routes refuse with a SettingsRefusal; a body that is not one, such as a 500's plain
+    // text, keeps its text as the message.
+    private static async Task<SettingsFailure> RefusalAsync(
+        HttpResponseMessage response,
+        CancellationToken cancellationToken)
+    {
+        var kind = response.StatusCode switch
+        {
+            HttpStatusCode.Conflict => SettingsFailureKind.Conflict,
+            HttpStatusCode.UnprocessableEntity => SettingsFailureKind.Invalid,
+            HttpStatusCode.Locked => SettingsFailureKind.Held,
+            HttpStatusCode.ServiceUnavailable => SettingsFailureKind.Unavailable,
+            _ => SettingsFailureKind.Failed,
+        };
+        var body = await response.Content.ReadAsStringAsync(cancellationToken)
+            .ConfigureAwait(false);
+        if (TryDecodeRefusal(body) is { } refusal)
+        {
+            return new SettingsFailure(kind, refusal.Message, refusal.Problems, refusal.Revision);
+        }
+
+        var text = body.Trim();
+        var message = text.Length == 0
+            ? $"the service answered {(int)response.StatusCode}"
+            : text;
+        return new SettingsFailure(kind, message, [], null);
+    }
+
+    private static SettingsRefusal? TryDecodeRefusal(string body)
+    {
+        try
+        {
+            return JsonSerializer.Deserialize(body, ContractJsonContext.Default.SettingsRefusal);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private async Task<SettingsReply<T>> SettingsRouteAsync<T>(
+        HttpMethod method,
+        string path,
+        string? body,
+        JsonTypeInfo<T> type,
+        CancellationToken cancellationToken)
+        where T : class
+    {
+        try
+        {
+            using var response = await SendWithTokenAsync(
+                    method, path, RequestTimeout, body, cancellationToken)
+                .ConfigureAwait(false);
+            switch (response)
+            {
+                case null:
+                    return Failed<T>(SettingsFailureKind.Token, $"no token in {tokenFile}");
+                case { StatusCode: HttpStatusCode.OK }:
+                    return await DecodeSettingsAsync(response, type, cancellationToken)
+                        .ConfigureAwait(false);
+                case { StatusCode: HttpStatusCode.Unauthorized }:
+                    return Failed<T>(SettingsFailureKind.Token, "the service refused the token");
+                default:
+                    return new SettingsReply<T>(
+                        await RefusalAsync(response, cancellationToken).ConfigureAwait(false));
+            }
+        }
+        catch (Exception error) when (IsUnreachable(error, cancellationToken))
+        {
+            return Failed<T>(SettingsFailureKind.Unreachable, error.Message);
+        }
+    }
+
+    private static async Task<SettingsReply<T>> DecodeSettingsAsync<T>(
+        HttpResponseMessage response,
+        JsonTypeInfo<T> type,
+        CancellationToken cancellationToken)
+        where T : class
+    {
+        var body = await response.Content.ReadAsStringAsync(cancellationToken)
+            .ConfigureAwait(false);
+        try
+        {
+            return JsonSerializer.Deserialize(body, type) is { } value
+                ? new SettingsReply<T>(value)
+                : Failed<T>(
+                    SettingsFailureKind.Failed,
+                    "the service's answer could not be read: it was empty");
+        }
+        catch (JsonException error)
+        {
+            return Failed<T>(
+                SettingsFailureKind.Failed,
+                $"the service's answer could not be read: {error.Message}");
+        }
+    }
+
     // allotd v0.1 has no /ui/state, and answers 404 for it.
     private async Task<PollResult> WithoutUiStateAsync(CancellationToken cancellationToken)
     {
@@ -270,11 +422,14 @@ public sealed class DaemonClient(HttpClient http, string tokenFile) : IDisposabl
                 Detail: $"allotd {health.Version} has no /ui/state");
     }
 
+    // A body is JSON, sent with its content type; each attempt builds its own content, so a request
+    // refused with 401 can be sent again.
     /// <returns><c>null</c> when there is no token to send.</returns>
     private async Task<HttpResponseMessage?> SendWithTokenAsync(
         HttpMethod method,
         string path,
         TimeSpan timeout,
+        string? body,
         CancellationToken cancellationToken)
     {
         if (Token() is not { } token)
@@ -282,7 +437,7 @@ public sealed class DaemonClient(HttpClient http, string tokenFile) : IDisposabl
             return null;
         }
 
-        var response = await SendAsync(method, path, token, timeout, cancellationToken)
+        var response = await SendAsync(method, path, token, timeout, body, cancellationToken)
             .ConfigureAwait(false);
         if (response.StatusCode != HttpStatusCode.Unauthorized)
         {
@@ -294,7 +449,7 @@ public sealed class DaemonClient(HttpClient http, string tokenFile) : IDisposabl
         response.Dispose();
         _token = null;
         return Token() is { } fresh
-            ? await SendAsync(method, path, fresh, timeout, cancellationToken)
+            ? await SendAsync(method, path, fresh, timeout, body, cancellationToken)
                 .ConfigureAwait(false)
             : null;
     }
@@ -304,10 +459,16 @@ public sealed class DaemonClient(HttpClient http, string tokenFile) : IDisposabl
         string path,
         string token,
         TimeSpan timeout,
+        string? body,
         CancellationToken cancellationToken)
     {
         using var request = new HttpRequestMessage(method, path);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        if (body is not null)
+        {
+            request.Content = new StringContent(body, Encoding.UTF8, "application/json");
+        }
+
         return await SendAsync(request, timeout, cancellationToken).ConfigureAwait(false);
     }
 

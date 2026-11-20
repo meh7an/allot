@@ -23,12 +23,13 @@ use crate::{
     api::{
         BenchmarkProgress, ClassifyRequest, HealthResponse, JobSummary, KillResponse,
         KilledProcess, PreviewRequest, RemoveResponse, RunStats, SettingsPatch, SettingsRefusal,
-        SettingsState, UnkilledProcess, Verdict,
+        SettingsState, ShutdownRequest, UnkilledProcess, Verdict,
     },
-    config::{Config, FieldError},
-    config_write::Revision,
+    config::{Config, FieldError, HeavyRule},
+    config_write::{Change, Revision},
     explain::{
-        ClassSize, CommandKind, CommandResult, CommandTest, FitPreview, Fits, KeptFree, SizeFit,
+        ClassSize, CommandKind, CommandResult, CommandTest, FitPreview, Fits, KeptFree, Shell,
+        SizeFit,
     },
     settings::{SettingValue, SettingsSpec},
     stop::{StopRecord, StoppedBy},
@@ -58,6 +59,7 @@ const FIT_PREVIEW_SCHEMA_FILE: &str = "contract/fit-preview.schema.json";
 const CLASSIFY_REQUEST_SCHEMA_FILE: &str = "contract/classify-request.schema.json";
 const COMMAND_TEST_SCHEMA_FILE: &str = "contract/command-test.schema.json";
 const SETTINGS_REFUSAL_SCHEMA_FILE: &str = "contract/settings-refusal.schema.json";
+const SHUTDOWN_REQUEST_SCHEMA_FILE: &str = "contract/shutdown-request.schema.json";
 const LEASES_SCHEMA_FILE: &str = "contract/leases.schema.json";
 const JOBS_SCHEMA_FILE: &str = "contract/job-summaries.schema.json";
 const RUNS_SCHEMA_FILE: &str = "contract/job-runs.schema.json";
@@ -907,7 +909,7 @@ fn root_schema<T: schemars::JsonSchema>() -> Schema {
 
 /// Every root the desktop apps decode or send, with its committed schema file; `UiState`
 /// first.
-fn contract_schemas() -> [(&'static str, Schema); 12] {
+fn contract_schemas() -> [(&'static str, Schema); 13] {
     [
         (SCHEMA_FILE, root_schema::<UiState>()),
         (KILL_SCHEMA_FILE, root_schema::<KillResponse>()),
@@ -926,6 +928,10 @@ fn contract_schemas() -> [(&'static str, Schema); 12] {
         (
             SETTINGS_REFUSAL_SCHEMA_FILE,
             root_schema::<SettingsRefusal>(),
+        ),
+        (
+            SHUTDOWN_REQUEST_SCHEMA_FILE,
+            root_schema::<ShutdownRequest>(),
         ),
     ]
 }
@@ -1137,6 +1143,71 @@ fn test_settings_route_fixtures_match_committed_files() {
     }
     assert_fixture("fit-preview", &fit_preview_scenario());
     assert_fixture("command-test", &command_test_scenario());
+}
+
+/// A burst of edits from a Settings window: one of every kind of change, so each panel's
+/// encoding can be checked against it.
+fn settings_patch_scenario() -> SettingsPatch {
+    SettingsPatch {
+        revision: Revision::of(b"[daemon]\nport = 47999\n"),
+        changes: vec![
+            Change::SetSwitch {
+                key: "estimates.lower".into(),
+                value: false,
+            },
+            Change::SetNumber {
+                key: "admission.headroom_pct".into(),
+                value: 20.5,
+            },
+            Change::SetList {
+                key: "classifier.light_flags".into(),
+                value: vec!["--help".into(), "--dry-run".into()],
+            },
+            Change::SetRules {
+                rules: vec![HeavyRule {
+                    program: "cargo".into(),
+                    args: vec!["build".into(), "test".into()],
+                    class: JobClass::CpuHeavy,
+                }],
+            },
+            Change::SetRow {
+                table: "presets".into(),
+                name: "render".into(),
+                profile: profile(6.0, 8192, 40.0, 4096, 900),
+                min_cores: Some(2.0),
+            },
+            Change::ResetRow {
+                table: "presets".into(),
+                name: "quick".into(),
+            },
+            Change::Reset {
+                key: "daemon.port".into(),
+            },
+        ],
+    }
+}
+
+/// The requests the panels send besides a settings read: a burst of edits, a command test
+/// against an unsaved rule list, and a Stop service.
+#[test]
+fn test_request_fixtures_match_committed_files() {
+    assert_fixture("settings-patch", &settings_patch_scenario());
+    assert_fixture(
+        "classify-request",
+        &ClassifyRequest {
+            line: "cargo build --release && cargo fmt".into(),
+            shell: Shell::PowerShell,
+            changes: vec![Change::Reset {
+                key: "classifier.rules".into(),
+            }],
+        },
+    );
+    assert_fixture(
+        "shutdown-request",
+        &ShutdownRequest {
+            by: StoppedBy::Panel,
+        },
+    );
 }
 
 #[test]

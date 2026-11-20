@@ -17,7 +17,10 @@ export const PACKAGE_DIR = new URL("tech.mehran.allot/", KDE_DIR);
  * @typedef {{ status: number, body: string } | null} Answer
  */
 
-/** @typedef {{ method: string, url: string, headers: Record<string, string> }} SentRequest */
+/**
+ * @typedef {{ method: string, url: string, headers: Record<string, string>, body?: string }}
+ *   SentRequest
+ */
 
 /** An XMLHttpRequest that answers from a handler once a test lets promises run. */
 export class FakeXhr {
@@ -54,7 +57,11 @@ export class FakeXhr {
     this.sent.headers[name] = value;
   }
 
-  send() {
+  /** @param {string} [body] */
+  send(body) {
+    if (body !== undefined) {
+      this.sent.body = body;
+    }
     const answer = this.#answer(this.sent);
     if (answer === undefined) {
       return;
@@ -93,7 +100,7 @@ export function fakeRequests(answer, made = []) {
       made.push(xhr);
       return /** @type {Xhr} */ (/** @type {unknown} */ (xhr));
     },
-    send: (xhr) => xhr.send(),
+    send: (xhr, body) => (body === null ? xhr.send() : xhr.send(body)),
   };
 }
 

@@ -14,9 +14,10 @@ use allot_shared::{
         HealthResponse, HeartbeatResponse, HistoryResponse, HistoryRunsQuery, HistoryRunsResponse,
         KillResponse, KilledProcess, LeaseOwner, LeaseQuery, LeasesResponse, NextReservation,
         NoticesResponse, ProfileSpec, RegisterSessionRequest, ReleaseResponse, RemoveResponse,
-        RunReport, SessionsResponse, UnkilledProcess, Verdict, WaitRequest,
+        RunReport, SessionsResponse, ShutdownRequest, UnkilledProcess, Verdict, WaitRequest,
     },
     config::{Config, Sizing},
+    stop::StopRecord,
     types::{
         EndCause, JobClass, JobProfile, JobRun, Lease, LeaseBinding, LeaseId, LeaseKind,
         LeaseState, SessionKey, Snapshot,
@@ -26,6 +27,7 @@ use allot_shared::{
 use anyhow::anyhow;
 use axum::{
     Json, Router,
+    body::Bytes,
     extract::{Path, Query, Request, State},
     http::{StatusCode, header::AUTHORIZATION},
     middleware::{self, Next},
@@ -117,11 +119,33 @@ async fn ui_state(State(state): State<AppState>) -> Result<Json<UiState>, AppErr
 }
 
 /// Stops the daemon gracefully after this response; Windows has no signal another process
-/// can send a detached daemon.
-async fn shutdown(State(state): State<AppState>) -> StatusCode {
+/// can send a detached daemon. With a [`ShutdownRequest`] body the stop record is written
+/// first, so no session starts allotd again; when it cannot be written, allotd keeps running,
+/// since a stop that does not last would only confuse.
+async fn shutdown(State(state): State<AppState>, body: Bytes) -> Result<StatusCode, AppError> {
+    if !body.is_empty() {
+        let Json(request) = Json::<ShutdownRequest>::from_bytes(&body).map_err(|rejection| {
+            AppError::Validation(format!("not a shutdown request: {}", rejection.body_text()))
+        })?;
+        record_stop(&state, request).await?;
+    }
     tracing::info!("shutdown requested over HTTP");
     state.shutdown.send_replace(true);
-    StatusCode::ACCEPTED
+    Ok(StatusCode::ACCEPTED)
+}
+
+async fn record_stop(state: &Shared, request: ShutdownRequest) -> Result<(), AppError> {
+    let path = state
+        .stop_file
+        .clone()
+        .ok_or_else(|| anyhow!("this allotd has no stop record file"))?;
+    let record = StopRecord::now(request.by);
+    tokio::task::spawn_blocking(move || record.write(&path))
+        .await
+        .map_err(|error| anyhow!("writing the stop record: {error}"))?
+        .map_err(|error| anyhow!("writing the stop record: {error}"))?;
+    tracing::info!("stop record written: stopped {}", request.by.how());
+    Ok(())
 }
 
 async fn snapshot(State(state): State<AppState>) -> Result<Json<Snapshot>, AppError> {

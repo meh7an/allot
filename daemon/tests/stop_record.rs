@@ -1,5 +1,5 @@
-//! Runs the built allotd under a temporary home with a stop record, the way a panel's Start or
-//! a sign-in launcher starts it, and checks that the start ends the stop.
+//! Runs the built allotd under a temporary home: a panel's Stop service leaves the stop record
+//! behind, and a start, the way a panel's Start or a sign-in launcher does it, ends the stop.
 
 use std::{
     fs,
@@ -11,6 +11,7 @@ use std::{
 };
 
 use allot_shared::{
+    api::ShutdownRequest,
     paths::Paths,
     platform::HOME_VAR,
     stop::{StopRecord, StoppedBy},
@@ -57,15 +58,17 @@ impl Daemon {
         daemon
     }
 
-    /// Asks allotd to shut down through its API, then waits for it to exit.
-    async fn shut_down(mut self, paths: &Paths, port: u16) {
+    /// Asks allotd to shut down through its API, with `request` as the body when set, then
+    /// waits for it to exit.
+    async fn shut_down(mut self, paths: &Paths, port: u16, request: Option<ShutdownRequest>) {
         let token = fs::read_to_string(paths.token_file()).unwrap();
-        let response = reqwest::Client::new()
+        let mut post = reqwest::Client::new()
             .post(format!("http://127.0.0.1:{port}/shutdown"))
-            .bearer_auth(token.trim())
-            .send()
-            .await
-            .unwrap();
+            .bearer_auth(token.trim());
+        if let Some(request) = request {
+            post = post.json(&request);
+        }
+        let response = post.send().await.unwrap();
         assert!(response.status().is_success(), "{}", response.status());
         let deadline = Instant::now() + EXIT_TIMEOUT;
         while self.0.try_wait().unwrap().is_none() {
@@ -97,7 +100,30 @@ async fn test_allotd_start_clears_the_stop_record() {
     let daemon = Daemon::start(home.path(), port);
 
     assert!(!paths.stop_file().exists());
-    daemon.shut_down(&paths, port).await;
+    daemon.shut_down(&paths, port, None).await;
     let log = fs::read_to_string(paths.log_dir().join("allotd.log")).unwrap();
     assert!(log.contains("stop record cleared"), "{log}");
+}
+
+#[tokio::test]
+async fn test_allotd_stopped_from_a_panel_stays_stopped_until_started() {
+    let home = TempDir::new().unwrap();
+    let paths = Paths::under(home.path());
+    let port = free_port();
+    fs::create_dir(paths.root()).unwrap();
+    fs::write(paths.config_file(), format!("[daemon]\nport = {port}\n")).unwrap();
+
+    let stop = ShutdownRequest {
+        by: StoppedBy::Panel,
+    };
+    Daemon::start(home.path(), port)
+        .shut_down(&paths, port, Some(stop))
+        .await;
+
+    let record = StopRecord::read(&paths.stop_file()).expect("the stop leaves its record");
+    assert_eq!(record.by, StoppedBy::Panel);
+    Daemon::start(home.path(), port)
+        .shut_down(&paths, port, None)
+        .await;
+    assert!(!paths.stop_file().exists());
 }

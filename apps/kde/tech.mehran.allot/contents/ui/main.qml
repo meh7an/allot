@@ -193,7 +193,7 @@ PlasmoidItem {
             // XMLHttpRequest calls back only when send() runs in QML code, so it runs here.
             requests: {
                 create: () => new XMLHttpRequest(),
-                send: (xhr) => xhr.send(),
+                send: (xhr, body) => body === null ? xhr.send() : xhr.send(body),
             },
             timers: root.timers,
             rows: listRows,

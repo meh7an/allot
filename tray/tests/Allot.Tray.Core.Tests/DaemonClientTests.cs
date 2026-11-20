@@ -1,4 +1,5 @@
 using System.Net;
+using System.Text.Json.Nodes;
 
 using Allot.Tray.Core.Daemon;
 using Allot.Tray.Core.Tests.Support;
@@ -148,9 +149,11 @@ public sealed class DaemonClientTests
     {
         using var directory = new TempDirectory();
         var methods = new List<HttpMethod>();
+        var bodies = new List<string?>();
         var handler = new FakeHttpHandler(request =>
         {
             methods.Add(request.Method);
+            bodies.Add(FakeHttpHandler.BodyOf(request));
             return FakeHttpHandler.Status(HttpStatusCode.Accepted);
         });
         using var client = Client(directory, handler, "secret");
@@ -160,6 +163,11 @@ public sealed class DaemonClientTests
         Assert.IsNull(problem);
         Assert.AreEqual(new SeenRequest("/shutdown", "secret"), handler.Seen.Single());
         Assert.AreEqual(HttpMethod.Post, methods.Single());
+        var body = JsonNode.Parse(bodies.Single() ?? string.Empty);
+        var expected = JsonNode.Parse(Fixtures.Read("shutdown-request.json"));
+        Assert.IsTrue(
+            JsonNode.DeepEquals(expected, body),
+            "Stop service sends the panel's stop record request");
     }
 
     [TestMethod]

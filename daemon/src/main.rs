@@ -74,6 +74,7 @@ async fn run(paths: &Paths) -> anyhow::Result<()> {
         sample_interval: Duration::from_secs(1),
         maintenance: Maintenance::standard(config_file),
         scopes: Scopes::detect(paths.root()).await,
+        stop_file: Some(paths.stop_file()),
     };
     allotd::serve(listener, options, shutdown_signal()).await
 }
