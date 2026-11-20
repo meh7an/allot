@@ -28,6 +28,9 @@ public sealed class DaemonClient(HttpClient http, string tokenFile)
 
     private string? _token;
 
+    // Set once allotd moves to another port; until then the HttpClient's own base address holds.
+    private volatile Uri? _base;
+
     /// <summary>
     /// A client for the local install: the port from <c>config.toml</c>, the token file beside it.
     /// </summary>
@@ -119,12 +122,17 @@ public sealed class DaemonClient(HttpClient http, string tokenFile)
     /// starts it again, answers 202, then stops gracefully. Start service needs nothing of the
     /// kind, since every start of allotd clears the record. Only cancellation throws.
     /// </summary>
+    /// <param name="record">Whether allotd writes the stop record; a restart sends no body, so
+    /// nothing stays stopped between the stop and the start.</param>
+    /// <param name="cancellationToken">Cancels the request.</param>
     /// <returns><c>null</c> when allotd accepted, else why not.</returns>
-    public async Task<string?> ShutdownAsync(CancellationToken cancellationToken)
+    public async Task<string?> ShutdownAsync(bool record, CancellationToken cancellationToken)
     {
-        var body = JsonSerializer.Serialize(
-            new ShutdownRequest { By = StoppedBy.Panel },
-            ContractJsonContext.Default.ShutdownRequest);
+        var body = record
+            ? JsonSerializer.Serialize(
+                new ShutdownRequest { By = StoppedBy.Panel },
+                ContractJsonContext.Default.ShutdownRequest)
+            : null;
         try
         {
             using var response = await SendWithTokenAsync(
@@ -142,6 +150,12 @@ public sealed class DaemonClient(HttpClient http, string tokenFile)
             return error.Message;
         }
     }
+
+    /// <summary>
+    /// Sends every later request to <paramref name="port"/>, after allotd restarted on a new one.
+    /// </summary>
+    public void UsePort(ushort port) =>
+        _base = new Uri(string.Create(CultureInfo.InvariantCulture, $"http://127.0.0.1:{port}/"));
 
     /// <inheritdoc/>
     public Task<SettingsReply<SettingsState>> SettingsAsync(CancellationToken cancellationToken) =>
@@ -479,6 +493,11 @@ public sealed class DaemonClient(HttpClient http, string tokenFile)
         TimeSpan timeout,
         CancellationToken cancellationToken)
     {
+        if (_base is { } moved && request.RequestUri is { IsAbsoluteUri: false } relative)
+        {
+            request.RequestUri = new Uri(moved, relative);
+        }
+
         using var limit = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         limit.CancelAfter(timeout);
         return await http.SendAsync(request, limit.Token).ConfigureAwait(false);

@@ -32,6 +32,29 @@ public sealed record TraySettings
     /// turned on, which neither does again.
     /// </summary>
     public bool FirstRunShown { get; set; }
+
+    /// <summary>
+    /// Where the Settings window was last, or <c>null</c> before it was first moved.
+    /// </summary>
+    public WindowPlacement? SettingsWindow { get; set; }
+}
+
+/// <summary>
+/// A window's restored rect: the top-left corner in physical pixels (screen coordinates) and the
+/// size in DIPs, so a restore onto a monitor with another scale keeps its size on screen. It stays
+/// the restored rect while the window is maximized.
+/// </summary>
+public sealed record WindowPlacement
+{
+    public int X { get; set; }
+
+    public int Y { get; set; }
+
+    public double WidthDip { get; set; }
+
+    public double HeightDip { get; set; }
+
+    public bool Maximized { get; set; }
 }
 
 /// <summary>

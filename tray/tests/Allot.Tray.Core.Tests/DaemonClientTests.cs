@@ -158,7 +158,7 @@ public sealed class DaemonClientTests
         });
         using var client = Client(directory, handler, "secret");
 
-        var problem = await client.ShutdownAsync(TestContext.CancellationToken);
+        var problem = await client.ShutdownAsync(record: true, TestContext.CancellationToken);
 
         Assert.IsNull(problem);
         Assert.AreEqual(new SeenRequest("/shutdown", "secret"), handler.Seen.Single());
@@ -177,7 +177,7 @@ public sealed class DaemonClientTests
         var handler = new FakeHttpHandler(_ => FakeHttpHandler.Status(HttpStatusCode.Forbidden));
         using var client = Client(directory, handler, "secret");
 
-        var problem = await client.ShutdownAsync(TestContext.CancellationToken);
+        var problem = await client.ShutdownAsync(record: true, TestContext.CancellationToken);
 
         Assert.AreEqual("POST /shutdown answered 403", problem);
     }
@@ -189,7 +189,7 @@ public sealed class DaemonClientTests
         var handler = new FakeHttpHandler(_ => throw FakeHttpHandler.Refused());
         using var client = Client(directory, handler, "secret");
 
-        var problem = await client.ShutdownAsync(TestContext.CancellationToken);
+        var problem = await client.ShutdownAsync(record: true, TestContext.CancellationToken);
 
         StringAssert.Contains(problem, "actively refused");
     }
@@ -201,10 +201,47 @@ public sealed class DaemonClientTests
         var handler = new FakeHttpHandler(_ => FakeHttpHandler.Status(HttpStatusCode.Accepted));
         using var client = Client(directory, handler, token: null);
 
-        var problem = await client.ShutdownAsync(TestContext.CancellationToken);
+        var problem = await client.ShutdownAsync(record: true, TestContext.CancellationToken);
 
         StringAssert.StartsWith(problem, "no token in ");
         Assert.IsEmpty(handler.Seen);
+    }
+
+    [TestMethod]
+    public async Task ShutdownForARestartSendsNoBody()
+    {
+        using var directory = new TempDirectory();
+        var bodies = new List<string?>();
+        var handler = new FakeHttpHandler(request =>
+        {
+            bodies.Add(FakeHttpHandler.BodyOf(request));
+            return FakeHttpHandler.Status(HttpStatusCode.Accepted);
+        });
+        using var client = Client(directory, handler, "secret");
+
+        var problem = await client.ShutdownAsync(record: false, TestContext.CancellationToken);
+
+        Assert.IsNull(problem);
+        Assert.IsNull(bodies.Single(), "a restart leaves no stop record");
+    }
+
+    [TestMethod]
+    public async Task UsePortSendsLaterRequestsToTheNewPort()
+    {
+        using var directory = new TempDirectory();
+        var ports = new List<int>();
+        var handler = new FakeHttpHandler(request =>
+        {
+            ports.Add(request.RequestUri!.Port);
+            return FakeHttpHandler.Json(HealthJson);
+        });
+        using var client = Client(directory, handler, "secret");
+
+        _ = await client.HealthAsync(TestContext.CancellationToken);
+        client.UsePort(47999);
+        _ = await client.HealthAsync(TestContext.CancellationToken);
+
+        CollectionAssert.AreEqual(new List<int> { 47823, 47999 }, ports);
     }
 
     internal static DaemonClient Client(

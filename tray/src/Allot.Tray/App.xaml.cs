@@ -6,6 +6,7 @@ using Allot.Tray.Core.Contract;
 using Allot.Tray.Core.Daemon;
 using Allot.Tray.Core.Logging;
 using Allot.Tray.Core.Notifications;
+using Allot.Tray.Core.ServiceSettings;
 using Allot.Tray.Core.Settings;
 using Allot.Tray.Core.Startup;
 using Allot.Tray.Core.TrayIcon;
@@ -13,6 +14,7 @@ using Allot.Tray.Core.ViewModels;
 using Allot.Tray.Diagnostics;
 using Allot.Tray.Flyout;
 using Allot.Tray.Notifications;
+using Allot.Tray.Settings;
 using Allot.Tray.Startup;
 using Allot.Tray.TrayIcon;
 
@@ -55,6 +57,8 @@ public sealed partial class App : Application
     private DataDirectory? _data;
     private DaemonClient? _client;
     private DaemonPoller? _poller;
+    private ServiceControl? _service;
+    private SettingsHost? _settingsHost;
     private FlyoutWindow? _flyout;
     private FlyoutShell? _shell;
     private TrayController? _tray;
@@ -109,13 +113,21 @@ public sealed partial class App : Application
         _settingsStore = new SettingsStore(SettingsFile(_data));
         _settings = _settingsStore.Load();
         _ = ReadNotificationsOff();
-        _model.ApplyMenu(_settings, _notificationsOff);
         _autostart = new Autostart(new RegistryAutostartStore(), Environment.ProcessPath ?? "");
         _ = ReadLaunchAtLogon();
 
         _client = DaemonClient.ForInstall(_data);
         _stopper = _client;
         _poller = new DaemonPoller(_client, new ServiceLauncher(_data), TimeProvider.System);
+        _service = new ServiceControl(_poller, _data, _toastRules.ExpectStop);
+        _settingsHost = new SettingsHost(
+            CreateSettingsServices,
+            () => _settings.SettingsWindow,
+            placement =>
+            {
+                _settings.SettingsWindow = placement;
+                SaveSettings();
+            });
 
         _flyout = new FlyoutWindow();
         _flyout.Diagnostic += message => AppLog.Write($"flyout: {message}");
@@ -136,11 +148,9 @@ public sealed partial class App : Application
         };
         var shell = new FlyoutShell(_flyout, _model, OpenLogs);
         _shell = shell;
-        shell.ShowToggles(_settings);
         shell.ResourcesToggled += ToggleResources;
-        shell.MetersChanged += meters => ChangeSettings(settings => settings.Meters = meters);
-        shell.NotificationsChanged += notifications =>
-            ChangeSettings(settings => settings.Notifications = notifications);
+        shell.SettingsPressed += () => OpenSettings(null);
+        shell.ServiceItemPressed += RunServiceItem;
         shell.KillPressed += OnKillPressed;
         shell.RemovePressed += OnRemovePressed;
         shell.ConfirmCancelled += lease =>
@@ -156,10 +166,9 @@ public sealed partial class App : Application
         shell.NotificationSettingsPressed += () => _ = Toasts.OpenSettingsAsync();
         shell.MenuOpening += () =>
         {
-            if (ReadNotificationsOff())
-            {
-                _ = Show();
-            }
+            var item = ServiceMenu.ItemFor(_status);
+            shell.ShowServiceItem(item.Text, item.Enabled);
+            shell.ShowSettingsBlocked(SettingsBlocked());
         };
 #if DEBUG
         if (_toasts)
@@ -182,14 +191,15 @@ public sealed partial class App : Application
         _stopTimer.Tick += (_, _) => Show();
 
         _tray = new TrayController(
-            _poller,
+            _service,
             _data.LogDirectory,
             ToggleFlyout,
             OpenFlyout,
             Quit,
             ReadLaunchAtLogon,
             SetLaunchAtLogon,
-            _toastRules.ExpectStop);
+            () => OpenSettings(null),
+            SettingsBlocked);
         Measure.Startup("tray icon");
 #if DEBUG
         if (DebugScenario.Name is { } scenario)
@@ -285,6 +295,7 @@ public sealed partial class App : Application
     {
         _status = status;
         _state = shown;
+        _service?.Update(new PollResult(status, live));
         _clock.Received(live);
         if (live is null)
         {
@@ -296,7 +307,7 @@ public sealed partial class App : Application
         }
 
         var snapshot = Show();
-        _tray?.Update(status, live, TrayStatus.From(snapshot));
+        _tray?.Update(TrayStatus.From(snapshot));
 
         if (FirstRun.ShowsForTheFirstTime(snapshot, _settings))
         {
@@ -359,10 +370,7 @@ public sealed partial class App : Application
             return;
         }
 #endif
-        if (_poller?.StartService() is { } problem)
-        {
-            AppLog.Write($"start service failed: {problem}");
-        }
+        _service?.Start();
     }
 
     /// <summary>
@@ -383,8 +391,8 @@ public sealed partial class App : Application
     }
 
     /// <summary>
-    /// Reads again whether Windows has Allot's toasts turned off, so a change made in Settings
-    /// shows; the ⋯ menu follows at once, the first-run card with the next <see cref="Show"/>.
+    /// Reads again whether Windows has Allot's toasts turned off, so a change made in Windows
+    /// Settings shows; the first-run card follows with the next <see cref="Show"/>.
     /// </summary>
     /// <returns>True when it changed.</returns>
     private bool ReadNotificationsOff()
@@ -397,7 +405,6 @@ public sealed partial class App : Application
 
         _notificationsOff = off;
         AppLog.Write($"toasts {(off ? "turned off" : "back on")} in Windows Settings");
-        _model.ApplyMenu(_settings, off);
         return true;
     }
 
@@ -427,7 +434,6 @@ public sealed partial class App : Application
     private void ChangeSettings(Action<TraySettings> change)
     {
         change(_settings);
-        _model.ApplyMenu(_settings, _notificationsOff);
         SaveSettings();
         _ = Show();
     }
@@ -588,8 +594,6 @@ public sealed partial class App : Application
         {
             _settings.ResourcesExpanded = preset.Expanded;
             _settings.Meters = preset.Meters ?? _settings.Meters;
-            _model.ApplyMenu(_settings, _notificationsOff);
-            _shell?.ShowToggles(_settings);
             SaveSettings();
         }
 
@@ -684,6 +688,77 @@ public sealed partial class App : Application
     }
 
     private void ToggleFlyout() => _flyout?.Toggle();
+
+    private void RunServiceItem()
+    {
+#if DEBUG
+        // A scenario instance starts its make-believe service, and stops nothing of the user's.
+        if (DebugScenario.Name is not null)
+        {
+            if (ServiceMenu.ItemFor(_status).Action == ServiceAction.Start)
+            {
+                StartScenarioService();
+            }
+            else if (SettingsBlocked() is null)
+            {
+                _tray?.RunServiceItem();
+            }
+
+            return;
+        }
+#endif
+        _tray?.RunServiceItem();
+    }
+
+    // Opens the Settings window, or says in the log why this instance may not.
+    private void OpenSettings(string? pageId)
+    {
+        if (SettingsBlocked() is { } reason)
+        {
+            AppLog.Write($"settings: not opened, {reason}");
+            return;
+        }
+
+        _settingsHost?.Open(pageId);
+    }
+
+    private SettingsServices CreateSettingsServices()
+    {
+        var data = _data!;
+        var session = new SettingsSession(
+            _client!,
+            new TimeProviderSessionTimers(TimeProvider.System, SynchronizationContext.Current),
+            Platform.Windows,
+            cancellation => SettingsSession.ReadStopRecordAsync(data.StopFile, cancellation));
+        var panel = new PanelHost(
+            () => _settings,
+            ChangeSettings,
+            ReadLaunchAtLogon,
+            SetLaunchAtLogon,
+            () =>
+            {
+                _ = ReadNotificationsOff();
+                return _notificationsOff;
+            },
+            () => _ = Toasts.OpenSettingsAsync());
+        return new SettingsServices(session, _service!, data, panel, OpenLogs);
+    }
+
+    /// <summary>
+    /// Why this instance may not open Settings, or <c>null</c>: a Debug scenario instance runs
+    /// beside the real tray app, so it opens Settings only under a test home, never against the
+    /// user's own config.toml and allotd.
+    /// </summary>
+    private static string? SettingsBlocked()
+    {
+#if DEBUG
+        return DebugScenario.Name is not null && DebugScenario.UsesRealHome()
+            ? "Settings (needs a test USERPROFILE)"
+            : null;
+#else
+        return null;
+#endif
+    }
 
     private void OpenFlyout() => _flyout?.Open();
 }

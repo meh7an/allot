@@ -1,5 +1,3 @@
-using Allot.Tray.Core.Contract;
-using Allot.Tray.Core.Daemon;
 using Allot.Tray.Core.TrayIcon;
 using Allot.Tray.Diagnostics;
 using Allot.Tray.Interop;
@@ -19,39 +17,41 @@ internal sealed class TrayController : IDisposable
     private const uint LaunchAtLogonId = 3;
     private const uint OpenLogsId = 4;
     private const uint QuitId = 5;
+    private const uint SettingsId = 6;
 
     private readonly NotifyIcon _icon;
     private readonly DispatcherQueue _dispatcher = DispatcherQueue.GetForCurrentThread();
-    private readonly DaemonPoller _poller;
+    private readonly ServiceControl _service;
     private readonly string _logDirectory;
     private readonly Action _toggleFlyout;
     private readonly Action _openFlyout;
     private readonly Action _quit;
     private readonly Func<bool> _launchAtLogon;
     private readonly Action<bool> _setLaunchAtLogon;
-    private readonly Action _stopping;
+    private readonly Action _openSettings;
+    private readonly Func<string?> _settingsBlocked;
     private TrayStatus _status = new(TrayIconState.Down, "Starting service…");
-    private ServiceStatus _service = ServiceStatus.Starting;
-    private UiState? _state;
 
     public TrayController(
-        DaemonPoller poller,
+        ServiceControl service,
         string logDirectory,
         Action toggleFlyout,
         Action openFlyout,
         Action quit,
         Func<bool> launchAtLogon,
         Action<bool> setLaunchAtLogon,
-        Action stopping)
+        Action openSettings,
+        Func<string?> settingsBlocked)
     {
-        _poller = poller;
+        _service = service;
         _logDirectory = logDirectory;
         _toggleFlyout = toggleFlyout;
         _openFlyout = openFlyout;
         _quit = quit;
         _launchAtLogon = launchAtLogon;
         _setLaunchAtLogon = setLaunchAtLogon;
-        _stopping = stopping;
+        _openSettings = openSettings;
+        _settingsBlocked = settingsBlocked;
 
         _icon = new NotifyIcon(_status.Icon, _status.Tooltip);
         _icon.Diagnostic += message => AppLog.Write($"tray: {message}");
@@ -72,13 +72,9 @@ internal sealed class TrayController : IDisposable
     /// <summary>
     /// Takes the latest poll; called on the UI thread.
     /// </summary>
-    /// <param name="service">The service status of the poll.</param>
-    /// <param name="state">The served state, or <c>null</c> while allotd is not serving it.</param>
-    /// <param name="status">What the icon shows for it.</param>
-    public void Update(ServiceStatus service, UiState? state, TrayStatus status)
+    /// <param name="status">What the icon shows for the latest poll.</param>
+    public void Update(TrayStatus status)
     {
-        _service = service;
-        _state = state;
         if (status == _status)
         {
             return;
@@ -116,11 +112,13 @@ internal sealed class TrayController : IDisposable
     // Built at every open, so the check follows a change made in Task Manager.
     private List<NativeMenuItem> BuildMenu()
     {
-        var service = ServiceMenu.ItemFor(_service);
+        var service = ServiceMenu.ItemFor(_service.Status);
+        var blocked = _settingsBlocked();
         return
         [
             new(_status.Summary) { Enabled = false },
             NativeMenuItem.Separator,
+            new(blocked ?? "Settings", SettingsId) { Enabled = blocked is null },
             new("Open Allot", OpenId) { IsDefault = true },
             new(service.Text, ServiceId) { Enabled = service.Enabled },
             new("Launch at logon", LaunchAtLogonId) { Checked = _launchAtLogon() },
@@ -137,6 +135,9 @@ internal sealed class TrayController : IDisposable
             case OpenId:
                 _openFlyout();
                 break;
+            case SettingsId:
+                _openSettings();
+                break;
             case ServiceId:
                 RunServiceItem();
                 break;
@@ -152,21 +153,21 @@ internal sealed class TrayController : IDisposable
         }
     }
 
-    private void RunServiceItem()
+    /// <summary>
+    /// Stop service (asking first while jobs run or wait) or Start service, as the poll allows;
+    /// also the flyout's ⋯ › Stop service or Start service.
+    /// </summary>
+    public void RunServiceItem()
     {
-        switch (ServiceMenu.ItemFor(_service).Action)
+        switch (ServiceMenu.ItemFor(_service.Status).Action)
         {
             case ServiceAction.Start:
-                if (_poller.StartService() is { } problem)
-                {
-                    AppLog.Write($"start service failed: {problem}");
-                }
-
+                _service.Start();
                 break;
             case ServiceAction.Stop:
-                if (ConfirmStop())
+                if (ConfirmStop(_icon.WindowHandle, _service))
                 {
-                    _ = StopAsync();
+                    _ = _service.StopAsync();
                 }
 
                 break;
@@ -175,15 +176,19 @@ internal sealed class TrayController : IDisposable
         }
     }
 
-    private bool ConfirmStop()
+    /// <summary>
+    /// Asks before a stop while jobs run or wait, in a message box over <paramref name="owner"/>.
+    /// </summary>
+    /// <returns>Whether to stop.</returns>
+    public static bool ConfirmStop(nint owner, ServiceControl service)
     {
-        if (ServiceMenu.StopConfirmation(_state) is not { } text)
+        if (service.StopConfirmation is not { } text)
         {
             return true;
         }
 
         var answer = NativeMethods.MessageBox(
-            _icon.WindowHandle,
+            owner,
             text,
             ServiceMenu.ConfirmTitle,
             NativeMethods.MbYesNo
@@ -191,15 +196,5 @@ internal sealed class TrayController : IDisposable
                 | NativeMethods.MbDefButton2
                 | NativeMethods.MbSetForeground);
         return answer == NativeMethods.IdYes;
-    }
-
-    private async Task StopAsync()
-    {
-        AppLog.Write("stop service chosen");
-        _stopping();
-        if (await _poller.StopServiceAsync(CancellationToken.None) is { } problem)
-        {
-            AppLog.Write($"stop service failed: {problem}");
-        }
     }
 }

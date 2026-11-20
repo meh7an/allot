@@ -8,8 +8,8 @@ namespace Allot.Tray.Core.Tests;
 public sealed class ServiceMenuTests
 {
     private const string Footer =
-        "Heavy commands run unchecked while the service is stopped. A Claude session starts it "
-        + "again the next time it asks for resources.";
+        "Jobs keep running, and new heavy commands run without leases until you start the service "
+        + "again.";
 
     [TestMethod]
     [DataRow(ServiceStatus.Running, "Stop service…", ServiceAction.Stop, true)]

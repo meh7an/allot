@@ -1,7 +1,12 @@
 #if DEBUG
+using System.Security;
+using System.Security.Principal;
+
 using Allot.Tray.Core.Daemon;
 using Allot.Tray.Core.Samples;
 using Allot.Tray.Core.ViewModels;
+
+using Microsoft.Win32;
 
 namespace Allot.Tray;
 
@@ -16,6 +21,39 @@ internal static class DebugScenario
     /// The scenario named on the command line, or <c>null</c>.
     /// </summary>
     public static string? Name { get; } = Find(Environment.GetCommandLineArgs());
+
+    /// <summary>
+    /// Whether USERPROFILE is the user's own profile folder, as Windows records it, so the
+    /// scenario instance would reach the real ~/.allot. Unknown counts as real.
+    /// </summary>
+    public static bool UsesRealHome()
+    {
+        var home = Environment.GetEnvironmentVariable("USERPROFILE");
+        string? real = null;
+        try
+        {
+            var sid = WindowsIdentity.GetCurrent().User?.Value;
+            using var key = Registry.LocalMachine.OpenSubKey(
+                $@"SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList\{sid}");
+            if (key?.GetValue("ProfileImagePath") is string path)
+            {
+                real = Environment.ExpandEnvironmentVariables(path);
+            }
+        }
+        catch (Exception error) when (error is SecurityException
+            or UnauthorizedAccessException
+            or IOException)
+        {
+            AppLog.Write($"reading the profile folder failed: {error.Message}");
+        }
+
+        return string.IsNullOrEmpty(home)
+            || real is null
+            || string.Equals(
+                Path.TrimEndingDirectorySeparator(Path.GetFullPath(home)),
+                Path.TrimEndingDirectorySeparator(Path.GetFullPath(real)),
+                StringComparison.OrdinalIgnoreCase);
+    }
 
     private static string? Find(string[] args)
     {

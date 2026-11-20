@@ -2,7 +2,6 @@ using System.Collections.Specialized;
 using System.ComponentModel;
 using System.Numerics;
 
-using Allot.Tray.Core.Settings;
 using Allot.Tray.Core.ViewModels;
 
 using Microsoft.UI.Composition;
@@ -10,7 +9,6 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Automation.Peers;
 using Microsoft.UI.Xaml.Controls;
-using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Hosting;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
@@ -42,6 +40,9 @@ public sealed partial class FlyoutShell : UserControl, IFlyoutContent
     private const double MeterValueWidth = 108;
     private const double MinBarWidth = 48;
 
+    // VirtualKey names no comma key; VK_OEM_COMMA.
+    private const VirtualKey OemComma = (VirtualKey)188;
+
     private readonly FlyoutWindow _window;
     private readonly Action _openLogs;
     private readonly Dictionary<FlyoutRow, ContentControl> _hosts =
@@ -59,13 +60,6 @@ public sealed partial class FlyoutShell : UserControl, IFlyoutContent
     private bool _pinShown;
     private double _reportedHeight;
 
-    // A check item was toggled, so the menu's coming close is cancelled; set while the item's
-    // click runs, and cleared after it.
-    private bool _keepMenuOpen;
-
-    // Check items are being set from the settings, not by a click.
-    private bool _showingToggles;
-
     // The Resources card's running expand or collapse, if any.
     private Storyboard? _resourcesStoryboard;
 
@@ -76,6 +70,16 @@ public sealed partial class FlyoutShell : UserControl, IFlyoutContent
         Model = model;
         InitializeComponent();
         _templates = (DataTemplateSelector)Resources["RowTemplates"];
+
+        // Ctrl+, opens Settings from anywhere in the flyout, the menu closed or not.
+        var settingsKey = new KeyboardAccelerator
+        {
+            Key = OemComma,
+            Modifiers = VirtualKeyModifiers.Control,
+        };
+        settingsKey.Invoked += OnSettingsAccelerator;
+        KeyboardAccelerators.Add(settingsKey);
+        KeyboardAcceleratorPlacementMode = KeyboardAcceleratorPlacementMode.Hidden;
         _bodyPadding = BodyPanel.Padding;
 
         foreach (var row in model.Rows)
@@ -86,13 +90,6 @@ public sealed partial class FlyoutShell : UserControl, IFlyoutContent
         UpdateGaps();
         model.Rows.CollectionChanged += OnRowsChanged;
         _window.ModesChanged += SyncToggles;
-
-        foreach (var item in CheckItems())
-        {
-            _ = item.RegisterPropertyChangedCallback(
-                ToggleMenuFlyoutItem.IsCheckedProperty,
-                OnCheckItemToggled);
-        }
 
         ResourcesRows.Visibility =
             model.Resources.Expanded ? Visibility.Visible : Visibility.Collapsed;
@@ -141,14 +138,14 @@ public sealed partial class FlyoutShell : UserControl, IFlyoutContent
     public event Action? ResourcesToggled;
 
     /// <summary>
-    /// A ⋯ › Meters item was toggled; carries every meter item's state.
+    /// A press of ⋯ › Settings, or Ctrl+, in the flyout.
     /// </summary>
-    public event Action<MeterToggles>? MetersChanged;
+    public event Action? SettingsPressed;
 
     /// <summary>
-    /// A ⋯ › Notifications item was toggled; carries every notification item's state.
+    /// A press of ⋯ › Stop service or Start service.
     /// </summary>
-    public event Action<NotificationToggles>? NotificationsChanged;
+    public event Action? ServiceItemPressed;
 
     /// <summary>
     /// A press of the service-down banner's Start service.
@@ -171,7 +168,7 @@ public sealed partial class FlyoutShell : UserControl, IFlyoutContent
     public event Action? MenuOpening;
 
     /// <summary>
-    /// A press of Open notification settings, in ⋯ › Notifications or on the first-run card.
+    /// A press of Open notification settings on the first-run card.
     /// </summary>
     public event Action? NotificationSettingsPressed;
 
@@ -305,27 +302,22 @@ public sealed partial class FlyoutShell : UserControl, IFlyoutContent
     }
 
     /// <summary>
-    /// Sets the ⋯ menu's check items from the settings; Drive activity is disabled while Drives
-    /// is off.
+    /// Sets ⋯ › Stop service or Start service for the service's status; the app calls it as the
+    /// menu opens.
     /// </summary>
-    public void ShowToggles(TraySettings settings)
+    public void ShowServiceItem(string text, bool enabled)
     {
-        _showingToggles = true;
-        var meters = settings.Meters;
-        CpuItem.IsChecked = meters.Cpu;
-        RamItem.IsChecked = meters.Ram;
-        GpuItem.IsChecked = meters.Gpu;
-        VramItem.IsChecked = meters.Vram;
-        DrivesItem.IsChecked = meters.Drives;
-        DriveActivityItem.IsChecked = meters.DriveActivity;
-        DriveActivityItem.IsEnabled = meters.Drives;
-        var notifications = settings.Notifications;
-        ServiceStoppedItem.IsChecked = notifications.ServiceStopped;
-        RunningLongItem.IsChecked = notifications.RunningLong;
-        BenchmarkFinishedItem.IsChecked = notifications.BenchmarkFinished;
-        JobFinishedItem.IsChecked = notifications.JobFinished;
-        KilledOutsideItem.IsChecked = notifications.KilledOutsideFlyout;
-        _showingToggles = false;
+        ServiceItem.Text = text;
+        ServiceItem.IsEnabled = enabled;
+    }
+
+    /// <summary>
+    /// Disables ⋯ › Settings with the reason, or enables it for <c>null</c>.
+    /// </summary>
+    public void ShowSettingsBlocked(string? reason)
+    {
+        SettingsItem.Text = reason ?? "Settings";
+        SettingsItem.IsEnabled = reason is null;
     }
 
 #if DEBUG
@@ -597,61 +589,21 @@ public sealed partial class FlyoutShell : UserControl, IFlyoutContent
     private void OnNotificationSettingsClick(object sender, object e) =>
         NotificationSettingsPressed?.Invoke();
 
-    private IEnumerable<ToggleMenuFlyoutItem> CheckItems() =>
-    [
-        CpuItem, RamItem, GpuItem, VramItem, DrivesItem, DriveActivityItem,
-        ServiceStoppedItem, RunningLongItem, BenchmarkFinishedItem, JobFinishedItem,
-        KilledOutsideItem,
-    ];
+    private void OnSettingsClick(object sender, RoutedEventArgs e) => SettingsPressed?.Invoke();
 
-    // A check item flips before its click closes the menu, so the close that follows is the
-    // toggle's: the handoff keeps the menu open. The flag clears once the click is done, so a
-    // later dismissal still closes it.
-    private void OnCheckItemToggled(DependencyObject sender, DependencyProperty property)
+    private void OnSettingsAccelerator(
+        KeyboardAccelerator sender,
+        KeyboardAcceleratorInvokedEventArgs args)
     {
-        if (_showingToggles)
+        if (SettingsItem.IsEnabled)
         {
-            return;
-        }
-
-        _keepMenuOpen = true;
-        _ = DispatcherQueue.TryEnqueue(
-            Microsoft.UI.Dispatching.DispatcherQueuePriority.Low,
-            () => _keepMenuOpen = false);
-    }
-
-    private void OnMenuClosing(FlyoutBase sender, FlyoutBaseClosingEventArgs args)
-    {
-        if (_keepMenuOpen)
-        {
-            args.Cancel = true;
-            _keepMenuOpen = false;
+            args.Handled = true;
+            SettingsPressed?.Invoke();
         }
     }
 
-    private void OnMeterClick(object sender, RoutedEventArgs e)
-    {
-        DriveActivityItem.IsEnabled = DrivesItem.IsChecked;
-        MetersChanged?.Invoke(new MeterToggles
-        {
-            Cpu = CpuItem.IsChecked,
-            Ram = RamItem.IsChecked,
-            Gpu = GpuItem.IsChecked,
-            Vram = VramItem.IsChecked,
-            Drives = DrivesItem.IsChecked,
-            DriveActivity = DriveActivityItem.IsChecked,
-        });
-    }
-
-    private void OnNotificationClick(object sender, RoutedEventArgs e) =>
-        NotificationsChanged?.Invoke(new NotificationToggles
-        {
-            ServiceStopped = ServiceStoppedItem.IsChecked,
-            RunningLong = RunningLongItem.IsChecked,
-            BenchmarkFinished = BenchmarkFinishedItem.IsChecked,
-            JobFinished = JobFinishedItem.IsChecked,
-            KilledOutsideFlyout = KilledOutsideItem.IsChecked,
-        });
+    private void OnServiceItemClick(object sender, RoutedEventArgs e) =>
+        ServiceItemPressed?.Invoke();
 
     private void OnResourcesToggleClick(object sender, RoutedEventArgs e) =>
         ResourcesToggled?.Invoke();

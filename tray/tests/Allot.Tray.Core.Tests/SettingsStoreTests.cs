@@ -59,6 +59,14 @@ public sealed class SettingsStoreTests
             ResourcesExpanded = true,
             FirstRunDone = true,
             FirstRunShown = true,
+            SettingsWindow = new WindowPlacement
+            {
+                X = -1200,
+                Y = 40,
+                WidthDip = 920.5,
+                HeightDip = 680,
+                Maximized = true,
+            },
         };
 
         store.Save(changed);

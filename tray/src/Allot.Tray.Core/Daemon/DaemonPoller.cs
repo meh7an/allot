@@ -15,6 +15,13 @@ public sealed class DaemonPoller(DaemonClient client, IServiceLauncher launcher,
     /// </summary>
     public static readonly TimeSpan StartTimeout = TimeSpan.FromSeconds(10);
 
+    /// <summary>
+    /// How long a restart waits for the old allotd to stop answering before it starts the new one.
+    /// </summary>
+    public static readonly TimeSpan StopTimeout = TimeSpan.FromSeconds(10);
+
+    private static readonly TimeSpan StopCheck = TimeSpan.FromMilliseconds(200);
+
     private readonly Lock _gate = new();
     private readonly PollSchedule _schedule = new();
     private TaskCompletionSource _wake = NewWake();
@@ -80,9 +87,44 @@ public sealed class DaemonPoller(DaemonClient client, IServiceLauncher launcher,
     /// <returns><c>null</c> when allotd accepted, else why not.</returns>
     public async Task<string?> StopServiceAsync(CancellationToken cancellationToken)
     {
-        var problem = await client.ShutdownAsync(cancellationToken).ConfigureAwait(false);
+        var problem = await client.ShutdownAsync(record: true, cancellationToken)
+            .ConfigureAwait(false);
         PollNow();
         return problem;
+    }
+
+    /// <summary>
+    /// Restarts allotd so a new port or token takes effect: stops it without a stop record, waits
+    /// until it no longer answers, then starts it and polls it on <paramref name="port"/>.
+    /// </summary>
+    /// <param name="port">The port <c>config.toml</c> names now.</param>
+    /// <param name="cancellationToken">Cancels the wait.</param>
+    /// <returns><c>null</c> when allotd stopped and was started again, else why not.</returns>
+    public async Task<string?> RestartServiceAsync(ushort port, CancellationToken cancellationToken)
+    {
+        var problem = await client.ShutdownAsync(record: false, cancellationToken)
+            .ConfigureAwait(false);
+        if (problem is not null)
+        {
+            PollNow();
+            return problem;
+        }
+
+        // A new allotd started while the old one still holds its instance lock exits at once.
+        var until = time.GetUtcNow() + StopTimeout;
+        while (await client.HealthAsync(cancellationToken).ConfigureAwait(false) is not null)
+        {
+            if (time.GetUtcNow() >= until)
+            {
+                PollNow();
+                return "the service did not stop within 10 s";
+            }
+
+            await Task.Delay(StopCheck, time, cancellationToken).ConfigureAwait(false);
+        }
+
+        client.UsePort(port);
+        return StartService();
     }
 
     /// <summary>

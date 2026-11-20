@@ -1,3 +1,5 @@
+using System.Net;
+
 using Allot.Tray.Core.Daemon;
 using Allot.Tray.Core.Tests.Support;
 
@@ -264,6 +266,51 @@ public sealed class DaemonPollerTests
 
         Assert.IsTrue(woke);
         _ = await Assert.ThrowsAsync<OperationCanceledException>(() => loop);
+    }
+
+    [TestMethod]
+    public async Task RestartStopsWithoutARecordThenStartsOnTheNewPort()
+    {
+        using var directory = new TempDirectory();
+        var seen = new List<string>();
+        var handler = new FakeHttpHandler(request =>
+        {
+            var path = request.RequestUri!.AbsolutePath;
+            seen.Add($"{request.Method} {path} {request.RequestUri.Port}");
+            return path == "/shutdown"
+                ? FakeHttpHandler.Status(HttpStatusCode.Accepted)
+                : throw FakeHttpHandler.Refused();
+        });
+        var launcher = new FakeLauncher();
+        var poller = Poller(directory, handler, launcher);
+
+        var problem = await poller.RestartServiceAsync(47999, TestContext.CancellationToken);
+        _ = await poller.PollOnceAsync(TestContext.CancellationToken);
+
+        Assert.IsNull(problem);
+        Assert.AreEqual(1, launcher.Starts);
+        CollectionAssert.AreEqual(
+            new List<string>
+            {
+                "POST /shutdown 47823",
+                "GET /health 47823",
+                "GET /ui/state 47999",
+            },
+            seen);
+    }
+
+    [TestMethod]
+    public async Task ARefusedRestartStartsNothing()
+    {
+        using var directory = new TempDirectory();
+        var handler = new FakeHttpHandler(_ => FakeHttpHandler.Status(HttpStatusCode.Forbidden));
+        var launcher = new FakeLauncher();
+        var poller = Poller(directory, handler, launcher);
+
+        var problem = await poller.RestartServiceAsync(47999, TestContext.CancellationToken);
+
+        Assert.AreEqual("POST /shutdown answered 403", problem);
+        Assert.AreEqual(0, launcher.Starts);
     }
 
     private static DaemonPoller Poller(

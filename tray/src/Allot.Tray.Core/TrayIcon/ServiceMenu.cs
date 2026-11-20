@@ -27,7 +27,7 @@ public sealed record ServiceMenuItem(string Text, ServiceAction Action)
 /// </summary>
 public static class ServiceMenu
 {
-    public const string ConfirmTitle = "Stop Allot?";
+    public const string ConfirmTitle = "Stop the service?";
 
     public static ServiceMenuItem ItemFor(ServiceStatus status) => status switch
     {
@@ -40,8 +40,7 @@ public static class ServiceMenu
 
     /// <summary>
     /// The confirmation shown before stopping allotd, or <c>null</c> when no lease is running or
-    /// waiting. Every Claude session's MCP server starts allotd again on its next call, so the text
-    /// says the stop lasts only until then.
+    /// waiting. The stop lasts until the user starts allotd again (the stop record).
     /// </summary>
     public static string? StopConfirmation(UiState? state)
     {
@@ -64,7 +63,7 @@ public static class ServiceMenu
         }
 
         return $"{string.Join(" and ", parts)}.\n\n"
-            + "Heavy commands run unchecked while the service is stopped. A Claude session starts "
-            + "it again the next time it asks for resources.";
+            + "Jobs keep running, and new heavy commands run without leases until you start the "
+            + "service again.";
     }
 }

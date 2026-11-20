@@ -1,7 +1,5 @@
 using System.Collections.ObjectModel;
 
-using Allot.Tray.Core.Settings;
-
 namespace Allot.Tray.Core.ViewModels;
 
 /// <summary>
@@ -15,9 +13,6 @@ public sealed class FlyoutModel : Observable
     private string _summary = "Starting service…";
     private bool _isLastKnown = true;
     private ServiceBanner _banner = ServiceBanner.Hidden;
-    private string _metersCount = MenuCounts.Meters(new MeterToggles());
-    private string _notificationsCount = MenuCounts.Notifications(new NotificationToggles());
-    private bool _notificationsOff;
 
     public HeaderGlyph Glyph
     {
@@ -48,35 +43,6 @@ public sealed class FlyoutModel : Observable
     {
         get => _banner;
         private set => Set(ref _banner, value);
-    }
-
-    /// <summary>
-    /// The trailing count of ⋯ › Meters, for example <c>4 of 5</c>.
-    /// </summary>
-    public string MetersCount
-    {
-        get => _metersCount;
-        private set => Set(ref _metersCount, value);
-    }
-
-    /// <summary>
-    /// The trailing count of ⋯ › Notifications, or <c>Off</c> while Windows has Allot's toasts
-    /// turned off.
-    /// </summary>
-    public string NotificationsCount
-    {
-        get => _notificationsCount;
-        private set => Set(ref _notificationsCount, value);
-    }
-
-    /// <summary>
-    /// Windows has Allot's toasts turned off; ⋯ › Notifications starts with a line saying so and
-    /// an item that opens Settings.
-    /// </summary>
-    public bool NotificationsOff
-    {
-        get => _notificationsOff;
-        private set => Set(ref _notificationsOff, value);
     }
 
     public ObservableCollection<FlyoutRow> Rows { get; } = [];
@@ -135,15 +101,6 @@ public sealed class FlyoutModel : Observable
     }
 
     public void ApplyBanner(ServiceBanner? banner) => Banner = banner ?? ServiceBanner.Hidden;
-
-    /// <param name="settings">The saved menu toggles.</param>
-    /// <param name="notificationsOff">Windows has Allot's toasts turned off.</param>
-    public void ApplyMenu(TraySettings settings, bool notificationsOff)
-    {
-        MetersCount = MenuCounts.Meters(settings.Meters);
-        NotificationsCount = MenuCounts.Notifications(settings.Notifications, notificationsOff);
-        NotificationsOff = notificationsOff;
-    }
 
     /// <summary>
     /// Makes <paramref name="rows"/> equal to <paramref name="fresh"/> by key with the fewest
