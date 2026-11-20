@@ -311,11 +311,12 @@ public final class SettingsSession: ValueHost {
         Task { await flush() }
     }
 
-    /// What fits with the shown values, unsaved edits included.
+    /// What fits with the shown values, unsaved edits included, and `changes`, such as a row
+    /// edited in a dialog.
     ///
     /// - Throws: Only `CancellationError`.
-    public func preview() async throws -> SettingsReply<FitPreview> {
-        try await client.previewSettings(unsaved())
+    public func preview(_ changes: [Change] = []) async throws -> SettingsReply<FitPreview> {
+        try await client.previewSettings(unsaved() + changes)
     }
 
     /// How the hook treats `line`, under the shown values and `changes`, such as a rule list

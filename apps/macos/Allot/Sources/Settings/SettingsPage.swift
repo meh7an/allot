@@ -7,6 +7,9 @@ import SwiftUI
 struct SettingsPage: View {
     static let width: CGFloat = 640
 
+    // Sizes shows every column of its tables; the window widens while it is selected.
+    private static let wideWidth: CGFloat = 900
+
     // Beyond this the page scrolls; it keeps the window on a 13-inch screen.
     private static let maxContentHeight: CGFloat = 560
 
@@ -49,7 +52,7 @@ struct SettingsPage: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(EdgeInsets(top: 8, leading: 20, bottom: 8, trailing: 20))
         }
-        .frame(width: Self.width)
+        .frame(width: pageId == "sizes" ? Self.wideWidth : Self.width)
     }
 
     @ViewBuilder private var content: some View {

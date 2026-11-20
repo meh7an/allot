@@ -86,14 +86,22 @@ public final class SizeTableModel: ValueModel {
             return false
         }
         let row = draft.row()
-        var changes: [Change] = []
-        if let original = draft.original, original != row.name {
-            changes.append(Contract.resetRow(table: key, name: original))
-        }
-        changes.append(Contract.setRow(table: key, row: row))
         let rest = sizeRows.filter { $0.name != draft.original && $0.name != row.name }
-        write(sorted(rest + [row]), changes)
+        write(sorted(rest + [row]), rowChanges(original: draft.original, row))
         return true
+    }
+
+    /// What the table would be with the draft saved, for the dialog's fit preview.
+    ///
+    /// - Returns: `nil` while the draft could not be saved.
+    public func proposal(_ draft: RowDraft) -> [Change]? {
+        draft.ready ? rowChanges(original: draft.original, draft.row()) : nil
+    }
+
+    /// Writes `row` back as it was, such as before a reset or delete for Undo.
+    public func restore(_ row: SizeRow) {
+        let rest = sizeRows.filter { $0.name != row.name }
+        write(sorted(rest + [row]), rowChanges(original: nil, row))
     }
 
     /// Deletes a row the user added; a built-in row is reset instead.
@@ -136,6 +144,16 @@ public final class SizeTableModel: ValueModel {
             names += classes.map(\.name)
         }
         return names
+    }
+
+    // A rename removes the old row in the same write.
+    private func rowChanges(original: String?, _ row: SizeRow) -> [Change] {
+        var changes: [Change] = []
+        if let original, original != row.name {
+            changes.append(Contract.resetRow(table: key, name: original))
+        }
+        changes.append(Contract.setRow(table: key, row: row))
+        return changes
     }
 
     private func write(_ rows: [SizeRow], _ changes: [Change]) {
@@ -220,6 +238,14 @@ public final class RowDraft {
     /// The name field's label, help and pattern, when the table allows names.
     public var nameSpec: RowName? {
         table.control.newRowName
+    }
+
+    /// Whether the row could be saved now, without showing any issue.
+    public var ready: Bool {
+        currentNameIssue() == nil
+            && fields.allSatisfy { field in
+                field.issue == nil && (field.number != nil || field.control.automatic != nil)
+            }
     }
 
     public func field(_ key: String) -> NumberModel? {

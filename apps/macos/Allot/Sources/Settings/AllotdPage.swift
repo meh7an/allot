@@ -3,8 +3,8 @@ import SwiftUI
 
 /// A page of allotd's settings, built from the spec once `GET /settings` has answered: its
 /// groups, each ending in its live sentence, then an Advanced section with the rarely changed
-/// keys (DESIGN.md D11), then Reset. The Service page adds its status row above the groups and
-/// Files after them.
+/// keys (DESIGN.md D11), then Reset. A size table or the rule list is a group's section of its
+/// own. The Service page adds its status row above the groups and Files after them.
 struct AllotdPage: View {
     let model: SettingsWindowModel
     let pageId: String
@@ -24,7 +24,11 @@ struct AllotdPage: View {
                 }
                 ForEach(page.groups, id: \.spec.id) { group in
                     let normal = group.settings.filter { !$0.spec.advanced }
-                    if !normal.isEmpty {
+                    if let table = group.settings.first as? SizeTableModel {
+                        SizeTableSection(window: model, table: table, title: group.spec.label)
+                    } else if let rules = group.settings.first as? RuleListModel {
+                        RuleListSections(window: model, rules: rules, title: group.spec.label)
+                    } else if !normal.isEmpty {
                         section(group.spec.label, normal, live: live(group.spec.id))
                     }
                     if pageId == "admission" && group.spec.id == "learn" {

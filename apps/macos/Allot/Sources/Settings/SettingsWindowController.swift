@@ -132,9 +132,14 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         let current = window.frame
         var frame = window.frameRect(forContentRect: NSRect(origin: .zero, size: contentSize))
         frame.origin = NSPoint(x: current.minX, y: current.maxY - frame.height)
-        if let visible = (window.screen ?? NSScreen.main)?.visibleFrame, frame.minY < visible.minY
-        {
-            frame.origin.y = visible.minY
+        if let visible = (window.screen ?? NSScreen.main)?.visibleFrame {
+            if frame.minY < visible.minY {
+                frame.origin.y = visible.minY
+            }
+            // The wider Sizes page grows to the right; near the screen's edge it moves left.
+            if frame.maxX > visible.maxX {
+                frame.origin.x = max(visible.minX, visible.maxX - frame.width)
+            }
         }
         if frame != current {
             window.setFrame(frame, display: true, animate: window.isVisible)

@@ -59,14 +59,21 @@ public final class RuleListModel: ValueModel {
         guard draft.check(), let rule = draft.rule() else {
             return false
         }
-        var rules = ruleList
-        if let index = draft.index, rules.indices.contains(index) {
-            rules[index] = rule
-        } else {
-            rules.append(rule)
-        }
-        write(rules)
+        write(withRule(draft.index, rule))
         return true
+    }
+
+    /// What the list would be with the draft saved, for testing a command against it before
+    /// Save.
+    ///
+    /// - Returns: `nil` while the draft could not be saved.
+    public func proposal(_ draft: RuleDraft) -> [Change]? {
+        draft.proposed.map { [Contract.setRules(withRule(draft.index, $0))] }
+    }
+
+    /// Writes `rules` as they are, such as the list before a delete for Undo.
+    public func replace(_ rules: [HeavyRule]) {
+        write(rules)
     }
 
     /// Moves a rule to position `to`; rules match in list order.
@@ -90,6 +97,17 @@ public final class RuleListModel: ValueModel {
         var rules = ruleList
         rules.remove(at: index)
         write(rules)
+    }
+
+    // A list that shrank on a refresh while the dialog was open gets the rule at its end.
+    private func withRule(_ index: Int?, _ rule: HeavyRule) -> [HeavyRule] {
+        var rules = ruleList
+        if let index, rules.indices.contains(index) {
+            rules[index] = rule
+        } else {
+            rules.append(rule)
+        }
+        return rules
     }
 
     private func write(_ rules: [HeavyRule]) {
@@ -184,20 +202,28 @@ public final class RuleDraft {
         onChange?()
     }
 
+    /// The rule as it would be saved now, without showing any issue; `nil` while it could not
+    /// be saved.
+    public var proposed: HeavyRule? {
+        currentProgramIssue() == nil ? rule() : nil
+    }
+
     /// - Returns: Whether the rule can be saved.
     public func check() -> Bool {
         programIssue = currentProgramIssue()
-        classIssue = ruleClass == nil ? .required : nil
+        classIssue = jobClass == nil ? .required : nil
         onChange?()
         return programIssue == nil && classIssue == nil
     }
 
     /// The rule as drafted; `nil` while no class is picked.
     public func rule() -> HeavyRule? {
-        guard let value = ruleClass, let jobClass = JobClass(rawValue: value) else {
-            return nil
-        }
-        return Contract.rule(program: program, args: args.entries, class: jobClass)
+        jobClass.map { Contract.rule(program: program, args: args.entries, class: $0) }
+    }
+
+    // The class's value is the class's name in the file, as `JobClass` spells it.
+    private var jobClass: JobClass? {
+        ruleClass.flatMap(JobClass.init(rawValue:))
     }
 
     private func currentProgramIssue() -> ValueIssue? {

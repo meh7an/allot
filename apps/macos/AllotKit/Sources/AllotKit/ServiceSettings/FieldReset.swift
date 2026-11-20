@@ -24,6 +24,8 @@ public enum FieldReset {
             return { number.commit(saved / number.unit.factor) }
         case (let number as NumberModel, .number(.none)):
             return { number.setAutomatic(true) }
+        case (let list as StringListModel, .list(let saved)):
+            return { list.replace(saved) }
         default:
             return nil
         }

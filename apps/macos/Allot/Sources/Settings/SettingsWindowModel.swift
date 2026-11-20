@@ -39,6 +39,8 @@ final class SettingsWindowModel {
     static let pages: [(id: String, label: String, symbol: String)] = [
         (SettingsBanners.panelPage, "Panel", "gauge.with.dots.needle.33percent"),
         ("admission", "Admission", "scalemass"),
+        ("sizes", "Sizes", "square.stack.3d.up"),
+        ("commands", "Commands", "terminal"),
         ("benchmarks", "Benchmarks", "timer"),
         ("leases", "Leases", "key"),
         (SettingsBanners.servicePage, "Service", "server.rack"),
@@ -47,7 +49,7 @@ final class SettingsWindowModel {
     private static let noticeTime = Duration.seconds(10)
 
     // The fit preview runs while a page that shows it is open.
-    private static let fitPages: Set<String> = ["admission"]
+    private static let fitPages: Set<String> = ["admission", "sizes"]
 
     let session: SettingsSession
     let fits: FitPreviews

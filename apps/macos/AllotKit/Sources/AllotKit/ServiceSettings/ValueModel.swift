@@ -443,6 +443,11 @@ public final class StringListModel: ValueModel {
         return true
     }
 
+    /// Writes `entries` as they are, such as the list before a reset for Undo.
+    public func replace(_ entries: [String]) {
+        save(entries)
+    }
+
     public func remove(at index: Int) {
         if entries.indices.contains(index) {
             var rest = entries

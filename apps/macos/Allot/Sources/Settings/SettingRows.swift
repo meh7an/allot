@@ -26,6 +26,22 @@ struct SettingRows: View {
             }
             .padding(.leading, 20)
             .disabled(locked || !duration.isOn)
+        } else if let list = setting as? StringListModel {
+            // Chips need the row's width, so they go under the label and help. The print-only
+            // flags are the one list on a page.
+            VStack(alignment: .leading, spacing: 0) {
+                SettingRow(
+                    label: setting.label, help: setting.spec.help, key: setting.key,
+                    notes: notes, reset: resetButton
+                ) {
+                    EmptyView()
+                }
+                ChipsEditor(
+                    model: list, entryName: "New print-only flag", placeholder: "--dry-run",
+                    addLabel: "Add Flag")
+                    .padding(.bottom, 6)
+            }
+            .disabled(locked)
         } else {
             SettingRow(
                 label: setting.label, help: setting.spec.help, key: setting.key,
