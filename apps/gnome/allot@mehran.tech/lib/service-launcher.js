@@ -100,12 +100,13 @@ export const RESTART_WAIT_MS = 10_000;
 const RESTART_POLL_MS = 250;
 
 /**
- * What Restart Service needs from the client: `DaemonClient`, or a fake in tests.
+ * What Restart Service needs from the client: `DaemonClient`, GNOME's `BusClient`, or a fake
+ * in tests. Only an HTTP client has a port to follow.
  *
  * @typedef {object} RestartClient
  * @property {(options: { record: boolean }) => Promise<string | null>} shutdown
  * @property {() => Promise<string | null>} healthVersion
- * @property {(port: number) => void} usePort
+ * @property {(port: number) => void} [usePort]
  */
 
 /**
@@ -118,8 +119,8 @@ const RESTART_POLL_MS = 250;
 
 /**
  * Restarts allotd, for a new port or a refused token: through the systemd unit when it runs this
- * allotd, else `POST /shutdown` with no stop record, a wait of up to 10 s for `/health` to stop
- * answering, and a start. Every later request then goes to `port`.
+ * allotd, else a shutdown with no stop record, a wait of up to 10 s for allotd to stop
+ * answering, and a start. An HTTP client then sends every later request to `port`.
  *
  * @param {RestartClient} client
  * @param {RestartLauncher} launcher
@@ -129,7 +130,7 @@ const RESTART_POLL_MS = 250;
  */
 export async function restartService(client, launcher, timers, port) {
   if (await launcher.restartThroughUnit()) {
-    client.usePort(port);
+    client.usePort?.(port);
     return null;
   }
   const problem = await client.shutdown({ record: false });
@@ -142,7 +143,7 @@ export async function restartService(client, launcher, timers, port) {
     }
     await new Promise((resolve) => timers.setTimeout(() => resolve(undefined), RESTART_POLL_MS));
   }
-  client.usePort(port);
+  client.usePort?.(port);
   return launcher.start();
 }
 

@@ -78,6 +78,8 @@ async fn run(paths: &Paths) -> anyhow::Result<()> {
         maintenance: Maintenance::standard(config_file),
         scopes: Scopes::detect(paths.root()).await,
         stop_file: Some(paths.stop_file()),
+        #[cfg(target_os = "linux")]
+        bus: allotd::bus::PanelBus::Session,
     };
     allotd::serve(listener, options, shutdown).await
 }

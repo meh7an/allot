@@ -103,12 +103,13 @@ export class SystemdServiceLauncher {
 export const RESTART_WAIT_MS = 10000;
 const RESTART_POLL_MS = 250;
 /**
- * What Restart Service needs from the client: `DaemonClient`, or a fake in tests.
+ * What Restart Service needs from the client: `DaemonClient`, GNOME's `BusClient`, or a fake
+ * in tests. Only an HTTP client has a port to follow.
  *
  * @typedef {object} RestartClient
  * @property {(options: { record: boolean }) => Promise<string | null>} shutdown
  * @property {() => Promise<string | null>} healthVersion
- * @property {(port: number) => void} usePort
+ * @property {(port: number) => void} [usePort]
  */
 /**
  * What Restart Service needs from the launcher.
@@ -119,8 +120,8 @@ const RESTART_POLL_MS = 250;
  */
 /**
  * Restarts allotd, for a new port or a refused token: through the systemd unit when it runs this
- * allotd, else `POST /shutdown` with no stop record, a wait of up to 10 s for `/health` to stop
- * answering, and a start. Every later request then goes to `port`.
+ * allotd, else a shutdown with no stop record, a wait of up to 10 s for allotd to stop
+ * answering, and a start. An HTTP client then sends every later request to `port`.
  *
  * @param {RestartClient} client
  * @param {RestartLauncher} launcher
@@ -130,8 +131,9 @@ const RESTART_POLL_MS = 250;
  */
 export function restartService(client, launcher, timers, port) {
     return __awaiter(this, void 0, void 0, function* () {
+        var _a, _b;
         if (yield launcher.restartThroughUnit()) {
-            client.usePort(port);
+            (_a = client.usePort) === null || _a === void 0 ? void 0 : _a.call(client, port);
             return null;
         }
         const problem = yield client.shutdown({ record: false });
@@ -144,7 +146,7 @@ export function restartService(client, launcher, timers, port) {
             }
             yield new Promise((resolve) => timers.setTimeout(() => resolve(undefined), RESTART_POLL_MS));
         }
-        client.usePort(port);
+        (_b = client.usePort) === null || _b === void 0 ? void 0 : _b.call(client, port);
         return launcher.start();
     });
 }

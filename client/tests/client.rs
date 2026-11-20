@@ -122,6 +122,8 @@ impl Daemon {
             maintenance: Maintenance::default(),
             scopes: Scopes::disabled(),
             stop_file: None,
+            #[cfg(target_os = "linux")]
+            bus: allotd::bus::PanelBus::Off,
         };
         let (stop, stopped) = oneshot::channel::<()>();
         let server = tokio::spawn(async move {

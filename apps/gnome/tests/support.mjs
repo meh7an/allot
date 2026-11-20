@@ -4,6 +4,7 @@ import { decodeUiState } from "../allot@mehran.tech/contract.g.mjs";
 
 /** @import { UiState } from "../allot@mehran.tech/contract.g.mjs" */
 /** @import { HttpRequest, HttpResponse } from "../allot@mehran.tech/lib/client.js" */
+/** @import { Bus, BusCall } from "../allot@mehran.tech/lib/bus-client.js" */
 
 export const EXTENSION_DIR = new URL("../allot@mehran.tech/", import.meta.url);
 export const REPO_DIR = new URL("../../../", import.meta.url);
@@ -156,6 +157,41 @@ export class FakeTransport {
     this.requests.push(request);
     return this.#handler(request);
   };
+}
+
+/** allotd on a session bus of the test's own: answers each call from a handler and records it. */
+export class FakeBus {
+  /** @type {BusCall[]} */
+  calls = [];
+
+  /**
+   * What the name watcher saw last; `null` before its first answer.
+   *
+   * @type {boolean | null}
+   */
+  owner = true;
+
+  /** @type {() => Promise<string>} */
+  version = async () => "0.5.0";
+
+  #handler;
+
+  /** @param {(call: BusCall) => string | null | Promise<string | null>} handler */
+  constructor(handler) {
+    this.#handler = handler;
+  }
+
+  /** @returns {Bus} */
+  bus() {
+    return {
+      call: async (call) => {
+        this.calls.push(call);
+        return this.#handler(call);
+      },
+      version: () => this.version(),
+      hasOwner: () => this.owner,
+    };
+  }
 }
 
 /** Timers that fire only when a test says so. */

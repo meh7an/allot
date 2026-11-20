@@ -1,6 +1,8 @@
 //! The allot daemon: system sampling, the lease ledger, their persistence, and the
-//! HTTP API that serves them.
+//! HTTP API that serves them, with a D-Bus interface for the GNOME extension on Linux.
 
+#[cfg(target_os = "linux")]
+pub mod bus;
 pub mod db;
 mod error;
 pub mod logfile;
@@ -47,6 +49,9 @@ pub struct DaemonOptions {
     pub scopes: Scopes,
     /// Where a panel's Stop service writes the stop record; `None` refuses such a stop.
     pub stop_file: Option<PathBuf>,
+    /// The bus the GNOME extension's interface is offered on.
+    #[cfg(target_os = "linux")]
+    pub bus: bus::PanelBus,
 }
 
 /// Serves the API on `listener` until `shutdown` resolves or a client calls
@@ -95,10 +100,17 @@ pub async fn serve(
         stopping.shutdown.send_replace(true);
     };
 
+    #[cfg(target_os = "linux")]
+    let offered = bus::offer(state.clone(), &options.bus).await;
+
     tracing::info!("listening on {}", listener.local_addr()?);
     let served = axum::serve(listener, routes::router(state))
         .with_graceful_shutdown(stop)
         .await;
+    #[cfg(target_os = "linux")]
+    if let Some(offered) = offered {
+        offered.close().await;
+    }
     sampling.abort();
     upkeep.abort();
     tracing::info!("stopped");

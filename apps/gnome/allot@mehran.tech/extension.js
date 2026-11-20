@@ -14,7 +14,7 @@ import {
   writeTextFile,
 } from "./daemon-io.js";
 import { AllotIndicator } from "./indicator.js";
-import { DEFAULT_PORT, dataPaths, portFromToml } from "./lib/config.js";
+import { dataPaths } from "./lib/config.js";
 import { NotificationRules } from "./lib/notification-rules.js";
 import { DaemonPoller } from "./lib/poller.js";
 import { PopupModel } from "./lib/popup-model.js";
@@ -110,7 +110,6 @@ export default class AllotExtension extends Extension {
     this._indicator.showStatus(this._model.indicator);
     Main.panel.addToStatusArea(this.uuid, this._indicator);
     this._lastStatus = null;
-    this._followingPort = false;
     this._watchSettings(paths);
     this._startPolling(paths, this._connection, this._files);
   }
@@ -144,36 +143,28 @@ export default class AllotExtension extends Extension {
     this._indicator = null;
     this._rules = null;
     this._model = null;
-    this._client = null;
     this._settingsMonitor = null;
     this._settingsReadId = 0;
   }
 
   /**
-   * Reads the settings and the port once, as the other apps do at launch, then polls until
-   * `disable`.
+   * Reads the settings once, as the other apps do at launch, then polls until `disable`. allotd
+   * taking or leaving its name, and its JobsChanged, poll at once.
    *
    * @param {import("./lib/config.js").DataPaths} paths
    * @param {DaemonConnection} connection
    * @param {Gio.Cancellable} files Ends the file reads and service waits in flight.
    */
   async _startPolling(paths, connection, files) {
-    const [toml, settings] = await Promise.all([
-      readTextFile(paths.config, files),
-      readTextFile(paths.settings, files),
-    ]);
-    // A disable, or a disable and enable, while the files were being read.
+    const settings = await readTextFile(paths.settings, files);
+    // A disable, or a disable and enable, while the file was being read.
     if (this._connection !== connection) {
       return;
     }
     this._showChange(this._model.loadSettings(decodeSettings(settings)));
     this._popup.syncMenu();
-    const client = connection.client({
-      port: toml === null ? DEFAULT_PORT : portFromToml(toml),
-      readToken: () => readTextFile(paths.token, files),
-    });
+    const client = connection.client();
     this._model.stopper = client;
-    this._client = client;
     const launcher = new SystemdServiceLauncher(
       {
         home: GLib.get_home_dir(),
@@ -189,6 +180,8 @@ export default class AllotExtension extends Extension {
     poller.onUpdate = (result) => this._show(result);
     poller.setPopupOpen(this._popup?.isOpen ?? false);
     this._poller = poller;
+    connection.onOwnerChanged = () => poller.pollNow();
+    connection.onJobsChanged = () => poller.pollNow();
     try {
       await poller.start();
     } catch (error) {
@@ -198,9 +191,6 @@ export default class AllotExtension extends Extension {
 
   /** @param {PollResult} result */
   _show(result) {
-    if (result.status === "stopped") {
-      this._followPort();
-    }
     if (result.status !== this._lastStatus) {
       this._lastStatus = result.status;
       const detail = result.version ?? result.detail ?? "";
@@ -359,29 +349,6 @@ export default class AllotExtension extends Extension {
     const settings = decodeSettings(text);
     if (JSON.stringify(settings) !== JSON.stringify(this._model.settings)) {
       this._showChange(this._model.loadSettings(settings));
-    }
-  }
-
-  /**
-   * While allotd does not answer, reads the port from `config.toml` again: after Settings
-   * restarted allotd on a new port, the old one stays silent.
-   */
-  async _followPort() {
-    const client = this._client;
-    if (this._followingPort || client === null || client === undefined) {
-      return;
-    }
-    this._followingPort = true;
-    try {
-      const toml = await readTextFile(dataPaths(GLib.get_home_dir()).config, this._files);
-      const port = toml === null ? DEFAULT_PORT : portFromToml(toml);
-      if (this._client === client && port !== client.port) {
-        console.log(`Allot: following the service to port ${port}`);
-        client.usePort(port);
-        this._poller?.pollNow();
-      }
-    } finally {
-      this._followingPort = false;
     }
   }
 

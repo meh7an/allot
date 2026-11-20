@@ -78,7 +78,8 @@ pub struct Shared {
     /// The ledger. It stays locked while its transitions are written, so the database sees
     /// them in the order the ledger made them.
     pub ledger: AsyncMutex<Ledger>,
-    /// Bumped after every batch of lease transitions, to wake waiting acquire requests.
+    /// Bumped after every batch of lease transitions and every new lease, to wake waiting
+    /// acquire requests and tell the panels on D-Bus.
     pub changes: watch::Sender<u64>,
     /// Set by `POST /shutdown`; the server stops gracefully when it turns true.
     pub shutdown: watch::Sender<bool>,

@@ -1,0 +1,314 @@
+import {
+  decodeCommandTest,
+  decodeFitPreview,
+  decodeKillResponse,
+  decodeRemoveResponse,
+  decodeSettingsRefusal,
+  decodeSettingsState,
+} from "../contract.g.mjs";
+import {
+  TimeoutError,
+  conflictReason,
+  pollResult,
+  rethrowCancelled,
+  runningState,
+  settingsFailure,
+  stoppedOrRethrow,
+} from "./client.js";
+import * as stopResult from "./stop-result.js";
+
+/**
+ * @import {
+ *   Change,
+ *   ClassifyRequest,
+ *   CommandTest,
+ *   FitPreview,
+ *   SettingsPatch,
+ *   SettingsState,
+ * } from "../contract.g.mjs"
+ */
+/** @import { PollResult, SettingsFailureKind, SettingsReply } from "./client.js" */
+/** @import { StopResult } from "./stop-result.js" */
+
+/**
+ * One call of allotd's D-Bus interface, `tech.mehran.Allot1`.
+ *
+ * @typedef {object} BusCall
+ * @property {string} method
+ * @property {string | null} signature
+ *   The arguments' D-Bus signature, such as `(x)`; `null` for none.
+ * @property {unknown[]} args
+ * @property {number} timeoutMs
+ */
+
+/**
+ * The session bus as the client needs it: `Gio.DBus` in the shell and the Settings window, a
+ * fake in tests.
+ *
+ * - `call` resolves with the method's JSON answer, or `null` for a method without one. It
+ *   rejects with `BusRefusal` when allotd refuses, `CancelledError` when the extension is being
+ *   disabled, `TimeoutError` when nothing answers in time, and any other error when allotd is
+ *   not on the bus.
+ * - `version` reads allotd's `Version` property and rejects like `call`.
+ * - `hasOwner` is whether allotd owns its name, as the name watcher saw last; `null` before
+ *   the watcher's first answer.
+ *
+ * @typedef {object} Bus
+ * @property {(call: BusCall) => Promise<string | null>} call
+ * @property {() => Promise<string>} version
+ * @property {() => boolean | null} hasOwner
+ */
+
+/** An error allotd answered, such as `Conflict`, with its message. */
+export class BusRefusal extends Error {
+  /**
+   * @param {string} name The error's name after `tech.mehran.Allot1.Error.`.
+   * @param {string} message
+   */
+  constructor(name, message) {
+    super(message);
+    this.name = name;
+  }
+}
+
+const REQUEST_TIMEOUT_MS = 3000;
+
+// A kill ends a whole process tree, which takes longer than a read.
+const STOP_TIMEOUT_MS = 10_000;
+
+/** @type {Readonly<Record<string, SettingsFailureKind>>} */
+const REFUSAL_KINDS = {
+  Conflict: "conflict",
+  Invalid: "invalid",
+  Held: "held",
+  Unavailable: "unavailable",
+};
+
+const NOT_ON_BUS = "the service is not on the session bus";
+
+/**
+ * The GNOME extension's client of allotd over D-Bus, with the methods of `DaemonClient` that
+ * the shell and the Settings window use. The session bus says who calls, so there is no token.
+ * It never starts allotd by itself; that is the user's Start service.
+ */
+export class BusClient {
+  #bus;
+
+  /** @param {Bus} bus */
+  constructor(bus) {
+    this.#bus = bus;
+  }
+
+  /**
+   * `GetState`, mapped to a service status. While allotd is not on the bus it answers without
+   * a call.
+   *
+   * @returns {Promise<PollResult>} Rejects only with `CancelledError`.
+   */
+  async poll() {
+    if (this.#bus.hasOwner() === false) {
+      return pollResult("stopped", { detail: NOT_ON_BUS });
+    }
+    let json;
+    try {
+      json = await this.#call("GetState");
+    } catch (error) {
+      if (error instanceof BusRefusal) {
+        return error.name === "Unavailable"
+          ? pollResult("starting", { detail: "the daemon has no first sample yet" })
+          : pollResult("incompatible", { detail: `GetState: ${error.name}: ${error.message}` });
+      }
+      return stoppedOrRethrow(error);
+    }
+    return runningState(json ?? "");
+  }
+
+  /**
+   * allotd's version, or `null` while it is not on the bus.
+   *
+   * @returns {Promise<string | null>} Rejects only with `CancelledError`.
+   */
+  async healthVersion() {
+    if (this.#bus.hasOwner() === false) {
+      return null;
+    }
+    try {
+      return await this.#bus.version();
+    } catch (error) {
+      rethrowCancelled(error);
+      return null;
+    }
+  }
+
+  /**
+   * `Shutdown`. Stop service writes the stop record, so no session starts allotd again; a
+   * restart passes `record: false`.
+   *
+   * @param {object} [options]
+   * @param {boolean} [options.record] Whether allotd writes the stop record; true unless a
+   *   restart follows.
+   * @returns {Promise<string | null>} `null` when allotd accepted, else why not. Rejects only
+   *   with `CancelledError`.
+   */
+  async shutdown(options = {}) {
+    try {
+      await this.#call("Shutdown", "(b)", [options.record !== false]);
+      return null;
+    } catch (error) {
+      rethrowCancelled(error);
+      return error instanceof Error ? error.message : String(error);
+    }
+  }
+
+  /** @returns {Promise<SettingsReply<SettingsState>>} Rejects only with `CancelledError`. */
+  settings() {
+    return this.#settingsCall("GetSettings", null, decodeSettingsState);
+  }
+
+  /**
+   * @param {SettingsPatch} patch
+   * @returns {Promise<SettingsReply<SettingsState>>} Rejects only with `CancelledError`.
+   */
+  changeSettings(patch) {
+    return this.#settingsCall("ChangeSettings", patch, decodeSettingsState);
+  }
+
+  /**
+   * @param {Change[]} changes
+   * @returns {Promise<SettingsReply<FitPreview>>} Rejects only with `CancelledError`.
+   */
+  previewSettings(changes) {
+    return this.#settingsCall("PreviewSettings", { changes }, decodeFitPreview);
+  }
+
+  /**
+   * @param {ClassifyRequest} request
+   * @returns {Promise<SettingsReply<CommandTest>>} Rejects only with `CancelledError`.
+   */
+  classify(request) {
+    return this.#settingsCall("Classify", request, decodeCommandTest);
+  }
+
+  /**
+   * @param {number} lease
+   * @returns {Promise<StopResult>} Rejects only with `CancelledError`.
+   */
+  kill(lease) {
+    return this.#stop("Kill", lease, (json) => stopResult.killed(decodeKillResponse(json)));
+  }
+
+  /**
+   * @param {number} lease
+   * @returns {Promise<StopResult>} Rejects only with `CancelledError`.
+   */
+  remove(lease) {
+    return this.#stop("Remove", lease, (json) => stopResult.removed(decodeRemoveResponse(json)));
+  }
+
+  /**
+   * @param {string} method
+   * @param {number} lease
+   * @param {(json: unknown) => StopResult} ended Reads allotd's answer; throws when it cannot.
+   * @returns {Promise<StopResult>}
+   */
+  async #stop(method, lease, ended) {
+    let json;
+    try {
+      json = await this.#call(method, "(x)", [lease], STOP_TIMEOUT_MS);
+    } catch (error) {
+      rethrowCancelled(error);
+      return stopResult.refused(stopRefusal(error));
+    }
+    try {
+      return ended(JSON.parse(json ?? ""));
+    } catch {
+      return stopResult.refused("the service's answer could not be read");
+    }
+  }
+
+  /**
+   * @template T
+   * @param {string} method
+   * @param {object | null} request Sent as JSON.
+   * @param {(json: unknown) => T} decodeValue Throws when the answer is not a `T`.
+   * @returns {Promise<SettingsReply<T>>}
+   */
+  async #settingsCall(method, request, decodeValue) {
+    let json;
+    try {
+      json =
+        request === null
+          ? await this.#call(method)
+          : await this.#call(method, "(s)", [JSON.stringify(request)]);
+    } catch (error) {
+      rethrowCancelled(error);
+      if (error instanceof BusRefusal) {
+        return { ok: false, failure: settingsRefusal(error) };
+      }
+      return settingsFailure("unreachable", error instanceof Error ? error.message : String(error));
+    }
+    try {
+      return { ok: true, value: decodeValue(JSON.parse(json ?? "")) };
+    } catch (error) {
+      return settingsFailure("failed", `the service's answer could not be read: ${error}`);
+    }
+  }
+
+  /**
+   * @param {string} method
+   * @param {string | null} [signature]
+   * @param {unknown[]} [args]
+   * @param {number} [timeoutMs]
+   * @returns {Promise<string | null>}
+   */
+  #call(method, signature = null, args = [], timeoutMs = REQUEST_TIMEOUT_MS) {
+    return this.#bus.call({ method, signature, args, timeoutMs });
+  }
+}
+
+/**
+ * Why a kill or remove did not end the lease, for a card that already names the job.
+ *
+ * @param {unknown} error
+ * @returns {string}
+ */
+function stopRefusal(error) {
+  if (error instanceof TimeoutError) {
+    return `the service did not answer within ${STOP_TIMEOUT_MS / 1000} s`;
+  }
+  if (!(error instanceof BusRefusal)) {
+    return "the service is not running";
+  }
+  switch (error.name) {
+    case "Conflict":
+      return conflictReason(error.message);
+    case "NotFound":
+      return "the job no longer exists";
+    case "Unavailable":
+      return "the service has just started; try again";
+    default:
+      return error.message === "" ? "the service refused" : error.message;
+  }
+}
+
+/**
+ * A refused settings call. Its message is a `SettingsRefusal` as JSON; one that is not keeps
+ * its text as the message.
+ *
+ * @param {BusRefusal} refusal
+ * @returns {import("./client.js").SettingsFailure}
+ */
+function settingsRefusal(refusal) {
+  const kind = REFUSAL_KINDS[refusal.name] ?? "failed";
+  try {
+    const decoded = decodeSettingsRefusal(JSON.parse(refusal.message));
+    return {
+      kind,
+      message: decoded.message,
+      problems: decoded.problems,
+      revision: decoded.revision,
+    };
+  } catch {
+    return { kind, message: refusal.message, problems: [], revision: null };
+  }
+}

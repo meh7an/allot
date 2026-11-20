@@ -104,7 +104,7 @@ async fn health(State(state): State<AppState>) -> Json<HealthResponse> {
     Json(health_of(&state))
 }
 
-fn health_of(state: &Shared) -> HealthResponse {
+pub(crate) fn health_of(state: &Shared) -> HealthResponse {
     HealthResponse {
         version: env!("CARGO_PKG_VERSION").to_owned(),
         pid: std::process::id(),
@@ -123,15 +123,31 @@ async fn ui_state(State(state): State<AppState>) -> Result<Json<UiState>, AppErr
 /// first, so no session starts allotd again; when it cannot be written, allotd keeps running,
 /// since a stop that does not last would only confuse.
 async fn shutdown(State(state): State<AppState>, body: Bytes) -> Result<StatusCode, AppError> {
-    if !body.is_empty() {
+    let request = if body.is_empty() {
+        None
+    } else {
         let Json(request) = Json::<ShutdownRequest>::from_bytes(&body).map_err(|rejection| {
             AppError::Validation(format!("not a shutdown request: {}", rejection.body_text()))
         })?;
-        record_stop(&state, request).await?;
-    }
-    tracing::info!("shutdown requested over HTTP");
-    state.shutdown.send_replace(true);
+        Some(request)
+    };
+    stop(&state, request, "HTTP").await?;
     Ok(StatusCode::ACCEPTED)
+}
+
+/// Stops the daemon gracefully, first writing the stop record when `request` says who
+/// stopped it. `over` names the transport for the log.
+pub(crate) async fn stop(
+    state: &Shared,
+    request: Option<ShutdownRequest>,
+    over: &str,
+) -> Result<(), AppError> {
+    if let Some(request) = request {
+        record_stop(state, request).await?;
+    }
+    tracing::info!("shutdown requested over {over}");
+    state.shutdown.send_replace(true);
+    Ok(())
 }
 
 async fn record_stop(state: &Shared, request: ShutdownRequest) -> Result<(), AppError> {
@@ -349,6 +365,8 @@ async fn acquire(
         let mut ledger = state.ledger.lock().await;
         ledger.enqueue(lease)?;
         state.remember_request(id, requested, ledger.leases());
+        // A queued lease is news to the panels even when the tick grants nothing.
+        state.notify_changes();
         state.tick(&mut ledger).await?;
     }
     let Json(mut response) =
@@ -603,7 +621,7 @@ async fn bind(
 /// Ends an active lease as killed, whichever session holds it, then terminates its bound
 /// process tree. The lease ends first, so the hook that sees the command fail already finds
 /// the notice. A lease without a running bound tree ends anyway, with nothing terminated.
-async fn kill(
+pub(crate) async fn kill(
     State(state): State<AppState>,
     Path(id): Path<i64>,
 ) -> Result<Json<KillResponse>, AppError> {
@@ -739,7 +757,7 @@ fn spare_reason(reason: SpareReason) -> &'static str {
 
 /// Ends a queued lease as removed, whichever session holds it. Open acquire and wait requests
 /// on it answer at once.
-async fn remove(
+pub(crate) async fn remove(
     State(state): State<AppState>,
     Path(id): Path<i64>,
 ) -> Result<Json<RemoveResponse>, AppError> {

@@ -161,19 +161,19 @@ export class DaemonClient {
                 return stoppedOrRethrow(error);
             }
             if (response === null) {
-                return result("stopped", { detail: "no token in ~/.allot/token" });
+                return pollResult("stopped", { detail: "no token in ~/.allot/token" });
             }
             switch (response.status) {
                 case 200:
-                    return decode(response.body);
+                    return runningState(response.body);
                 case 404:
                     return this._withoutUiState();
                 case 503:
-                    return result("starting", { detail: "the daemon has no first sample yet" });
+                    return pollResult("starting", { detail: "the daemon has no first sample yet" });
                 case 401:
-                    return result("incompatible", { detail: "the daemon refused the token" });
+                    return pollResult("incompatible", { detail: "the daemon refused the token" });
                 default:
-                    return result("incompatible", {
+                    return pollResult("incompatible", {
                         detail: `GET /ui/state answered ${response.status}`,
                     });
             }
@@ -374,9 +374,9 @@ export class DaemonClient {
         return __awaiter(this, void 0, void 0, function* () {
             const version = yield this.healthVersion();
             if (version === null) {
-                return result("stopped", { detail: "GET /ui/state answered 404" });
+                return pollResult("stopped", { detail: "GET /ui/state answered 404" });
             }
-            return result("incompatible", { version, detail: `allotd ${version} has no /ui/state` });
+            return pollResult("incompatible", { version, detail: `allotd ${version} has no /ui/state` });
         });
     }
     /**
@@ -471,11 +471,13 @@ function stopRefusal(status, body) {
     }
 }
 /**
+ * A settings call that got no answer from allotd's settings code.
+ *
  * @param {SettingsFailureKind} kind
  * @param {string} message
  * @returns {{ ok: false, failure: SettingsFailure }}
  */
-function settingsFailure(kind, message) {
+export function settingsFailure(kind, message) {
     return { ok: false, failure: { kind, message, problems: [], revision: null } };
 }
 /** @type {Readonly<Record<number, SettingsFailureKind>>} */
@@ -510,28 +512,37 @@ function settingsRefusal(response) {
     }
 }
 /**
+ * The poll of a `UiState` answer: running, or incompatible when it does not decode.
+ *
  * @param {string} body
  * @returns {PollResult}
  */
-function decode(body) {
+export function runningState(body) {
     try {
         const state = decodeUiState(JSON.parse(body));
-        return result("running", { state, version: state.service.version });
+        return pollResult("running", { state, version: state.service.version });
     }
     catch (error) {
-        return result("incompatible", { detail: String(error) });
+        return pollResult("incompatible", { detail: String(error) });
     }
 }
 /**
+ * Nothing answered, which reads as stopped; a cancel is passed on.
+ *
  * @param {unknown} error
  * @returns {PollResult}
  */
-function stoppedOrRethrow(error) {
+export function stoppedOrRethrow(error) {
     rethrowCancelled(error);
-    return result("stopped", { detail: error instanceof Error ? error.message : String(error) });
+    const detail = error instanceof Error ? error.message : String(error);
+    return pollResult("stopped", { detail });
 }
-/** @param {unknown} error */
-function rethrowCancelled(error) {
+/**
+ * A cancel must never read as a stopped service.
+ *
+ * @param {unknown} error
+ */
+export function rethrowCancelled(error) {
     if (error instanceof CancelledError) {
         throw error;
     }
@@ -541,7 +552,7 @@ function rethrowCancelled(error) {
  * @param {{ state?: UiState, version?: string, detail?: string }} [fields]
  * @returns {PollResult}
  */
-function result(status, fields = {}) {
+export function pollResult(status, fields = {}) {
     var _a, _b, _c;
     return {
         status,

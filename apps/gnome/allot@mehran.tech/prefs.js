@@ -124,7 +124,10 @@ class SettingsWindow {
   #number = localeNumbers();
   #cancellable = new Gio.Cancellable();
   #toaster;
-  #client;
+  #connection = new DaemonConnection();
+  #client = this.#connection.client();
+  /** The port in `config.toml`, which allotd listens on for its other clients. */
+  #port;
   #session;
   #fits;
   #launcher;
@@ -149,11 +152,7 @@ class SettingsWindow {
     window.set_default_size(DEFAULT_WIDTH, DEFAULT_HEIGHT);
 
     const toml = readFileNow(this.#paths.config);
-    // Never cancelled: a change sent as the window closes must still arrive (M0.3).
-    this.#client = new DaemonConnection().client({
-      port: toml === null ? DEFAULT_PORT : portFromToml(toml),
-      readToken: () => readTextFile(this.#paths.token, this.#cancellable),
-    });
+    this.#port = toml === null ? DEFAULT_PORT : portFromToml(toml);
     this.#session = new SettingsSession(this.#client, glibTimers, {
       platform: "linux",
       readStopRecord: () => readTextFile(`${this.#paths.root}/stopped.json`, this.#cancellable),
@@ -186,6 +185,7 @@ class SettingsWindow {
       this.sync();
     };
     this.#fits.onChange = () => this.sync();
+    this.#connection.onOwnerChanged = () => void this.#refresh();
     window.connect("notify::visible-page", () => this.#followPage());
     window.connect("notify::is-active", () => {
       if (window.is_active) {
@@ -198,9 +198,14 @@ class SettingsWindow {
     this.sync();
   }
 
-  /** Sends what is still pending, then stops the timers; the request outlives the window. */
+  /**
+   * Sends what is still pending, then stops the timers. Calls are never cancelled: a change
+   * sent as the window closes must still arrive (M0.3).
+   */
   close() {
     this.#closed = true;
+    this.#connection.onOwnerChanged = null;
+    this.#connection.stopWatching();
     this.#session.onChange = null;
     this.#fits.onChange = null;
     this.#session.setVisible(false);
@@ -239,7 +244,7 @@ class SettingsWindow {
     const quiet = session.status !== "ready" && save.kind === "saved";
     const status = session.status === "loading" ? LOADING_TEXT : quiet ? "" : saveStatusText(save);
     return {
-      banners: settingsBanners(session, pageId, this.#client.port, this.#number),
+      banners: settingsBanners(session, pageId, this.#port, this.#number),
       status,
       readOnly: session.readOnly,
     };
@@ -418,7 +423,7 @@ class SettingsWindow {
       if (status === null) {
         return;
       }
-      const shown = serviceRow(status, this.#session.status, this.#version, this.#client.port);
+      const shown = serviceRow(status, this.#session.status, this.#version, this.#port);
       row.title = escaped(shown.text);
       button.label = serviceButtonText(shown.button);
       button.sensitive = shown.button !== "starting";
@@ -675,8 +680,9 @@ class SettingsWindow {
   async #restartService() {
     this.#beginStarting();
     const saved = this.#session.setting(PORT_KEY)?.saved;
-    const port = typeof saved === "number" ? saved : this.#client.port;
+    const port = typeof saved === "number" ? saved : this.#port;
     const problem = await restartService(this.#client, this.#launcher, glibTimers, port);
+    this.#port = port;
     if (problem !== null) {
       this.#starting = false;
       this.#toaster.show(`The service did not restart: ${problem}`);

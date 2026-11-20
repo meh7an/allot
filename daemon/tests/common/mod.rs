@@ -146,11 +146,26 @@ impl Daemon {
     pub async fn start_unpolled() -> Self {
         let machine = Arc::new(Mutex::new(idle_machine()));
         let dir = TempDir::new().unwrap();
-        Self::serve(dir, Config::default(), machine, Duration::from_secs(3_600)).await
+        let config_poll = Duration::from_secs(3_600);
+        Self::serve(dir, Config::default(), machine, config_poll, |_| {}).await
+    }
+
+    /// Starts a daemon that also offers the GNOME extension's interface on the bus at
+    /// `address`, a test's private bus.
+    #[cfg(target_os = "linux")]
+    pub async fn start_on_bus(address: &str) -> Self {
+        let machine = Arc::new(Mutex::new(idle_machine()));
+        let dir = TempDir::new().unwrap();
+        let bus = allotd::bus::PanelBus::Address(address.to_owned());
+        let config_poll = Duration::from_millis(20);
+        Self::serve(dir, Config::default(), machine, config_poll, |options| {
+            options.bus = bus;
+        })
+        .await
     }
 
     pub async fn serve_in(dir: TempDir, config: Config, machine: Arc<Mutex<RawSample>>) -> Self {
-        Self::serve(dir, config, machine, Duration::from_millis(20)).await
+        Self::serve(dir, config, machine, Duration::from_millis(20), |_| {}).await
     }
 
     async fn serve(
@@ -158,12 +173,13 @@ impl Daemon {
         config: Config,
         machine: Arc<Mutex<RawSample>>,
         config_poll: Duration,
+        adjust: impl FnOnce(&mut DaemonOptions),
     ) -> Self {
         let pool = open_pool(&database(&dir)).unwrap();
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let base = format!("http://{}", listener.local_addr().unwrap());
         let sampled = machine.clone();
-        let options = DaemonOptions {
+        let mut options = DaemonOptions {
             config,
             token: TOKEN.into(),
             pool,
@@ -176,7 +192,10 @@ impl Daemon {
             },
             scopes: Scopes::disabled(),
             stop_file: Some(dir.path().join("stopped.json")),
+            #[cfg(target_os = "linux")]
+            bus: allotd::bus::PanelBus::Off,
         };
+        adjust(&mut options);
         let (stop, stopped) = oneshot::channel::<()>();
         let server = tokio::spawn(allotd::serve(listener, options, async {
             let _ = stopped.await;

@@ -1,109 +1,177 @@
 import Gio from "gi://Gio";
 import GLib from "gi://GLib";
-import Soup from "gi://Soup?version=3.0";
 
-import { CancelledError, DaemonClient, TimeoutError } from "./lib/client.js";
+import { BusClient, BusRefusal } from "./lib/bus-client.js";
+import { CancelledError, TimeoutError } from "./lib/client.js";
 
-/** @import { HttpRequest, HttpResponse } from "./lib/client.js" */
+/** @import { BusCall } from "./lib/bus-client.js" */
 /** @import { Timers } from "./lib/poller.js" */
 
-Gio._promisify(Soup.Session.prototype, "send_and_read_async");
+Gio._promisify(Gio.DBusConnection.prototype, "call");
 Gio._promisify(Gio.File.prototype, "load_contents_async");
 Gio._promisify(Gio.File.prototype, "replace_contents_bytes_async", "replace_contents_finish");
 Gio._promisify(Gio.File.prototype, "query_info_async");
 Gio._promisify(Gio.Subprocess.prototype, "wait_check_async");
 
+// allotd's D-Bus interface (`daemon/src/bus.rs`).
+const NAME = "tech.mehran.Allot";
+const PATH = "/tech/mehran/Allot";
+const INTERFACE = "tech.mehran.Allot1";
+const ERROR_PREFIX = `${INTERFACE}.Error.`;
+const PROPERTIES = "org.freedesktop.DBus.Properties";
+const NO_REPLY = "org.freedesktop.DBus.Error.NoReply";
+const VERSION_TIMEOUT_MS = 3000;
+
 /**
- * How the shell and the Settings window reach allotd: the one place that picks the transport,
- * so moving to D-Bus (M6.1b) replaces this class and leaves its callers, which see only the
- * client, as they are. Today it is loopback HTTP through libsoup.
+ * How the shell and the Settings window reach allotd: its interface on the session bus. It
+ * watches allotd's name, so a start or a stop shows at once and nothing is called while allotd
+ * is away, and it passes on `JobsChanged`.
  */
 export class DaemonConnection {
-  #transport = new SoupTransport();
+  /**
+   * Called when allotd takes or leaves its name on the bus.
+   *
+   * @type {(() => void) | null}
+   */
+  onOwnerChanged = null;
+
+  /**
+   * Called when allotd says a lease was queued, started, ended or killed.
+   *
+   * @type {(() => void) | null}
+   */
+  onJobsChanged = null;
+
+  #cancellable = new Gio.Cancellable();
+  /** @type {boolean | null} */
+  #hasOwner = null;
+  #watchId;
+  #signalId;
+
+  constructor() {
+    this.#watchId = Gio.bus_watch_name(
+      Gio.BusType.SESSION,
+      NAME,
+      Gio.BusNameWatcherFlags.NONE,
+      () => this.#ownerChanged(true),
+      () => this.#ownerChanged(false),
+    );
+    this.#signalId = Gio.DBus.session.signal_subscribe(
+      NAME,
+      INTERFACE,
+      "JobsChanged",
+      PATH,
+      null,
+      Gio.DBusSignalFlags.NONE,
+      () => this.onJobsChanged?.(),
+    );
+  }
 
   /**
    * A client over this connection; every client of one connection shares its `cancel`.
    *
-   * @param {object} options
-   * @param {number} options.port allotd's loopback port.
-   * @param {() => Promise<string | null>} options.readToken Read on first use and after a 401.
-   * @returns {DaemonClient}
+   * @returns {BusClient}
    */
-  client(options) {
-    return new DaemonClient({ ...options, send: this.#transport.send });
+  client() {
+    return new BusClient({
+      call: (call) => this.#call(call),
+      version: () => this.#version(),
+      hasOwner: () => this.#hasOwner,
+    });
   }
 
-  /** Ends every request in flight. */
-  cancel() {
-    this.#transport.cancel();
-  }
-}
-
-/** Sends the client's requests with libsoup; `cancel` ends every one in flight. */
-class SoupTransport {
-  // One session per timeout: a session's timeout applies to all its requests, and a poll must
-  // not shorten the wait of a kill in flight.
-  /** @type {Map<number, Soup.Session>} */
-  #sessions = new Map();
-  #cancellable = new Gio.Cancellable();
-
-  /**
-   * @param {HttpRequest} request
-   * @returns {Promise<HttpResponse>}
-   */
-  send = async (request) => {
-    const message = Soup.Message.new(request.method, request.url);
-    if (request.token !== null) {
-      message.request_headers.append("Authorization", `Bearer ${request.token}`);
-    }
-    if (request.body !== undefined) {
-      const bytes = new GLib.Bytes(new TextEncoder().encode(request.body));
-      message.set_request_body_from_bytes("application/json", bytes);
-    }
-    try {
-      const bytes = await this.#session(request.timeoutSecs).send_and_read_async(
-        message,
-        GLib.PRIORITY_DEFAULT,
-        this.#cancellable,
-      );
-      const body = new TextDecoder().decode(bytes.get_data() ?? new Uint8Array());
-      return { status: message.get_status(), body };
-    } catch (error) {
-      if (this.#cancellable.is_cancelled()) {
-        throw new CancelledError();
-      }
-      if (
-        error instanceof GLib.Error &&
-        error.matches(Gio.IOErrorEnum, Gio.IOErrorEnum.TIMED_OUT)
-      ) {
-        throw new TimeoutError();
-      }
-      throw error;
-    }
-  };
-
+  /** Ends every call in flight, and stops watching allotd. */
   cancel() {
     this.#cancellable.cancel();
-    for (const session of this.#sessions.values()) {
-      session.abort();
+    this.stopWatching();
+  }
+
+  /** Stops watching allotd's name and signal; calls in flight still finish. */
+  stopWatching() {
+    if (this.#watchId !== 0) {
+      Gio.bus_unwatch_name(this.#watchId);
+      Gio.DBus.session.signal_unsubscribe(this.#signalId);
+      this.#watchId = 0;
+    }
+  }
+
+  /** @param {boolean} hasOwner */
+  #ownerChanged(hasOwner) {
+    this.#hasOwner = hasOwner;
+    this.onOwnerChanged?.();
+  }
+
+  /**
+   * @param {BusCall} call
+   * @returns {Promise<string | null>}
+   */
+  async #call(call) {
+    const args = call.signature === null ? null : new GLib.Variant(call.signature, call.args);
+    const reply = await this.#send(INTERFACE, call.method, args, call.timeoutMs);
+    const [json] = reply.recursiveUnpack();
+    return typeof json === "string" ? json : null;
+  }
+
+  /** @returns {Promise<string>} */
+  async #version() {
+    const args = new GLib.Variant("(ss)", [INTERFACE, "Version"]);
+    const reply = await this.#send(PROPERTIES, "Get", args, VERSION_TIMEOUT_MS);
+    const [version] = reply.recursiveUnpack();
+    return String(version);
+  }
+
+  /**
+   * One method call to allotd. allotd is never started by the bus: Start service does that.
+   *
+   * @param {string} iface
+   * @param {string} method
+   * @param {GLib.Variant | null} args
+   * @param {number} timeoutMs
+   * @returns {Promise<GLib.Variant>}
+   */
+  async #send(iface, method, args, timeoutMs) {
+    try {
+      return await Gio.DBus.session.call(
+        NAME,
+        PATH,
+        iface,
+        method,
+        args,
+        null,
+        Gio.DBusCallFlags.NO_AUTO_START,
+        timeoutMs,
+        this.#cancellable,
+      );
+    } catch (error) {
+      throw this.#failure(error);
     }
   }
 
   /**
-   * @param {number} timeoutSecs
-   * @returns {Soup.Session}
+   * The error the client expects for a failed call.
+   *
+   * @param {unknown} error
+   * @returns {unknown}
    */
-  #session(timeoutSecs) {
-    let session = this.#sessions.get(timeoutSecs);
-    if (session === undefined) {
-      // allotd only listens on loopback, which a system proxy must never see.
-      session = new Soup.Session({
-        proxy_resolver: Gio.SimpleProxyResolver.new(null, null),
-        timeout: timeoutSecs,
-      });
-      this.#sessions.set(timeoutSecs, session);
+  #failure(error) {
+    if (this.#cancellable.is_cancelled()) {
+      return new CancelledError();
     }
-    return session;
+    if (!(error instanceof GLib.Error)) {
+      return error;
+    }
+    if (error.matches(Gio.IOErrorEnum, Gio.IOErrorEnum.TIMED_OUT)) {
+      return new TimeoutError();
+    }
+    const name = Gio.DBusError.get_remote_error(error);
+    if (name === NO_REPLY) {
+      return new TimeoutError();
+    }
+    if (name?.startsWith(ERROR_PREFIX)) {
+      Gio.DBusError.strip_remote_error(error);
+      return new BusRefusal(name.slice(ERROR_PREFIX.length), error.message);
+    }
+    return error;
   }
 }
 

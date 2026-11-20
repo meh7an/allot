@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { test } from "node:test";
 
 import { EXTENSION_DIR, REPO_DIR } from "./support.mjs";
@@ -12,6 +12,17 @@ test("the contract module is an unchanged copy of the generated one", () => {
     copy.equals(generated),
     "copy contract/typescript/contract.g.mjs to apps/gnome/allot@mehran.tech/",
   );
+});
+
+test("the extension reaches allotd over D-Bus only: no libsoup anywhere in it", () => {
+  const files = readdirSync(EXTENSION_DIR, { recursive: true, encoding: "utf8" });
+  const scripts = files.filter((name) => name.endsWith(".js") || name.endsWith(".mjs"));
+
+  assert.ok(scripts.length > 0);
+  for (const name of scripts) {
+    const text = readFileSync(new URL(name.replaceAll("\\", "/"), EXTENSION_DIR), "utf8");
+    assert.doesNotMatch(text, /soup/i, `${name} mentions libsoup`);
+  }
 });
 
 test("metadata names the folder's UUID and GNOME Shell 48 to 51", () => {
