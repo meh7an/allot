@@ -61,6 +61,17 @@
  */
 
 /**
+ * Every allotd setting, page by page, in the order the Settings window shows them.
+ *
+ * Panels add what holds no key themselves: the Panel page of their own settings, live
+ * explanations, the command test, the service status, the config file row and Reset.
+ *
+ * @typedef {object} SettingsSpec
+ * @property {SettingsPageSpec[]} pages
+ *   The pages, in window order.
+ */
+
+/**
  * How well a GPU source measures something per process.
  *
  * - `exact`: Measured per process.
@@ -137,6 +148,16 @@
  */
 
 /**
+ * One end of a number's range.
+ *
+ * @typedef {object} Bound
+ * @property {boolean} exclusive
+ *   Whether the limit itself is out of range.
+ * @property {number} value
+ *   The limit.
+ */
+
+/**
  * One process, identified across PID reuse.
  *
  * @typedef {object} BoundProcess
@@ -144,6 +165,16 @@
  *   Process ID.
  * @property {number} start_time
  *   Start time of `pid` in seconds since the Unix epoch, as in `Holder::pid_start_time`.
+ */
+
+/**
+ * One value of a choice.
+ *
+ * @typedef {object} ChoiceOption
+ * @property {string} label
+ *   The value as the panel shows it.
+ * @property {string} value
+ *   The value written to the file.
  */
 
 /**
@@ -263,6 +294,22 @@
  *   Seconds since the daemon started.
  * @property {string} version
  *   Daemon version, from its `Cargo.toml`.
+ */
+
+/**
+ * Marks a simple command as heavy when its program and arguments match.
+ *
+ * Matching ignores case, and `*` matches any run of characters.
+ *
+ * @typedef {object} HeavyRule
+ * @property {string[]} args
+ *   Any one of these makes the command heavy; empty matches any arguments. A pattern that
+ *   starts with `-` matches that flag anywhere in the command; any other pattern matches
+ *   the first positional argument (the first one not starting with `-` or `+`).
+ * @property {JobClass} class
+ *   Class the matched command needs a lease for.
+ * @property {string} program
+ *   Program name without directory or extension, for example `cargo` or `python*`.
  */
 
 /**
@@ -497,6 +544,42 @@
  */
 
 /**
+ * A switch that turns a numeric feature off by writing one value.
+ *
+ * @typedef {object} OffSwitch
+ * @property {string} help
+ *   The switch's help.
+ * @property {string} label
+ *   The switch's label, describing the on state.
+ * @property {number} value
+ *   The value written while the switch is off.
+ */
+
+/**
+ * An operating system a panel runs on.
+ *
+ * - `windows`: The Windows tray.
+ * - `macos`: The macOS menu bar app.
+ * - `linux`: The GNOME extension and the KDE widget.
+ *
+ * @typedef {"windows" | "macos" | "linux"} Platform
+ */
+
+/**
+ * What a number counts.
+ *
+ * - `percent`: A share from 0 to 100.
+ * - `runs`: A number of job runs.
+ * - `days`: A number of days.
+ * - `seconds`: A duration in seconds; panels may show it in minutes or hours.
+ * - `cores`: Logical cores; fractions are allowed.
+ * - `megabytes`: Memory in megabytes; panels may show it in gigabytes.
+ * - `port`: A TCP port, shown without digit grouping.
+ *
+ * @typedef {"percent" | "runs" | "days" | "seconds" | "cores" | "megabytes" | "port"} Quantity
+ */
+
+/**
  * A queued lease and why it waits.
  *
  * @typedef {object} QueuedJob
@@ -548,6 +631,16 @@
  */
 
 /**
+ * A switch another setting depends on.
+ *
+ * @typedef {object} Requirement
+ * @property {string} key
+ *   The switch's key.
+ * @property {string} note
+ *   Shown under the disabled setting while the switch is off.
+ */
+
+/**
  * Resources used by a process or a group of processes, in the units of `JobProfile`.
  *
  * @typedef {object} ResourceUsage
@@ -559,6 +652,19 @@
  *   Resident memory; on macOS the physical footprint, as Activity Monitor shows it.
  * @property {number} vram_mb
  *   Dedicated video memory.
+ */
+
+/**
+ * The name field of a row the user adds or renames.
+ *
+ * @typedef {object} RowName
+ * @property {string} help
+ *   The field's help.
+ * @property {string} label
+ *   The field's label.
+ * @property {string} pattern
+ *   A regular expression the whole name must match. A name must also differ from every
+ *   other row's and from every class's.
  */
 
 /**
@@ -576,6 +682,176 @@
  *   Nearest-rank 90th percentile of each value, which estimates raise and lower to.
  * @property {number} runs
  *   Runs the statistics come from.
+ */
+
+/**
+ * How a setting is edited.
+ *
+ * @typedef {(
+ *   | SettingControlSwitch
+ *   | SettingControlNumber
+ *   | SettingControlText
+ *   | SettingControlChoice
+ *   | SettingControlStringList
+ *   | SettingControlSizeTable
+ *   | SettingControlRuleList
+ * )} SettingControl
+ */
+
+/**
+ * On or off.
+ *
+ * @typedef {object} SettingControlSwitch
+ * @property {"switch"} kind
+ * @property {boolean} default
+ *   The value while the key is not in the file.
+ */
+
+/**
+ * A number in a unit, written to the file in that unit.
+ *
+ * @typedef {object} SettingControlNumber
+ * @property {"number"} kind
+ * @property {string | null} automatic
+ *   How the value is worked out while the key is left out, when it may be, shown
+ *   beside an Automatic choice.
+ * @property {number | null} default
+ *   The value while the key is not in the file. In a table's fields, the value a new
+ *   row starts with, or `null` when a new row must give one or `automatic` applies.
+ * @property {boolean} integer
+ *   Whether only whole numbers are allowed.
+ * @property {Bound | null} max
+ *   The largest value allowed, if any besides `max_key`.
+ * @property {string | null} max_key
+ *   A setting this value must be at most, by key; in a table, a field of the same row.
+ * @property {Bound | null} min
+ *   The smallest value allowed, if any besides `min_key`.
+ * @property {string | null} min_key
+ *   A setting this value must be at least, by key; in a table, a field of the same row.
+ * @property {OffSwitch | null} off
+ *   A switch in front of the number, when one value turns the feature off.
+ * @property {Quantity} quantity
+ *   What the number counts, which picks its unit and display.
+ */
+
+/**
+ * A line of text, never blank.
+ *
+ * @typedef {object} SettingControlText
+ * @property {"text"} kind
+ * @property {string | null} pattern
+ *   A regular expression the whole text must match, if any.
+ */
+
+/**
+ * One of a fixed set of values.
+ *
+ * @typedef {object} SettingControlChoice
+ * @property {"choice"} kind
+ * @property {string | null} default
+ *   The value a new item starts with, or `null` when one must be picked.
+ * @property {ChoiceOption[]} options
+ *   The values in display order.
+ */
+
+/**
+ * A list of strings without blank entries; a list in the file replaces the default list.
+ *
+ * @typedef {object} SettingControlStringList
+ * @property {"string_list"} kind
+ * @property {string[]} default
+ *   The list while the key is not in the file.
+ */
+
+/**
+ * Named rows of sizes, such as `[classes.cpu_heavy]`, edited one row at a time. A row
+ * in the file changes only the fields it names.
+ *
+ * @typedef {object} SettingControlSizeTable
+ * @property {"size_table"} kind
+ * @property {SettingSpec[]} fields
+ *   The fields of every row.
+ * @property {RowName | null} new_row_name
+ *   How a row added by the user is named, or `null` when rows cannot be added,
+ *   renamed or deleted.
+ * @property {SizeRowSpec[]} rows
+ *   The built-in rows with their defaults, which always exist.
+ */
+
+/**
+ * An ordered list of heavy-command rules, always written whole. A list in the file, even
+ * an empty one, replaces the default list; removing the key brings the default back.
+ *
+ * @typedef {object} SettingControlRuleList
+ * @property {"rule_list"} kind
+ * @property {HeavyRule[]} default
+ *   The list while the key is not in the file.
+ * @property {SettingSpec[]} fields
+ *   The fields of every rule.
+ */
+
+/**
+ * One setting: a key of `config.toml`, or a field of a table row or rule.
+ *
+ * @typedef {object} SettingSpec
+ * @property {boolean} advanced
+ *   Whether the setting is rarely changed and shows last on its page, under Advanced.
+ * @property {SettingControl} control
+ *   How the value is edited, with its default and range.
+ * @property {string} help
+ *   One or two plain sentences. Panels show the key after them.
+ * @property {string} key
+ *   The TOML key: a dotted path such as `admission.headroom_pct` for a setting on a page,
+ *   or the key inside a row, such as `cores`, for a field of a table or rule.
+ * @property {string} label
+ *   A noun phrase in sentence case; a switch's label describes the on state.
+ * @property {boolean} needs_restart
+ *   Whether a change takes effect only once allotd restarts.
+ * @property {Platform[]} platforms
+ *   The operating systems whose panels show the setting; empty means every one.
+ * @property {Requirement | null} requires
+ *   A switch that must be on for this setting to act; panels disable it while it is off.
+ */
+
+/**
+ * A titled group of settings on a page.
+ *
+ * @typedef {object} SettingsGroupSpec
+ * @property {string} id
+ *   Stable identifier, unique on its page, such as `learn`.
+ * @property {string} label
+ *   The group's title.
+ * @property {SettingSpec[]} settings
+ *   The settings, in group order.
+ */
+
+/**
+ * A page of the Settings window.
+ *
+ * @typedef {object} SettingsPageSpec
+ * @property {SettingsGroupSpec[]} groups
+ *   The groups, in page order.
+ * @property {string} id
+ *   Stable identifier, such as `admission`.
+ * @property {string | null} intro
+ *   A sentence under the title, if the page has one.
+ * @property {string} label
+ *   The page's title.
+ */
+
+/**
+ * A built-in row of a size table.
+ *
+ * @typedef {object} SizeRowSpec
+ * @property {JobProfile} default
+ *   The row's values while the file does not change them.
+ * @property {number | null} default_min_cores
+ *   The row's minimum cores while the file names none; `null` follows the field's
+ *   automatic rule.
+ * @property {string} label
+ *   The row as the panel shows it.
+ * @property {string} name
+ *   The row's key in the file, such as `cpu_heavy`.
  */
 
 /**
@@ -670,6 +946,11 @@ const TYPES = {
       lease: { type: "Lease" },
     },
   },
+  SettingsSpec: {
+    fields: {
+      pages: { array: { type: "SettingsPageSpec" } },
+    },
+  },
   Accuracy: { values: ["exact", "estimated", "unavailable"] },
   ActiveJob: {
     fields: {
@@ -705,10 +986,22 @@ const TYPES = {
       },
     },
   },
+  Bound: {
+    fields: {
+      exclusive: { type: "boolean" },
+      value: { type: "double" },
+    },
+  },
   BoundProcess: {
     fields: {
       pid: { type: "uint32" },
       start_time: { type: "uint64" },
+    },
+  },
+  ChoiceOption: {
+    fields: {
+      label: { type: "string" },
+      value: { type: "string" },
     },
   },
   CpuMeter: {
@@ -765,6 +1058,13 @@ const TYPES = {
       pid: { type: "uint32" },
       uptime_secs: { type: "uint64" },
       version: { type: "string" },
+    },
+  },
+  HeavyRule: {
+    fields: {
+      args: { array: { type: "string" }, absent: [] },
+      class: { type: "JobClass" },
+      program: { type: "string" },
     },
   },
   Holder: {
@@ -866,6 +1166,15 @@ const TYPES = {
       tool_use_id: { type: "string", nullable: true, absent: null },
     },
   },
+  OffSwitch: {
+    fields: {
+      help: { type: "string" },
+      label: { type: "string" },
+      value: { type: "double" },
+    },
+  },
+  Platform: { values: ["windows", "macos", "linux"] },
+  Quantity: { values: ["percent", "runs", "days", "seconds", "cores", "megabytes", "port"] },
   QueuedJob: {
     fields: {
       lease: { type: "Lease" },
@@ -894,6 +1203,12 @@ const TYPES = {
       stats: { type: "RunStats", nullable: true, absent: null },
     },
   },
+  Requirement: {
+    fields: {
+      key: { type: "string" },
+      note: { type: "string" },
+    },
+  },
   ResourceUsage: {
     fields: {
       cores: { type: "float" },
@@ -902,12 +1217,106 @@ const TYPES = {
       vram_mb: { type: "uint64" },
     },
   },
+  RowName: {
+    fields: {
+      help: { type: "string" },
+      label: { type: "string" },
+      pattern: { type: "string" },
+    },
+  },
   RunStats: {
     fields: {
       max: { type: "JobProfile" },
       median: { type: "JobProfile" },
       p90: { type: "JobProfile" },
       runs: { type: "uint32" },
+    },
+  },
+  SettingControl: {
+    tag: "kind",
+    variants: {
+      switch: {
+        fields: {
+          default: { type: "boolean" },
+        },
+      },
+      number: {
+        fields: {
+          automatic: { type: "string", nullable: true, absent: null },
+          default: { type: "double", nullable: true, absent: null },
+          integer: { type: "boolean" },
+          max: { type: "Bound", nullable: true, absent: null },
+          max_key: { type: "string", nullable: true, absent: null },
+          min: { type: "Bound", nullable: true, absent: null },
+          min_key: { type: "string", nullable: true, absent: null },
+          off: { type: "OffSwitch", nullable: true, absent: null },
+          quantity: { type: "Quantity" },
+        },
+      },
+      text: {
+        fields: {
+          pattern: { type: "string", nullable: true, absent: null },
+        },
+      },
+      choice: {
+        fields: {
+          default: { type: "string", nullable: true, absent: null },
+          options: { array: { type: "ChoiceOption" } },
+        },
+      },
+      string_list: {
+        fields: {
+          default: { array: { type: "string" } },
+        },
+      },
+      size_table: {
+        fields: {
+          fields: { array: { type: "SettingSpec" } },
+          new_row_name: { type: "RowName", nullable: true, absent: null },
+          rows: { array: { type: "SizeRowSpec" } },
+        },
+      },
+      rule_list: {
+        fields: {
+          default: { array: { type: "HeavyRule" } },
+          fields: { array: { type: "SettingSpec" } },
+        },
+      },
+    },
+  },
+  SettingSpec: {
+    fields: {
+      advanced: { type: "boolean" },
+      control: { type: "SettingControl" },
+      help: { type: "string" },
+      key: { type: "string" },
+      label: { type: "string" },
+      needs_restart: { type: "boolean" },
+      platforms: { array: { type: "Platform" } },
+      requires: { type: "Requirement", nullable: true, absent: null },
+    },
+  },
+  SettingsGroupSpec: {
+    fields: {
+      id: { type: "string" },
+      label: { type: "string" },
+      settings: { array: { type: "SettingSpec" } },
+    },
+  },
+  SettingsPageSpec: {
+    fields: {
+      groups: { array: { type: "SettingsGroupSpec" } },
+      id: { type: "string" },
+      intro: { type: "string", nullable: true, absent: null },
+      label: { type: "string" },
+    },
+  },
+  SizeRowSpec: {
+    fields: {
+      default: { type: "JobProfile" },
+      default_min_cores: { type: "float", nullable: true, absent: null },
+      label: { type: "string" },
+      name: { type: "string" },
     },
   },
   UiSession: {
@@ -1137,4 +1546,15 @@ export function decodeKillResponse(json) {
  */
 export function decodeRemoveResponse(json) {
   return /** @type {RemoveResponse} */ (decodeType(json, "RemoveResponse", "RemoveResponse"));
+}
+
+/**
+ * Decodes a parsed `SettingsSpec` body.
+ *
+ * @param {unknown} json The value `JSON.parse` returned.
+ * @returns {SettingsSpec}
+ * @throws {ContractError} When the value does not match the contract.
+ */
+export function decodeSettingsSpec(json) {
+  return /** @type {SettingsSpec} */ (decodeType(json, "SettingsSpec", "SettingsSpec"));
 }

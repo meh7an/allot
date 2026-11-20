@@ -512,7 +512,7 @@ impl ProfileOverride {
 pub struct Presets(pub BTreeMap<String, Sizing>);
 
 /// Run time of a new preset that gives none.
-const PRESET_EST_SECS: u64 = 300;
+pub(crate) const PRESET_EST_SECS: u64 = 300;
 
 impl Presets {
     /// The sizing of preset `name`.
@@ -614,6 +614,7 @@ impl Default for ClassifierConfig {
 /// Marks a simple command as heavy when its program and arguments match.
 ///
 /// Matching ignores case, and `*` matches any run of characters.
+#[cfg_attr(any(feature = "schema", test), derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct HeavyRule {

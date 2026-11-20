@@ -9,6 +9,7 @@ mod error;
 pub mod mutate;
 pub mod paths;
 pub mod platform;
+pub mod settings;
 #[cfg(test)]
 mod test_support;
 pub mod types;

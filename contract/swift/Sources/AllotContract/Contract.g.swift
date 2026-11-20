@@ -102,6 +102,19 @@ public struct RemoveResponse: Codable, Sendable, Equatable {
     }
 }
 
+/// Every allotd setting, page by page, in the order the Settings window shows them.
+///
+/// Panels add what holds no key themselves: the Panel page of their own settings, live
+/// explanations, the command test, the service status, the config file row and Reset.
+public struct SettingsSpec: Codable, Sendable, Equatable {
+    /// The pages, in window order.
+    public let pages: [SettingsPageSpec]
+
+    private enum CodingKeys: String, CodingKey {
+        case pages
+    }
+}
+
 /// How well a GPU source measures something per process.
 public enum Accuracy: String, Codable, Sendable, Equatable {
     /// Measured per process.
@@ -237,6 +250,20 @@ public enum BenchmarkProgress: Codable, Sendable, Equatable {
     }
 }
 
+/// One end of a number's range.
+public struct Bound: Codable, Sendable, Equatable {
+    /// Whether the limit itself is out of range.
+    public let exclusive: Bool
+
+    /// The limit.
+    public let value: Double
+
+    private enum CodingKeys: String, CodingKey {
+        case exclusive
+        case value
+    }
+}
+
 /// One process, identified across PID reuse.
 public struct BoundProcess: Codable, Sendable, Equatable {
     /// Process ID.
@@ -248,6 +275,20 @@ public struct BoundProcess: Codable, Sendable, Equatable {
     private enum CodingKeys: String, CodingKey {
         case pid
         case startTime = "start_time"
+    }
+}
+
+/// One value of a choice.
+public struct ChoiceOption: Codable, Sendable, Equatable {
+    /// The value as the panel shows it.
+    public let label: String
+
+    /// The value written to the file.
+    public let value: String
+
+    private enum CodingKeys: String, CodingKey {
+        case label
+        case value
     }
 }
 
@@ -444,6 +485,35 @@ public struct HealthResponse: Codable, Sendable, Equatable {
         case pid
         case uptimeSecs = "uptime_secs"
         case version
+    }
+}
+
+/// Marks a simple command as heavy when its program and arguments match.
+///
+/// Matching ignores case, and `*` matches any run of characters.
+public struct HeavyRule: Codable, Sendable, Equatable {
+    /// Any one of these makes the command heavy; empty matches any arguments. A pattern that
+    /// starts with `-` matches that flag anywhere in the command; any other pattern matches
+    /// the first positional argument (the first one not starting with `-` or `+`).
+    public let args: [String]
+
+    /// Class the matched command needs a lease for.
+    public let `class`: JobClass
+
+    /// Program name without directory or extension, for example `cargo` or `python*`.
+    public let program: String
+
+    private enum CodingKeys: String, CodingKey {
+        case args
+        case `class`
+        case program
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.args = try container.decodeIfPresent([String].self, forKey: .args) ?? []
+        self.`class` = try container.decode(JobClass.self, forKey: .`class`)
+        self.program = try container.decode(String.self, forKey: .program)
     }
 }
 
@@ -810,6 +880,52 @@ public struct Notice: Codable, Sendable, Equatable {
     }
 }
 
+/// A switch that turns a numeric feature off by writing one value.
+public struct OffSwitch: Codable, Sendable, Equatable {
+    /// The switch's help.
+    public let help: String
+
+    /// The switch's label, describing the on state.
+    public let label: String
+
+    /// The value written while the switch is off.
+    public let value: Double
+
+    private enum CodingKeys: String, CodingKey {
+        case help
+        case label
+        case value
+    }
+}
+
+/// An operating system a panel runs on.
+public enum Platform: String, Codable, Sendable, Equatable {
+    /// The Windows tray.
+    case windows
+    /// The macOS menu bar app.
+    case macos
+    /// The GNOME extension and the KDE widget.
+    case linux
+}
+
+/// What a number counts.
+public enum Quantity: String, Codable, Sendable, Equatable {
+    /// A share from 0 to 100.
+    case percent
+    /// A number of job runs.
+    case runs
+    /// A number of days.
+    case days
+    /// A duration in seconds; panels may show it in minutes or hours.
+    case seconds
+    /// Logical cores; fractions are allowed.
+    case cores
+    /// Memory in megabytes; panels may show it in gigabytes.
+    case megabytes
+    /// A TCP port, shown without digit grouping.
+    case port
+}
+
 /// A queued lease and why it waits.
 public struct QueuedJob: Codable, Sendable, Equatable {
     /// The lease.
@@ -893,6 +1009,20 @@ public struct RecentRun: Codable, Sendable, Equatable {
     }
 }
 
+/// A switch another setting depends on.
+public struct Requirement: Codable, Sendable, Equatable {
+    /// The switch's key.
+    public let key: String
+
+    /// Shown under the disabled setting while the switch is off.
+    public let note: String
+
+    private enum CodingKeys: String, CodingKey {
+        case key
+        case note
+    }
+}
+
 /// Resources used by a process or a group of processes, in the units of `JobProfile`.
 public struct ResourceUsage: Codable, Sendable, Equatable {
     /// CPU load in logical cores, for example `2.5` for two and a half busy cores.
@@ -912,6 +1042,25 @@ public struct ResourceUsage: Codable, Sendable, Equatable {
         case gpuPct = "gpu_pct"
         case ramMb = "ram_mb"
         case vramMb = "vram_mb"
+    }
+}
+
+/// The name field of a row the user adds or renames.
+public struct RowName: Codable, Sendable, Equatable {
+    /// The field's help.
+    public let help: String
+
+    /// The field's label.
+    public let label: String
+
+    /// A regular expression the whole name must match. A name must also differ from every
+    /// other row's and from every class's.
+    public let pattern: String
+
+    private enum CodingKeys: String, CodingKey {
+        case help
+        case label
+        case pattern
     }
 }
 
@@ -937,6 +1086,302 @@ public struct RunStats: Codable, Sendable, Equatable {
         case median
         case p90
         case runs
+    }
+}
+
+/// How a setting is edited.
+public enum SettingControl: Codable, Sendable, Equatable {
+    /// On or off.
+    case `switch`(Switch)
+    /// A number in a unit, written to the file in that unit.
+    case number(Number)
+    /// A line of text, never blank.
+    case text(Text)
+    /// One of a fixed set of values.
+    case choice(Choice)
+    /// A list of strings without blank entries; a list in the file replaces the default list.
+    case stringList(StringList)
+    /// Named rows of sizes, such as `[classes.cpu_heavy]`, edited one row at a time. A row
+    /// in the file changes only the fields it names.
+    case sizeTable(SizeTable)
+    /// An ordered list of heavy-command rules, always written whole. A list in the file, even
+    /// an empty one, replaces the default list; removing the key brings the default back.
+    case ruleList(RuleList)
+
+    /// On or off.
+    public struct Switch: Codable, Sendable, Equatable {
+        /// The value while the key is not in the file.
+        public let `default`: Bool
+
+        private enum CodingKeys: String, CodingKey {
+            case `default`
+        }
+    }
+
+    /// A number in a unit, written to the file in that unit.
+    public struct Number: Codable, Sendable, Equatable {
+        /// How the value is worked out while the key is left out, when it may be, shown
+        /// beside an Automatic choice.
+        public let automatic: String?
+
+        /// The value while the key is not in the file. In a table's fields, the value a new
+        /// row starts with, or `nil` when a new row must give one or `automatic` applies.
+        public let `default`: Double?
+
+        /// Whether only whole numbers are allowed.
+        public let integer: Bool
+
+        /// The largest value allowed, if any besides `max_key`.
+        public let max: Bound?
+
+        /// A setting this value must be at most, by key; in a table, a field of the same row.
+        public let maxKey: String?
+
+        /// The smallest value allowed, if any besides `min_key`.
+        public let min: Bound?
+
+        /// A setting this value must be at least, by key; in a table, a field of the same row.
+        public let minKey: String?
+
+        /// A switch in front of the number, when one value turns the feature off.
+        public let off: OffSwitch?
+
+        /// What the number counts, which picks its unit and display.
+        public let quantity: Quantity
+
+        private enum CodingKeys: String, CodingKey {
+            case automatic
+            case `default`
+            case integer
+            case max
+            case maxKey = "max_key"
+            case min
+            case minKey = "min_key"
+            case off
+            case quantity
+        }
+    }
+
+    /// A line of text, never blank.
+    public struct Text: Codable, Sendable, Equatable {
+        /// A regular expression the whole text must match, if any.
+        public let pattern: String?
+
+        private enum CodingKeys: String, CodingKey {
+            case pattern
+        }
+    }
+
+    /// One of a fixed set of values.
+    public struct Choice: Codable, Sendable, Equatable {
+        /// The value a new item starts with, or `nil` when one must be picked.
+        public let `default`: String?
+
+        /// The values in display order.
+        public let options: [ChoiceOption]
+
+        private enum CodingKeys: String, CodingKey {
+            case `default`
+            case options
+        }
+    }
+
+    /// A list of strings without blank entries; a list in the file replaces the default list.
+    public struct StringList: Codable, Sendable, Equatable {
+        /// The list while the key is not in the file.
+        public let `default`: [String]
+
+        private enum CodingKeys: String, CodingKey {
+            case `default`
+        }
+    }
+
+    /// Named rows of sizes, such as `[classes.cpu_heavy]`, edited one row at a time. A row
+    /// in the file changes only the fields it names.
+    public struct SizeTable: Codable, Sendable, Equatable {
+        /// The fields of every row.
+        public let fields: [SettingSpec]
+
+        /// How a row added by the user is named, or `nil` when rows cannot be added,
+        /// renamed or deleted.
+        public let newRowName: RowName?
+
+        /// The built-in rows with their defaults, which always exist.
+        public let rows: [SizeRowSpec]
+
+        private enum CodingKeys: String, CodingKey {
+            case fields
+            case newRowName = "new_row_name"
+            case rows
+        }
+    }
+
+    /// An ordered list of heavy-command rules, always written whole. A list in the file, even
+    /// an empty one, replaces the default list; removing the key brings the default back.
+    public struct RuleList: Codable, Sendable, Equatable {
+        /// The list while the key is not in the file.
+        public let `default`: [HeavyRule]
+
+        /// The fields of every rule.
+        public let fields: [SettingSpec]
+
+        private enum CodingKeys: String, CodingKey {
+            case `default`
+            case fields
+        }
+    }
+
+    private enum TagCodingKeys: String, CodingKey {
+        case kind
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: TagCodingKeys.self)
+        let tag = try container.decode(String.self, forKey: .kind)
+        switch tag {
+        case "switch": self = try .`switch`(Switch(from: decoder))
+        case "number": self = try .number(Number(from: decoder))
+        case "text": self = try .text(Text(from: decoder))
+        case "choice": self = try .choice(Choice(from: decoder))
+        case "string_list": self = try .stringList(StringList(from: decoder))
+        case "size_table": self = try .sizeTable(SizeTable(from: decoder))
+        case "rule_list": self = try .ruleList(RuleList(from: decoder))
+        default:
+            throw DecodingError.dataCorruptedError(
+                forKey: .kind,
+                in: container,
+                debugDescription: "unknown SettingControl kind \(tag)"
+            )
+        }
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: TagCodingKeys.self)
+        switch self {
+        case .`switch`(let variant):
+            try container.encode("switch", forKey: .kind)
+            try variant.encode(to: encoder)
+        case .number(let variant):
+            try container.encode("number", forKey: .kind)
+            try variant.encode(to: encoder)
+        case .text(let variant):
+            try container.encode("text", forKey: .kind)
+            try variant.encode(to: encoder)
+        case .choice(let variant):
+            try container.encode("choice", forKey: .kind)
+            try variant.encode(to: encoder)
+        case .stringList(let variant):
+            try container.encode("string_list", forKey: .kind)
+            try variant.encode(to: encoder)
+        case .sizeTable(let variant):
+            try container.encode("size_table", forKey: .kind)
+            try variant.encode(to: encoder)
+        case .ruleList(let variant):
+            try container.encode("rule_list", forKey: .kind)
+            try variant.encode(to: encoder)
+        }
+    }
+}
+
+/// One setting: a key of `config.toml`, or a field of a table row or rule.
+public struct SettingSpec: Codable, Sendable, Equatable {
+    /// Whether the setting is rarely changed and shows last on its page, under Advanced.
+    public let advanced: Bool
+
+    /// How the value is edited, with its default and range.
+    public let control: SettingControl
+
+    /// One or two plain sentences. Panels show the key after them.
+    public let help: String
+
+    /// The TOML key: a dotted path such as `admission.headroom_pct` for a setting on a page,
+    /// or the key inside a row, such as `cores`, for a field of a table or rule.
+    public let key: String
+
+    /// A noun phrase in sentence case; a switch's label describes the on state.
+    public let label: String
+
+    /// Whether a change takes effect only once allotd restarts.
+    public let needsRestart: Bool
+
+    /// The operating systems whose panels show the setting; empty means every one.
+    public let platforms: [Platform]
+
+    /// A switch that must be on for this setting to act; panels disable it while it is off.
+    public let requires: Requirement?
+
+    private enum CodingKeys: String, CodingKey {
+        case advanced
+        case control
+        case help
+        case key
+        case label
+        case needsRestart = "needs_restart"
+        case platforms
+        case requires
+    }
+}
+
+/// A titled group of settings on a page.
+public struct SettingsGroupSpec: Codable, Sendable, Equatable {
+    /// Stable identifier, unique on its page, such as `learn`.
+    public let id: String
+
+    /// The group's title.
+    public let label: String
+
+    /// The settings, in group order.
+    public let settings: [SettingSpec]
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case label
+        case settings
+    }
+}
+
+/// A page of the Settings window.
+public struct SettingsPageSpec: Codable, Sendable, Equatable {
+    /// The groups, in page order.
+    public let groups: [SettingsGroupSpec]
+
+    /// Stable identifier, such as `admission`.
+    public let id: String
+
+    /// A sentence under the title, if the page has one.
+    public let intro: String?
+
+    /// The page's title.
+    public let label: String
+
+    private enum CodingKeys: String, CodingKey {
+        case groups
+        case id
+        case intro
+        case label
+    }
+}
+
+/// A built-in row of a size table.
+public struct SizeRowSpec: Codable, Sendable, Equatable {
+    /// The row's values while the file does not change them.
+    public let `default`: JobProfile
+
+    /// The row's minimum cores while the file names none; `nil` follows the field's
+    /// automatic rule.
+    public let defaultMinCores: Float?
+
+    /// The row as the panel shows it.
+    public let label: String
+
+    /// The row's key in the file, such as `cpu_heavy`.
+    public let name: String
+
+    private enum CodingKeys: String, CodingKey {
+        case `default`
+        case defaultMinCores = "default_min_cores"
+        case label
+        case name
     }
 }
 

@@ -1,0 +1,945 @@
+{
+  "pages": [
+    {
+      "id": "admission",
+      "label": "Admission",
+      "groups": [
+        {
+          "id": "keep_free",
+          "label": "Keep free for your desktop",
+          "settings": [
+            {
+              "key": "admission.headroom_pct",
+              "label": "Headroom",
+              "help": "Share of cores, memory, GPU and video memory that jobs never get, so your desktop stays responsive.",
+              "control": {
+                "kind": "number",
+                "quantity": "percent",
+                "integer": false,
+                "default": 15.0,
+                "min": {
+                  "value": 0.0,
+                  "exclusive": false
+                },
+                "max": {
+                  "value": 100.0,
+                  "exclusive": true
+                }
+              },
+              "advanced": false,
+              "needs_restart": false,
+              "platforms": []
+            }
+          ]
+        },
+        {
+          "id": "learn",
+          "label": "Learn from past runs",
+          "settings": [
+            {
+              "key": "estimates.lower",
+              "label": "Lower requests that past runs show are too big",
+              "help": "Once a command has used less than it asks for, reserve what it really uses. Requests always rise when runs used more. Benchmarks never lower.",
+              "control": {
+                "kind": "switch",
+                "default": true
+              },
+              "advanced": false,
+              "needs_restart": false,
+              "platforms": []
+            },
+            {
+              "key": "estimates.min_runs",
+              "label": "Runs before lowering",
+              "help": "Clean past runs of the same command in the same folder needed before its request lowers.",
+              "control": {
+                "kind": "number",
+                "quantity": "runs",
+                "integer": true,
+                "default": 3.0,
+                "min": {
+                  "value": 1.0,
+                  "exclusive": false
+                }
+              },
+              "advanced": false,
+              "needs_restart": false,
+              "platforms": [],
+              "requires": {
+                "key": "estimates.lower",
+                "note": "Used only while lowering is on."
+              }
+            },
+            {
+              "key": "estimates.margin_pct",
+              "label": "Safety margin",
+              "help": "Added on top of what past runs used, so a slightly heavier run still fits.",
+              "control": {
+                "kind": "number",
+                "quantity": "percent",
+                "integer": false,
+                "default": 10.0,
+                "min": {
+                  "value": 0.0,
+                  "exclusive": false
+                },
+                "max": {
+                  "value": 100.0,
+                  "exclusive": false
+                }
+              },
+              "advanced": false,
+              "needs_restart": false,
+              "platforms": [],
+              "requires": {
+                "key": "estimates.lower",
+                "note": "Used only while lowering is on."
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "sizes",
+      "label": "Sizes",
+      "intro": "Each heavy command reserves the size of its class. Presets are sizes a session can ask for by name.",
+      "groups": [
+        {
+          "id": "classes",
+          "label": "Classes",
+          "settings": [
+            {
+              "key": "classes",
+              "label": "Classes",
+              "help": "The size each class reserves. The four classes are fixed.",
+              "control": {
+                "kind": "size_table",
+                "rows": [
+                  {
+                    "name": "light",
+                    "label": "Light",
+                    "default": {
+                      "cores": 1.0,
+                      "ram_mb": 512,
+                      "gpu_pct": 0.0,
+                      "vram_mb": 0,
+                      "est_secs": 30
+                    }
+                  },
+                  {
+                    "name": "cpu_heavy",
+                    "label": "CPU heavy",
+                    "default": {
+                      "cores": 8.0,
+                      "ram_mb": 4096,
+                      "gpu_pct": 0.0,
+                      "vram_mb": 0,
+                      "est_secs": 300
+                    }
+                  },
+                  {
+                    "name": "gpu_heavy",
+                    "label": "GPU heavy",
+                    "default": {
+                      "cores": 2.0,
+                      "ram_mb": 4096,
+                      "gpu_pct": 80.0,
+                      "vram_mb": 4096,
+                      "est_secs": 600
+                    }
+                  },
+                  {
+                    "name": "mixed",
+                    "label": "Mixed",
+                    "default": {
+                      "cores": 6.0,
+                      "ram_mb": 8192,
+                      "gpu_pct": 50.0,
+                      "vram_mb": 2048,
+                      "est_secs": 600
+                    }
+                  }
+                ],
+                "fields": [
+                  {
+                    "key": "cores",
+                    "label": "Cores",
+                    "help": "Cores a job of this size reserves. Fractions such as 0.5 are allowed.",
+                    "control": {
+                      "kind": "number",
+                      "quantity": "cores",
+                      "integer": false,
+                      "min": {
+                        "value": 0.0,
+                        "exclusive": false
+                      }
+                    },
+                    "advanced": false,
+                    "needs_restart": false,
+                    "platforms": []
+                  },
+                  {
+                    "key": "min_cores",
+                    "label": "Minimum cores",
+                    "help": "When the machine is busy, a job may start with fewer cores, down to this.",
+                    "control": {
+                      "kind": "number",
+                      "quantity": "cores",
+                      "integer": false,
+                      "min": {
+                        "value": 0.0,
+                        "exclusive": true
+                      },
+                      "max_key": "cores",
+                      "automatic": "half the cores, at least 1"
+                    },
+                    "advanced": false,
+                    "needs_restart": false,
+                    "platforms": []
+                  },
+                  {
+                    "key": "ram_mb",
+                    "label": "Memory",
+                    "help": "Memory a job of this size reserves.",
+                    "control": {
+                      "kind": "number",
+                      "quantity": "megabytes",
+                      "integer": true,
+                      "min": {
+                        "value": 0.0,
+                        "exclusive": false
+                      }
+                    },
+                    "advanced": false,
+                    "needs_restart": false,
+                    "platforms": []
+                  },
+                  {
+                    "key": "gpu_pct",
+                    "label": "GPU",
+                    "help": "Share of the GPU's engines a job reserves.",
+                    "control": {
+                      "kind": "number",
+                      "quantity": "percent",
+                      "integer": false,
+                      "default": 0.0,
+                      "min": {
+                        "value": 0.0,
+                        "exclusive": false
+                      },
+                      "max": {
+                        "value": 100.0,
+                        "exclusive": false
+                      }
+                    },
+                    "advanced": false,
+                    "needs_restart": false,
+                    "platforms": []
+                  },
+                  {
+                    "key": "vram_mb",
+                    "label": "Video memory",
+                    "help": "GPU memory a job reserves.",
+                    "control": {
+                      "kind": "number",
+                      "quantity": "megabytes",
+                      "integer": true,
+                      "default": 0.0,
+                      "min": {
+                        "value": 0.0,
+                        "exclusive": false
+                      }
+                    },
+                    "advanced": false,
+                    "needs_restart": false,
+                    "platforms": []
+                  },
+                  {
+                    "key": "est_secs",
+                    "label": "Expected run time",
+                    "help": "How long a job of this size usually runs. Jobs of 15 s or less may start while a benchmark waits.",
+                    "control": {
+                      "kind": "number",
+                      "quantity": "seconds",
+                      "integer": true,
+                      "default": 300.0,
+                      "min": {
+                        "value": 0.0,
+                        "exclusive": false
+                      }
+                    },
+                    "advanced": false,
+                    "needs_restart": false,
+                    "platforms": []
+                  }
+                ]
+              },
+              "advanced": false,
+              "needs_restart": false,
+              "platforms": []
+            }
+          ]
+        },
+        {
+          "id": "presets",
+          "label": "Presets",
+          "settings": [
+            {
+              "key": "presets",
+              "label": "Presets",
+              "help": "Sizes a session asks for by name. Built-in presets can be changed and reset, not renamed or deleted.",
+              "control": {
+                "kind": "size_table",
+                "rows": [
+                  {
+                    "name": "cpu_medium",
+                    "label": "cpu_medium",
+                    "default": {
+                      "cores": 4.0,
+                      "ram_mb": 2048,
+                      "gpu_pct": 0.0,
+                      "vram_mb": 0,
+                      "est_secs": 180
+                    }
+                  },
+                  {
+                    "name": "cpu_small",
+                    "label": "cpu_small",
+                    "default": {
+                      "cores": 2.0,
+                      "ram_mb": 1024,
+                      "gpu_pct": 0.0,
+                      "vram_mb": 0,
+                      "est_secs": 60
+                    }
+                  },
+                  {
+                    "name": "gpu_small",
+                    "label": "gpu_small",
+                    "default": {
+                      "cores": 1.0,
+                      "ram_mb": 2048,
+                      "gpu_pct": 30.0,
+                      "vram_mb": 2048,
+                      "est_secs": 300
+                    }
+                  },
+                  {
+                    "name": "low_impact",
+                    "label": "low_impact",
+                    "default": {
+                      "cores": 0.25,
+                      "ram_mb": 256,
+                      "gpu_pct": 0.0,
+                      "vram_mb": 0,
+                      "est_secs": 60
+                    }
+                  },
+                  {
+                    "name": "quick",
+                    "label": "quick",
+                    "default": {
+                      "cores": 4.0,
+                      "ram_mb": 2048,
+                      "gpu_pct": 0.0,
+                      "vram_mb": 0,
+                      "est_secs": 10
+                    }
+                  }
+                ],
+                "fields": [
+                  {
+                    "key": "cores",
+                    "label": "Cores",
+                    "help": "Cores a job of this size reserves. Fractions such as 0.5 are allowed.",
+                    "control": {
+                      "kind": "number",
+                      "quantity": "cores",
+                      "integer": false,
+                      "min": {
+                        "value": 0.0,
+                        "exclusive": false
+                      }
+                    },
+                    "advanced": false,
+                    "needs_restart": false,
+                    "platforms": []
+                  },
+                  {
+                    "key": "min_cores",
+                    "label": "Minimum cores",
+                    "help": "When the machine is busy, a job may start with fewer cores, down to this.",
+                    "control": {
+                      "kind": "number",
+                      "quantity": "cores",
+                      "integer": false,
+                      "min": {
+                        "value": 0.0,
+                        "exclusive": true
+                      },
+                      "max_key": "cores",
+                      "automatic": "half the cores, at least 1"
+                    },
+                    "advanced": false,
+                    "needs_restart": false,
+                    "platforms": []
+                  },
+                  {
+                    "key": "ram_mb",
+                    "label": "Memory",
+                    "help": "Memory a job of this size reserves.",
+                    "control": {
+                      "kind": "number",
+                      "quantity": "megabytes",
+                      "integer": true,
+                      "min": {
+                        "value": 0.0,
+                        "exclusive": false
+                      }
+                    },
+                    "advanced": false,
+                    "needs_restart": false,
+                    "platforms": []
+                  },
+                  {
+                    "key": "gpu_pct",
+                    "label": "GPU",
+                    "help": "Share of the GPU's engines a job reserves.",
+                    "control": {
+                      "kind": "number",
+                      "quantity": "percent",
+                      "integer": false,
+                      "default": 0.0,
+                      "min": {
+                        "value": 0.0,
+                        "exclusive": false
+                      },
+                      "max": {
+                        "value": 100.0,
+                        "exclusive": false
+                      }
+                    },
+                    "advanced": false,
+                    "needs_restart": false,
+                    "platforms": []
+                  },
+                  {
+                    "key": "vram_mb",
+                    "label": "Video memory",
+                    "help": "GPU memory a job reserves.",
+                    "control": {
+                      "kind": "number",
+                      "quantity": "megabytes",
+                      "integer": true,
+                      "default": 0.0,
+                      "min": {
+                        "value": 0.0,
+                        "exclusive": false
+                      }
+                    },
+                    "advanced": false,
+                    "needs_restart": false,
+                    "platforms": []
+                  },
+                  {
+                    "key": "est_secs",
+                    "label": "Expected run time",
+                    "help": "How long a job of this size usually runs. Jobs of 15 s or less may start while a benchmark waits.",
+                    "control": {
+                      "kind": "number",
+                      "quantity": "seconds",
+                      "integer": true,
+                      "default": 300.0,
+                      "min": {
+                        "value": 0.0,
+                        "exclusive": false
+                      }
+                    },
+                    "advanced": false,
+                    "needs_restart": false,
+                    "platforms": []
+                  }
+                ],
+                "new_row_name": {
+                  "label": "Name",
+                  "help": "Lowercase letters, digits and _. Sessions ask for the preset by this name.",
+                  "pattern": "^[a-z0-9_]+$"
+                }
+              },
+              "advanced": false,
+              "needs_restart": false,
+              "platforms": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "commands",
+      "label": "Commands",
+      "groups": [
+        {
+          "id": "rules",
+          "label": "Heavy-command rules",
+          "settings": [
+            {
+              "key": "classifier.rules",
+              "label": "Heavy-command rules",
+              "help": "Checked in order against every simple command in a command line. Your list replaces the built-in rules.",
+              "control": {
+                "kind": "rule_list",
+                "default": [
+                  {
+                    "program": "cargo",
+                    "args": [
+                      "build",
+                      "test",
+                      "run",
+                      "bench"
+                    ],
+                    "class": "cpu_heavy"
+                  },
+                  {
+                    "program": "pnpm",
+                    "args": [
+                      "build*",
+                      "test*"
+                    ],
+                    "class": "cpu_heavy"
+                  },
+                  {
+                    "program": "msbuild",
+                    "args": [],
+                    "class": "cpu_heavy"
+                  },
+                  {
+                    "program": "cmake",
+                    "args": [
+                      "--build"
+                    ],
+                    "class": "cpu_heavy"
+                  },
+                  {
+                    "program": "python*",
+                    "args": [
+                      "train*.py"
+                    ],
+                    "class": "gpu_heavy"
+                  },
+                  {
+                    "program": "py",
+                    "args": [
+                      "train*.py"
+                    ],
+                    "class": "gpu_heavy"
+                  }
+                ],
+                "fields": [
+                  {
+                    "key": "program",
+                    "label": "Program",
+                    "help": "The program's name without folder or extension, such as cargo or python*. * matches any characters, and case is ignored.",
+                    "control": {
+                      "kind": "text"
+                    },
+                    "advanced": false,
+                    "needs_restart": false,
+                    "platforms": []
+                  },
+                  {
+                    "key": "args",
+                    "label": "Arguments",
+                    "help": "Any one of these makes the command heavy; leave empty to match any arguments. A pattern starting with - matches that flag anywhere; others match the first argument that is not a flag.",
+                    "control": {
+                      "kind": "string_list",
+                      "default": []
+                    },
+                    "advanced": false,
+                    "needs_restart": false,
+                    "platforms": []
+                  },
+                  {
+                    "key": "class",
+                    "label": "Lease class",
+                    "help": "The size a matching command reserves.",
+                    "control": {
+                      "kind": "choice",
+                      "options": [
+                        {
+                          "value": "light",
+                          "label": "Light"
+                        },
+                        {
+                          "value": "cpu_heavy",
+                          "label": "CPU heavy"
+                        },
+                        {
+                          "value": "gpu_heavy",
+                          "label": "GPU heavy"
+                        },
+                        {
+                          "value": "mixed",
+                          "label": "Mixed"
+                        }
+                      ]
+                    },
+                    "advanced": false,
+                    "needs_restart": false,
+                    "platforms": []
+                  }
+                ]
+              },
+              "advanced": false,
+              "needs_restart": false,
+              "platforms": []
+            }
+          ]
+        },
+        {
+          "id": "print_only",
+          "label": "Print-only flags",
+          "settings": [
+            {
+              "key": "classifier.light_flags",
+              "label": "Print-only flags",
+              "help": "A command with any of these only prints and exits, so it never needs a lease, even when a rule matches.",
+              "control": {
+                "kind": "string_list",
+                "default": [
+                  "--help",
+                  "-h",
+                  "--version",
+                  "-V",
+                  "/?"
+                ]
+              },
+              "advanced": false,
+              "needs_restart": false,
+              "platforms": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "benchmarks",
+      "label": "Benchmarks",
+      "groups": [
+        {
+          "id": "quiet",
+          "label": "Quiet machine",
+          "settings": [
+            {
+              "key": "benchmark.quiet_cpu_pct",
+              "label": "CPU load limit",
+              "help": "A benchmark waits until total CPU load stays at or below this.",
+              "control": {
+                "kind": "number",
+                "quantity": "percent",
+                "integer": false,
+                "default": 10.0,
+                "min": {
+                  "value": 0.0,
+                  "exclusive": false
+                },
+                "max": {
+                  "value": 100.0,
+                  "exclusive": false
+                }
+              },
+              "advanced": false,
+              "needs_restart": false,
+              "platforms": []
+            },
+            {
+              "key": "benchmark.quiet_gpu_pct",
+              "label": "GPU load limit",
+              "help": "A benchmark waits until GPU load stays at or below this.",
+              "control": {
+                "kind": "number",
+                "quantity": "percent",
+                "integer": false,
+                "default": 10.0,
+                "min": {
+                  "value": 0.0,
+                  "exclusive": false
+                },
+                "max": {
+                  "value": 100.0,
+                  "exclusive": false
+                }
+              },
+              "advanced": false,
+              "needs_restart": false,
+              "platforms": []
+            },
+            {
+              "key": "benchmark.quiet_secs",
+              "label": "Quiet for",
+              "help": "How long both loads must stay under their limits, once no other lease is active.",
+              "control": {
+                "kind": "number",
+                "quantity": "seconds",
+                "integer": true,
+                "default": 10.0,
+                "min": {
+                  "value": 0.0,
+                  "exclusive": true
+                }
+              },
+              "advanced": false,
+              "needs_restart": false,
+              "platforms": []
+            },
+            {
+              "key": "benchmark.max_quiet_wait_secs",
+              "label": "Longest wait",
+              "help": "After this, a waiting benchmark starts anyway, marked not quiet.",
+              "control": {
+                "kind": "number",
+                "quantity": "seconds",
+                "integer": true,
+                "default": 60.0,
+                "min_key": "benchmark.quiet_secs"
+              },
+              "advanced": false,
+              "needs_restart": false,
+              "platforms": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "leases",
+      "label": "Leases",
+      "groups": [
+        {
+          "id": "leases",
+          "label": "Leases",
+          "settings": [
+            {
+              "key": "leases.heartbeat_ttl_secs",
+              "label": "Lease timeout",
+              "help": "A lease ends when its session stops checking in for this long.",
+              "control": {
+                "kind": "number",
+                "quantity": "seconds",
+                "integer": true,
+                "default": 60.0,
+                "min": {
+                  "value": 0.0,
+                  "exclusive": true
+                }
+              },
+              "advanced": false,
+              "needs_restart": false,
+              "platforms": []
+            },
+            {
+              "key": "leases.idle_release_secs",
+              "label": "Idle for",
+              "help": "How long the session must be idle first.",
+              "control": {
+                "kind": "number",
+                "quantity": "seconds",
+                "integer": true,
+                "default": 180.0,
+                "min": {
+                  "value": 0.0,
+                  "exclusive": true
+                },
+                "off": {
+                  "value": 0.0,
+                  "label": "End leases left idle",
+                  "help": "Ends a lease once nothing runs under it and its session has been idle, for sessions that forget to release."
+                }
+              },
+              "advanced": false,
+              "needs_restart": false,
+              "platforms": []
+            }
+          ]
+        },
+        {
+          "id": "history",
+          "label": "History",
+          "settings": [
+            {
+              "key": "retention.lease_days",
+              "label": "Keep ended leases for",
+              "help": "Ended leases and their audit trail are deleted after this. Cleanup runs every hour.",
+              "control": {
+                "kind": "number",
+                "quantity": "days",
+                "integer": true,
+                "default": 30.0,
+                "min": {
+                  "value": 1.0,
+                  "exclusive": false
+                }
+              },
+              "advanced": true,
+              "needs_restart": false,
+              "platforms": []
+            },
+            {
+              "key": "retention.history_days",
+              "label": "Keep job runs for",
+              "help": "Job runs are deleted after this, except each command's newest runs below.",
+              "control": {
+                "kind": "number",
+                "quantity": "days",
+                "integer": true,
+                "default": 90.0,
+                "min": {
+                  "value": 1.0,
+                  "exclusive": false
+                }
+              },
+              "advanced": true,
+              "needs_restart": false,
+              "platforms": []
+            },
+            {
+              "key": "retention.keep_runs_per_job",
+              "label": "Always keep per command",
+              "help": "The newest runs of each command stay whatever their age, so estimates survive long breaks. Estimates read the newest 20.",
+              "control": {
+                "kind": "number",
+                "quantity": "runs",
+                "integer": true,
+                "default": 20.0,
+                "min": {
+                  "value": 1.0,
+                  "exclusive": false
+                }
+              },
+              "advanced": true,
+              "needs_restart": false,
+              "platforms": []
+            },
+            {
+              "key": "retention.max_job_runs",
+              "label": "Most runs kept",
+              "help": "Beyond this, the oldest runs are deleted, whatever the command.",
+              "control": {
+                "kind": "number",
+                "quantity": "runs",
+                "integer": true,
+                "default": 5000.0,
+                "min_key": "retention.keep_runs_per_job"
+              },
+              "advanced": true,
+              "needs_restart": false,
+              "platforms": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "service",
+      "label": "Service",
+      "groups": [
+        {
+          "id": "connection",
+          "label": "Connection",
+          "settings": [
+            {
+              "key": "hook.fail_open",
+              "label": "Let heavy commands run while the service is down",
+              "help": "When off, every heavy command is blocked until the service answers again.",
+              "control": {
+                "kind": "switch",
+                "default": true
+              },
+              "advanced": false,
+              "needs_restart": false,
+              "platforms": []
+            },
+            {
+              "key": "daemon.port",
+              "label": "Port",
+              "help": "The service listens on this port on 127.0.0.1. Change it only if another app needs the port.",
+              "control": {
+                "kind": "number",
+                "quantity": "port",
+                "integer": true,
+                "default": 47823.0,
+                "min": {
+                  "value": 1.0,
+                  "exclusive": false
+                },
+                "max": {
+                  "value": 65535.0,
+                  "exclusive": false
+                }
+              },
+              "advanced": true,
+              "needs_restart": true,
+              "platforms": []
+            }
+          ]
+        },
+        {
+          "id": "linux",
+          "label": "Linux",
+          "settings": [
+            {
+              "key": "linux.scopes",
+              "label": "Run each lease in its own systemd scope",
+              "help": "Gives exact CPU and memory use, and a kill that ends every process at once. Needs cgroup v2 and a systemd user session.",
+              "control": {
+                "kind": "switch",
+                "default": true
+              },
+              "advanced": false,
+              "needs_restart": false,
+              "platforms": [
+                "linux"
+              ]
+            },
+            {
+              "key": "linux.enforce_cpu",
+              "label": "Cap jobs at their reserved cores",
+              "help": "A job that outgrows its lease is slowed down, not stopped.",
+              "control": {
+                "kind": "switch",
+                "default": false
+              },
+              "advanced": false,
+              "needs_restart": false,
+              "platforms": [
+                "linux"
+              ],
+              "requires": {
+                "key": "linux.scopes",
+                "note": "Needs systemd scopes."
+              }
+            },
+            {
+              "key": "linux.enforce_memory",
+              "label": "Slow down jobs above their reserved memory",
+              "help": "Memory above the reservation is throttled. A job is never stopped for memory.",
+              "control": {
+                "kind": "switch",
+                "default": false
+              },
+              "advanced": false,
+              "needs_restart": false,
+              "platforms": [
+                "linux"
+              ],
+              "requires": {
+                "key": "linux.scopes",
+                "note": "Needs systemd scopes."
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

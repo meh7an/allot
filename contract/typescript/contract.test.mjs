@@ -6,6 +6,7 @@ import {
   ContractError,
   decodeKillResponse,
   decodeRemoveResponse,
+  decodeSettingsSpec,
   decodeUiState,
 } from "./contract.g.mjs";
 
@@ -16,6 +17,7 @@ const DECODERS = [
   ["ui-state-", decodeUiState],
   ["kill-response-", decodeKillResponse],
   ["remove-response", decodeRemoveResponse],
+  ["settings-spec", decodeSettingsSpec],
 ];
 
 /**
@@ -97,6 +99,40 @@ test("the benchmark fixture decodes its progress by phase", () => {
     cpu_avg_pct: 3,
     gpu_avg_pct: 0.5,
   });
+});
+
+test("the settings spec decodes every control kind and fills its optional members", () => {
+  const spec = decodeSettingsSpec(readFixture("settings-spec"));
+  const settings = new Map(
+    spec.pages.flatMap((page) => page.groups.flatMap((group) => group.settings)).map((setting) => [
+      setting.key,
+      setting,
+    ]),
+  );
+
+  const headroom = settings.get("admission.headroom_pct").control;
+  assert.equal(headroom.kind, "number");
+  assert.equal(headroom.quantity, "percent");
+  assert.equal(headroom.default, 15);
+  assert.equal(headroom.off, null);
+  assert.equal(settings.get("leases.idle_release_secs").control.off.value, 0);
+  assert.equal(settings.get("estimates.min_runs").requires.key, "estimates.lower");
+  assert.equal(settings.get("admission.headroom_pct").requires, null);
+  const classes = settings.get("classes").control;
+  assert.equal(classes.kind, "size_table");
+  assert.equal(classes.rows.length, 4);
+  assert.equal(classes.new_row_name, null);
+  assert.equal(settings.get("classifier.rules").control.default[0].class, "cpu_heavy");
+  assert.equal(settings.get("classifier.rules").control.fields[0].control.pattern, null);
+  assert.equal(settings.get("daemon.port").needs_restart, true);
+  assert.deepEqual(settings.get("linux.scopes").platforms, ["linux"]);
+});
+
+test("an unknown setting control kind is rejected", () => {
+  const json = readFixture("settings-spec");
+  json.pages[0].groups[0].settings[0].control.kind = "slider";
+
+  assert.throws(() => decodeSettingsSpec(json), ContractError);
 });
 
 test("an unknown enum value is rejected with its path", () => {

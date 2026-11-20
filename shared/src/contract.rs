@@ -1,5 +1,6 @@
-//! Golden files for the desktop apps: the JSON Schemas of [`UiState`] and of the kill and
-//! remove responses, one fixture per flyout scenario and response shape, kept in `contract/` at
+//! Golden files for the desktop apps: the JSON Schemas of [`UiState`], of the kill and remove
+//! responses and of [`SettingsSpec`], one fixture per flyout scenario and response shape plus
+//! the full settings spec, kept in `contract/` at
 //! the repository root, and the types generated from the schemas: C# in the tray's logic
 //! library, a Swift package and a JavaScript module with JSDoc types in `contract/`. The other
 //! responses `allot --json` prints get schemas there too.
@@ -22,6 +23,7 @@ use crate::{
         BenchmarkProgress, HealthResponse, JobSummary, KillResponse, KilledProcess, RemoveResponse,
         RunStats, UnkilledProcess, Verdict,
     },
+    settings::SettingsSpec,
     types::{
         Accuracy, BoundProcess, DriveUsage, EndCause, EnforcedLimits, Holder, IsolationKind,
         JobClass, JobProfile, JobRun, Lease, LeaseBinding, LeaseId, LeaseIsolation, LeaseKind,
@@ -37,6 +39,8 @@ const UPDATE_VAR: &str = "ALLOT_UPDATE_CONTRACT";
 const SCHEMA_FILE: &str = "contract/ui-state.schema.json";
 const KILL_SCHEMA_FILE: &str = "contract/kill-response.schema.json";
 const REMOVE_SCHEMA_FILE: &str = "contract/remove-response.schema.json";
+const SETTINGS_SCHEMA_FILE: &str = "contract/settings-spec.schema.json";
+const SETTINGS_FIXTURE_FILE: &str = "contract/fixtures/settings-spec.json";
 const LEASES_SCHEMA_FILE: &str = "contract/leases.schema.json";
 const JOBS_SCHEMA_FILE: &str = "contract/job-summaries.schema.json";
 const RUNS_SCHEMA_FILE: &str = "contract/job-runs.schema.json";
@@ -885,11 +889,12 @@ fn root_schema<T: schemars::JsonSchema>() -> Schema {
 }
 
 /// Every root the desktop apps decode, with its committed schema file; `UiState` first.
-fn contract_schemas() -> [(&'static str, Schema); 3] {
+fn contract_schemas() -> [(&'static str, Schema); 4] {
     [
         (SCHEMA_FILE, root_schema::<UiState>()),
         (KILL_SCHEMA_FILE, root_schema::<KillResponse>()),
         (REMOVE_SCHEMA_FILE, root_schema::<RemoveResponse>()),
+        (SETTINGS_SCHEMA_FILE, root_schema::<SettingsSpec>()),
     ]
 }
 
@@ -949,6 +954,11 @@ fn test_response_fixtures_match_committed_files() {
         "contract/fixtures/remove-response.json",
         &pretty_json(&remove_scenario()),
     );
+}
+
+#[test]
+fn test_settings_spec_fixture_matches_committed_file() {
+    assert_matches_file(SETTINGS_FIXTURE_FILE, &pretty_json(&SettingsSpec::new()));
 }
 
 #[test]

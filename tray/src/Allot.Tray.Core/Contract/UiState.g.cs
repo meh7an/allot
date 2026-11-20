@@ -114,6 +114,20 @@ public sealed record RemoveResponse
 }
 
 /// <summary>
+/// Every allotd setting, page by page, in the order the Settings window shows them.
+///
+/// Panels add what holds no key themselves: the Panel page of their own settings, live
+/// explanations, the command test, the service status, the config file row and Reset.
+/// </summary>
+public sealed record SettingsSpec
+{
+    /// <summary>
+    /// The pages, in window order.
+    /// </summary>
+    public required IReadOnlyList<SettingsPageSpec> Pages { get; init; }
+}
+
+/// <summary>
 /// How well a GPU source measures something per process.
 /// </summary>
 [JsonConverter(typeof(StrictEnumConverter<Accuracy>))]
@@ -241,6 +255,22 @@ public abstract record BenchmarkProgress
 }
 
 /// <summary>
+/// One end of a number's range.
+/// </summary>
+public sealed record Bound
+{
+    /// <summary>
+    /// Whether the limit itself is out of range.
+    /// </summary>
+    public required bool Exclusive { get; init; }
+
+    /// <summary>
+    /// The limit.
+    /// </summary>
+    public required double Value { get; init; }
+}
+
+/// <summary>
 /// One process, identified across PID reuse.
 /// </summary>
 public sealed record BoundProcess
@@ -254,6 +284,22 @@ public sealed record BoundProcess
     /// Start time of <c>pid</c> in seconds since the Unix epoch, as in <c>Holder::pid_start_time</c>.
     /// </summary>
     public required ulong StartTime { get; init; }
+}
+
+/// <summary>
+/// One value of a choice.
+/// </summary>
+public sealed record ChoiceOption
+{
+    /// <summary>
+    /// The value as the panel shows it.
+    /// </summary>
+    public required string Label { get; init; }
+
+    /// <summary>
+    /// The value written to the file.
+    /// </summary>
+    public required string Value { get; init; }
 }
 
 /// <summary>
@@ -486,6 +532,31 @@ public sealed record HealthResponse
     /// Daemon version, from its <c>Cargo.toml</c>.
     /// </summary>
     public required string Version { get; init; }
+}
+
+/// <summary>
+/// Marks a simple command as heavy when its program and arguments match.
+///
+/// Matching ignores case, and <c>*</c> matches any run of characters.
+/// </summary>
+public sealed record HeavyRule
+{
+    /// <summary>
+    /// Any one of these makes the command heavy; empty matches any arguments. A pattern that
+    /// starts with <c>-</c> matches that flag anywhere in the command; any other pattern matches
+    /// the first positional argument (the first one not starting with <c>-</c> or <c>+</c>).
+    /// </summary>
+    public IReadOnlyList<string> Args { get; set; } = [];
+
+    /// <summary>
+    /// Class the matched command needs a lease for.
+    /// </summary>
+    public required JobClass Class { get; init; }
+
+    /// <summary>
+    /// Program name without directory or extension, for example <c>cargo</c> or <c>python*</c>.
+    /// </summary>
+    public required string Program { get; init; }
 }
 
 /// <summary>
@@ -945,6 +1016,101 @@ public sealed record Notice
 }
 
 /// <summary>
+/// A switch that turns a numeric feature off by writing one value.
+/// </summary>
+public sealed record OffSwitch
+{
+    /// <summary>
+    /// The switch's help.
+    /// </summary>
+    public required string Help { get; init; }
+
+    /// <summary>
+    /// The switch's label, describing the on state.
+    /// </summary>
+    public required string Label { get; init; }
+
+    /// <summary>
+    /// The value written while the switch is off.
+    /// </summary>
+    public required double Value { get; init; }
+}
+
+/// <summary>
+/// An operating system a panel runs on.
+/// </summary>
+[JsonConverter(typeof(StrictEnumConverter<Platform>))]
+public enum Platform
+{
+    /// <summary>
+    /// The Windows tray.
+    /// </summary>
+    [JsonStringEnumMemberName("windows")]
+    Windows,
+
+    /// <summary>
+    /// The macOS menu bar app.
+    /// </summary>
+    [JsonStringEnumMemberName("macos")]
+    Macos,
+
+    /// <summary>
+    /// The GNOME extension and the KDE widget.
+    /// </summary>
+    [JsonStringEnumMemberName("linux")]
+    Linux,
+}
+
+/// <summary>
+/// What a number counts.
+/// </summary>
+[JsonConverter(typeof(StrictEnumConverter<Quantity>))]
+public enum Quantity
+{
+    /// <summary>
+    /// A share from 0 to 100.
+    /// </summary>
+    [JsonStringEnumMemberName("percent")]
+    Percent,
+
+    /// <summary>
+    /// A number of job runs.
+    /// </summary>
+    [JsonStringEnumMemberName("runs")]
+    Runs,
+
+    /// <summary>
+    /// A number of days.
+    /// </summary>
+    [JsonStringEnumMemberName("days")]
+    Days,
+
+    /// <summary>
+    /// A duration in seconds; panels may show it in minutes or hours.
+    /// </summary>
+    [JsonStringEnumMemberName("seconds")]
+    Seconds,
+
+    /// <summary>
+    /// Logical cores; fractions are allowed.
+    /// </summary>
+    [JsonStringEnumMemberName("cores")]
+    Cores,
+
+    /// <summary>
+    /// Memory in megabytes; panels may show it in gigabytes.
+    /// </summary>
+    [JsonStringEnumMemberName("megabytes")]
+    Megabytes,
+
+    /// <summary>
+    /// A TCP port, shown without digit grouping.
+    /// </summary>
+    [JsonStringEnumMemberName("port")]
+    Port,
+}
+
+/// <summary>
 /// A queued lease and why it waits.
 /// </summary>
 public sealed record QueuedJob
@@ -1044,6 +1210,22 @@ public sealed record RecentRun
 }
 
 /// <summary>
+/// A switch another setting depends on.
+/// </summary>
+public sealed record Requirement
+{
+    /// <summary>
+    /// The switch's key.
+    /// </summary>
+    public required string Key { get; init; }
+
+    /// <summary>
+    /// Shown under the disabled setting while the switch is off.
+    /// </summary>
+    public required string Note { get; init; }
+}
+
+/// <summary>
 /// Resources used by a process or a group of processes, in the units of <c>JobProfile</c>.
 /// </summary>
 public sealed record ResourceUsage
@@ -1067,6 +1249,28 @@ public sealed record ResourceUsage
     /// Dedicated video memory.
     /// </summary>
     public required ulong VramMb { get; init; }
+}
+
+/// <summary>
+/// The name field of a row the user adds or renames.
+/// </summary>
+public sealed record RowName
+{
+    /// <summary>
+    /// The field's help.
+    /// </summary>
+    public required string Help { get; init; }
+
+    /// <summary>
+    /// The field's label.
+    /// </summary>
+    public required string Label { get; init; }
+
+    /// <summary>
+    /// A regular expression the whole name must match. A name must also differ from every
+    /// other row's and from every class's.
+    /// </summary>
+    public required string Pattern { get; init; }
 }
 
 /// <summary>
@@ -1097,6 +1301,283 @@ public sealed record RunStats
     /// Runs the statistics come from.
     /// </summary>
     public required uint Runs { get; init; }
+}
+
+/// <summary>
+/// How a setting is edited.
+/// </summary>
+[JsonPolymorphic(TypeDiscriminatorPropertyName = "kind")]
+[JsonDerivedType(typeof(SettingControl.Switch), "switch")]
+[JsonDerivedType(typeof(SettingControl.Number), "number")]
+[JsonDerivedType(typeof(SettingControl.Text), "text")]
+[JsonDerivedType(typeof(SettingControl.Choice), "choice")]
+[JsonDerivedType(typeof(SettingControl.StringList), "string_list")]
+[JsonDerivedType(typeof(SettingControl.SizeTable), "size_table")]
+[JsonDerivedType(typeof(SettingControl.RuleList), "rule_list")]
+public abstract record SettingControl
+{
+    /// <summary>
+    /// On or off.
+    /// </summary>
+    public sealed record Switch : SettingControl
+    {
+        /// <summary>
+        /// The value while the key is not in the file.
+        /// </summary>
+        public required bool Default { get; init; }
+    }
+
+    /// <summary>
+    /// A number in a unit, written to the file in that unit.
+    /// </summary>
+    public sealed record Number : SettingControl
+    {
+        /// <summary>
+        /// How the value is worked out while the key is left out, when it may be, shown
+        /// beside an Automatic choice.
+        /// </summary>
+        public string? Automatic { get; init; }
+
+        /// <summary>
+        /// The value while the key is not in the file. In a table's fields, the value a new
+        /// row starts with, or <c>null</c> when a new row must give one or <c>automatic</c> applies.
+        /// </summary>
+        public double? Default { get; init; }
+
+        /// <summary>
+        /// Whether only whole numbers are allowed.
+        /// </summary>
+        public required bool Integer { get; init; }
+
+        /// <summary>
+        /// The largest value allowed, if any besides <c>max_key</c>.
+        /// </summary>
+        public Bound? Max { get; init; }
+
+        /// <summary>
+        /// A setting this value must be at most, by key; in a table, a field of the same row.
+        /// </summary>
+        public string? MaxKey { get; init; }
+
+        /// <summary>
+        /// The smallest value allowed, if any besides <c>min_key</c>.
+        /// </summary>
+        public Bound? Min { get; init; }
+
+        /// <summary>
+        /// A setting this value must be at least, by key; in a table, a field of the same row.
+        /// </summary>
+        public string? MinKey { get; init; }
+
+        /// <summary>
+        /// A switch in front of the number, when one value turns the feature off.
+        /// </summary>
+        public OffSwitch? Off { get; init; }
+
+        /// <summary>
+        /// What the number counts, which picks its unit and display.
+        /// </summary>
+        public required Quantity Quantity { get; init; }
+    }
+
+    /// <summary>
+    /// A line of text, never blank.
+    /// </summary>
+    public sealed record Text : SettingControl
+    {
+        /// <summary>
+        /// A regular expression the whole text must match, if any.
+        /// </summary>
+        public string? Pattern { get; init; }
+    }
+
+    /// <summary>
+    /// One of a fixed set of values.
+    /// </summary>
+    public sealed record Choice : SettingControl
+    {
+        /// <summary>
+        /// The value a new item starts with, or <c>null</c> when one must be picked.
+        /// </summary>
+        public string? Default { get; init; }
+
+        /// <summary>
+        /// The values in display order.
+        /// </summary>
+        public required IReadOnlyList<ChoiceOption> Options { get; init; }
+    }
+
+    /// <summary>
+    /// A list of strings without blank entries; a list in the file replaces the default list.
+    /// </summary>
+    public sealed record StringList : SettingControl
+    {
+        /// <summary>
+        /// The list while the key is not in the file.
+        /// </summary>
+        public required IReadOnlyList<string> Default { get; init; }
+    }
+
+    /// <summary>
+    /// Named rows of sizes, such as <c>[classes.cpu_heavy]</c>, edited one row at a time. A row
+    /// in the file changes only the fields it names.
+    /// </summary>
+    public sealed record SizeTable : SettingControl
+    {
+        /// <summary>
+        /// The fields of every row.
+        /// </summary>
+        public required IReadOnlyList<SettingSpec> Fields { get; init; }
+
+        /// <summary>
+        /// How a row added by the user is named, or <c>null</c> when rows cannot be added,
+        /// renamed or deleted.
+        /// </summary>
+        public RowName? NewRowName { get; init; }
+
+        /// <summary>
+        /// The built-in rows with their defaults, which always exist.
+        /// </summary>
+        public required IReadOnlyList<SizeRowSpec> Rows { get; init; }
+    }
+
+    /// <summary>
+    /// An ordered list of heavy-command rules, always written whole. A list in the file, even
+    /// an empty one, replaces the default list; removing the key brings the default back.
+    /// </summary>
+    public sealed record RuleList : SettingControl
+    {
+        /// <summary>
+        /// The list while the key is not in the file.
+        /// </summary>
+        public required IReadOnlyList<HeavyRule> Default { get; init; }
+
+        /// <summary>
+        /// The fields of every rule.
+        /// </summary>
+        public required IReadOnlyList<SettingSpec> Fields { get; init; }
+    }
+}
+
+/// <summary>
+/// One setting: a key of <c>config.toml</c>, or a field of a table row or rule.
+/// </summary>
+public sealed record SettingSpec
+{
+    /// <summary>
+    /// Whether the setting is rarely changed and shows last on its page, under Advanced.
+    /// </summary>
+    public required bool Advanced { get; init; }
+
+    /// <summary>
+    /// How the value is edited, with its default and range.
+    /// </summary>
+    public required SettingControl Control { get; init; }
+
+    /// <summary>
+    /// One or two plain sentences. Panels show the key after them.
+    /// </summary>
+    public required string Help { get; init; }
+
+    /// <summary>
+    /// The TOML key: a dotted path such as <c>admission.headroom_pct</c> for a setting on a page,
+    /// or the key inside a row, such as <c>cores</c>, for a field of a table or rule.
+    /// </summary>
+    public required string Key { get; init; }
+
+    /// <summary>
+    /// A noun phrase in sentence case; a switch's label describes the on state.
+    /// </summary>
+    public required string Label { get; init; }
+
+    /// <summary>
+    /// Whether a change takes effect only once allotd restarts.
+    /// </summary>
+    public required bool NeedsRestart { get; init; }
+
+    /// <summary>
+    /// The operating systems whose panels show the setting; empty means every one.
+    /// </summary>
+    public required IReadOnlyList<Platform> Platforms { get; init; }
+
+    /// <summary>
+    /// A switch that must be on for this setting to act; panels disable it while it is off.
+    /// </summary>
+    public Requirement? Requires { get; init; }
+}
+
+/// <summary>
+/// A titled group of settings on a page.
+/// </summary>
+public sealed record SettingsGroupSpec
+{
+    /// <summary>
+    /// Stable identifier, unique on its page, such as <c>learn</c>.
+    /// </summary>
+    public required string Id { get; init; }
+
+    /// <summary>
+    /// The group's title.
+    /// </summary>
+    public required string Label { get; init; }
+
+    /// <summary>
+    /// The settings, in group order.
+    /// </summary>
+    public required IReadOnlyList<SettingSpec> Settings { get; init; }
+}
+
+/// <summary>
+/// A page of the Settings window.
+/// </summary>
+public sealed record SettingsPageSpec
+{
+    /// <summary>
+    /// The groups, in page order.
+    /// </summary>
+    public required IReadOnlyList<SettingsGroupSpec> Groups { get; init; }
+
+    /// <summary>
+    /// Stable identifier, such as <c>admission</c>.
+    /// </summary>
+    public required string Id { get; init; }
+
+    /// <summary>
+    /// A sentence under the title, if the page has one.
+    /// </summary>
+    public string? Intro { get; init; }
+
+    /// <summary>
+    /// The page's title.
+    /// </summary>
+    public required string Label { get; init; }
+}
+
+/// <summary>
+/// A built-in row of a size table.
+/// </summary>
+public sealed record SizeRowSpec
+{
+    /// <summary>
+    /// The row's values while the file does not change them.
+    /// </summary>
+    public required JobProfile Default { get; init; }
+
+    /// <summary>
+    /// The row's minimum cores while the file names none; <c>null</c> follows the field's
+    /// automatic rule.
+    /// </summary>
+    public float? DefaultMinCores { get; init; }
+
+    /// <summary>
+    /// The row as the panel shows it.
+    /// </summary>
+    public required string Label { get; init; }
+
+    /// <summary>
+    /// The row's key in the file, such as <c>cpu_heavy</c>.
+    /// </summary>
+    public required string Name { get; init; }
 }
 
 /// <summary>
@@ -1193,6 +1674,7 @@ public sealed class StrictEnumConverter<TEnum> : JsonStringEnumConverter<TEnum>
 [JsonSerializable(typeof(UiState))]
 [JsonSerializable(typeof(KillResponse))]
 [JsonSerializable(typeof(RemoveResponse))]
+[JsonSerializable(typeof(SettingsSpec))]
 public sealed partial class ContractJsonContext : JsonSerializerContext
 {
 }

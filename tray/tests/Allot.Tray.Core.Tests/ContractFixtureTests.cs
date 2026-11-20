@@ -28,6 +28,7 @@ public sealed class ContractFixtureTests
             ["ui-state-"] = typeof(UiState),
             ["kill-response-"] = typeof(KillResponse),
             ["remove-response"] = typeof(RemoveResponse),
+            ["settings-spec"] = typeof(SettingsSpec),
         };
 
     public static IEnumerable<object[]> FixtureFiles =>
@@ -253,6 +254,38 @@ public sealed class ContractFixtureTests
         root["queue"]![0]!["verdict"]!["benchmark"]!["phase"] = "warming";
 
         AssertRejected(root);
+    }
+
+    [TestMethod]
+    public void SettingsSpecFixtureDecodesEveryControlKind()
+    {
+        var spec = DecodeResponse("settings-spec", ContractJsonContext.Default.SettingsSpec);
+        var settings = spec.Pages
+            .SelectMany(page => page.Groups)
+            .SelectMany(group => group.Settings)
+            .ToDictionary(setting => setting.Key, StringComparer.Ordinal);
+
+        var headroom = (SettingControl.Number)settings["admission.headroom_pct"].Control;
+        Assert.AreEqual(Quantity.Percent, headroom.Quantity);
+        Assert.AreEqual(15.0, headroom.Default);
+        Assert.IsTrue(headroom.Max?.Exclusive);
+        var idle = (SettingControl.Number)settings["leases.idle_release_secs"].Control;
+        Assert.AreEqual(0.0, idle.Off?.Value);
+        Assert.IsTrue(((SettingControl.Switch)settings["estimates.lower"].Control).Default);
+        Assert.AreEqual("estimates.lower", settings["estimates.min_runs"].Requires?.Key);
+        var classes = (SettingControl.SizeTable)settings["classes"].Control;
+        Assert.HasCount(4, classes.Rows);
+        Assert.IsNull(classes.NewRowName);
+        var presets = (SettingControl.SizeTable)settings["presets"].Control;
+        Assert.IsNotNull(presets.NewRowName);
+        var rules = (SettingControl.RuleList)settings["classifier.rules"].Control;
+        Assert.AreEqual(JobClass.CpuHeavy, rules.Default[0].Class);
+        Assert.IsInstanceOfType<SettingControl.Choice>(rules.Fields[2].Control);
+        Assert.IsInstanceOfType<SettingControl.StringList>(
+            settings["classifier.light_flags"].Control);
+        Assert.IsTrue(settings["daemon.port"].NeedsRestart);
+        CollectionAssert.AreEqual(
+            new[] { Platform.Linux }, settings["linux.scopes"].Platforms.ToArray());
     }
 
     private static string ReadFixture(string scenario) =>

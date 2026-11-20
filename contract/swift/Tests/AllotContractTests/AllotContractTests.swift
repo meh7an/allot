@@ -40,6 +40,9 @@ private func reencode(_ name: String) throws -> Data {
     if name.hasPrefix("remove-response") {
         return try reencode(RemoveResponse.self)
     }
+    if name.hasPrefix("settings-spec") {
+        return try reencode(SettingsSpec.self)
+    }
     throw CocoaError(.fileReadUnknown, userInfo: [NSFilePathErrorKey: name])
 }
 
@@ -83,7 +86,38 @@ private func expectContains(_ expected: Any, _ actual: Any?, at path: String) {
 }
 
 @Test func fixturesAreFound() {
-    #expect(fixtureNames.count >= 9)
+    #expect(fixtureNames.count >= 10)
+}
+
+@Test func settingsSpecDecodesEveryControlKind() throws {
+    let spec = try decode(SettingsSpec.self, "settings-spec")
+    let settings = Dictionary(
+        uniqueKeysWithValues: spec.pages
+            .flatMap(\.groups)
+            .flatMap(\.settings)
+            .map { ($0.key, $0) })
+
+    guard case .number(let headroom) = settings["admission.headroom_pct"]?.control else {
+        Issue.record("headroom is not a number")
+        return
+    }
+    #expect(headroom.quantity == .percent)
+    #expect(headroom.default == 15)
+    #expect(headroom.max?.exclusive == true)
+    #expect(settings["estimates.min_runs"]?.requires?.key == "estimates.lower")
+    guard case .sizeTable(let classes) = settings["classes"]?.control else {
+        Issue.record("classes is not a size table")
+        return
+    }
+    #expect(classes.rows.count == 4)
+    #expect(classes.newRowName == nil)
+    guard case .ruleList(let rules) = settings["classifier.rules"]?.control else {
+        Issue.record("the rules are not a rule list")
+        return
+    }
+    #expect(rules.default.first?.`class` == .cpuHeavy)
+    #expect(settings["daemon.port"]?.needsRestart == true)
+    #expect(settings["linux.scopes"]?.platforms == [.linux])
 }
 
 @Test(arguments: fixtureNames)
