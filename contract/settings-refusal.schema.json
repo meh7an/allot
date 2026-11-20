@@ -1,0 +1,58 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "SettingsRefusal",
+  "description": "Body of a refused settings request. Nothing was written.",
+  "type": "object",
+  "properties": {
+    "message": {
+      "description": "What went wrong, as one sentence.",
+      "type": "string"
+    },
+    "problems": {
+      "description": "Every rejected value with its key, when values were the cause; empty otherwise.",
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/FieldError"
+      }
+    },
+    "revision": {
+      "description": "The file's revision now, when it changed since the request's revision was read.",
+      "anyOf": [
+        {
+          "$ref": "#/definitions/Revision"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "message",
+    "problems"
+  ],
+  "definitions": {
+    "FieldError": {
+      "description": "A value of the configuration outside what it allows: its key and what it must be.",
+      "type": "object",
+      "properties": {
+        "key": {
+          "description": "The value's dotted key, such as `admission.headroom_pct`, `presets.big.min_cores` or\n`classifier.rules[2].program`. A preset's name is reported as `presets.<name>`.",
+          "type": "string"
+        },
+        "message": {
+          "description": "What the value must be, such as `must be at least 0 and below 100`.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "key",
+        "message"
+      ]
+    },
+    "Revision": {
+      "description": "A version of `config.toml`'s bytes, as 16 hex digits.",
+      "type": "string"
+    }
+  }
+}

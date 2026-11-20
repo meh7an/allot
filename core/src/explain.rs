@@ -3,8 +3,12 @@
 //! treats a command line.
 //!
 //! Both take a whole proposed [`Config`] and refuse one that [`Config::problems`] rejects, so
-//! they never explain values allotd would not accept.
+//! they never explain values allotd would not accept. The results are the wire types of
+//! [`allot_shared::explain`], which allotd sends as they are.
 
+pub use allot_shared::explain::{
+    ClassSize, CommandKind, CommandResult, CommandTest, FitPreview, Fits, KeptFree, SizeFit,
+};
 use allot_shared::{
     config::{Config, FieldError, Sizing},
     types::{JobClass, JobProfile, Snapshot},
@@ -25,93 +29,6 @@ pub const FIT_LIMIT: u32 = 99;
 pub struct Invalid {
     /// Every rejected value, in file order.
     pub problems: Vec<FieldError>,
-}
-
-/// How many jobs of one size start, one after another, in a given room.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub struct Fits {
-    /// Jobs that get every core they ask for.
-    pub full: u32,
-    /// Jobs after those that start shrunk, each counted at its minimum cores.
-    pub shrunk: u32,
-    /// Whether more would still fit after [`FIT_LIMIT`] jobs.
-    pub more: bool,
-}
-
-/// What fits of one class or preset.
-#[derive(Debug, Clone, PartialEq)]
-pub struct SizeFit {
-    /// The class's key, such as `cpu_heavy`, or the preset's name.
-    pub name: String,
-    /// The fewest cores a job of it starts with.
-    pub min_cores: f32,
-    /// Beside the active leases and the load right now.
-    pub now: Fits,
-    /// With every lease ended; load outside leases stays.
-    pub idle: Fits,
-}
-
-/// What the headroom keeps free of the whole machine.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct KeptFree {
-    /// Logical cores kept free.
-    pub cores: f64,
-    /// The machine's logical cores.
-    pub total_cores: u32,
-    /// Memory kept free.
-    pub ram_mb: f64,
-    /// The machine's memory.
-    pub total_ram_mb: u64,
-    /// Share of the primary GPU kept free, or `None` without a GPU.
-    pub gpu_pct: Option<f64>,
-    /// Video memory kept free, or `None` when there is no GPU, its size is unknown, or it
-    /// shares RAM.
-    pub vram_mb: Option<f64>,
-    /// The primary GPU's video memory, under the same conditions.
-    pub total_vram_mb: Option<u64>,
-}
-
-/// What fits on this machine with proposed settings.
-#[derive(Debug, Clone, PartialEq)]
-pub struct FitPreview {
-    /// One per class, in [`JobClass::ALL`] order.
-    pub classes: Vec<SizeFit>,
-    /// One per preset, by name.
-    pub presets: Vec<SizeFit>,
-    /// What the proposed headroom keeps free.
-    pub kept_free: KeptFree,
-    /// The machine's CPU load, as the 10 s average the counts use.
-    pub cpu_busy_pct: f32,
-}
-
-/// A class with the size the proposed settings give it.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct ClassSize {
-    /// The lease class.
-    pub class: JobClass,
-    /// Its profile and minimum cores.
-    pub sizing: Sizing,
-}
-
-/// One simple command of a tested line.
-#[derive(Debug, Clone, PartialEq)]
-pub struct CommandResult {
-    /// Its words joined by spaces.
-    pub command: String,
-    /// How the proposed rules treat it.
-    pub matched: CommandMatch,
-    /// The lease a heavy command needs on its own; `None` for the others.
-    pub size: Option<ClassSize>,
-}
-
-/// How the hook treats a command line under proposed rules.
-#[derive(Debug, Clone, PartialEq)]
-pub struct CommandTest {
-    /// The one lease the hook asks for: the class of every heavy command combined. `None`
-    /// when no command is heavy.
-    pub lease: Option<ClassSize>,
-    /// Every simple command of the line, in order.
-    pub commands: Vec<CommandResult>,
 }
 
 /// How many jobs of each class and preset fit now and with every lease ended, if `proposed`
@@ -164,24 +81,39 @@ pub fn fit_preview(
 pub fn test_command(proposed: &Config, line: &str, shell: Shell) -> Result<CommandTest, Invalid> {
     check(proposed)?;
     let classifier = Classifier::new(&proposed.classifier);
-    let size = |class: JobClass| ClassSize {
-        class,
-        sizing: *proposed.classes.get(class),
+    let size = |class: JobClass| {
+        let sizing = proposed.classes.get(class);
+        ClassSize {
+            class,
+            profile: sizing.profile,
+            min_cores: start_minimum(sizing),
+        }
     };
     let commands = classifier
         .explain(line, shell)
         .into_iter()
         .map(|simple| {
-            let size = match simple.matched {
-                CommandMatch::Heavy { rule_index } => {
-                    Some(size(proposed.classifier.rules[rule_index].class))
-                }
-                _ => None,
-            };
-            CommandResult {
+            let unmatched = CommandResult {
                 command: simple.command,
-                matched: simple.matched,
-                size,
+                kind: CommandKind::NotHeavy,
+                rule_index: None,
+                flag: None,
+                size: None,
+            };
+            match simple.matched {
+                CommandMatch::Heavy { rule_index } => CommandResult {
+                    kind: CommandKind::Heavy,
+                    // The rule list's length is bounded by the file, far below u32::MAX.
+                    rule_index: u32::try_from(rule_index).ok(),
+                    size: Some(size(proposed.classifier.rules[rule_index].class)),
+                    ..unmatched
+                },
+                CommandMatch::PrintOnly { flag } => CommandResult {
+                    kind: CommandKind::PrintOnly,
+                    flag: Some(flag),
+                    ..unmatched
+                },
+                _ => unmatched,
             }
         })
         .collect();
@@ -492,15 +424,18 @@ mod tests {
         let test = test.unwrap();
         let heavy = &test.commands[0];
         assert_eq!(heavy.command, "cargo build --release");
-        assert_eq!(heavy.matched, CommandMatch::Heavy { rule_index: 0 });
+        assert_eq!(
+            (heavy.kind, heavy.rule_index),
+            (CommandKind::Heavy, Some(0))
+        );
         let size = heavy.size.unwrap();
         assert_eq!(size.class, JobClass::CpuHeavy);
-        assert_eq!(size.sizing.profile.cores, 6.0);
-        assert_eq!(size.sizing.minimum(), 3.0);
+        assert_eq!(size.profile.cores, 6.0);
+        assert_eq!(size.min_cores, 3.0);
         let fmt = &test.commands[1];
         assert_eq!(
-            (fmt.command.as_str(), &fmt.matched),
-            ("cargo fmt", &CommandMatch::NotHeavy)
+            (fmt.command.as_str(), fmt.kind, fmt.rule_index),
+            ("cargo fmt", CommandKind::NotHeavy, None)
         );
         assert_eq!(fmt.size, None);
         assert_eq!(test.lease, Some(size));
@@ -518,18 +453,18 @@ mod tests {
             "cargo build; python3 train.py; make -j8",
             Shell::Bash,
         );
-        let matched: Vec<CommandMatch> = test
+        let matched: Vec<(CommandKind, Option<u32>)> = test
             .unwrap()
             .commands
             .into_iter()
-            .map(|result| result.matched)
+            .map(|result| (result.kind, result.rule_index))
             .collect();
         assert_eq!(
             matched,
             [
-                CommandMatch::NotHeavy,
-                CommandMatch::Heavy { rule_index: 0 },
-                CommandMatch::Heavy { rule_index: 1 },
+                (CommandKind::NotHeavy, None),
+                (CommandKind::Heavy, Some(0)),
+                (CommandKind::Heavy, Some(1)),
             ]
         );
     }
@@ -544,7 +479,8 @@ mod tests {
         let test = test_command(&config, "cargo build && python train.py", Shell::Bash).unwrap();
         let lease = test.lease.unwrap();
         assert_eq!(lease.class, JobClass::Mixed);
-        assert_eq!(lease.sizing, config.classes.mixed);
+        assert_eq!(lease.profile, config.classes.mixed.profile);
+        assert_eq!(lease.min_cores, config.classes.mixed.minimum());
         let classes: Vec<Option<JobClass>> = test
             .commands
             .iter()
@@ -560,11 +496,10 @@ mod tests {
     fn test_test_command_print_only_needs_no_lease() {
         let test = test_command(&Config::default(), "cargo build --help", Shell::Bash).unwrap();
         assert_eq!(test.lease, None);
+        let command = &test.commands[0];
         assert_eq!(
-            test.commands[0].matched,
-            CommandMatch::PrintOnly {
-                flag: "--help".into()
-            }
+            (command.kind, command.flag.as_deref()),
+            (CommandKind::PrintOnly, Some("--help"))
         );
         assert_eq!(test.commands[0].size, None);
     }

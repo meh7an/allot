@@ -1,0 +1,198 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "CommandTest",
+  "description": "How the hook treats a command line under proposed rules.",
+  "type": "object",
+  "properties": {
+    "commands": {
+      "description": "Every simple command of the line, in order.",
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/CommandResult"
+      }
+    },
+    "lease": {
+      "description": "The one lease the hook asks for: the class of every heavy command combined. `None`\nwhen no command is heavy.",
+      "anyOf": [
+        {
+          "$ref": "#/definitions/ClassSize"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "commands"
+  ],
+  "definitions": {
+    "ClassSize": {
+      "description": "A class with the size the proposed settings give it.",
+      "type": "object",
+      "properties": {
+        "class": {
+          "description": "The lease class.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/JobClass"
+            }
+          ]
+        },
+        "min_cores": {
+          "description": "The fewest cores a lease of it starts with: its own minimum, or the automatic one.",
+          "type": "number",
+          "format": "float"
+        },
+        "profile": {
+          "description": "What a lease of it asks for.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/JobProfile"
+            }
+          ]
+        }
+      },
+      "required": [
+        "class",
+        "profile",
+        "min_cores"
+      ]
+    },
+    "CommandKind": {
+      "description": "How the rules treat one simple command.",
+      "oneOf": [
+        {
+          "description": "A rule matches, so it needs a lease.",
+          "type": "string",
+          "const": "heavy"
+        },
+        {
+          "description": "A rule matches, but a light flag makes it only print and exit.",
+          "type": "string",
+          "const": "print_only"
+        },
+        {
+          "description": "No rule matches.",
+          "type": "string",
+          "const": "not_heavy"
+        }
+      ]
+    },
+    "CommandResult": {
+      "description": "One simple command of a tested line.",
+      "type": "object",
+      "properties": {
+        "command": {
+          "description": "Its words joined by spaces, wrappers such as `sudo` included.",
+          "type": "string"
+        },
+        "flag": {
+          "description": "The first light flag among its arguments, for a print-only command.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "kind": {
+          "description": "How the proposed rules treat it.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/CommandKind"
+            }
+          ]
+        },
+        "rule_index": {
+          "description": "Position of the first matching rule, from 0, for a heavy command.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0
+        },
+        "size": {
+          "description": "The lease a heavy command needs on its own; `None` for the others.",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ClassSize"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "command",
+        "kind"
+      ]
+    },
+    "JobClass": {
+      "description": "Named job profiles. Their values come from the `[classes]` section of the config.",
+      "oneOf": [
+        {
+          "description": "Short jobs that barely load the machine.",
+          "type": "string",
+          "const": "light"
+        },
+        {
+          "description": "Compiles, test suites, and other CPU-bound work.",
+          "type": "string",
+          "const": "cpu_heavy"
+        },
+        {
+          "description": "Training, rendering, games, and other GPU-bound work.",
+          "type": "string",
+          "const": "gpu_heavy"
+        },
+        {
+          "description": "Jobs that load both the CPU and the GPU.",
+          "type": "string",
+          "const": "mixed"
+        }
+      ]
+    },
+    "JobProfile": {
+      "description": "Resources a job is expected to need while it runs.",
+      "type": "object",
+      "properties": {
+        "cores": {
+          "description": "Logical cores the job keeps busy.",
+          "type": "number",
+          "format": "float"
+        },
+        "est_secs": {
+          "description": "Expected run time.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "gpu_pct": {
+          "description": "GPU engine load as a percentage of one adapter.",
+          "type": "number",
+          "format": "float"
+        },
+        "ram_mb": {
+          "description": "Peak resident memory.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "vram_mb": {
+          "description": "Peak dedicated video memory.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "cores",
+        "ram_mb",
+        "gpu_pct",
+        "vram_mb",
+        "est_secs"
+      ]
+    }
+  }
+}

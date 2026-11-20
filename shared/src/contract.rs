@@ -1,7 +1,8 @@
 //! Golden files for the desktop apps: the JSON Schemas of [`UiState`], of the kill and remove
-//! responses, of [`SettingsSpec`] and of the [`StopRecord`] file, one fixture per flyout
-//! scenario and response shape plus the full settings spec and a stop record, kept in
-//! `contract/` at the repository root, and the types generated from the schemas: C# in the
+//! responses, of [`SettingsSpec`], of the [`StopRecord`] file and of the settings routes'
+//! requests and responses, one fixture per flyout scenario and response shape plus the full
+//! settings spec and a stop record, kept in `contract/` at the repository root, and the types
+//! generated from the schemas: C# in the
 //! tray's logic library, a Swift package and a JavaScript module with JSDoc types in
 //! `contract/`. The other responses `allot --json` prints get schemas there too.
 //!
@@ -20,10 +21,16 @@ use serde::Serialize;
 
 use crate::{
     api::{
-        BenchmarkProgress, HealthResponse, JobSummary, KillResponse, KilledProcess, RemoveResponse,
-        RunStats, UnkilledProcess, Verdict,
+        BenchmarkProgress, ClassifyRequest, HealthResponse, JobSummary, KillResponse,
+        KilledProcess, PreviewRequest, RemoveResponse, RunStats, SettingsPatch, SettingsRefusal,
+        SettingsState, UnkilledProcess, Verdict,
     },
-    settings::SettingsSpec,
+    config::{Config, FieldError},
+    config_write::Revision,
+    explain::{
+        ClassSize, CommandKind, CommandResult, CommandTest, FitPreview, Fits, KeptFree, SizeFit,
+    },
+    settings::{SettingValue, SettingsSpec},
     stop::{StopRecord, StoppedBy},
     types::{
         Accuracy, BoundProcess, DriveUsage, EndCause, EnforcedLimits, Holder, IsolationKind,
@@ -44,6 +51,13 @@ const SETTINGS_SCHEMA_FILE: &str = "contract/settings-spec.schema.json";
 const SETTINGS_FIXTURE_FILE: &str = "contract/fixtures/settings-spec.json";
 const STOP_SCHEMA_FILE: &str = "contract/stop-record.schema.json";
 const STOP_FIXTURE_FILE: &str = "contract/fixtures/stop-record.json";
+const SETTINGS_STATE_SCHEMA_FILE: &str = "contract/settings-state.schema.json";
+const SETTINGS_PATCH_SCHEMA_FILE: &str = "contract/settings-patch.schema.json";
+const PREVIEW_REQUEST_SCHEMA_FILE: &str = "contract/preview-request.schema.json";
+const FIT_PREVIEW_SCHEMA_FILE: &str = "contract/fit-preview.schema.json";
+const CLASSIFY_REQUEST_SCHEMA_FILE: &str = "contract/classify-request.schema.json";
+const COMMAND_TEST_SCHEMA_FILE: &str = "contract/command-test.schema.json";
+const SETTINGS_REFUSAL_SCHEMA_FILE: &str = "contract/settings-refusal.schema.json";
 const LEASES_SCHEMA_FILE: &str = "contract/leases.schema.json";
 const JOBS_SCHEMA_FILE: &str = "contract/job-summaries.schema.json";
 const RUNS_SCHEMA_FILE: &str = "contract/job-runs.schema.json";
@@ -891,14 +905,28 @@ fn root_schema<T: schemars::JsonSchema>() -> Schema {
         .into_root_schema_for::<T>()
 }
 
-/// Every root the desktop apps decode, with its committed schema file; `UiState` first.
-fn contract_schemas() -> [(&'static str, Schema); 5] {
+/// Every root the desktop apps decode or send, with its committed schema file; `UiState`
+/// first.
+fn contract_schemas() -> [(&'static str, Schema); 12] {
     [
         (SCHEMA_FILE, root_schema::<UiState>()),
         (KILL_SCHEMA_FILE, root_schema::<KillResponse>()),
         (REMOVE_SCHEMA_FILE, root_schema::<RemoveResponse>()),
         (SETTINGS_SCHEMA_FILE, root_schema::<SettingsSpec>()),
         (STOP_SCHEMA_FILE, root_schema::<StopRecord>()),
+        (SETTINGS_STATE_SCHEMA_FILE, root_schema::<SettingsState>()),
+        (SETTINGS_PATCH_SCHEMA_FILE, root_schema::<SettingsPatch>()),
+        (PREVIEW_REQUEST_SCHEMA_FILE, root_schema::<PreviewRequest>()),
+        (FIT_PREVIEW_SCHEMA_FILE, root_schema::<FitPreview>()),
+        (
+            CLASSIFY_REQUEST_SCHEMA_FILE,
+            root_schema::<ClassifyRequest>(),
+        ),
+        (COMMAND_TEST_SCHEMA_FILE, root_schema::<CommandTest>()),
+        (
+            SETTINGS_REFUSAL_SCHEMA_FILE,
+            root_schema::<SettingsRefusal>(),
+        ),
     ]
 }
 
@@ -976,6 +1004,139 @@ fn stop_scenario() -> StopRecord {
 #[test]
 fn test_stop_record_fixture_matches_committed_file() {
     assert_matches_file(STOP_FIXTURE_FILE, &pretty_json(&stop_scenario()));
+}
+
+/// The defaults with a few changes, among them a port allotd listens on only after a restart.
+fn settings_state_scenario() -> SettingsState {
+    let spec = SettingsSpec::new();
+    let mut config = Config::default();
+    config.daemon.port = 47_999;
+    config.admission.headroom_pct = 15.0;
+    config.classes.mixed.min_cores = Some(3.0);
+    SettingsState {
+        values: SettingValue::all(&spec, &config),
+        spec,
+        revision: Revision::of(b"[daemon]\nport = 47999\n"),
+        file_error: None,
+        listening_port: 47_823,
+        pending_restart: vec!["daemon.port".into()],
+    }
+}
+
+/// A refused value, and a file saved by hand since the panel read it.
+fn refusal_scenarios() -> [(&'static str, SettingsRefusal); 2] {
+    let problem = FieldError::new("admission.headroom_pct", "must be at least 0 and below 100");
+    [
+        (
+            "invalid",
+            SettingsRefusal {
+                message: problem.to_string(),
+                problems: vec![problem],
+                revision: None,
+            },
+        ),
+        (
+            "conflict",
+            SettingsRefusal {
+                message: "config.toml changed since it was read".into(),
+                problems: Vec::new(),
+                revision: Some(Revision::of(b"[admission]\nheadroom_pct = 20\n")),
+            },
+        ),
+    ]
+}
+
+/// A 16-core machine with an 8 GB GPU, one CPU-heavy lease running.
+fn fit_preview_scenario() -> FitPreview {
+    let fits = |full, shrunk| Fits {
+        full,
+        shrunk,
+        more: false,
+    };
+    let size = |name: &str, min_cores, now, idle| SizeFit {
+        name: name.into(),
+        min_cores,
+        now,
+        idle,
+    };
+    let unlimited = Fits {
+        full: 99,
+        shrunk: 0,
+        more: true,
+    };
+    FitPreview {
+        classes: vec![
+            size("light", 1.0, unlimited, unlimited),
+            size("cpu_heavy", 4.0, fits(0, 1), fits(1, 1)),
+            size("gpu_heavy", 1.0, fits(1, 0), fits(1, 0)),
+            size("mixed", 3.0, fits(0, 1), fits(1, 0)),
+        ],
+        presets: vec![
+            size("cpu_small", 1.0, fits(2, 1), fits(6, 1)),
+            size("low_impact", 0.25, fits(30, 0), fits(52, 0)),
+        ],
+        kept_free: KeptFree {
+            cores: 2.5,
+            total_cores: 16,
+            ram_mb: 4_915.5,
+            total_ram_mb: 32_768,
+            gpu_pct: Some(15.0),
+            vram_mb: Some(1_228.5),
+            total_vram_mb: Some(8_192),
+        },
+        cpu_busy_pct: 42.5,
+    }
+}
+
+/// A line with a heavy, a print-only and a light command.
+fn command_test_scenario() -> CommandTest {
+    let cpu_heavy = ClassSize {
+        class: JobClass::CpuHeavy,
+        profile: profile(8.0, 4096, 0.0, 0, 300),
+        min_cores: 4.0,
+    };
+    let command = |command: &str, kind| CommandResult {
+        command: command.into(),
+        kind,
+        rule_index: None,
+        flag: None,
+        size: None,
+    };
+    CommandTest {
+        lease: Some(cpu_heavy),
+        commands: vec![
+            CommandResult {
+                rule_index: Some(0),
+                size: Some(cpu_heavy),
+                ..command("cargo build --release", CommandKind::Heavy)
+            },
+            CommandResult {
+                flag: Some("--help".into()),
+                ..command("cargo test --help", CommandKind::PrintOnly)
+            },
+            command("cargo fmt", CommandKind::NotHeavy),
+        ],
+    }
+}
+
+/// Writes or checks the fixture `name`, and checks that it decodes back to `value`.
+fn assert_fixture<T>(name: &str, value: &T)
+where
+    T: Serialize + serde::de::DeserializeOwned + PartialEq + std::fmt::Debug,
+{
+    let json = pretty_json(value);
+    assert_matches_file(&format!("contract/fixtures/{name}.json"), &json);
+    assert_eq!(&serde_json::from_str::<T>(&json).unwrap(), value, "{name}");
+}
+
+#[test]
+fn test_settings_route_fixtures_match_committed_files() {
+    assert_fixture("settings-state", &settings_state_scenario());
+    for (name, refusal) in refusal_scenarios() {
+        assert_fixture(&format!("settings-refusal-{name}"), &refusal);
+    }
+    assert_fixture("fit-preview", &fit_preview_scenario());
+    assert_fixture("command-test", &command_test_scenario());
 }
 
 #[test]

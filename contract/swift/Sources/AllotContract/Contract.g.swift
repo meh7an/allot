@@ -129,6 +129,147 @@ public struct StopRecord: Codable, Sendable, Equatable {
     }
 }
 
+/// Response of `GET /settings` and of a `PATCH /settings` that was written.
+public struct SettingsState: Codable, Sendable, Equatable {
+    /// Why allotd rejects `config.toml`, if it does. Settings cannot be changed until the
+    /// file is fixed by hand.
+    public let fileError: String?
+
+    /// The port allotd listens on, which differs from `daemon.port` until a restart.
+    public let listeningPort: UInt32
+
+    /// Keys whose saved value takes effect only once allotd restarts, such as `daemon.port`.
+    public let pendingRestart: [String]
+
+    /// The revision of `config.toml`, to send with the next `PATCH /settings`.
+    public let revision: String
+
+    /// Every setting allotd owns, with its page, control, range, default, label and help.
+    public let spec: SettingsSpec
+
+    /// The value of every setting on the spec's pages: the file's, or while allotd rejects the
+    /// file, the last good values, which stay in effect.
+    public let values: [SettingValue]
+
+    private enum CodingKeys: String, CodingKey {
+        case fileError = "file_error"
+        case listeningPort = "listening_port"
+        case pendingRestart = "pending_restart"
+        case revision
+        case spec
+        case values
+    }
+}
+
+/// Body of `PATCH /settings`.
+public struct SettingsPatch: Codable, Sendable, Equatable {
+    /// The changes, written together or not at all. A reset is a change too.
+    public let changes: [Change]
+
+    /// The revision the changes were made against, from the last `GET /settings`.
+    public let revision: String
+
+    private enum CodingKeys: String, CodingKey {
+        case changes
+        case revision
+    }
+}
+
+/// Body of `POST /settings/preview`.
+public struct PreviewRequest: Codable, Sendable, Equatable {
+    /// Unsaved changes, applied on top of the file; none previews the file as it is.
+    public let changes: [Change]
+
+    private enum CodingKeys: String, CodingKey {
+        case changes
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.changes = try container.decodeIfPresent([Change].self, forKey: .changes) ?? []
+    }
+}
+
+/// What fits on this machine with proposed settings.
+public struct FitPreview: Codable, Sendable, Equatable {
+    /// One per class, in `JobClass::ALL` order.
+    public let classes: [SizeFit]
+
+    /// The machine's CPU load, as the 10 s average the counts use.
+    public let cpuBusyPct: Float
+
+    /// What the proposed headroom keeps free.
+    public let keptFree: KeptFree
+
+    /// One per preset, by name.
+    public let presets: [SizeFit]
+
+    private enum CodingKeys: String, CodingKey {
+        case classes
+        case cpuBusyPct = "cpu_busy_pct"
+        case keptFree = "kept_free"
+        case presets
+    }
+}
+
+/// Body of `POST /classify`.
+public struct ClassifyRequest: Codable, Sendable, Equatable {
+    /// Unsaved changes, such as edited rules, applied on top of the file.
+    public let changes: [Change]
+
+    /// The command line to test.
+    public let line: String
+
+    /// The shell the line is written for.
+    public let shell: Shell
+
+    private enum CodingKeys: String, CodingKey {
+        case changes
+        case line
+        case shell
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.changes = try container.decodeIfPresent([Change].self, forKey: .changes) ?? []
+        self.line = try container.decode(String.self, forKey: .line)
+        self.shell = try container.decodeIfPresent(Shell.self, forKey: .shell) ?? .bash
+    }
+}
+
+/// How the hook treats a command line under proposed rules.
+public struct CommandTest: Codable, Sendable, Equatable {
+    /// Every simple command of the line, in order.
+    public let commands: [CommandResult]
+
+    /// The one lease the hook asks for: the class of every heavy command combined. `nil`
+    /// when no command is heavy.
+    public let lease: ClassSize?
+
+    private enum CodingKeys: String, CodingKey {
+        case commands
+        case lease
+    }
+}
+
+/// Body of a refused settings request. Nothing was written.
+public struct SettingsRefusal: Codable, Sendable, Equatable {
+    /// What went wrong, as one sentence.
+    public let message: String
+
+    /// Every rejected value with its key, when values were the cause; empty otherwise.
+    public let problems: [FieldError]
+
+    /// The file's revision now, when it changed since the request's revision was read.
+    public let revision: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case message
+        case problems
+        case revision
+    }
+}
+
 /// How well a GPU source measures something per process.
 public enum Accuracy: String, Codable, Sendable, Equatable {
     /// Measured per process.
@@ -292,6 +433,184 @@ public struct BoundProcess: Codable, Sendable, Equatable {
     }
 }
 
+/// One change to `config.toml`. Keys are the spec's dotted keys, such as
+/// `admission.headroom_pct`; tables are a size table's key, `classes` or `presets`.
+public enum Change: Codable, Sendable, Equatable {
+    /// Turns a switch on or off.
+    case setSwitch(SetSwitch)
+    /// Sets a number, in the unit of its setting. A whole number is written as an integer
+    /// for whole-number settings and as a float, such as `8.0`, for the others.
+    case setNumber(SetNumber)
+    /// Replaces a list of strings, such as `classifier.light_flags`, as a whole.
+    case setList(SetList)
+    /// Replaces `classifier.rules` as a whole. An empty list is written as `rules = []`, so
+    /// no rule applies; `Change::Reset` of `classifier.rules` brings back the built-in ones.
+    case setRules(SetRules)
+    /// Sets every field of a class or preset, adding the preset when it is new. A field is
+    /// written when the file already has it or it differs from the row's default.
+    case setRow(SetRow)
+    /// Removes a class or preset from the file: a built-in row takes its defaults again, and
+    /// a preset of the user's own is deleted. A rename is this and a `Change::SetRow`.
+    case resetRow(ResetRow)
+    /// Removes a setting from the file so its default applies, or with a size table's key,
+    /// every row of it.
+    case reset(Reset)
+
+    /// Turns a switch on or off.
+    public struct SetSwitch: Codable, Sendable, Equatable {
+        /// The switch's key.
+        public let key: String
+
+        /// The new state.
+        public let value: Bool
+
+        private enum CodingKeys: String, CodingKey {
+            case key
+            case value
+        }
+    }
+
+    /// Sets a number, in the unit of its setting. A whole number is written as an integer
+    /// for whole-number settings and as a float, such as `8.0`, for the others.
+    public struct SetNumber: Codable, Sendable, Equatable {
+        /// The number's key.
+        public let key: String
+
+        /// The new value.
+        public let value: Double
+
+        private enum CodingKeys: String, CodingKey {
+            case key
+            case value
+        }
+    }
+
+    /// Replaces a list of strings, such as `classifier.light_flags`, as a whole.
+    public struct SetList: Codable, Sendable, Equatable {
+        /// The list's key.
+        public let key: String
+
+        /// The new list.
+        public let value: [String]
+
+        private enum CodingKeys: String, CodingKey {
+            case key
+            case value
+        }
+    }
+
+    /// Replaces `classifier.rules` as a whole. An empty list is written as `rules = []`, so
+    /// no rule applies; `Change::Reset` of `classifier.rules` brings back the built-in ones.
+    public struct SetRules: Codable, Sendable, Equatable {
+        /// The rules, in matching order.
+        public let rules: [HeavyRule]
+
+        private enum CodingKeys: String, CodingKey {
+            case rules
+        }
+    }
+
+    /// Sets every field of a class or preset, adding the preset when it is new. A field is
+    /// written when the file already has it or it differs from the row's default.
+    public struct SetRow: Codable, Sendable, Equatable {
+        /// The fewest cores a lease of it may start with; `nil` leaves it automatic.
+        public let minCores: Float?
+
+        /// The row, such as `cpu_heavy` or a preset's name.
+        public let name: String
+
+        /// The row's values.
+        public let profile: JobProfile
+
+        /// The size table, `classes` or `presets`.
+        public let table: String
+
+        private enum CodingKeys: String, CodingKey {
+            case minCores = "min_cores"
+            case name
+            case profile
+            case table
+        }
+    }
+
+    /// Removes a class or preset from the file: a built-in row takes its defaults again, and
+    /// a preset of the user's own is deleted. A rename is this and a `Change::SetRow`.
+    public struct ResetRow: Codable, Sendable, Equatable {
+        /// The row.
+        public let name: String
+
+        /// The size table, `classes` or `presets`.
+        public let table: String
+
+        private enum CodingKeys: String, CodingKey {
+            case name
+            case table
+        }
+    }
+
+    /// Removes a setting from the file so its default applies, or with a size table's key,
+    /// every row of it.
+    public struct Reset: Codable, Sendable, Equatable {
+        /// The setting's key.
+        public let key: String
+
+        private enum CodingKeys: String, CodingKey {
+            case key
+        }
+    }
+
+    private enum TagCodingKeys: String, CodingKey {
+        case kind
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: TagCodingKeys.self)
+        let tag = try container.decode(String.self, forKey: .kind)
+        switch tag {
+        case "set_switch": self = try .setSwitch(SetSwitch(from: decoder))
+        case "set_number": self = try .setNumber(SetNumber(from: decoder))
+        case "set_list": self = try .setList(SetList(from: decoder))
+        case "set_rules": self = try .setRules(SetRules(from: decoder))
+        case "set_row": self = try .setRow(SetRow(from: decoder))
+        case "reset_row": self = try .resetRow(ResetRow(from: decoder))
+        case "reset": self = try .reset(Reset(from: decoder))
+        default:
+            throw DecodingError.dataCorruptedError(
+                forKey: .kind,
+                in: container,
+                debugDescription: "unknown Change kind \(tag)"
+            )
+        }
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: TagCodingKeys.self)
+        switch self {
+        case .setSwitch(let variant):
+            try container.encode("set_switch", forKey: .kind)
+            try variant.encode(to: encoder)
+        case .setNumber(let variant):
+            try container.encode("set_number", forKey: .kind)
+            try variant.encode(to: encoder)
+        case .setList(let variant):
+            try container.encode("set_list", forKey: .kind)
+            try variant.encode(to: encoder)
+        case .setRules(let variant):
+            try container.encode("set_rules", forKey: .kind)
+            try variant.encode(to: encoder)
+        case .setRow(let variant):
+            try container.encode("set_row", forKey: .kind)
+            try variant.encode(to: encoder)
+        case .resetRow(let variant):
+            try container.encode("reset_row", forKey: .kind)
+            try variant.encode(to: encoder)
+        case .reset(let variant):
+            try container.encode("reset", forKey: .kind)
+            try variant.encode(to: encoder)
+        }
+    }
+}
+
 /// One value of a choice.
 public struct ChoiceOption: Codable, Sendable, Equatable {
     /// The value as the panel shows it.
@@ -303,6 +622,60 @@ public struct ChoiceOption: Codable, Sendable, Equatable {
     private enum CodingKeys: String, CodingKey {
         case label
         case value
+    }
+}
+
+/// A class with the size the proposed settings give it.
+public struct ClassSize: Codable, Sendable, Equatable {
+    /// The lease class.
+    public let `class`: JobClass
+
+    /// The fewest cores a lease of it starts with: its own minimum, or the automatic one.
+    public let minCores: Float
+
+    /// What a lease of it asks for.
+    public let profile: JobProfile
+
+    private enum CodingKeys: String, CodingKey {
+        case `class`
+        case minCores = "min_cores"
+        case profile
+    }
+}
+
+/// How the rules treat one simple command.
+public enum CommandKind: String, Codable, Sendable, Equatable {
+    /// A rule matches, so it needs a lease.
+    case heavy
+    /// A rule matches, but a light flag makes it only print and exit.
+    case printOnly = "print_only"
+    /// No rule matches.
+    case notHeavy = "not_heavy"
+}
+
+/// One simple command of a tested line.
+public struct CommandResult: Codable, Sendable, Equatable {
+    /// Its words joined by spaces, wrappers such as `sudo` included.
+    public let command: String
+
+    /// The first light flag among its arguments, for a print-only command.
+    public let flag: String?
+
+    /// How the proposed rules treat it.
+    public let kind: CommandKind
+
+    /// Position of the first matching rule, from 0, for a heavy command.
+    public let ruleIndex: UInt32?
+
+    /// The lease a heavy command needs on its own; `nil` for the others.
+    public let size: ClassSize?
+
+    private enum CodingKeys: String, CodingKey {
+        case command
+        case flag
+        case kind
+        case ruleIndex = "rule_index"
+        case size
     }
 }
 
@@ -420,6 +793,39 @@ public struct EnforcedLimits: Codable, Sendable, Equatable {
         case cpuCores = "cpu_cores"
         case memoryHighMb = "memory_high_mb"
         case memoryMaxMb = "memory_max_mb"
+    }
+}
+
+/// A value of the configuration outside what it allows: its key and what it must be.
+public struct FieldError: Codable, Sendable, Equatable {
+    /// The value's dotted key, such as `admission.headroom_pct`, `presets.big.min_cores` or
+    /// `classifier.rules[2].program`. A preset's name is reported as `presets.<name>`.
+    public let key: String
+
+    /// What the value must be, such as `must be at least 0 and below 100`.
+    public let message: String
+
+    private enum CodingKeys: String, CodingKey {
+        case key
+        case message
+    }
+}
+
+/// How many jobs of one size start, one after another, in a given room.
+public struct Fits: Codable, Sendable, Equatable {
+    /// Jobs that get every core they ask for.
+    public let full: UInt32
+
+    /// Whether more would still fit after the count's limit of 99 jobs.
+    public let more: Bool
+
+    /// Jobs after those that start shrunk, each counted at its minimum cores.
+    public let shrunk: UInt32
+
+    private enum CodingKeys: String, CodingKey {
+        case full
+        case more
+        case shrunk
     }
 }
 
@@ -617,6 +1023,41 @@ public struct JobProfile: Codable, Sendable, Equatable {
         case estSecs = "est_secs"
         case gpuPct = "gpu_pct"
         case ramMb = "ram_mb"
+        case vramMb = "vram_mb"
+    }
+}
+
+/// What the headroom keeps free of the whole machine.
+public struct KeptFree: Codable, Sendable, Equatable {
+    /// Logical cores kept free.
+    public let cores: Double
+
+    /// Share of the primary GPU kept free, or `nil` without a GPU.
+    public let gpuPct: Double?
+
+    /// Memory kept free.
+    public let ramMb: Double
+
+    /// The machine's logical cores.
+    public let totalCores: UInt32
+
+    /// The machine's memory.
+    public let totalRamMb: UInt64
+
+    /// The primary GPU's video memory, under the same conditions.
+    public let totalVramMb: UInt64?
+
+    /// Video memory kept free, or `nil` when there is no GPU, its size is unknown, or it
+    /// shares RAM.
+    public let vramMb: Double?
+
+    private enum CodingKeys: String, CodingKey {
+        case cores
+        case gpuPct = "gpu_pct"
+        case ramMb = "ram_mb"
+        case totalCores = "total_cores"
+        case totalRamMb = "total_ram_mb"
+        case totalVramMb = "total_vram_mb"
         case vramMb = "vram_mb"
     }
 }
@@ -1336,6 +1777,136 @@ public struct SettingSpec: Codable, Sendable, Equatable {
     }
 }
 
+/// The value of one setting on a page, keyed like the spec, in the kind its control edits.
+///
+/// The tags end in `_value`, so the panels' generated types never share a name with
+/// `SettingControl`'s: System.Text.Json's source generator warns on a repeated type name.
+public enum SettingValue: Codable, Sendable, Equatable {
+    /// The state of a switch.
+    case switchValue(SwitchValue)
+    /// A number, in the unit of its setting.
+    case numberValue(NumberValue)
+    /// A list of strings, such as `classifier.light_flags`.
+    case listValue(ListValue)
+    /// The heavy-command rules.
+    case rulesValue(RulesValue)
+    /// Every row of a size table, built-in rows included.
+    case rowsValue(RowsValue)
+
+    /// The state of a switch.
+    public struct SwitchValue: Codable, Sendable, Equatable {
+        /// The setting's key.
+        public let key: String
+
+        /// Whether it is on.
+        public let value: Bool
+
+        private enum CodingKeys: String, CodingKey {
+            case key
+            case value
+        }
+    }
+
+    /// A number, in the unit of its setting.
+    public struct NumberValue: Codable, Sendable, Equatable {
+        /// The setting's key.
+        public let key: String
+
+        /// The value.
+        public let value: Double
+
+        private enum CodingKeys: String, CodingKey {
+            case key
+            case value
+        }
+    }
+
+    /// A list of strings, such as `classifier.light_flags`.
+    public struct ListValue: Codable, Sendable, Equatable {
+        /// The setting's key.
+        public let key: String
+
+        /// The entries, in file order.
+        public let value: [String]
+
+        private enum CodingKeys: String, CodingKey {
+            case key
+            case value
+        }
+    }
+
+    /// The heavy-command rules.
+    public struct RulesValue: Codable, Sendable, Equatable {
+        /// The setting's key, `classifier.rules`.
+        public let key: String
+
+        /// The rules, in matching order.
+        public let value: [HeavyRule]
+
+        private enum CodingKeys: String, CodingKey {
+            case key
+            case value
+        }
+    }
+
+    /// Every row of a size table, built-in rows included.
+    public struct RowsValue: Codable, Sendable, Equatable {
+        /// The table's key, `classes` or `presets`.
+        public let key: String
+
+        /// The rows: classes in class order, presets by name.
+        public let value: [SizeRow]
+
+        private enum CodingKeys: String, CodingKey {
+            case key
+            case value
+        }
+    }
+
+    private enum TagCodingKeys: String, CodingKey {
+        case kind
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: TagCodingKeys.self)
+        let tag = try container.decode(String.self, forKey: .kind)
+        switch tag {
+        case "switch_value": self = try .switchValue(SwitchValue(from: decoder))
+        case "number_value": self = try .numberValue(NumberValue(from: decoder))
+        case "list_value": self = try .listValue(ListValue(from: decoder))
+        case "rules_value": self = try .rulesValue(RulesValue(from: decoder))
+        case "rows_value": self = try .rowsValue(RowsValue(from: decoder))
+        default:
+            throw DecodingError.dataCorruptedError(
+                forKey: .kind,
+                in: container,
+                debugDescription: "unknown SettingValue kind \(tag)"
+            )
+        }
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: TagCodingKeys.self)
+        switch self {
+        case .switchValue(let variant):
+            try container.encode("switch_value", forKey: .kind)
+            try variant.encode(to: encoder)
+        case .numberValue(let variant):
+            try container.encode("number_value", forKey: .kind)
+            try variant.encode(to: encoder)
+        case .listValue(let variant):
+            try container.encode("list_value", forKey: .kind)
+            try variant.encode(to: encoder)
+        case .rulesValue(let variant):
+            try container.encode("rules_value", forKey: .kind)
+            try variant.encode(to: encoder)
+        case .rowsValue(let variant):
+            try container.encode("rows_value", forKey: .kind)
+            try variant.encode(to: encoder)
+        }
+    }
+}
+
 /// A titled group of settings on a page.
 public struct SettingsGroupSpec: Codable, Sendable, Equatable {
     /// Stable identifier, unique on its page, such as `learn`.
@@ -1373,6 +1944,54 @@ public struct SettingsPageSpec: Codable, Sendable, Equatable {
         case id
         case intro
         case label
+    }
+}
+
+/// The shell a command line is written for. Quoting and escapes differ between them.
+public enum Shell: String, Codable, Sendable, Equatable {
+    /// bash and other POSIX shells: `\` escapes.
+    case bash
+    /// PowerShell, also used for `cmd /c` scripts: `` ` `` escapes and `\` is literal.
+    case powershell
+}
+
+/// What fits of one class or preset.
+public struct SizeFit: Codable, Sendable, Equatable {
+    /// With every lease ended; load outside leases stays.
+    public let idle: Fits
+
+    /// The fewest cores a job of it starts with.
+    public let minCores: Float
+
+    /// The class's key, such as `cpu_heavy`, or the preset's name.
+    public let name: String
+
+    /// Beside the active leases and the load right now.
+    public let now: Fits
+
+    private enum CodingKeys: String, CodingKey {
+        case idle
+        case minCores = "min_cores"
+        case name
+        case now
+    }
+}
+
+/// A class or preset with its values.
+public struct SizeRow: Codable, Sendable, Equatable {
+    /// The fewest cores a lease of it may start with; `nil` while it is automatic.
+    public let minCores: Float?
+
+    /// The row's key in the file, such as `cpu_heavy` or a preset's name.
+    public let name: String
+
+    /// What a lease of it asks for.
+    public let profile: JobProfile
+
+    private enum CodingKeys: String, CodingKey {
+        case minCores = "min_cores"
+        case name
+        case profile
     }
 }
 

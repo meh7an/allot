@@ -37,7 +37,7 @@ use tokio::sync::watch;
 use crate::{
     db::repo::{self, LeaseDraft},
     error::AppError,
-    scopes,
+    scopes, settings,
     state::{AppState, Latest, Requested, Shared, now_ms},
     ui,
 };
@@ -74,6 +74,9 @@ pub fn router(state: AppState) -> Router {
         .route("/history", get(job_history))
         .route("/history/runs", get(history_runs))
         .route("/shutdown", post(shutdown))
+        .route("/settings", get(settings::read).patch(settings::change))
+        .route("/settings/preview", post(settings::preview))
+        .route("/classify", post(settings::classify))
         .route_layer(middleware::from_fn_with_state(state.clone(), require_token))
         .route("/health", get(health))
         .with_state(state)

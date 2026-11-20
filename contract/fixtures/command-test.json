@@ -1,0 +1,40 @@
+{
+  "lease": {
+    "class": "cpu_heavy",
+    "profile": {
+      "cores": 8.0,
+      "ram_mb": 4096,
+      "gpu_pct": 0.0,
+      "vram_mb": 0,
+      "est_secs": 300
+    },
+    "min_cores": 4.0
+  },
+  "commands": [
+    {
+      "command": "cargo build --release",
+      "kind": "heavy",
+      "rule_index": 0,
+      "size": {
+        "class": "cpu_heavy",
+        "profile": {
+          "cores": 8.0,
+          "ram_mb": 4096,
+          "gpu_pct": 0.0,
+          "vram_mb": 0,
+          "est_secs": 300
+        },
+        "min_cores": 4.0
+      }
+    },
+    {
+      "command": "cargo test --help",
+      "kind": "print_only",
+      "flag": "--help"
+    },
+    {
+      "command": "cargo fmt",
+      "kind": "not_heavy"
+    }
+  ]
+}

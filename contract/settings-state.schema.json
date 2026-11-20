@@ -1,0 +1,904 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "SettingsState",
+  "description": "Response of `GET /settings` and of a `PATCH /settings` that was written.",
+  "type": "object",
+  "properties": {
+    "file_error": {
+      "description": "Why allotd rejects `config.toml`, if it does. Settings cannot be changed until the\nfile is fixed by hand.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "listening_port": {
+      "description": "The port allotd listens on, which differs from `daemon.port` until a restart.",
+      "type": "integer",
+      "format": "uint32",
+      "minimum": 0
+    },
+    "pending_restart": {
+      "description": "Keys whose saved value takes effect only once allotd restarts, such as `daemon.port`.",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "revision": {
+      "description": "The revision of `config.toml`, to send with the next `PATCH /settings`.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/Revision"
+        }
+      ]
+    },
+    "spec": {
+      "description": "Every setting allotd owns, with its page, control, range, default, label and help.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/SettingsSpec"
+        }
+      ]
+    },
+    "values": {
+      "description": "The value of every setting on the spec's pages: the file's, or while allotd rejects the\nfile, the last good values, which stay in effect.",
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/SettingValue"
+      }
+    }
+  },
+  "required": [
+    "spec",
+    "values",
+    "revision",
+    "listening_port",
+    "pending_restart"
+  ],
+  "definitions": {
+    "Bound": {
+      "description": "One end of a number's range.",
+      "type": "object",
+      "properties": {
+        "exclusive": {
+          "description": "Whether the limit itself is out of range.",
+          "type": "boolean"
+        },
+        "value": {
+          "description": "The limit.",
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "required": [
+        "value",
+        "exclusive"
+      ]
+    },
+    "ChoiceOption": {
+      "description": "One value of a choice.",
+      "type": "object",
+      "properties": {
+        "label": {
+          "description": "The value as the panel shows it.",
+          "type": "string"
+        },
+        "value": {
+          "description": "The value written to the file.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "value",
+        "label"
+      ]
+    },
+    "HeavyRule": {
+      "description": "Marks a simple command as heavy when its program and arguments match.\n\nMatching ignores case, and `*` matches any run of characters.",
+      "type": "object",
+      "properties": {
+        "args": {
+          "description": "Any one of these makes the command heavy; empty matches any arguments. A pattern that\nstarts with `-` matches that flag anywhere in the command; any other pattern matches\nthe first positional argument (the first one not starting with `-` or `+`).",
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          }
+        },
+        "class": {
+          "description": "Class the matched command needs a lease for.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/JobClass"
+            }
+          ]
+        },
+        "program": {
+          "description": "Program name without directory or extension, for example `cargo` or `python*`.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "program",
+        "class"
+      ]
+    },
+    "JobClass": {
+      "description": "Named job profiles. Their values come from the `[classes]` section of the config.",
+      "oneOf": [
+        {
+          "description": "Short jobs that barely load the machine.",
+          "type": "string",
+          "const": "light"
+        },
+        {
+          "description": "Compiles, test suites, and other CPU-bound work.",
+          "type": "string",
+          "const": "cpu_heavy"
+        },
+        {
+          "description": "Training, rendering, games, and other GPU-bound work.",
+          "type": "string",
+          "const": "gpu_heavy"
+        },
+        {
+          "description": "Jobs that load both the CPU and the GPU.",
+          "type": "string",
+          "const": "mixed"
+        }
+      ]
+    },
+    "JobProfile": {
+      "description": "Resources a job is expected to need while it runs.",
+      "type": "object",
+      "properties": {
+        "cores": {
+          "description": "Logical cores the job keeps busy.",
+          "type": "number",
+          "format": "float"
+        },
+        "est_secs": {
+          "description": "Expected run time.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "gpu_pct": {
+          "description": "GPU engine load as a percentage of one adapter.",
+          "type": "number",
+          "format": "float"
+        },
+        "ram_mb": {
+          "description": "Peak resident memory.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "vram_mb": {
+          "description": "Peak dedicated video memory.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "cores",
+        "ram_mb",
+        "gpu_pct",
+        "vram_mb",
+        "est_secs"
+      ]
+    },
+    "OffSwitch": {
+      "description": "A switch that turns a numeric feature off by writing one value.",
+      "type": "object",
+      "properties": {
+        "help": {
+          "description": "The switch's help.",
+          "type": "string"
+        },
+        "label": {
+          "description": "The switch's label, describing the on state.",
+          "type": "string"
+        },
+        "value": {
+          "description": "The value written while the switch is off.",
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "required": [
+        "value",
+        "label",
+        "help"
+      ]
+    },
+    "Platform": {
+      "description": "An operating system a panel runs on.",
+      "oneOf": [
+        {
+          "description": "The Windows tray.",
+          "type": "string",
+          "const": "windows"
+        },
+        {
+          "description": "The macOS menu bar app.",
+          "type": "string",
+          "const": "macos"
+        },
+        {
+          "description": "The GNOME extension and the KDE widget.",
+          "type": "string",
+          "const": "linux"
+        }
+      ]
+    },
+    "Quantity": {
+      "description": "What a number counts.",
+      "oneOf": [
+        {
+          "description": "A share from 0 to 100.",
+          "type": "string",
+          "const": "percent"
+        },
+        {
+          "description": "A number of job runs.",
+          "type": "string",
+          "const": "runs"
+        },
+        {
+          "description": "A number of days.",
+          "type": "string",
+          "const": "days"
+        },
+        {
+          "description": "A duration in seconds; panels may show it in minutes or hours.",
+          "type": "string",
+          "const": "seconds"
+        },
+        {
+          "description": "Logical cores; fractions are allowed.",
+          "type": "string",
+          "const": "cores"
+        },
+        {
+          "description": "Memory in megabytes; panels may show it in gigabytes.",
+          "type": "string",
+          "const": "megabytes"
+        },
+        {
+          "description": "A TCP port, shown without digit grouping.",
+          "type": "string",
+          "const": "port"
+        }
+      ]
+    },
+    "Requirement": {
+      "description": "A switch another setting depends on.",
+      "type": "object",
+      "properties": {
+        "key": {
+          "description": "The switch's key.",
+          "type": "string"
+        },
+        "note": {
+          "description": "Shown under the disabled setting while the switch is off.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "key",
+        "note"
+      ]
+    },
+    "Revision": {
+      "description": "A version of `config.toml`'s bytes, as 16 hex digits.",
+      "type": "string"
+    },
+    "RowName": {
+      "description": "The name field of a row the user adds or renames.",
+      "type": "object",
+      "properties": {
+        "help": {
+          "description": "The field's help.",
+          "type": "string"
+        },
+        "label": {
+          "description": "The field's label.",
+          "type": "string"
+        },
+        "pattern": {
+          "description": "A regular expression the whole name must match. A name must also differ from every\nother row's and from every class's.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "label",
+        "help",
+        "pattern"
+      ]
+    },
+    "SettingControl": {
+      "description": "How a setting is edited.",
+      "oneOf": [
+        {
+          "description": "On or off.",
+          "type": "object",
+          "properties": {
+            "default": {
+              "description": "The value while the key is not in the file.",
+              "type": "boolean"
+            },
+            "kind": {
+              "type": "string",
+              "const": "switch"
+            }
+          },
+          "required": [
+            "kind",
+            "default"
+          ]
+        },
+        {
+          "description": "A number in a unit, written to the file in that unit.",
+          "type": "object",
+          "properties": {
+            "automatic": {
+              "description": "How the value is worked out while the key is left out, when it may be, shown\nbeside an Automatic choice.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "default": {
+              "description": "The value while the key is not in the file. In a table's fields, the value a new\nrow starts with, or `None` when a new row must give one or `automatic` applies.",
+              "type": [
+                "number",
+                "null"
+              ],
+              "format": "double"
+            },
+            "integer": {
+              "description": "Whether only whole numbers are allowed.",
+              "type": "boolean"
+            },
+            "kind": {
+              "type": "string",
+              "const": "number"
+            },
+            "max": {
+              "description": "The largest value allowed, if any besides `max_key`.",
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/Bound"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "max_key": {
+              "description": "A setting this value must be at most, by key; in a table, a field of the same row.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "min": {
+              "description": "The smallest value allowed, if any besides `min_key`.",
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/Bound"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "min_key": {
+              "description": "A setting this value must be at least, by key; in a table, a field of the same row.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "off": {
+              "description": "A switch in front of the number, when one value turns the feature off.",
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/OffSwitch"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "quantity": {
+              "description": "What the number counts, which picks its unit and display.",
+              "allOf": [
+                {
+                  "$ref": "#/definitions/Quantity"
+                }
+              ]
+            }
+          },
+          "required": [
+            "kind",
+            "quantity",
+            "integer"
+          ]
+        },
+        {
+          "description": "A line of text, never blank.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "text"
+            },
+            "pattern": {
+              "description": "A regular expression the whole text must match, if any.",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "kind"
+          ]
+        },
+        {
+          "description": "One of a fixed set of values.",
+          "type": "object",
+          "properties": {
+            "default": {
+              "description": "The value a new item starts with, or `None` when one must be picked.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "kind": {
+              "type": "string",
+              "const": "choice"
+            },
+            "options": {
+              "description": "The values in display order.",
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/ChoiceOption"
+              }
+            }
+          },
+          "required": [
+            "kind",
+            "options"
+          ]
+        },
+        {
+          "description": "A list of strings without blank entries; a list in the file replaces the default list.",
+          "type": "object",
+          "properties": {
+            "default": {
+              "description": "The list while the key is not in the file.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "kind": {
+              "type": "string",
+              "const": "string_list"
+            }
+          },
+          "required": [
+            "kind",
+            "default"
+          ]
+        },
+        {
+          "description": "Named rows of sizes, such as `[classes.cpu_heavy]`, edited one row at a time. A row\nin the file changes only the fields it names.",
+          "type": "object",
+          "properties": {
+            "fields": {
+              "description": "The fields of every row.",
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/SettingSpec"
+              }
+            },
+            "kind": {
+              "type": "string",
+              "const": "size_table"
+            },
+            "new_row_name": {
+              "description": "How a row added by the user is named, or `None` when rows cannot be added,\nrenamed or deleted.",
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/RowName"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "rows": {
+              "description": "The built-in rows with their defaults, which always exist.",
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/SizeRowSpec"
+              }
+            }
+          },
+          "required": [
+            "kind",
+            "rows",
+            "fields"
+          ]
+        },
+        {
+          "description": "An ordered list of heavy-command rules, always written whole. A list in the file, even\nan empty one, replaces the default list; removing the key brings the default back.",
+          "type": "object",
+          "properties": {
+            "default": {
+              "description": "The list while the key is not in the file.",
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/HeavyRule"
+              }
+            },
+            "fields": {
+              "description": "The fields of every rule.",
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/SettingSpec"
+              }
+            },
+            "kind": {
+              "type": "string",
+              "const": "rule_list"
+            }
+          },
+          "required": [
+            "kind",
+            "default",
+            "fields"
+          ]
+        }
+      ]
+    },
+    "SettingSpec": {
+      "description": "One setting: a key of `config.toml`, or a field of a table row or rule.",
+      "type": "object",
+      "properties": {
+        "advanced": {
+          "description": "Whether the setting is rarely changed and shows last on its page, under Advanced.",
+          "type": "boolean"
+        },
+        "control": {
+          "description": "How the value is edited, with its default and range.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/SettingControl"
+            }
+          ]
+        },
+        "help": {
+          "description": "One or two plain sentences. Panels show the key after them.",
+          "type": "string"
+        },
+        "key": {
+          "description": "The TOML key: a dotted path such as `admission.headroom_pct` for a setting on a page,\nor the key inside a row, such as `cores`, for a field of a table or rule.",
+          "type": "string"
+        },
+        "label": {
+          "description": "A noun phrase in sentence case; a switch's label describes the on state.",
+          "type": "string"
+        },
+        "needs_restart": {
+          "description": "Whether a change takes effect only once allotd restarts.",
+          "type": "boolean"
+        },
+        "platforms": {
+          "description": "The operating systems whose panels show the setting; empty means every one.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Platform"
+          }
+        },
+        "requires": {
+          "description": "A switch that must be on for this setting to act; panels disable it while it is off.",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Requirement"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "key",
+        "label",
+        "help",
+        "control",
+        "advanced",
+        "needs_restart",
+        "platforms"
+      ]
+    },
+    "SettingValue": {
+      "description": "The value of one setting on a page, keyed like the spec, in the kind its control edits.\n\nThe tags end in `_value`, so the panels' generated types never share a name with\n[`SettingControl`]'s: System.Text.Json's source generator warns on a repeated type name.",
+      "oneOf": [
+        {
+          "description": "The state of a switch.",
+          "type": "object",
+          "properties": {
+            "key": {
+              "description": "The setting's key.",
+              "type": "string"
+            },
+            "kind": {
+              "type": "string",
+              "const": "switch_value"
+            },
+            "value": {
+              "description": "Whether it is on.",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "kind",
+            "key",
+            "value"
+          ]
+        },
+        {
+          "description": "A number, in the unit of its setting.",
+          "type": "object",
+          "properties": {
+            "key": {
+              "description": "The setting's key.",
+              "type": "string"
+            },
+            "kind": {
+              "type": "string",
+              "const": "number_value"
+            },
+            "value": {
+              "description": "The value.",
+              "type": "number",
+              "format": "double"
+            }
+          },
+          "required": [
+            "kind",
+            "key",
+            "value"
+          ]
+        },
+        {
+          "description": "A list of strings, such as `classifier.light_flags`.",
+          "type": "object",
+          "properties": {
+            "key": {
+              "description": "The setting's key.",
+              "type": "string"
+            },
+            "kind": {
+              "type": "string",
+              "const": "list_value"
+            },
+            "value": {
+              "description": "The entries, in file order.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "required": [
+            "kind",
+            "key",
+            "value"
+          ]
+        },
+        {
+          "description": "The heavy-command rules.",
+          "type": "object",
+          "properties": {
+            "key": {
+              "description": "The setting's key, `classifier.rules`.",
+              "type": "string"
+            },
+            "kind": {
+              "type": "string",
+              "const": "rules_value"
+            },
+            "value": {
+              "description": "The rules, in matching order.",
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/HeavyRule"
+              }
+            }
+          },
+          "required": [
+            "kind",
+            "key",
+            "value"
+          ]
+        },
+        {
+          "description": "Every row of a size table, built-in rows included.",
+          "type": "object",
+          "properties": {
+            "key": {
+              "description": "The table's key, `classes` or `presets`.",
+              "type": "string"
+            },
+            "kind": {
+              "type": "string",
+              "const": "rows_value"
+            },
+            "value": {
+              "description": "The rows: classes in class order, presets by name.",
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/SizeRow"
+              }
+            }
+          },
+          "required": [
+            "kind",
+            "key",
+            "value"
+          ]
+        }
+      ]
+    },
+    "SettingsGroupSpec": {
+      "description": "A titled group of settings on a page.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "description": "Stable identifier, unique on its page, such as `learn`.",
+          "type": "string"
+        },
+        "label": {
+          "description": "The group's title.",
+          "type": "string"
+        },
+        "settings": {
+          "description": "The settings, in group order.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/SettingSpec"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "label",
+        "settings"
+      ]
+    },
+    "SettingsPageSpec": {
+      "description": "A page of the Settings window.",
+      "type": "object",
+      "properties": {
+        "groups": {
+          "description": "The groups, in page order.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/SettingsGroupSpec"
+          }
+        },
+        "id": {
+          "description": "Stable identifier, such as `admission`.",
+          "type": "string"
+        },
+        "intro": {
+          "description": "A sentence under the title, if the page has one.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "label": {
+          "description": "The page's title.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "label",
+        "groups"
+      ]
+    },
+    "SettingsSpec": {
+      "description": "Every allotd setting, page by page, in the order the Settings window shows them.\n\nPanels add what holds no key themselves: the Panel page of their own settings, live\nexplanations, the command test, the service status, the config file row and Reset.",
+      "type": "object",
+      "properties": {
+        "pages": {
+          "description": "The pages, in window order.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/SettingsPageSpec"
+          }
+        }
+      },
+      "required": [
+        "pages"
+      ]
+    },
+    "SizeRow": {
+      "description": "A class or preset with its values.",
+      "type": "object",
+      "properties": {
+        "min_cores": {
+          "description": "The fewest cores a lease of it may start with; `None` while it is automatic.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float"
+        },
+        "name": {
+          "description": "The row's key in the file, such as `cpu_heavy` or a preset's name.",
+          "type": "string"
+        },
+        "profile": {
+          "description": "What a lease of it asks for.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/JobProfile"
+            }
+          ]
+        }
+      },
+      "required": [
+        "name",
+        "profile"
+      ]
+    },
+    "SizeRowSpec": {
+      "description": "A built-in row of a size table.",
+      "type": "object",
+      "properties": {
+        "default": {
+          "description": "The row's values while the file does not change them.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/JobProfile"
+            }
+          ]
+        },
+        "default_min_cores": {
+          "description": "The row's minimum cores while the file names none; `None` follows the field's\nautomatic rule.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float"
+        },
+        "label": {
+          "description": "The row as the panel shows it.",
+          "type": "string"
+        },
+        "name": {
+          "description": "The row's key in the file, such as `cpu_heavy`.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "label",
+        "default"
+      ]
+    }
+  }
+}

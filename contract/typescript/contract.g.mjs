@@ -82,6 +82,93 @@
  */
 
 /**
+ * Response of `GET /settings` and of a `PATCH /settings` that was written.
+ *
+ * @typedef {object} SettingsState
+ * @property {string | null} file_error
+ *   Why allotd rejects `config.toml`, if it does. Settings cannot be changed until the
+ *   file is fixed by hand.
+ * @property {number} listening_port
+ *   The port allotd listens on, which differs from `daemon.port` until a restart.
+ * @property {string[]} pending_restart
+ *   Keys whose saved value takes effect only once allotd restarts, such as `daemon.port`.
+ * @property {string} revision
+ *   The revision of `config.toml`, to send with the next `PATCH /settings`.
+ * @property {SettingsSpec} spec
+ *   Every setting allotd owns, with its page, control, range, default, label and help.
+ * @property {SettingValue[]} values
+ *   The value of every setting on the spec's pages: the file's, or while allotd rejects the
+ *   file, the last good values, which stay in effect.
+ */
+
+/**
+ * Body of `PATCH /settings`.
+ *
+ * @typedef {object} SettingsPatch
+ * @property {Change[]} changes
+ *   The changes, written together or not at all. A reset is a change too.
+ * @property {string} revision
+ *   The revision the changes were made against, from the last `GET /settings`.
+ */
+
+/**
+ * Body of `POST /settings/preview`.
+ *
+ * @typedef {object} PreviewRequest
+ * @property {Change[]} changes
+ *   Unsaved changes, applied on top of the file; none previews the file as it is.
+ */
+
+/**
+ * What fits on this machine with proposed settings.
+ *
+ * @typedef {object} FitPreview
+ * @property {SizeFit[]} classes
+ *   One per class, in `JobClass::ALL` order.
+ * @property {number} cpu_busy_pct
+ *   The machine's CPU load, as the 10 s average the counts use.
+ * @property {KeptFree} kept_free
+ *   What the proposed headroom keeps free.
+ * @property {SizeFit[]} presets
+ *   One per preset, by name.
+ */
+
+/**
+ * Body of `POST /classify`.
+ *
+ * @typedef {object} ClassifyRequest
+ * @property {Change[]} changes
+ *   Unsaved changes, such as edited rules, applied on top of the file.
+ * @property {string} line
+ *   The command line to test.
+ * @property {Shell} shell
+ *   The shell the line is written for.
+ */
+
+/**
+ * How the hook treats a command line under proposed rules.
+ *
+ * @typedef {object} CommandTest
+ * @property {CommandResult[]} commands
+ *   Every simple command of the line, in order.
+ * @property {ClassSize | null} lease
+ *   The one lease the hook asks for: the class of every heavy command combined. `null`
+ *   when no command is heavy.
+ */
+
+/**
+ * Body of a refused settings request. Nothing was written.
+ *
+ * @typedef {object} SettingsRefusal
+ * @property {string} message
+ *   What went wrong, as one sentence.
+ * @property {FieldError[]} problems
+ *   Every rejected value with its key, when values were the cause; empty otherwise.
+ * @property {string | null} revision
+ *   The file's revision now, when it changed since the request's revision was read.
+ */
+
+/**
  * How well a GPU source measures something per process.
  *
  * - `exact`: Measured per process.
@@ -178,6 +265,103 @@
  */
 
 /**
+ * One change to `config.toml`. Keys are the spec's dotted keys, such as
+ * `admission.headroom_pct`; tables are a size table's key, `classes` or `presets`.
+ *
+ * @typedef {(
+ *   | ChangeSetSwitch
+ *   | ChangeSetNumber
+ *   | ChangeSetList
+ *   | ChangeSetRules
+ *   | ChangeSetRow
+ *   | ChangeResetRow
+ *   | ChangeReset
+ * )} Change
+ */
+
+/**
+ * Turns a switch on or off.
+ *
+ * @typedef {object} ChangeSetSwitch
+ * @property {"set_switch"} kind
+ * @property {string} key
+ *   The switch's key.
+ * @property {boolean} value
+ *   The new state.
+ */
+
+/**
+ * Sets a number, in the unit of its setting. A whole number is written as an integer
+ * for whole-number settings and as a float, such as `8.0`, for the others.
+ *
+ * @typedef {object} ChangeSetNumber
+ * @property {"set_number"} kind
+ * @property {string} key
+ *   The number's key.
+ * @property {number} value
+ *   The new value.
+ */
+
+/**
+ * Replaces a list of strings, such as `classifier.light_flags`, as a whole.
+ *
+ * @typedef {object} ChangeSetList
+ * @property {"set_list"} kind
+ * @property {string} key
+ *   The list's key.
+ * @property {string[]} value
+ *   The new list.
+ */
+
+/**
+ * Replaces `classifier.rules` as a whole. An empty list is written as `rules = []`, so
+ * no rule applies; `Change::Reset` of `classifier.rules` brings back the built-in ones.
+ *
+ * @typedef {object} ChangeSetRules
+ * @property {"set_rules"} kind
+ * @property {HeavyRule[]} rules
+ *   The rules, in matching order.
+ */
+
+/**
+ * Sets every field of a class or preset, adding the preset when it is new. A field is
+ * written when the file already has it or it differs from the row's default.
+ *
+ * @typedef {object} ChangeSetRow
+ * @property {"set_row"} kind
+ * @property {number | null} min_cores
+ *   The fewest cores a lease of it may start with; `null` leaves it automatic.
+ * @property {string} name
+ *   The row, such as `cpu_heavy` or a preset's name.
+ * @property {JobProfile} profile
+ *   The row's values.
+ * @property {string} table
+ *   The size table, `classes` or `presets`.
+ */
+
+/**
+ * Removes a class or preset from the file: a built-in row takes its defaults again, and
+ * a preset of the user's own is deleted. A rename is this and a `Change::SetRow`.
+ *
+ * @typedef {object} ChangeResetRow
+ * @property {"reset_row"} kind
+ * @property {string} name
+ *   The row.
+ * @property {string} table
+ *   The size table, `classes` or `presets`.
+ */
+
+/**
+ * Removes a setting from the file so its default applies, or with a size table's key,
+ * every row of it.
+ *
+ * @typedef {object} ChangeReset
+ * @property {"reset"} kind
+ * @property {string} key
+ *   The setting's key.
+ */
+
+/**
  * One value of a choice.
  *
  * @typedef {object} ChoiceOption
@@ -185,6 +369,44 @@
  *   The value as the panel shows it.
  * @property {string} value
  *   The value written to the file.
+ */
+
+/**
+ * A class with the size the proposed settings give it.
+ *
+ * @typedef {object} ClassSize
+ * @property {JobClass} class
+ *   The lease class.
+ * @property {number} min_cores
+ *   The fewest cores a lease of it starts with: its own minimum, or the automatic one.
+ * @property {JobProfile} profile
+ *   What a lease of it asks for.
+ */
+
+/**
+ * How the rules treat one simple command.
+ *
+ * - `heavy`: A rule matches, so it needs a lease.
+ * - `print_only`: A rule matches, but a light flag makes it only print and exit.
+ * - `not_heavy`: No rule matches.
+ *
+ * @typedef {"heavy" | "print_only" | "not_heavy"} CommandKind
+ */
+
+/**
+ * One simple command of a tested line.
+ *
+ * @typedef {object} CommandResult
+ * @property {string} command
+ *   Its words joined by spaces, wrappers such as `sudo` included.
+ * @property {string | null} flag
+ *   The first light flag among its arguments, for a print-only command.
+ * @property {CommandKind} kind
+ *   How the proposed rules treat it.
+ * @property {number | null} rule_index
+ *   Position of the first matching rule, from 0, for a heavy command.
+ * @property {ClassSize | null} size
+ *   The lease a heavy command needs on its own; `null` for the others.
  */
 
 /**
@@ -263,6 +485,29 @@
  *   Memory above which the OS throttles the command and reclaims its memory.
  * @property {number | null} memory_max_mb
  *   Memory at which the OS kills the command.
+ */
+
+/**
+ * A value of the configuration outside what it allows: its key and what it must be.
+ *
+ * @typedef {object} FieldError
+ * @property {string} key
+ *   The value's dotted key, such as `admission.headroom_pct`, `presets.big.min_cores` or
+ *   `classifier.rules[2].program`. A preset's name is reported as `presets.<name>`.
+ * @property {string} message
+ *   What the value must be, such as `must be at least 0 and below 100`.
+ */
+
+/**
+ * How many jobs of one size start, one after another, in a given room.
+ *
+ * @typedef {object} Fits
+ * @property {number} full
+ *   Jobs that get every core they ask for.
+ * @property {boolean} more
+ *   Whether more would still fit after the count's limit of 99 jobs.
+ * @property {number} shrunk
+ *   Jobs after those that start shrunk, each counted at its minimum cores.
  */
 
 /**
@@ -386,6 +631,27 @@
  *   Peak resident memory.
  * @property {number} vram_mb
  *   Peak dedicated video memory.
+ */
+
+/**
+ * What the headroom keeps free of the whole machine.
+ *
+ * @typedef {object} KeptFree
+ * @property {number} cores
+ *   Logical cores kept free.
+ * @property {number | null} gpu_pct
+ *   Share of the primary GPU kept free, or `null` without a GPU.
+ * @property {number} ram_mb
+ *   Memory kept free.
+ * @property {number} total_cores
+ *   The machine's logical cores.
+ * @property {number} total_ram_mb
+ *   The machine's memory.
+ * @property {number | null} total_vram_mb
+ *   The primary GPU's video memory, under the same conditions.
+ * @property {number | null} vram_mb
+ *   Video memory kept free, or `null` when there is no GPU, its size is unknown, or it
+ *   shares RAM.
  */
 
 /**
@@ -824,6 +1090,76 @@
  */
 
 /**
+ * The value of one setting on a page, keyed like the spec, in the kind its control edits.
+ *
+ * The tags end in `_value`, so the panels' generated types never share a name with
+ * `SettingControl`'s: System.Text.Json's source generator warns on a repeated type name.
+ *
+ * @typedef {(
+ *   | SettingValueSwitchValue
+ *   | SettingValueNumberValue
+ *   | SettingValueListValue
+ *   | SettingValueRulesValue
+ *   | SettingValueRowsValue
+ * )} SettingValue
+ */
+
+/**
+ * The state of a switch.
+ *
+ * @typedef {object} SettingValueSwitchValue
+ * @property {"switch_value"} kind
+ * @property {string} key
+ *   The setting's key.
+ * @property {boolean} value
+ *   Whether it is on.
+ */
+
+/**
+ * A number, in the unit of its setting.
+ *
+ * @typedef {object} SettingValueNumberValue
+ * @property {"number_value"} kind
+ * @property {string} key
+ *   The setting's key.
+ * @property {number} value
+ *   The value.
+ */
+
+/**
+ * A list of strings, such as `classifier.light_flags`.
+ *
+ * @typedef {object} SettingValueListValue
+ * @property {"list_value"} kind
+ * @property {string} key
+ *   The setting's key.
+ * @property {string[]} value
+ *   The entries, in file order.
+ */
+
+/**
+ * The heavy-command rules.
+ *
+ * @typedef {object} SettingValueRulesValue
+ * @property {"rules_value"} kind
+ * @property {string} key
+ *   The setting's key, `classifier.rules`.
+ * @property {HeavyRule[]} value
+ *   The rules, in matching order.
+ */
+
+/**
+ * Every row of a size table, built-in rows included.
+ *
+ * @typedef {object} SettingValueRowsValue
+ * @property {"rows_value"} kind
+ * @property {string} key
+ *   The table's key, `classes` or `presets`.
+ * @property {SizeRow[]} value
+ *   The rows: classes in class order, presets by name.
+ */
+
+/**
  * A titled group of settings on a page.
  *
  * @typedef {object} SettingsGroupSpec
@@ -847,6 +1183,41 @@
  *   A sentence under the title, if the page has one.
  * @property {string} label
  *   The page's title.
+ */
+
+/**
+ * The shell a command line is written for. Quoting and escapes differ between them.
+ *
+ * - `bash`: bash and other POSIX shells: `\` escapes.
+ * - `powershell`: PowerShell, also used for `cmd /c` scripts: `` ` `` escapes and `\` is literal.
+ *
+ * @typedef {"bash" | "powershell"} Shell
+ */
+
+/**
+ * What fits of one class or preset.
+ *
+ * @typedef {object} SizeFit
+ * @property {Fits} idle
+ *   With every lease ended; load outside leases stays.
+ * @property {number} min_cores
+ *   The fewest cores a job of it starts with.
+ * @property {string} name
+ *   The class's key, such as `cpu_heavy`, or the preset's name.
+ * @property {Fits} now
+ *   Beside the active leases and the load right now.
+ */
+
+/**
+ * A class or preset with its values.
+ *
+ * @typedef {object} SizeRow
+ * @property {number | null} min_cores
+ *   The fewest cores a lease of it may start with; `null` while it is automatic.
+ * @property {string} name
+ *   The row's key in the file, such as `cpu_heavy` or a preset's name.
+ * @property {JobProfile} profile
+ *   What a lease of it asks for.
  */
 
 /**
@@ -976,6 +1347,55 @@ const TYPES = {
       stopped_at_ms: { type: "int64" },
     },
   },
+  SettingsState: {
+    fields: {
+      file_error: { type: "string", nullable: true, absent: null },
+      listening_port: { type: "uint32" },
+      pending_restart: { array: { type: "string" } },
+      revision: { type: "string" },
+      spec: { type: "SettingsSpec" },
+      values: { array: { type: "SettingValue" } },
+    },
+  },
+  SettingsPatch: {
+    fields: {
+      changes: { array: { type: "Change" } },
+      revision: { type: "string" },
+    },
+  },
+  PreviewRequest: {
+    fields: {
+      changes: { array: { type: "Change" }, absent: [] },
+    },
+  },
+  FitPreview: {
+    fields: {
+      classes: { array: { type: "SizeFit" } },
+      cpu_busy_pct: { type: "float" },
+      kept_free: { type: "KeptFree" },
+      presets: { array: { type: "SizeFit" } },
+    },
+  },
+  ClassifyRequest: {
+    fields: {
+      changes: { array: { type: "Change" }, absent: [] },
+      line: { type: "string" },
+      shell: { type: "Shell", absent: "bash" },
+    },
+  },
+  CommandTest: {
+    fields: {
+      commands: { array: { type: "CommandResult" } },
+      lease: { type: "ClassSize", nullable: true, absent: null },
+    },
+  },
+  SettingsRefusal: {
+    fields: {
+      message: { type: "string" },
+      problems: { array: { type: "FieldError" } },
+      revision: { type: "string", nullable: true, absent: null },
+    },
+  },
   Accuracy: { values: ["exact", "estimated", "unavailable"] },
   ActiveJob: {
     fields: {
@@ -1023,10 +1443,74 @@ const TYPES = {
       start_time: { type: "uint64" },
     },
   },
+  Change: {
+    tag: "kind",
+    variants: {
+      set_switch: {
+        fields: {
+          key: { type: "string" },
+          value: { type: "boolean" },
+        },
+      },
+      set_number: {
+        fields: {
+          key: { type: "string" },
+          value: { type: "double" },
+        },
+      },
+      set_list: {
+        fields: {
+          key: { type: "string" },
+          value: { array: { type: "string" } },
+        },
+      },
+      set_rules: {
+        fields: {
+          rules: { array: { type: "HeavyRule" } },
+        },
+      },
+      set_row: {
+        fields: {
+          min_cores: { type: "float", nullable: true, absent: null },
+          name: { type: "string" },
+          profile: { type: "JobProfile" },
+          table: { type: "string" },
+        },
+      },
+      reset_row: {
+        fields: {
+          name: { type: "string" },
+          table: { type: "string" },
+        },
+      },
+      reset: {
+        fields: {
+          key: { type: "string" },
+        },
+      },
+    },
+  },
   ChoiceOption: {
     fields: {
       label: { type: "string" },
       value: { type: "string" },
+    },
+  },
+  ClassSize: {
+    fields: {
+      class: { type: "JobClass" },
+      min_cores: { type: "float" },
+      profile: { type: "JobProfile" },
+    },
+  },
+  CommandKind: { values: ["heavy", "print_only", "not_heavy"] },
+  CommandResult: {
+    fields: {
+      command: { type: "string" },
+      flag: { type: "string", nullable: true, absent: null },
+      kind: { type: "CommandKind" },
+      rule_index: { type: "uint32", nullable: true, absent: null },
+      size: { type: "ClassSize", nullable: true, absent: null },
     },
   },
   CpuMeter: {
@@ -1063,6 +1547,19 @@ const TYPES = {
       cpu_cores: { type: "float", nullable: true, absent: null },
       memory_high_mb: { type: "uint64", nullable: true, absent: null },
       memory_max_mb: { type: "uint64", nullable: true, absent: null },
+    },
+  },
+  FieldError: {
+    fields: {
+      key: { type: "string" },
+      message: { type: "string" },
+    },
+  },
+  Fits: {
+    fields: {
+      full: { type: "uint32" },
+      more: { type: "boolean" },
+      shrunk: { type: "uint32" },
     },
   },
   GpuMeter: {
@@ -1116,6 +1613,17 @@ const TYPES = {
       gpu_pct: { type: "float" },
       ram_mb: { type: "uint64" },
       vram_mb: { type: "uint64" },
+    },
+  },
+  KeptFree: {
+    fields: {
+      cores: { type: "double" },
+      gpu_pct: { type: "double", nullable: true, absent: null },
+      ram_mb: { type: "double" },
+      total_cores: { type: "uint32" },
+      total_ram_mb: { type: "uint64" },
+      total_vram_mb: { type: "uint64", nullable: true, absent: null },
+      vram_mb: { type: "double", nullable: true, absent: null },
     },
   },
   KilledProcess: {
@@ -1321,6 +1829,41 @@ const TYPES = {
       requires: { type: "Requirement", nullable: true, absent: null },
     },
   },
+  SettingValue: {
+    tag: "kind",
+    variants: {
+      switch_value: {
+        fields: {
+          key: { type: "string" },
+          value: { type: "boolean" },
+        },
+      },
+      number_value: {
+        fields: {
+          key: { type: "string" },
+          value: { type: "double" },
+        },
+      },
+      list_value: {
+        fields: {
+          key: { type: "string" },
+          value: { array: { type: "string" } },
+        },
+      },
+      rules_value: {
+        fields: {
+          key: { type: "string" },
+          value: { array: { type: "HeavyRule" } },
+        },
+      },
+      rows_value: {
+        fields: {
+          key: { type: "string" },
+          value: { array: { type: "SizeRow" } },
+        },
+      },
+    },
+  },
   SettingsGroupSpec: {
     fields: {
       id: { type: "string" },
@@ -1334,6 +1877,22 @@ const TYPES = {
       id: { type: "string" },
       intro: { type: "string", nullable: true, absent: null },
       label: { type: "string" },
+    },
+  },
+  Shell: { values: ["bash", "powershell"] },
+  SizeFit: {
+    fields: {
+      idle: { type: "Fits" },
+      min_cores: { type: "float" },
+      name: { type: "string" },
+      now: { type: "Fits" },
+    },
+  },
+  SizeRow: {
+    fields: {
+      min_cores: { type: "float", nullable: true, absent: null },
+      name: { type: "string" },
+      profile: { type: "JobProfile" },
     },
   },
   SizeRowSpec: {
@@ -1594,4 +2153,81 @@ export function decodeSettingsSpec(json) {
  */
 export function decodeStopRecord(json) {
   return /** @type {StopRecord} */ (decodeType(json, "StopRecord", "StopRecord"));
+}
+
+/**
+ * Decodes a parsed `SettingsState` body.
+ *
+ * @param {unknown} json The value `JSON.parse` returned.
+ * @returns {SettingsState}
+ * @throws {ContractError} When the value does not match the contract.
+ */
+export function decodeSettingsState(json) {
+  return /** @type {SettingsState} */ (decodeType(json, "SettingsState", "SettingsState"));
+}
+
+/**
+ * Decodes a parsed `SettingsPatch` body.
+ *
+ * @param {unknown} json The value `JSON.parse` returned.
+ * @returns {SettingsPatch}
+ * @throws {ContractError} When the value does not match the contract.
+ */
+export function decodeSettingsPatch(json) {
+  return /** @type {SettingsPatch} */ (decodeType(json, "SettingsPatch", "SettingsPatch"));
+}
+
+/**
+ * Decodes a parsed `PreviewRequest` body.
+ *
+ * @param {unknown} json The value `JSON.parse` returned.
+ * @returns {PreviewRequest}
+ * @throws {ContractError} When the value does not match the contract.
+ */
+export function decodePreviewRequest(json) {
+  return /** @type {PreviewRequest} */ (decodeType(json, "PreviewRequest", "PreviewRequest"));
+}
+
+/**
+ * Decodes a parsed `FitPreview` body.
+ *
+ * @param {unknown} json The value `JSON.parse` returned.
+ * @returns {FitPreview}
+ * @throws {ContractError} When the value does not match the contract.
+ */
+export function decodeFitPreview(json) {
+  return /** @type {FitPreview} */ (decodeType(json, "FitPreview", "FitPreview"));
+}
+
+/**
+ * Decodes a parsed `ClassifyRequest` body.
+ *
+ * @param {unknown} json The value `JSON.parse` returned.
+ * @returns {ClassifyRequest}
+ * @throws {ContractError} When the value does not match the contract.
+ */
+export function decodeClassifyRequest(json) {
+  return /** @type {ClassifyRequest} */ (decodeType(json, "ClassifyRequest", "ClassifyRequest"));
+}
+
+/**
+ * Decodes a parsed `CommandTest` body.
+ *
+ * @param {unknown} json The value `JSON.parse` returned.
+ * @returns {CommandTest}
+ * @throws {ContractError} When the value does not match the contract.
+ */
+export function decodeCommandTest(json) {
+  return /** @type {CommandTest} */ (decodeType(json, "CommandTest", "CommandTest"));
+}
+
+/**
+ * Decodes a parsed `SettingsRefusal` body.
+ *
+ * @param {unknown} json The value `JSON.parse` returned.
+ * @returns {SettingsRefusal}
+ * @throws {ContractError} When the value does not match the contract.
+ */
+export function decodeSettingsRefusal(json) {
+  return /** @type {SettingsRefusal} */ (decodeType(json, "SettingsRefusal", "SettingsRefusal"));
 }

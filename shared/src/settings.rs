@@ -5,8 +5,11 @@
 //! The labels and help come from `design/settings/DESIGN.md` section 4. Defaults are read from
 //! [`Config::default`], so the spec cannot disagree with the daemon.
 
+mod values;
+
 use serde::{Deserialize, Serialize};
 
+pub use self::values::{SettingValue, SizeRow};
 use crate::{
     config::{Config, HeavyRule, PRESET_EST_SECS, Sizing},
     types::{JobClass, JobProfile, QUICK_MAX_SECS},

@@ -2,6 +2,7 @@
 
 use std::{
     collections::{HashMap, HashSet},
+    path::PathBuf,
     sync::{
         Arc, Mutex, PoisonError, RwLock,
         atomic::{AtomicBool, Ordering},
@@ -85,6 +86,14 @@ pub struct Shared {
     pub started: Instant,
     /// The cgroup scopes of Linux leases.
     pub scopes: Scopes,
+    /// The config file the settings routes read and write, or `None` when the daemon keeps
+    /// the config it started with.
+    pub config_path: Option<PathBuf>,
+    /// The port the daemon listens on until it restarts.
+    pub listening_port: u16,
+    /// Held while the settings routes write the config file, so two writes from this daemon
+    /// never race between the revision check and the rename.
+    pub config_writes: AsyncMutex<()>,
     settings: RwLock<Arc<Settings>>,
     config_error: Mutex<Option<String>>,
     latest: RwLock<Option<Arc<Latest>>>,
@@ -96,9 +105,24 @@ pub struct Shared {
     first_session_noted: AtomicBool,
 }
 
+/// Where the daemon's configuration comes from and how it is served.
+#[derive(Debug, Clone)]
+pub struct Service {
+    /// The config file, or `None` to keep the config the daemon started with.
+    pub config_path: Option<PathBuf>,
+    /// The port the listener is bound to.
+    pub listening_port: u16,
+}
+
 impl Shared {
     /// Fresh state with an empty ledger and no sample yet.
-    pub fn new(config: Config, token: String, pool: DbPool, scopes: Scopes) -> Self {
+    pub fn new(
+        config: Config,
+        token: String,
+        pool: DbPool,
+        scopes: Scopes,
+        service: Service,
+    ) -> Self {
         let ledger = Ledger::new(LedgerSettings::from_config(&config));
         Self {
             token,
@@ -108,6 +132,9 @@ impl Shared {
             shutdown: watch::Sender::new(false),
             started: Instant::now(),
             scopes,
+            config_path: service.config_path,
+            listening_port: service.listening_port,
+            config_writes: AsyncMutex::new(()),
             settings: RwLock::new(Arc::new(Settings::new(config))),
             config_error: Mutex::new(None),
             latest: RwLock::new(None),
@@ -126,9 +153,30 @@ impl Shared {
             .clone()
     }
 
+    /// Puts `config`, read from `source`, into effect when it differs from the config in
+    /// effect, and clears a reported config error either way. A changed `daemon.port` is only
+    /// logged, since the listener stays bound until a restart.
+    pub async fn reload_config(&self, config: Config, source: &str) {
+        let previous = self.settings();
+        if config == previous.config {
+            self.set_config_error(None);
+            return;
+        }
+        let (old_port, new_port) = (previous.config.daemon.port, config.daemon.port);
+        if new_port != old_port {
+            tracing::warn!(
+                "daemon.port changed from {old_port} to {new_port}; allotd keeps listening on \
+                 {} until it restarts, while clients already use {new_port}",
+                self.listening_port
+            );
+        }
+        self.apply_config(config).await;
+        tracing::info!("config reloaded from {source}");
+    }
+
     /// Puts `config` into effect for later requests and the ledger, and clears a reported
     /// config error. Leases keep the profiles they reserved.
-    pub async fn apply_config(&self, config: Config) {
+    async fn apply_config(&self, config: Config) {
         let mut ledger = self.ledger.lock().await;
         ledger.set_settings(LedgerSettings::from_config(&config));
         *self

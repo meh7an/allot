@@ -7,6 +7,7 @@ pub mod config_write;
 #[cfg(test)]
 mod contract;
 mod error;
+pub mod explain;
 pub mod mutate;
 pub mod paths;
 pub mod platform;

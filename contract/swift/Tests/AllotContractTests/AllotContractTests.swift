@@ -46,6 +46,18 @@ private func reencode(_ name: String) throws -> Data {
     if name.hasPrefix("settings-spec") {
         return try reencode(SettingsSpec.self)
     }
+    if name.hasPrefix("settings-state") {
+        return try reencode(SettingsState.self)
+    }
+    if name.hasPrefix("settings-refusal-") {
+        return try reencode(SettingsRefusal.self)
+    }
+    if name.hasPrefix("fit-preview") {
+        return try reencode(FitPreview.self)
+    }
+    if name.hasPrefix("command-test") {
+        return try reencode(CommandTest.self)
+    }
     throw CocoaError(.fileReadUnknown, userInfo: [NSFilePathErrorKey: name])
 }
 

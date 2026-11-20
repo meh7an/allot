@@ -28,6 +28,7 @@ use crate::{
 
 /// One change to `config.toml`. Keys are the spec's dotted keys, such as
 /// `admission.headroom_pct`; tables are a size table's key, `classes` or `presets`.
+#[cfg_attr(any(feature = "schema", test), derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[non_exhaustive]

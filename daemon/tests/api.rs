@@ -1,19 +1,20 @@
 //! End-to-end tests: the real router and ledger over a temp database, with a fake sampler
 //! whose machine state each test controls.
 
+mod common;
+
 #[cfg(unix)]
 use std::os::unix::process::ExitStatusExt;
 use std::{
     env, fs,
-    future::Future,
     path::PathBuf,
     process::{self, Child, Command, ExitStatus, Stdio},
-    sync::{Arc, Mutex},
+    sync::Arc,
     thread,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
-use allot_core::sampler::{RawProcess, RawSample, Sampler};
+use allot_core::sampler::RawProcess;
 use allot_shared::{
     api::{
         AcquireRequest, AcquireResponse, BenchmarkProgress, BindRequest, CanFitRequest,
@@ -23,216 +24,23 @@ use allot_shared::{
     },
     config::Config,
     types::{
-        EndCause, Holder, JobClass, JobProfile, Lease, LeaseId, LeaseKind, LeaseState, MemStats,
-        ResourceUsage, SessionKey, Snapshot,
+        EndCause, Holder, JobClass, JobProfile, Lease, LeaseId, LeaseKind, LeaseState,
+        ResourceUsage, Snapshot,
     },
     ui::{Notice, UiState},
 };
-use allotd::{
-    DaemonOptions, Maintenance, Scopes,
-    db::{
-        open_pool,
-        repo::{self, LeaseDraft},
-    },
+use allotd::db::{
+    open_pool,
+    repo::{self, LeaseDraft},
 };
-use diesel::{Connection, sqlite::SqliteConnection};
+use common::{ALICE_PID, BOB_PID, Daemon, alice, bob, eventually, holder, process, send};
+use diesel::sqlite::SqliteConnection;
 use reqwest::{RequestBuilder, Response, StatusCode};
 use serde_json::Value;
-use tempfile::TempDir;
-use tokio::{net::TcpListener, sync::oneshot, task::JoinHandle};
+use tokio::task::JoinHandle;
 
-const TOKEN: &str = "test-token";
-const ALICE_PID: u32 = 4_242;
-const BOB_PID: u32 = 5_353;
-
-struct FakeSampler(Arc<Mutex<RawSample>>);
-
-impl Sampler for FakeSampler {
-    /// The current machine state, stamped now: the quiet window and the benchmark meter
-    /// count each sample once, by its timestamp.
-    fn sample(&mut self) -> allot_shared::Result<RawSample> {
-        let mut sample = self.0.lock().unwrap().clone();
-        sample.taken_at_ms = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_millis() as i64;
-        Ok(sample)
-    }
-}
-
-fn process(pid: u32, start_time: u64) -> RawProcess {
-    RawProcess {
-        pid,
-        parent_pid: None,
-        name: "claude.exe".into(),
-        exe: None,
-        start_time,
-        usage: ResourceUsage::default(),
-    }
-}
-
-/// A 16-core, 32 GB machine at rest with two Claude sessions running.
-fn idle_machine() -> RawSample {
-    RawSample {
-        taken_at_ms: 0,
-        cpu_total_pct: 0.0,
-        per_core_pct: vec![0.0; 16],
-        memory: MemStats {
-            total_mb: 32_768,
-            used_mb: 4_000,
-            available_mb: 28_768,
-            commit_used_mb: 6_000,
-            commit_limit_mb: 65_536,
-            reclaimable_mb: 0,
-        },
-        processes: vec![process(ALICE_PID, 100), process(BOB_PID, 200)],
-        gpus: vec![],
-        drives: vec![],
-    }
-}
-
-fn holder(session: &str, pid: u32, pid_start_time: u64) -> Holder {
-    Holder {
-        session: SessionKey(session.into()),
-        pid,
-        pid_start_time,
-    }
-}
-
-fn alice() -> Holder {
-    holder("alice", ALICE_PID, 100)
-}
-
-fn bob() -> Holder {
-    holder("bob", BOB_PID, 200)
-}
-
-async fn send(request: RequestBuilder) -> Response {
-    request.send().await.unwrap()
-}
-
-/// Polls `check` every 10 ms for up to 3 s.
-async fn eventually<F, Fut>(what: &str, mut check: F)
-where
-    F: FnMut() -> Fut,
-    Fut: Future<Output = bool>,
-{
-    let deadline = Instant::now() + Duration::from_secs(3);
-    while Instant::now() < deadline {
-        if check().await {
-            return;
-        }
-        tokio::time::sleep(Duration::from_millis(10)).await;
-    }
-    panic!("timed out waiting for {what}");
-}
-
-struct Daemon {
-    base: String,
-    client: reqwest::Client,
-    machine: Arc<Mutex<RawSample>>,
-    stop: Option<oneshot::Sender<()>>,
-    server: Option<JoinHandle<anyhow::Result<()>>>,
-    _dir: TempDir,
-}
-
+/// Lease requests, the share of the harness only these tests use.
 impl Daemon {
-    async fn start() -> Self {
-        Self::start_with(Config::default(), |_| {}).await
-    }
-
-    /// Starts a daemon on `config` after `prepare` has run against its fresh database.
-    async fn start_with(config: Config, prepare: impl FnOnce(&mut SqliteConnection)) -> Self {
-        let dir = TempDir::new().unwrap();
-        prepare(&mut open_pool(&database(&dir)).unwrap().get().unwrap());
-        Self::serve_in(dir, config, Arc::new(Mutex::new(idle_machine()))).await
-    }
-
-    /// Stops the daemon gracefully and starts a new one on the same database, config file,
-    /// and machine.
-    async fn restart(mut self) -> Self {
-        self.stop_server().await;
-        let Self {
-            machine, _dir: dir, ..
-        } = self;
-        Self::serve_in(dir, Config::default(), machine).await
-    }
-
-    async fn serve_in(dir: TempDir, config: Config, machine: Arc<Mutex<RawSample>>) -> Self {
-        let pool = open_pool(&database(&dir)).unwrap();
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let base = format!("http://{}", listener.local_addr().unwrap());
-        let sampled = machine.clone();
-        let options = DaemonOptions {
-            config,
-            token: TOKEN.into(),
-            pool,
-            sampler: Box::new(move || Ok(Box::new(FakeSampler(sampled)) as Box<dyn Sampler>)),
-            sample_interval: Duration::from_millis(20),
-            maintenance: Maintenance {
-                config_path: Some(dir.path().join("config.toml")),
-                config_poll: Duration::from_millis(20),
-                prune_every: Duration::from_secs(3_600),
-            },
-            scopes: Scopes::disabled(),
-        };
-        let (stop, stopped) = oneshot::channel::<()>();
-        let server = tokio::spawn(allotd::serve(listener, options, async {
-            let _ = stopped.await;
-        }));
-        let daemon = Self {
-            base,
-            client: reqwest::Client::new(),
-            machine,
-            stop: Some(stop),
-            server: Some(server),
-            _dir: dir,
-        };
-        eventually("the first snapshot", || async {
-            daemon.get("/snapshot").await.status() == StatusCode::OK
-        })
-        .await;
-        daemon
-    }
-
-    fn url(&self, path: &str) -> String {
-        format!("{}{path}", self.base)
-    }
-
-    async fn get(&self, path: &str) -> Response {
-        let request = self.client.get(self.url(path)).bearer_auth(TOKEN);
-        request.send().await.unwrap()
-    }
-
-    /// Waits until `count` samples taken after `after_ms` have reached the daemon, so a test
-    /// does not depend on how quickly a loaded CI runner schedules the sampling loop.
-    async fn wait_for_samples_after(&self, after_ms: i64, count: usize) {
-        let deadline = std::time::Instant::now() + Duration::from_secs(10);
-        let mut seen = Vec::new();
-        while seen.len() < count {
-            let snapshot: Value = self.get("/snapshot").await.json().await.unwrap();
-            let taken = snapshot["taken_at_ms"].as_i64().unwrap();
-            if taken > after_ms && !seen.contains(&taken) {
-                seen.push(taken);
-            }
-            assert!(
-                std::time::Instant::now() < deadline,
-                "only {} sample(s) after {after_ms} within 10 s",
-                seen.len()
-            );
-            tokio::time::sleep(Duration::from_millis(10)).await;
-        }
-    }
-
-    fn post(&self, path: &str) -> RequestBuilder {
-        self.client.post(self.url(path)).bearer_auth(TOKEN)
-    }
-
-    async fn delete(&self, path: &str) -> Response {
-        let request = self.client.delete(self.url(path)).bearer_auth(TOKEN);
-        request.send().await.unwrap()
-    }
-
     async fn acquire(&self, holder: Holder, profile: ProfileSpec, wait_secs: u64) -> Response {
         send(self.acquire_request(holder, profile, wait_secs)).await
     }
@@ -332,40 +140,6 @@ impl Daemon {
         let response = self.get(&format!("/leases{query}")).await;
         response.json::<LeasesResponse>().await.unwrap().leases
     }
-
-    /// A connection to the daemon's database, for checks the API does not expose.
-    fn db(&self) -> SqliteConnection {
-        SqliteConnection::establish(&database(&self._dir).to_string_lossy()).unwrap()
-    }
-
-    fn write_config(&self, text: &str) {
-        fs::write(self._dir.path().join("config.toml"), text).unwrap();
-    }
-
-    async fn health(&self) -> HealthResponse {
-        send(self.client.get(self.url("/health")))
-            .await
-            .json()
-            .await
-            .unwrap()
-    }
-
-    async fn stop(mut self) {
-        self.stop_server().await;
-    }
-
-    async fn stop_server(&mut self) {
-        if let Some(stop) = self.stop.take() {
-            stop.send(()).unwrap();
-        }
-        if let Some(server) = self.server.take() {
-            server.await.unwrap().unwrap();
-        }
-    }
-}
-
-fn database(dir: &TempDir) -> PathBuf {
-    dir.path().join("allot.db")
 }
 
 #[tokio::test]
@@ -1042,7 +816,7 @@ async fn test_benchmark_on_a_quiet_machine_reports_and_stores_its_noise() {
     assert!(noise.quiet_at_start);
     assert_eq!((noise.avg_cpu_pct, noise.peak_cpu_pct), (0.0, 0.0));
 
-    let pool = open_pool(&daemon._dir.path().join("allot.db")).unwrap();
+    let pool = open_pool(&daemon.dir.path().join("allot.db")).unwrap();
     let mut conn = pool.get().unwrap();
     let runs = repo::recent_job_runs(&mut conn, "cargo bench|", 10).unwrap();
     assert_eq!(runs.len(), 1);
@@ -1086,7 +860,7 @@ async fn test_benchmark_on_a_busy_machine_is_granted_without_quiet() {
 
     let released = daemon.release_response(queued.lease.id, "alice").await;
     assert!(!released.noise.expect("a noise report").quiet_at_start);
-    let pool = open_pool(&daemon._dir.path().join("allot.db")).unwrap();
+    let pool = open_pool(&daemon.dir.path().join("allot.db")).unwrap();
     let events = repo::lease_events(&mut pool.get().unwrap(), queued.lease.id).unwrap();
     assert!(
         events[1]

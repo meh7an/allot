@@ -1,0 +1,9 @@
+{
+  "message": "admission.headroom_pct must be at least 0 and below 100",
+  "problems": [
+    {
+      "key": "admission.headroom_pct",
+      "message": "must be at least 0 and below 100"
+    }
+  ]
+}

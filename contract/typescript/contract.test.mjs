@@ -4,9 +4,13 @@ import { test } from "node:test";
 
 import {
   ContractError,
+  decodeCommandTest,
+  decodeFitPreview,
   decodeKillResponse,
   decodeRemoveResponse,
+  decodeSettingsRefusal,
   decodeSettingsSpec,
+  decodeSettingsState,
   decodeStopRecord,
   decodeUiState,
 } from "./contract.g.mjs";
@@ -20,6 +24,10 @@ const DECODERS = [
   ["remove-response", decodeRemoveResponse],
   ["settings-spec", decodeSettingsSpec],
   ["stop-record", decodeStopRecord],
+  ["settings-state", decodeSettingsState],
+  ["settings-refusal-", decodeSettingsRefusal],
+  ["fit-preview", decodeFitPreview],
+  ["command-test", decodeCommandTest],
 ];
 
 /**

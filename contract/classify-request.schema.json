@@ -1,0 +1,326 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ClassifyRequest",
+  "description": "Body of `POST /classify`.",
+  "type": "object",
+  "properties": {
+    "changes": {
+      "description": "Unsaved changes, such as edited rules, applied on top of the file.",
+      "type": "array",
+      "default": [],
+      "items": {
+        "$ref": "#/definitions/Change"
+      }
+    },
+    "line": {
+      "description": "The command line to test.",
+      "type": "string"
+    },
+    "shell": {
+      "description": "The shell the line is written for.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/Shell"
+        }
+      ],
+      "default": "bash"
+    }
+  },
+  "required": [
+    "line"
+  ],
+  "definitions": {
+    "Change": {
+      "description": "One change to `config.toml`. Keys are the spec's dotted keys, such as\n`admission.headroom_pct`; tables are a size table's key, `classes` or `presets`.",
+      "oneOf": [
+        {
+          "description": "Turns a switch on or off.",
+          "type": "object",
+          "properties": {
+            "key": {
+              "description": "The switch's key.",
+              "type": "string"
+            },
+            "kind": {
+              "type": "string",
+              "const": "set_switch"
+            },
+            "value": {
+              "description": "The new state.",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "kind",
+            "key",
+            "value"
+          ]
+        },
+        {
+          "description": "Sets a number, in the unit of its setting. A whole number is written as an integer\nfor whole-number settings and as a float, such as `8.0`, for the others.",
+          "type": "object",
+          "properties": {
+            "key": {
+              "description": "The number's key.",
+              "type": "string"
+            },
+            "kind": {
+              "type": "string",
+              "const": "set_number"
+            },
+            "value": {
+              "description": "The new value.",
+              "type": "number",
+              "format": "double"
+            }
+          },
+          "required": [
+            "kind",
+            "key",
+            "value"
+          ]
+        },
+        {
+          "description": "Replaces a list of strings, such as `classifier.light_flags`, as a whole.",
+          "type": "object",
+          "properties": {
+            "key": {
+              "description": "The list's key.",
+              "type": "string"
+            },
+            "kind": {
+              "type": "string",
+              "const": "set_list"
+            },
+            "value": {
+              "description": "The new list.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "required": [
+            "kind",
+            "key",
+            "value"
+          ]
+        },
+        {
+          "description": "Replaces `classifier.rules` as a whole. An empty list is written as `rules = []`, so\nno rule applies; [`Change::Reset`] of `classifier.rules` brings back the built-in ones.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "set_rules"
+            },
+            "rules": {
+              "description": "The rules, in matching order.",
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/HeavyRule"
+              }
+            }
+          },
+          "required": [
+            "kind",
+            "rules"
+          ]
+        },
+        {
+          "description": "Sets every field of a class or preset, adding the preset when it is new. A field is\nwritten when the file already has it or it differs from the row's default.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "set_row"
+            },
+            "min_cores": {
+              "description": "The fewest cores a lease of it may start with; `None` leaves it automatic.",
+              "type": [
+                "number",
+                "null"
+              ],
+              "format": "float"
+            },
+            "name": {
+              "description": "The row, such as `cpu_heavy` or a preset's name.",
+              "type": "string"
+            },
+            "profile": {
+              "description": "The row's values.",
+              "allOf": [
+                {
+                  "$ref": "#/definitions/JobProfile"
+                }
+              ]
+            },
+            "table": {
+              "description": "The size table, `classes` or `presets`.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "table",
+            "name",
+            "profile"
+          ]
+        },
+        {
+          "description": "Removes a class or preset from the file: a built-in row takes its defaults again, and\na preset of the user's own is deleted. A rename is this and a [`Change::SetRow`].",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "reset_row"
+            },
+            "name": {
+              "description": "The row.",
+              "type": "string"
+            },
+            "table": {
+              "description": "The size table, `classes` or `presets`.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "table",
+            "name"
+          ]
+        },
+        {
+          "description": "Removes a setting from the file so its default applies, or with a size table's key,\nevery row of it.",
+          "type": "object",
+          "properties": {
+            "key": {
+              "description": "The setting's key.",
+              "type": "string"
+            },
+            "kind": {
+              "type": "string",
+              "const": "reset"
+            }
+          },
+          "required": [
+            "kind",
+            "key"
+          ]
+        }
+      ]
+    },
+    "HeavyRule": {
+      "description": "Marks a simple command as heavy when its program and arguments match.\n\nMatching ignores case, and `*` matches any run of characters.",
+      "type": "object",
+      "properties": {
+        "args": {
+          "description": "Any one of these makes the command heavy; empty matches any arguments. A pattern that\nstarts with `-` matches that flag anywhere in the command; any other pattern matches\nthe first positional argument (the first one not starting with `-` or `+`).",
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          }
+        },
+        "class": {
+          "description": "Class the matched command needs a lease for.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/JobClass"
+            }
+          ]
+        },
+        "program": {
+          "description": "Program name without directory or extension, for example `cargo` or `python*`.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "program",
+        "class"
+      ]
+    },
+    "JobClass": {
+      "description": "Named job profiles. Their values come from the `[classes]` section of the config.",
+      "oneOf": [
+        {
+          "description": "Short jobs that barely load the machine.",
+          "type": "string",
+          "const": "light"
+        },
+        {
+          "description": "Compiles, test suites, and other CPU-bound work.",
+          "type": "string",
+          "const": "cpu_heavy"
+        },
+        {
+          "description": "Training, rendering, games, and other GPU-bound work.",
+          "type": "string",
+          "const": "gpu_heavy"
+        },
+        {
+          "description": "Jobs that load both the CPU and the GPU.",
+          "type": "string",
+          "const": "mixed"
+        }
+      ]
+    },
+    "JobProfile": {
+      "description": "Resources a job is expected to need while it runs.",
+      "type": "object",
+      "properties": {
+        "cores": {
+          "description": "Logical cores the job keeps busy.",
+          "type": "number",
+          "format": "float"
+        },
+        "est_secs": {
+          "description": "Expected run time.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "gpu_pct": {
+          "description": "GPU engine load as a percentage of one adapter.",
+          "type": "number",
+          "format": "float"
+        },
+        "ram_mb": {
+          "description": "Peak resident memory.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "vram_mb": {
+          "description": "Peak dedicated video memory.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "cores",
+        "ram_mb",
+        "gpu_pct",
+        "vram_mb",
+        "est_secs"
+      ]
+    },
+    "Shell": {
+      "description": "The shell a command line is written for. Quoting and escapes differ between them.",
+      "oneOf": [
+        {
+          "description": "bash and other POSIX shells: `\\` escapes.",
+          "type": "string",
+          "const": "bash"
+        },
+        {
+          "description": "PowerShell, also used for `cmd /c` scripts: `` ` `` escapes and `\\` is literal.",
+          "type": "string",
+          "const": "powershell"
+        }
+      ]
+    }
+  }
+}

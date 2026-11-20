@@ -144,6 +144,156 @@ public sealed record StopRecord
 }
 
 /// <summary>
+/// Response of <c>GET /settings</c> and of a <c>PATCH /settings</c> that was written.
+/// </summary>
+public sealed record SettingsState
+{
+    /// <summary>
+    /// Why allotd rejects <c>config.toml</c>, if it does. Settings cannot be changed until the
+    /// file is fixed by hand.
+    /// </summary>
+    public string? FileError { get; init; }
+
+    /// <summary>
+    /// The port allotd listens on, which differs from <c>daemon.port</c> until a restart.
+    /// </summary>
+    public required uint ListeningPort { get; init; }
+
+    /// <summary>
+    /// Keys whose saved value takes effect only once allotd restarts, such as <c>daemon.port</c>.
+    /// </summary>
+    public required IReadOnlyList<string> PendingRestart { get; init; }
+
+    /// <summary>
+    /// The revision of <c>config.toml</c>, to send with the next <c>PATCH /settings</c>.
+    /// </summary>
+    public required string Revision { get; init; }
+
+    /// <summary>
+    /// Every setting allotd owns, with its page, control, range, default, label and help.
+    /// </summary>
+    public required SettingsSpec Spec { get; init; }
+
+    /// <summary>
+    /// The value of every setting on the spec's pages: the file's, or while allotd rejects the
+    /// file, the last good values, which stay in effect.
+    /// </summary>
+    public required IReadOnlyList<SettingValue> Values { get; init; }
+}
+
+/// <summary>
+/// Body of <c>PATCH /settings</c>.
+/// </summary>
+public sealed record SettingsPatch
+{
+    /// <summary>
+    /// The changes, written together or not at all. A reset is a change too.
+    /// </summary>
+    public required IReadOnlyList<Change> Changes { get; init; }
+
+    /// <summary>
+    /// The revision the changes were made against, from the last <c>GET /settings</c>.
+    /// </summary>
+    public required string Revision { get; init; }
+}
+
+/// <summary>
+/// Body of <c>POST /settings/preview</c>.
+/// </summary>
+public sealed record PreviewRequest
+{
+    /// <summary>
+    /// Unsaved changes, applied on top of the file; none previews the file as it is.
+    /// </summary>
+    public IReadOnlyList<Change> Changes { get; set; } = [];
+}
+
+/// <summary>
+/// What fits on this machine with proposed settings.
+/// </summary>
+public sealed record FitPreview
+{
+    /// <summary>
+    /// One per class, in <c>JobClass::ALL</c> order.
+    /// </summary>
+    public required IReadOnlyList<SizeFit> Classes { get; init; }
+
+    /// <summary>
+    /// The machine's CPU load, as the 10 s average the counts use.
+    /// </summary>
+    public required float CpuBusyPct { get; init; }
+
+    /// <summary>
+    /// What the proposed headroom keeps free.
+    /// </summary>
+    public required KeptFree KeptFree { get; init; }
+
+    /// <summary>
+    /// One per preset, by name.
+    /// </summary>
+    public required IReadOnlyList<SizeFit> Presets { get; init; }
+}
+
+/// <summary>
+/// Body of <c>POST /classify</c>.
+/// </summary>
+public sealed record ClassifyRequest
+{
+    /// <summary>
+    /// Unsaved changes, such as edited rules, applied on top of the file.
+    /// </summary>
+    public IReadOnlyList<Change> Changes { get; set; } = [];
+
+    /// <summary>
+    /// The command line to test.
+    /// </summary>
+    public required string Line { get; init; }
+
+    /// <summary>
+    /// The shell the line is written for.
+    /// </summary>
+    public Shell Shell { get; set; } = Shell.Bash;
+}
+
+/// <summary>
+/// How the hook treats a command line under proposed rules.
+/// </summary>
+public sealed record CommandTest
+{
+    /// <summary>
+    /// Every simple command of the line, in order.
+    /// </summary>
+    public required IReadOnlyList<CommandResult> Commands { get; init; }
+
+    /// <summary>
+    /// The one lease the hook asks for: the class of every heavy command combined. <c>null</c>
+    /// when no command is heavy.
+    /// </summary>
+    public ClassSize? Lease { get; init; }
+}
+
+/// <summary>
+/// Body of a refused settings request. Nothing was written.
+/// </summary>
+public sealed record SettingsRefusal
+{
+    /// <summary>
+    /// What went wrong, as one sentence.
+    /// </summary>
+    public required string Message { get; init; }
+
+    /// <summary>
+    /// Every rejected value with its key, when values were the cause; empty otherwise.
+    /// </summary>
+    public required IReadOnlyList<FieldError> Problems { get; init; }
+
+    /// <summary>
+    /// The file's revision now, when it changed since the request's revision was read.
+    /// </summary>
+    public string? Revision { get; init; }
+}
+
+/// <summary>
 /// How well a GPU source measures something per process.
 /// </summary>
 [JsonConverter(typeof(StrictEnumConverter<Accuracy>))]
@@ -303,6 +453,138 @@ public sealed record BoundProcess
 }
 
 /// <summary>
+/// One change to <c>config.toml</c>. Keys are the spec's dotted keys, such as
+/// <c>admission.headroom_pct</c>; tables are a size table's key, <c>classes</c> or <c>presets</c>.
+/// </summary>
+[JsonPolymorphic(TypeDiscriminatorPropertyName = "kind")]
+[JsonDerivedType(typeof(Change.SetSwitch), "set_switch")]
+[JsonDerivedType(typeof(Change.SetNumber), "set_number")]
+[JsonDerivedType(typeof(Change.SetList), "set_list")]
+[JsonDerivedType(typeof(Change.SetRules), "set_rules")]
+[JsonDerivedType(typeof(Change.SetRow), "set_row")]
+[JsonDerivedType(typeof(Change.ResetRow), "reset_row")]
+[JsonDerivedType(typeof(Change.Reset), "reset")]
+public abstract record Change
+{
+    /// <summary>
+    /// Turns a switch on or off.
+    /// </summary>
+    public sealed record SetSwitch : Change
+    {
+        /// <summary>
+        /// The switch's key.
+        /// </summary>
+        public required string Key { get; init; }
+
+        /// <summary>
+        /// The new state.
+        /// </summary>
+        public required bool Value { get; init; }
+    }
+
+    /// <summary>
+    /// Sets a number, in the unit of its setting. A whole number is written as an integer
+    /// for whole-number settings and as a float, such as <c>8.0</c>, for the others.
+    /// </summary>
+    public sealed record SetNumber : Change
+    {
+        /// <summary>
+        /// The number's key.
+        /// </summary>
+        public required string Key { get; init; }
+
+        /// <summary>
+        /// The new value.
+        /// </summary>
+        public required double Value { get; init; }
+    }
+
+    /// <summary>
+    /// Replaces a list of strings, such as <c>classifier.light_flags</c>, as a whole.
+    /// </summary>
+    public sealed record SetList : Change
+    {
+        /// <summary>
+        /// The list's key.
+        /// </summary>
+        public required string Key { get; init; }
+
+        /// <summary>
+        /// The new list.
+        /// </summary>
+        public required IReadOnlyList<string> Value { get; init; }
+    }
+
+    /// <summary>
+    /// Replaces <c>classifier.rules</c> as a whole. An empty list is written as <c>rules = []</c>, so
+    /// no rule applies; <c>Change::Reset</c> of <c>classifier.rules</c> brings back the built-in ones.
+    /// </summary>
+    public sealed record SetRules : Change
+    {
+        /// <summary>
+        /// The rules, in matching order.
+        /// </summary>
+        public required IReadOnlyList<HeavyRule> Rules { get; init; }
+    }
+
+    /// <summary>
+    /// Sets every field of a class or preset, adding the preset when it is new. A field is
+    /// written when the file already has it or it differs from the row's default.
+    /// </summary>
+    public sealed record SetRow : Change
+    {
+        /// <summary>
+        /// The fewest cores a lease of it may start with; <c>null</c> leaves it automatic.
+        /// </summary>
+        public float? MinCores { get; init; }
+
+        /// <summary>
+        /// The row, such as <c>cpu_heavy</c> or a preset's name.
+        /// </summary>
+        public required string Name { get; init; }
+
+        /// <summary>
+        /// The row's values.
+        /// </summary>
+        public required JobProfile Profile { get; init; }
+
+        /// <summary>
+        /// The size table, <c>classes</c> or <c>presets</c>.
+        /// </summary>
+        public required string Table { get; init; }
+    }
+
+    /// <summary>
+    /// Removes a class or preset from the file: a built-in row takes its defaults again, and
+    /// a preset of the user's own is deleted. A rename is this and a <c>Change::SetRow</c>.
+    /// </summary>
+    public sealed record ResetRow : Change
+    {
+        /// <summary>
+        /// The row.
+        /// </summary>
+        public required string Name { get; init; }
+
+        /// <summary>
+        /// The size table, <c>classes</c> or <c>presets</c>.
+        /// </summary>
+        public required string Table { get; init; }
+    }
+
+    /// <summary>
+    /// Removes a setting from the file so its default applies, or with a size table's key,
+    /// every row of it.
+    /// </summary>
+    public sealed record Reset : Change
+    {
+        /// <summary>
+        /// The setting's key.
+        /// </summary>
+        public required string Key { get; init; }
+    }
+}
+
+/// <summary>
 /// One value of a choice.
 /// </summary>
 public sealed record ChoiceOption
@@ -316,6 +598,83 @@ public sealed record ChoiceOption
     /// The value written to the file.
     /// </summary>
     public required string Value { get; init; }
+}
+
+/// <summary>
+/// A class with the size the proposed settings give it.
+/// </summary>
+public sealed record ClassSize
+{
+    /// <summary>
+    /// The lease class.
+    /// </summary>
+    public required JobClass Class { get; init; }
+
+    /// <summary>
+    /// The fewest cores a lease of it starts with: its own minimum, or the automatic one.
+    /// </summary>
+    public required float MinCores { get; init; }
+
+    /// <summary>
+    /// What a lease of it asks for.
+    /// </summary>
+    public required JobProfile Profile { get; init; }
+}
+
+/// <summary>
+/// How the rules treat one simple command.
+/// </summary>
+[JsonConverter(typeof(StrictEnumConverter<CommandKind>))]
+public enum CommandKind
+{
+    /// <summary>
+    /// A rule matches, so it needs a lease.
+    /// </summary>
+    [JsonStringEnumMemberName("heavy")]
+    Heavy,
+
+    /// <summary>
+    /// A rule matches, but a light flag makes it only print and exit.
+    /// </summary>
+    [JsonStringEnumMemberName("print_only")]
+    PrintOnly,
+
+    /// <summary>
+    /// No rule matches.
+    /// </summary>
+    [JsonStringEnumMemberName("not_heavy")]
+    NotHeavy,
+}
+
+/// <summary>
+/// One simple command of a tested line.
+/// </summary>
+public sealed record CommandResult
+{
+    /// <summary>
+    /// Its words joined by spaces, wrappers such as <c>sudo</c> included.
+    /// </summary>
+    public required string Command { get; init; }
+
+    /// <summary>
+    /// The first light flag among its arguments, for a print-only command.
+    /// </summary>
+    public string? Flag { get; init; }
+
+    /// <summary>
+    /// How the proposed rules treat it.
+    /// </summary>
+    public required CommandKind Kind { get; init; }
+
+    /// <summary>
+    /// Position of the first matching rule, from 0, for a heavy command.
+    /// </summary>
+    public uint? RuleIndex { get; init; }
+
+    /// <summary>
+    /// The lease a heavy command needs on its own; <c>null</c> for the others.
+    /// </summary>
+    public ClassSize? Size { get; init; }
 }
 
 /// <summary>
@@ -471,6 +830,44 @@ public sealed record EnforcedLimits
     /// Memory at which the OS kills the command.
     /// </summary>
     public ulong? MemoryMaxMb { get; init; }
+}
+
+/// <summary>
+/// A value of the configuration outside what it allows: its key and what it must be.
+/// </summary>
+public sealed record FieldError
+{
+    /// <summary>
+    /// The value's dotted key, such as <c>admission.headroom_pct</c>, <c>presets.big.min_cores</c> or
+    /// <c>classifier.rules[2].program</c>. A preset's name is reported as <c>presets.&lt;name&gt;</c>.
+    /// </summary>
+    public required string Key { get; init; }
+
+    /// <summary>
+    /// What the value must be, such as <c>must be at least 0 and below 100</c>.
+    /// </summary>
+    public required string Message { get; init; }
+}
+
+/// <summary>
+/// How many jobs of one size start, one after another, in a given room.
+/// </summary>
+public sealed record Fits
+{
+    /// <summary>
+    /// Jobs that get every core they ask for.
+    /// </summary>
+    public required uint Full { get; init; }
+
+    /// <summary>
+    /// Whether more would still fit after the count's limit of 99 jobs.
+    /// </summary>
+    public required bool More { get; init; }
+
+    /// <summary>
+    /// Jobs after those that start shrunk, each counted at its minimum cores.
+    /// </summary>
+    public required uint Shrunk { get; init; }
 }
 
 /// <summary>
@@ -705,6 +1102,48 @@ public sealed record JobProfile
     /// Peak dedicated video memory.
     /// </summary>
     public required ulong VramMb { get; init; }
+}
+
+/// <summary>
+/// What the headroom keeps free of the whole machine.
+/// </summary>
+public sealed record KeptFree
+{
+    /// <summary>
+    /// Logical cores kept free.
+    /// </summary>
+    public required double Cores { get; init; }
+
+    /// <summary>
+    /// Share of the primary GPU kept free, or <c>null</c> without a GPU.
+    /// </summary>
+    public double? GpuPct { get; init; }
+
+    /// <summary>
+    /// Memory kept free.
+    /// </summary>
+    public required double RamMb { get; init; }
+
+    /// <summary>
+    /// The machine's logical cores.
+    /// </summary>
+    public required uint TotalCores { get; init; }
+
+    /// <summary>
+    /// The machine's memory.
+    /// </summary>
+    public required ulong TotalRamMb { get; init; }
+
+    /// <summary>
+    /// The primary GPU's video memory, under the same conditions.
+    /// </summary>
+    public ulong? TotalVramMb { get; init; }
+
+    /// <summary>
+    /// Video memory kept free, or <c>null</c> when there is no GPU, its size is unknown, or it
+    /// shares RAM.
+    /// </summary>
+    public double? VramMb { get; init; }
 }
 
 /// <summary>
@@ -1523,6 +1962,101 @@ public sealed record SettingSpec
 }
 
 /// <summary>
+/// The value of one setting on a page, keyed like the spec, in the kind its control edits.
+///
+/// The tags end in <c>_value</c>, so the panels' generated types never share a name with
+/// <c>SettingControl</c>'s: System.Text.Json's source generator warns on a repeated type name.
+/// </summary>
+[JsonPolymorphic(TypeDiscriminatorPropertyName = "kind")]
+[JsonDerivedType(typeof(SettingValue.SwitchValue), "switch_value")]
+[JsonDerivedType(typeof(SettingValue.NumberValue), "number_value")]
+[JsonDerivedType(typeof(SettingValue.ListValue), "list_value")]
+[JsonDerivedType(typeof(SettingValue.RulesValue), "rules_value")]
+[JsonDerivedType(typeof(SettingValue.RowsValue), "rows_value")]
+public abstract record SettingValue
+{
+    /// <summary>
+    /// The state of a switch.
+    /// </summary>
+    public sealed record SwitchValue : SettingValue
+    {
+        /// <summary>
+        /// The setting's key.
+        /// </summary>
+        public required string Key { get; init; }
+
+        /// <summary>
+        /// Whether it is on.
+        /// </summary>
+        public required bool Value { get; init; }
+    }
+
+    /// <summary>
+    /// A number, in the unit of its setting.
+    /// </summary>
+    public sealed record NumberValue : SettingValue
+    {
+        /// <summary>
+        /// The setting's key.
+        /// </summary>
+        public required string Key { get; init; }
+
+        /// <summary>
+        /// The value.
+        /// </summary>
+        public required double Value { get; init; }
+    }
+
+    /// <summary>
+    /// A list of strings, such as <c>classifier.light_flags</c>.
+    /// </summary>
+    public sealed record ListValue : SettingValue
+    {
+        /// <summary>
+        /// The setting's key.
+        /// </summary>
+        public required string Key { get; init; }
+
+        /// <summary>
+        /// The entries, in file order.
+        /// </summary>
+        public required IReadOnlyList<string> Value { get; init; }
+    }
+
+    /// <summary>
+    /// The heavy-command rules.
+    /// </summary>
+    public sealed record RulesValue : SettingValue
+    {
+        /// <summary>
+        /// The setting's key, <c>classifier.rules</c>.
+        /// </summary>
+        public required string Key { get; init; }
+
+        /// <summary>
+        /// The rules, in matching order.
+        /// </summary>
+        public required IReadOnlyList<HeavyRule> Value { get; init; }
+    }
+
+    /// <summary>
+    /// Every row of a size table, built-in rows included.
+    /// </summary>
+    public sealed record RowsValue : SettingValue
+    {
+        /// <summary>
+        /// The table's key, <c>classes</c> or <c>presets</c>.
+        /// </summary>
+        public required string Key { get; init; }
+
+        /// <summary>
+        /// The rows: classes in class order, presets by name.
+        /// </summary>
+        public required IReadOnlyList<SizeRow> Value { get; init; }
+    }
+}
+
+/// <summary>
 /// A titled group of settings on a page.
 /// </summary>
 public sealed record SettingsGroupSpec
@@ -1567,6 +2101,72 @@ public sealed record SettingsPageSpec
     /// The page's title.
     /// </summary>
     public required string Label { get; init; }
+}
+
+/// <summary>
+/// The shell a command line is written for. Quoting and escapes differ between them.
+/// </summary>
+[JsonConverter(typeof(StrictEnumConverter<Shell>))]
+public enum Shell
+{
+    /// <summary>
+    /// bash and other POSIX shells: <c>\</c> escapes.
+    /// </summary>
+    [JsonStringEnumMemberName("bash")]
+    Bash,
+
+    /// <summary>
+    /// PowerShell, also used for <c>cmd /c</c> scripts: <c></c> <c> </c><c> escapes and </c>\<c> is literal.</c>
+    /// </summary>
+    [JsonStringEnumMemberName("powershell")]
+    Powershell,
+}
+
+/// <summary>
+/// What fits of one class or preset.
+/// </summary>
+public sealed record SizeFit
+{
+    /// <summary>
+    /// With every lease ended; load outside leases stays.
+    /// </summary>
+    public required Fits Idle { get; init; }
+
+    /// <summary>
+    /// The fewest cores a job of it starts with.
+    /// </summary>
+    public required float MinCores { get; init; }
+
+    /// <summary>
+    /// The class's key, such as <c>cpu_heavy</c>, or the preset's name.
+    /// </summary>
+    public required string Name { get; init; }
+
+    /// <summary>
+    /// Beside the active leases and the load right now.
+    /// </summary>
+    public required Fits Now { get; init; }
+}
+
+/// <summary>
+/// A class or preset with its values.
+/// </summary>
+public sealed record SizeRow
+{
+    /// <summary>
+    /// The fewest cores a lease of it may start with; <c>null</c> while it is automatic.
+    /// </summary>
+    public float? MinCores { get; init; }
+
+    /// <summary>
+    /// The row's key in the file, such as <c>cpu_heavy</c> or a preset's name.
+    /// </summary>
+    public required string Name { get; init; }
+
+    /// <summary>
+    /// What a lease of it asks for.
+    /// </summary>
+    public required JobProfile Profile { get; init; }
 }
 
 /// <summary>
@@ -1711,6 +2311,13 @@ public sealed class StrictEnumConverter<TEnum> : JsonStringEnumConverter<TEnum>
 [JsonSerializable(typeof(RemoveResponse))]
 [JsonSerializable(typeof(SettingsSpec))]
 [JsonSerializable(typeof(StopRecord))]
+[JsonSerializable(typeof(SettingsState))]
+[JsonSerializable(typeof(SettingsPatch))]
+[JsonSerializable(typeof(PreviewRequest))]
+[JsonSerializable(typeof(FitPreview))]
+[JsonSerializable(typeof(ClassifyRequest))]
+[JsonSerializable(typeof(CommandTest))]
+[JsonSerializable(typeof(SettingsRefusal))]
 public sealed partial class ContractJsonContext : JsonSerializerContext
 {
 }

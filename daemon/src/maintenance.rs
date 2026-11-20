@@ -86,19 +86,11 @@ pub async fn run(state: AppState, maintenance: Maintenance) {
 /// Loads the config file again. A valid file goes into effect at once; an invalid one is
 /// reported and the config in effect stays.
 async fn reload(state: &AppState, path: &Path) {
-    let previous = state.settings();
     match Config::load(path) {
-        Ok(config) if config == previous.config => state.set_config_error(None),
         Ok(config) => {
-            let (old_port, new_port) = (previous.config.daemon.port, config.daemon.port);
-            if new_port != old_port {
-                tracing::warn!(
-                    "daemon.port changed from {old_port} to {new_port}; allotd keeps listening \
-                     on {old_port} until it restarts, while clients already use {new_port}"
-                );
-            }
-            state.apply_config(config).await;
-            tracing::info!("config reloaded from {}", path.display());
+            state
+                .reload_config(config, &path.display().to_string())
+                .await;
         }
         Err(error) => {
             let message = error.to_string();

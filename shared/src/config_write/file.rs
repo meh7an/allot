@@ -71,6 +71,20 @@ impl<'de> Deserialize<'de> for Revision {
     }
 }
 
+#[cfg(any(feature = "schema", test))]
+impl schemars::JsonSchema for Revision {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "Revision".into()
+    }
+
+    fn json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        schemars::json_schema!({
+            "description": "A version of `config.toml`'s bytes, as 16 hex digits.",
+            "type": "string",
+        })
+    }
+}
+
 /// How often a replace is tried again while another program holds the file.
 #[derive(Debug, Clone, Copy)]
 pub(super) struct Retry {

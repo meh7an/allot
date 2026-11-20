@@ -1,0 +1,100 @@
+{
+  "classes": [
+    {
+      "name": "light",
+      "min_cores": 1.0,
+      "now": {
+        "full": 99,
+        "shrunk": 0,
+        "more": true
+      },
+      "idle": {
+        "full": 99,
+        "shrunk": 0,
+        "more": true
+      }
+    },
+    {
+      "name": "cpu_heavy",
+      "min_cores": 4.0,
+      "now": {
+        "full": 0,
+        "shrunk": 1,
+        "more": false
+      },
+      "idle": {
+        "full": 1,
+        "shrunk": 1,
+        "more": false
+      }
+    },
+    {
+      "name": "gpu_heavy",
+      "min_cores": 1.0,
+      "now": {
+        "full": 1,
+        "shrunk": 0,
+        "more": false
+      },
+      "idle": {
+        "full": 1,
+        "shrunk": 0,
+        "more": false
+      }
+    },
+    {
+      "name": "mixed",
+      "min_cores": 3.0,
+      "now": {
+        "full": 0,
+        "shrunk": 1,
+        "more": false
+      },
+      "idle": {
+        "full": 1,
+        "shrunk": 0,
+        "more": false
+      }
+    }
+  ],
+  "presets": [
+    {
+      "name": "cpu_small",
+      "min_cores": 1.0,
+      "now": {
+        "full": 2,
+        "shrunk": 1,
+        "more": false
+      },
+      "idle": {
+        "full": 6,
+        "shrunk": 1,
+        "more": false
+      }
+    },
+    {
+      "name": "low_impact",
+      "min_cores": 0.25,
+      "now": {
+        "full": 30,
+        "shrunk": 0,
+        "more": false
+      },
+      "idle": {
+        "full": 52,
+        "shrunk": 0,
+        "more": false
+      }
+    }
+  ],
+  "kept_free": {
+    "cores": 2.5,
+    "total_cores": 16,
+    "ram_mb": 4915.5,
+    "total_ram_mb": 32768,
+    "gpu_pct": 15.0,
+    "vram_mb": 1228.5,
+    "total_vram_mb": 8192
+  },
+  "cpu_busy_pct": 42.5
+}

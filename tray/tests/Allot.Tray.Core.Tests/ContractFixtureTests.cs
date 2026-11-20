@@ -30,6 +30,10 @@ public sealed class ContractFixtureTests
             ["remove-response"] = typeof(RemoveResponse),
             ["settings-spec"] = typeof(SettingsSpec),
             ["stop-record"] = typeof(StopRecord),
+            ["settings-state"] = typeof(SettingsState),
+            ["settings-refusal-"] = typeof(SettingsRefusal),
+            ["fit-preview"] = typeof(FitPreview),
+            ["command-test"] = typeof(CommandTest),
         };
 
     public static IEnumerable<object[]> FixtureFiles =>

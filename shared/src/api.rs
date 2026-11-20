@@ -1,6 +1,10 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    config::FieldError,
+    config_write::{Change, Revision},
+    explain::Shell,
+    settings::{SettingValue, SettingsSpec},
     types::{
         EndCause, Holder, JobClass, JobProfile, JobRun, Lease, LeaseKind, LeaseState, NoiseReport,
         SessionKey, SessionUsage,
@@ -385,6 +389,73 @@ pub struct HistoryRunsResponse {
     /// `runs`; `None` when no run counts, and from older daemons.
     #[serde(default)]
     pub stats: Option<RunStats>,
+}
+
+/// Response of `GET /settings` and of a `PATCH /settings` that was written.
+#[cfg_attr(any(feature = "schema", test), derive(schemars::JsonSchema))]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SettingsState {
+    /// Every setting allotd owns, with its page, control, range, default, label and help.
+    pub spec: SettingsSpec,
+    /// The value of every setting on the spec's pages: the file's, or while allotd rejects the
+    /// file, the last good values, which stay in effect.
+    pub values: Vec<SettingValue>,
+    /// The revision of `config.toml`, to send with the next `PATCH /settings`.
+    pub revision: Revision,
+    /// Why allotd rejects `config.toml`, if it does. Settings cannot be changed until the
+    /// file is fixed by hand.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub file_error: Option<String>,
+    /// The port allotd listens on, which differs from `daemon.port` until a restart.
+    pub listening_port: u32,
+    /// Keys whose saved value takes effect only once allotd restarts, such as `daemon.port`.
+    pub pending_restart: Vec<String>,
+}
+
+/// Body of `PATCH /settings`.
+#[cfg_attr(any(feature = "schema", test), derive(schemars::JsonSchema))]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SettingsPatch {
+    /// The revision the changes were made against, from the last `GET /settings`.
+    pub revision: Revision,
+    /// The changes, written together or not at all. A reset is a change too.
+    pub changes: Vec<Change>,
+}
+
+/// Body of `POST /settings/preview`.
+#[cfg_attr(any(feature = "schema", test), derive(schemars::JsonSchema))]
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+pub struct PreviewRequest {
+    /// Unsaved changes, applied on top of the file; none previews the file as it is.
+    #[serde(default)]
+    pub changes: Vec<Change>,
+}
+
+/// Body of `POST /classify`.
+#[cfg_attr(any(feature = "schema", test), derive(schemars::JsonSchema))]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ClassifyRequest {
+    /// The command line to test.
+    pub line: String,
+    /// The shell the line is written for.
+    #[serde(default)]
+    pub shell: Shell,
+    /// Unsaved changes, such as edited rules, applied on top of the file.
+    #[serde(default)]
+    pub changes: Vec<Change>,
+}
+
+/// Body of a refused settings request. Nothing was written.
+#[cfg_attr(any(feature = "schema", test), derive(schemars::JsonSchema))]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SettingsRefusal {
+    /// What went wrong, as one sentence.
+    pub message: String,
+    /// Every rejected value with its key, when values were the cause; empty otherwise.
+    pub problems: Vec<FieldError>,
+    /// The file's revision now, when it changed since the request's revision was read.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub revision: Option<Revision>,
 }
 
 #[cfg(test)]

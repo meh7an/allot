@@ -1,0 +1,166 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "FitPreview",
+  "description": "What fits on this machine with proposed settings.",
+  "type": "object",
+  "properties": {
+    "classes": {
+      "description": "One per class, in [`JobClass::ALL`] order.",
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/SizeFit"
+      }
+    },
+    "cpu_busy_pct": {
+      "description": "The machine's CPU load, as the 10 s average the counts use.",
+      "type": "number",
+      "format": "float"
+    },
+    "kept_free": {
+      "description": "What the proposed headroom keeps free.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/KeptFree"
+        }
+      ]
+    },
+    "presets": {
+      "description": "One per preset, by name.",
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/SizeFit"
+      }
+    }
+  },
+  "required": [
+    "classes",
+    "presets",
+    "kept_free",
+    "cpu_busy_pct"
+  ],
+  "definitions": {
+    "Fits": {
+      "description": "How many jobs of one size start, one after another, in a given room.",
+      "type": "object",
+      "properties": {
+        "full": {
+          "description": "Jobs that get every core they ask for.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "more": {
+          "description": "Whether more would still fit after the count's limit of 99 jobs.",
+          "type": "boolean"
+        },
+        "shrunk": {
+          "description": "Jobs after those that start shrunk, each counted at its minimum cores.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "full",
+        "shrunk",
+        "more"
+      ]
+    },
+    "KeptFree": {
+      "description": "What the headroom keeps free of the whole machine.",
+      "type": "object",
+      "properties": {
+        "cores": {
+          "description": "Logical cores kept free.",
+          "type": "number",
+          "format": "double"
+        },
+        "gpu_pct": {
+          "description": "Share of the primary GPU kept free, or `None` without a GPU.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "ram_mb": {
+          "description": "Memory kept free.",
+          "type": "number",
+          "format": "double"
+        },
+        "total_cores": {
+          "description": "The machine's logical cores.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "total_ram_mb": {
+          "description": "The machine's memory.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "total_vram_mb": {
+          "description": "The primary GPU's video memory, under the same conditions.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 0
+        },
+        "vram_mb": {
+          "description": "Video memory kept free, or `None` when there is no GPU, its size is unknown, or it\nshares RAM.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        }
+      },
+      "required": [
+        "cores",
+        "total_cores",
+        "ram_mb",
+        "total_ram_mb"
+      ]
+    },
+    "SizeFit": {
+      "description": "What fits of one class or preset.",
+      "type": "object",
+      "properties": {
+        "idle": {
+          "description": "With every lease ended; load outside leases stays.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/Fits"
+            }
+          ]
+        },
+        "min_cores": {
+          "description": "The fewest cores a job of it starts with.",
+          "type": "number",
+          "format": "float"
+        },
+        "name": {
+          "description": "The class's key, such as `cpu_heavy`, or the preset's name.",
+          "type": "string"
+        },
+        "now": {
+          "description": "Beside the active leases and the load right now.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/Fits"
+            }
+          ]
+        }
+      },
+      "required": [
+        "name",
+        "min_cores",
+        "now",
+        "idle"
+      ]
+    }
+  }
+}

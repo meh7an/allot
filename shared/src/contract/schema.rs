@@ -32,21 +32,26 @@ impl<'a> Contract<'a> {
             .iter()
             .map(|root| {
                 let name = root["title"].as_str().expect("the root schema has a title");
-                assert!(
-                    !definitions.contains_key(name),
-                    "{name} is both a root and a definition"
-                );
+                if let Some(known) = definitions.get(name) {
+                    assert_eq!(
+                        known,
+                        &as_definition(root),
+                        "{name} differs as a root and as a definition"
+                    );
+                }
                 (name, *root)
             })
             .collect();
         Self { roots, definitions }
     }
 
-    /// Every type to emit: the roots in order, then the definitions by name.
+    /// Every type to emit: the roots in order, then the definitions by name. A root another
+    /// root also holds, such as `SettingsSpec`, is emitted once, as a root.
     pub(super) fn types(&self) -> impl Iterator<Item = (&str, &Value)> {
         self.roots.iter().copied().chain(
             self.definitions
                 .iter()
+                .filter(|(name, _)| !self.roots.iter().any(|(root, _)| root == name))
                 .map(|(name, schema)| (name.as_str(), schema)),
         )
     }
@@ -54,6 +59,18 @@ impl<'a> Contract<'a> {
     pub(super) fn root_names(&self) -> Vec<&'a str> {
         self.roots.iter().map(|(name, _)| *name).collect()
     }
+}
+
+/// A root schema as it reads when another root holds it: without its own definitions, title
+/// and `$schema`.
+fn as_definition(root: &Value) -> Value {
+    let mut schema = root.clone();
+    if let Some(object) = schema.as_object_mut() {
+        for key in ["$schema", "title", "definitions"] {
+            object.remove(key);
+        }
+    }
+    schema
 }
 
 /// What a definition becomes in the target language.

@@ -6,6 +6,7 @@
 //! `time`, `env`, `npx`, `uv run`, ...), nested shells (`bash -c`, `cmd /c`, `pwsh -Command`)
 //! are classified recursively, and the result is matched against the configured rules.
 
+pub use allot_shared::explain::Shell;
 use allot_shared::{
     config::{ClassifierConfig, HeavyRule},
     types::JobClass,
@@ -17,16 +18,6 @@ const SCRIPT_RUNNERS: [&str; 4] = ["uv", "poetry", "pipenv", "pdm"];
 
 // Nested shells deeper than this are not looked into; real commands never get close.
 const MAX_NESTING: usize = 4;
-
-/// The shell a command line is written for. Quoting and escapes differ between them.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[non_exhaustive]
-pub enum Shell {
-    /// bash and other POSIX shells: `\` escapes.
-    Bash,
-    /// PowerShell, also used for `cmd /c` scripts: `` ` `` escapes and `\` is literal.
-    PowerShell,
-}
 
 /// The verdict for a command line.
 #[derive(Debug, Clone, PartialEq, Eq)]

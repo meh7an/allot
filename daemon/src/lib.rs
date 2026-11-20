@@ -8,6 +8,7 @@ mod maintenance;
 mod routes;
 mod sampling;
 pub mod scopes;
+mod settings;
 pub mod startup;
 mod state;
 mod ui;
@@ -23,7 +24,7 @@ use tokio::{net::TcpListener, sync::watch};
 
 use crate::{
     db::{DbPool, repo},
-    state::{Shared, now_ms},
+    state::{Service, Shared, now_ms},
 };
 pub use crate::{maintenance::Maintenance, sampling::SamplerFactory, scopes::Scopes};
 
@@ -61,11 +62,16 @@ pub async fn serve(
     options: DaemonOptions,
     shutdown: impl Future<Output = ()> + Send + 'static,
 ) -> anyhow::Result<()> {
+    let service = Service {
+        config_path: options.maintenance.config_path.clone(),
+        listening_port: listener.local_addr()?.port(),
+    };
     let state = Arc::new(Shared::new(
         options.config,
         options.token,
         options.pool,
         options.scopes,
+        service,
     ));
     restore_leftovers(&state).await?;
     adopt_scopes(&state).await;
