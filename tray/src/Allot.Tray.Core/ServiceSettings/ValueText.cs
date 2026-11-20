@@ -55,16 +55,16 @@ public static class ValueText
             case Quantity.Cores:
                 return Plural(value, "core", number);
             case Quantity.Seconds:
-            {
-                var unit = ValueUnit.Best(ValueUnit.Durations, value);
-                return Plural(value / unit.Factor, unit.Singular, number);
-            }
+                {
+                    var unit = ValueUnit.Best(ValueUnit.Durations, value);
+                    return Plural(value / unit.Factor, unit.Singular, number);
+                }
 
             case Quantity.Megabytes:
-            {
-                var unit = ValueUnit.Best(ValueUnit.Memory, value);
-                return $"{number(value / unit.Factor)} {unit.Name}";
-            }
+                {
+                    var unit = ValueUnit.Best(ValueUnit.Memory, value);
+                    return $"{number(value / unit.Factor)} {unit.Name}";
+                }
 
             case Quantity.Port:
                 return value.ToString(CultureInfo.InvariantCulture);
