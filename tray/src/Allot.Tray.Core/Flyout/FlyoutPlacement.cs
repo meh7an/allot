@@ -23,34 +23,82 @@ public static class FlyoutPlacement
         Math.Min(contentHeight, Math.Min(MaxHeight, workAreaHeight * MaxWorkAreaFraction));
 
     /// <summary>
-    /// The tray-corner rectangle: 12 px from the right and bottom of the work area, or from the
-    /// right and top when the taskbar sits at the top of the monitor.
+    /// The tray-corner rectangle, 12 px in from the work area's corner next to the tray: the
+    /// right end of a bottom or top taskbar, and the end of a side taskbar that holds the icon.
     /// </summary>
+    /// <param name="workArea">The work area of the taskbar's monitor.</param>
+    /// <param name="edge">The edge the taskbar is on.</param>
+    /// <param name="scale">That monitor's scale.</param>
+    /// <param name="contentHeight">The content's height in effective pixels.</param>
+    /// <param name="iconY">Where the tray icon was last clicked, if it was.</param>
     public static PixelRect TrayCorner(
         PixelRect workArea,
-        PixelRect monitorBounds,
+        TaskbarEdge edge,
         double scale,
-        double contentHeight)
+        double contentHeight,
+        int? iconY = null)
     {
         var height = ClampHeight(contentHeight, workArea.Height / scale);
         var widthPx = ToPixels(Width, scale);
         var heightPx = ToPixels(height, scale);
         var marginPx = ToPixels(EdgeMargin, scale);
 
-        var x = workArea.Right - marginPx - widthPx;
-        var y = IsTaskbarAtTop(workArea, monitorBounds)
+        var x = edge == TaskbarEdge.Left
+            ? workArea.X + marginPx
+            : workArea.Right - marginPx - widthPx;
+        var y = OpensAtTop(edge, workArea, iconY)
             ? workArea.Y + marginPx
             : workArea.Bottom - marginPx - heightPx;
         return new PixelRect(x, y, widthPx, heightPx);
     }
 
     /// <summary>
-    /// The work area starts below the monitor's top edge only when an appbar (the taskbar, moved
-    /// by a third-party tool) occupies the top. An auto-hide taskbar leaves them equal, which
-    /// counts as bottom.
+    /// Whether the flyout and the tray menu open at the top: always for a top taskbar, never
+    /// for a bottom one, and for a side taskbar when the icon is in the upper half of the work
+    /// area. Where this Windows build puts the tray on a side taskbar is not documented, so the
+    /// icon decides; with no click yet, the bottom end, where Windows 10 put it.
     /// </summary>
-    public static bool IsTaskbarAtTop(PixelRect workArea, PixelRect monitorBounds) =>
-        workArea.Y > monitorBounds.Y && workArea.Bottom == monitorBounds.Bottom;
+    public static bool OpensAtTop(TaskbarEdge edge, PixelRect workArea, int? iconY) =>
+        edge switch
+        {
+            TaskbarEdge.Top => true,
+            TaskbarEdge.Bottom => false,
+            _ => iconY is { } y && 2 * y < (2 * workArea.Y) + workArea.Height,
+        };
+
+    /// <summary>
+    /// Where the open slide starts and the close slide ends: just past the work area's edge on
+    /// the taskbar's side, so the topmost taskbar covers the flyout there.
+    /// </summary>
+    public static PixelRect SlideOrigin(PixelRect target, PixelRect workArea, TaskbarEdge edge) =>
+        edge switch
+        {
+            TaskbarEdge.Top => target with { Y = workArea.Y - target.Height },
+            TaskbarEdge.Left => target with { X = workArea.X - target.Width },
+            TaskbarEdge.Right => target with { X = workArea.Right },
+            _ => target with { Y = workArea.Bottom },
+        };
+
+    /// <summary>
+    /// The part of a slide origin that reaches past the monitor on the taskbar's side. A
+    /// monitor there would show the flyout during the slide, so it fades instead.
+    /// </summary>
+    /// <returns>Null when the origin stays on its monitor.</returns>
+    public static PixelRect? Overhang(PixelRect origin, PixelRect monitor, TaskbarEdge edge)
+    {
+        var overhang = edge switch
+        {
+            TaskbarEdge.Top => origin with { Height = monitor.Y - origin.Y },
+            TaskbarEdge.Left => origin with { Width = monitor.X - origin.X },
+            TaskbarEdge.Right => origin with
+            {
+                X = monitor.Right,
+                Width = origin.Right - monitor.Right,
+            },
+            _ => origin with { Y = monitor.Bottom, Height = origin.Bottom - monitor.Bottom },
+        };
+        return overhang.Width > 0 && overhang.Height > 0 ? overhang : null;
+    }
 
     /// <summary>
     /// A pinned flyout dragged near a corner of its work area lands on that corner, 12 px in as

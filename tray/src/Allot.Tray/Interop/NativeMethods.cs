@@ -48,6 +48,7 @@ internal static partial class NativeMethods
     public const uint LrLoadFromFile = 0x10;
     public const int SmCxSmIcon = 49;
     public const int SmMenuDropAlignment = 40;
+    public const uint MonitorDefaultToNull = 0;
     public const uint MonitorDefaultToPrimary = 1;
     public const uint MonitorDefaultToNearest = 2;
 
@@ -66,10 +67,15 @@ internal static partial class NativeMethods
     public const uint MfPopup = 0x0010;
     public const uint MfSeparator = 0x0800;
     public const uint TpmLeftAlign = 0x0000;
+    public const uint TpmTopAlign = 0x0000;
+    public const uint TpmHorizontal = 0x0000;
     public const uint TpmRightButton = 0x0002;
     public const uint TpmRightAlign = 0x0008;
     public const uint TpmBottomAlign = 0x0020;
+    public const uint TpmVertical = 0x0040;
     public const uint TpmReturnCmd = 0x0100;
+
+    public const uint AbmGetTaskbarPos = 0x00000005;
 
     [LibraryImport("d2d1.dll")]
     public static partial int D2D1CreateFactory(
@@ -166,6 +172,9 @@ internal static partial class NativeMethods
 
     [LibraryImport("user32.dll")]
     public static partial int GetSystemMetricsForDpi(int index, uint dpi);
+
+    [LibraryImport("shell32.dll")]
+    public static partial nuint SHAppBarMessage(uint message, ref AppBarData data);
 
     [LibraryImport("shell32.dll", EntryPoint = "Shell_NotifyIconW")]
     [return: MarshalAs(UnmanagedType.Bool)]
@@ -330,6 +339,30 @@ internal static partial class NativeMethods
         public NativeRect Monitor;
         public NativeRect Work;
         public uint Flags;
+    }
+
+    /// <summary>
+    /// APPBARDATA.
+    /// </summary>
+    [StructLayout(LayoutKind.Sequential)]
+    public struct AppBarData
+    {
+        public uint Size;
+        public nint Window;
+        public uint CallbackMessage;
+        public uint Edge;
+        public NativeRect Rect;
+        public nint Param;
+    }
+
+    /// <summary>
+    /// TPMPARAMS.
+    /// </summary>
+    [StructLayout(LayoutKind.Sequential)]
+    public struct TrackPopupParams
+    {
+        public uint Size;
+        public NativeRect Exclude;
     }
 
     [StructLayout(LayoutKind.Sequential)]

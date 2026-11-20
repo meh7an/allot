@@ -23,7 +23,7 @@ internal sealed class TrayController : IDisposable
     private readonly DispatcherQueue _dispatcher = DispatcherQueue.GetForCurrentThread();
     private readonly ServiceControl _service;
     private readonly string _logDirectory;
-    private readonly Action _toggleFlyout;
+    private readonly Action<TrayCallback> _toggleFlyout;
     private readonly Action _openFlyout;
     private readonly Action _quit;
     private readonly Func<bool> _launchAtLogon;
@@ -35,7 +35,7 @@ internal sealed class TrayController : IDisposable
     public TrayController(
         ServiceControl service,
         string logDirectory,
-        Action toggleFlyout,
+        Action<TrayCallback> toggleFlyout,
         Action openFlyout,
         Action quit,
         Func<bool> launchAtLogon,
@@ -97,12 +97,13 @@ internal sealed class TrayController : IDisposable
     private void OnSelected(TrayCallback callback)
     {
         Measure.Clicked();
-        _ = _dispatcher.TryEnqueue(() => _toggleFlyout());
+        _ = _dispatcher.TryEnqueue(() => _toggleFlyout(callback));
     }
 
     private void OnContextMenuRequested(TrayCallback callback)
     {
-        var id = NativeMenu.Show(_icon.WindowHandle, BuildMenu(), callback.X, callback.Y);
+        var id = NativeMenu.Show(
+            _icon.WindowHandle, BuildMenu(), callback.X, callback.Y, Taskbar.Read());
         if (id != 0)
         {
             _ = _dispatcher.TryEnqueue(() => Run(id));

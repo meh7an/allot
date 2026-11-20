@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 
+using Allot.Tray.Core.Flyout;
 using Allot.Tray.Core.TrayIcon;
 using Allot.Tray.Interop;
 
@@ -39,10 +40,15 @@ internal static unsafe class NativeMenu
     private static readonly nint FlushMenuThemes = UxThemeExport(FlushMenuThemesOrdinal);
 
     /// <summary>
-    /// Shows the menu with its bottom edge at the point, blocking until it closes.
+    /// Shows the menu at the point, opening away from the taskbar, blocking until it closes.
     /// </summary>
     /// <returns>The chosen item's ID, or 0 when the menu was dismissed.</returns>
-    public static uint Show(nint owner, IReadOnlyList<NativeMenuItem> items, int x, int y)
+    public static uint Show(
+        nint owner,
+        IReadOnlyList<NativeMenuItem> items,
+        int x,
+        int y,
+        TaskbarPlace taskbar)
     {
         var menu = Build(items);
         try
@@ -50,15 +56,27 @@ internal static unsafe class NativeMenu
             // Without the owner in the foreground the menu never closes on an outside click,
             // and the WM_NULL afterwards lets the next right-click open it at once (KB135788).
             _ = NativeMethods.SetForegroundWindow(owner);
-            var horizontal =
-                NativeMethods.GetSystemMetrics(NativeMethods.SmMenuDropAlignment) != 0
-                    ? NativeMethods.TpmRightAlign
-                    : NativeMethods.TpmLeftAlign;
             var flags = NativeMethods.TpmReturnCmd
                 | NativeMethods.TpmRightButton
-                | NativeMethods.TpmBottomAlign
-                | horizontal;
-            var id = NativeMethods.TrackPopupMenuEx(menu, flags, x, y, owner, 0);
+                | Alignment(taskbar, y);
+            // Excluding the taskbar makes Windows move a menu that does not fit off it, rather
+            // than over it and the icon.
+            var parameters = new NativeMethods.TrackPopupParams
+            {
+                Size = (uint)sizeof(NativeMethods.TrackPopupParams),
+            };
+            if (taskbar.Bounds is { } bounds)
+            {
+                parameters.Exclude = Taskbar.ToNativeRect(bounds);
+            }
+
+            var id = NativeMethods.TrackPopupMenuEx(
+                menu,
+                flags,
+                x,
+                y,
+                owner,
+                taskbar.Bounds is null ? 0 : (nint)(&parameters));
             _ = NativeMethods.PostMessage(owner, NativeMethods.WmNull, 0, 0);
             return (uint)id;
         }
@@ -81,6 +99,27 @@ internal static unsafe class NativeMenu
             theme == TaskbarTheme.Dark ? ForceDark : ForceLight);
         ((delegate* unmanaged<void>)FlushMenuThemes)();
         return true;
+    }
+
+    /// <summary>
+    /// Up from a bottom taskbar and down from a top one, keeping the user's menu drop side;
+    /// sideways from a side taskbar, toward the end the flyout would open at.
+    /// </summary>
+    private static uint Alignment(TaskbarPlace taskbar, int y)
+    {
+        var vertical = FlyoutPlacement.OpensAtTop(taskbar.Edge, taskbar.WorkArea, y)
+            ? NativeMethods.TpmTopAlign
+            : NativeMethods.TpmBottomAlign;
+        var dropSide = NativeMethods.GetSystemMetrics(NativeMethods.SmMenuDropAlignment) != 0
+            ? NativeMethods.TpmRightAlign
+            : NativeMethods.TpmLeftAlign;
+        var side = taskbar.Edge switch
+        {
+            TaskbarEdge.Left => NativeMethods.TpmLeftAlign | NativeMethods.TpmHorizontal,
+            TaskbarEdge.Right => NativeMethods.TpmRightAlign | NativeMethods.TpmHorizontal,
+            _ => dropSide | NativeMethods.TpmVertical,
+        };
+        return vertical | side;
     }
 
     private static nint Build(IReadOnlyList<NativeMenuItem> items)

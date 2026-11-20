@@ -5,6 +5,7 @@ using System.Runtime.InteropServices;
 using Allot.Tray.Core.Flyout;
 using Allot.Tray.Diagnostics;
 using Allot.Tray.Interop;
+using Allot.Tray.TrayIcon;
 
 using Microsoft.UI;
 using Microsoft.UI.Composition;
@@ -34,11 +35,12 @@ public sealed unsafe partial class FlyoutWindow : Window
     // A click on the tray icon deactivates the flyout 16-141 ms before its NIN_SELECT arrives, as
     // measured; about twice that still lets a deliberate reopen through.
     private static readonly TimeSpan ToggleDebounce = TimeSpan.FromMilliseconds(300);
-    // Chosen over the handoff's 12 px content slide: the window itself rises out of
-    // the taskbar and sinks back into it, as the shell's tray flyouts do. A flyout dragged away
-    // from the tray corner, or reduced motion, fades instead.
-    private static readonly TimeSpan SlideUpDuration = TimeSpan.FromMilliseconds(250);
-    private static readonly TimeSpan SlideDownDuration = TimeSpan.FromMilliseconds(167);
+    // Chosen over the handoff's 12 px content slide: the window itself comes out of the
+    // taskbar and goes back into it, from whichever edge it is on, as the shell's tray flyouts
+    // do. A flyout dragged away from the tray corner, reduced motion, or a slide that would
+    // show on a neighbouring monitor fades instead.
+    private static readonly TimeSpan SlideInDuration = TimeSpan.FromMilliseconds(250);
+    private static readonly TimeSpan SlideOutDuration = TimeSpan.FromMilliseconds(167);
     private static readonly TimeSpan FadeInDuration = TimeSpan.FromMilliseconds(167);
     private static readonly TimeSpan FadeOutDuration = TimeSpan.FromMilliseconds(100);
     private const nuint SubclassId = 1;
@@ -75,6 +77,11 @@ public sealed unsafe partial class FlyoutWindow : Window
     private int _dragMoves;
     private WindowSlide? _slide;
     private bool _atTrayCorner = true;
+    // Read at each open, so a taskbar moved while the app runs is followed.
+    private TaskbarPlace _taskbar;
+    // Where the tray icon was last clicked; on a side taskbar it picks the end the flyout
+    // opens at.
+    private int? _iconY;
     private PixelRect _dragStart;
     private NativeMethods.NativePoint _dragCursor;
     private int _generation;
@@ -101,6 +108,7 @@ public sealed unsafe partial class FlyoutWindow : Window
         _themeSettings.Changed += (_, _) => _dispatcher.TryEnqueue(ApplyHighContrast);
         ApplyHighContrast();
 
+        _taskbar = Taskbar.Read();
         s_current = this;
         if (!NativeMethods.SetWindowSubclass(_hwnd, &SubclassProc, SubclassId, 0))
         {
@@ -174,8 +182,10 @@ public sealed unsafe partial class FlyoutWindow : Window
     /// <summary>
     /// A tray icon click.
     /// </summary>
-    public void Toggle()
+    /// <param name="icon">Where the icon was clicked, when the click came from the icon.</param>
+    public void Toggle(PointInt32? icon = null)
     {
+        _iconY = icon?.Y ?? _iconY;
         var result = _behavior.Toggle(Now);
         Report($"toggle -> {result}");
         switch (result)
@@ -240,21 +250,17 @@ public sealed unsafe partial class FlyoutWindow : Window
         ApplyDragRegion();
     }
 
+    private static int Between(int from, int to, double eased) =>
+        (int)Math.Round(from + ((to - from) * eased));
+
     private static PixelRect ToPixelRect(RectInt32 rect) =>
         new(rect.X, rect.Y, rect.Width, rect.Height);
 
     private static PixelRect ToPixelRect(NativeMethods.NativeRect rect) =>
         new(rect.Left, rect.Top, rect.Right - rect.Left, rect.Bottom - rect.Top);
 
-    private static double ScaleOf(nint monitor)
-    {
-        var hr = NativeMethods.GetDpiForMonitor(
-            monitor, NativeMethods.MdtEffectiveDpi, out var dpi, out _);
-        return hr == 0 ? dpi / 96.0 : 1.0;
-    }
-
     private static double ScaleOf(DisplayArea area) =>
-        ScaleOf(Win32Interop.GetMonitorFromDisplayId(area.DisplayId));
+        Taskbar.ScaleOf(Win32Interop.GetMonitorFromDisplayId(area.DisplayId));
 
     private static bool ForegroundIsOurs()
     {
@@ -368,7 +374,7 @@ public sealed unsafe partial class FlyoutWindow : Window
         }
 
         var snapped = FlyoutPlacement.SnapToCorner(
-            visible, ToPixelRect(info.Work), ScaleOf(monitor));
+            visible, ToPixelRect(info.Work), Taskbar.ScaleOf(monitor));
         var window = insets.Around(snapped);
         proposed->Left = window.X;
         proposed->Top = window.Y;
@@ -442,13 +448,15 @@ public sealed unsafe partial class FlyoutWindow : Window
 
         // Content may have changed while hidden; measure it before sizing the window.
         _root?.UpdateLayout();
+        _taskbar = Taskbar.Read();
+        Report($"taskbar {_taskbar.Edge}");
         var target = PlaceAtTrayCorner();
         _presenter.IsAlwaysOnTop = false;
-        var slide = AnimationsEnabled;
-        SetContentOpacity(slide ? 1 : 0);
-        if (slide)
+        var origin = AnimationsEnabled ? BehindTaskbar(target) : null;
+        SetContentOpacity(origin is null ? 0 : 1);
+        if (origin is { } start)
         {
-            MoveVisible(BehindTaskbar(target));
+            MoveVisible(start);
         }
 
         AppWindow.Show();
@@ -458,14 +466,14 @@ public sealed unsafe partial class FlyoutWindow : Window
             Report("SetForegroundWindow refused");
         }
 
-        if (slide)
+        if (origin is { } from)
         {
             StartSlide(new WindowSlide(
-                BehindTaskbar(target),
+                from,
                 target,
                 Stopwatch.GetTimestamp(),
                 generation,
-                SlideUpDuration,
+                SlideInDuration,
                 CubicBezier.Decelerate,
                 Closes: false));
         }
@@ -488,15 +496,15 @@ public sealed unsafe partial class FlyoutWindow : Window
             return;
         }
 
-        if (AnimationsEnabled && _atTrayCorner)
+        var visible = VisibleBounds();
+        if (AnimationsEnabled && _atTrayCorner && BehindTaskbar(visible) is { } to)
         {
-            var visible = VisibleBounds();
             StartSlide(new WindowSlide(
                 visible,
-                BehindTaskbar(visible),
+                to,
                 Stopwatch.GetTimestamp(),
                 generation,
-                SlideDownDuration,
+                SlideOutDuration,
                 CubicBezier.Accelerate,
                 Closes: true));
             return;
@@ -525,15 +533,13 @@ public sealed unsafe partial class FlyoutWindow : Window
     private double ContentHeight =>
         (_content?.DesiredHeight ?? FlyoutPlacement.MaxHeight) + _clientShortfall;
 
-    private PixelRect TrayCorner()
-    {
-        var area = DisplayArea.Primary;
-        return FlyoutPlacement.TrayCorner(
-            ToPixelRect(area.WorkArea),
-            ToPixelRect(area.OuterBounds),
-            ScaleOf(area),
-            ContentHeight);
-    }
+    private PixelRect TrayCorner() =>
+        FlyoutPlacement.TrayCorner(
+            _taskbar.WorkArea,
+            _taskbar.Edge,
+            _taskbar.Scale,
+            ContentHeight,
+            _iconY);
 
     /// <returns>The visible rectangle the flyout now has.</returns>
     private PixelRect PlaceAtTrayCorner()
@@ -548,14 +554,19 @@ public sealed unsafe partial class FlyoutWindow : Window
     /// Where the open slide starts and the close slide ends: just behind the taskbar's inner
     /// edge, so the topmost taskbar covers the flyout there.
     /// </summary>
-    private static PixelRect BehindTaskbar(PixelRect target)
+    /// <returns>Null when part of it would show on a monitor beyond the taskbar.</returns>
+    private PixelRect? BehindTaskbar(PixelRect target)
     {
-        var area = DisplayArea.Primary;
-        var workArea = ToPixelRect(area.WorkArea);
-        var y = FlyoutPlacement.IsTaskbarAtTop(workArea, ToPixelRect(area.OuterBounds))
-            ? workArea.Y - target.Height
-            : workArea.Bottom;
-        return target with { Y = y };
+        var origin = FlyoutPlacement.SlideOrigin(target, _taskbar.WorkArea, _taskbar.Edge);
+        if (FlyoutPlacement.Overhang(origin, _taskbar.Monitor, _taskbar.Edge) is not { } overhang)
+        {
+            return origin;
+        }
+
+        var native = Taskbar.ToNativeRect(overhang);
+        return NativeMethods.MonitorFromRect(native, NativeMethods.MonitorDefaultToNull) == 0
+            ? origin
+            : null;
     }
 
     private void StartSlide(WindowSlide slide)
@@ -588,8 +599,9 @@ public sealed unsafe partial class FlyoutWindow : Window
 
         var progress = Stopwatch.GetElapsedTime(slide.StartedAt) / slide.Duration;
         var eased = slide.Curve.Ease(progress);
-        var y = (int)Math.Round(slide.From.Y + ((slide.To.Y - slide.From.Y) * eased));
-        AppWindow.Move(new PointInt32(slide.To.X - _insets.Left, y - _insets.Top));
+        var x = Between(slide.From.X, slide.To.X, eased);
+        var y = Between(slide.From.Y, slide.To.Y, eased);
+        AppWindow.Move(new PointInt32(x - _insets.Left, y - _insets.Top));
         if (progress < 1)
         {
             return;

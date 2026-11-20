@@ -1,4 +1,5 @@
 using Allot.Tray.Core.Flyout;
+using Allot.Tray.Core.Tests.Support;
 
 namespace Allot.Tray.Core.Tests;
 
@@ -89,6 +90,49 @@ public sealed class PinnedPlacementTests
         var grown = FlyoutPlacement.Regrow(pinned, 500, WorkArea);
 
         Assert.AreEqual(new PixelRect(12, 12, 360, 500), grown);
+    }
+
+    [TestMethod]
+    [DataRow(TaskbarEdge.Bottom, 1.0, -1)]
+    [DataRow(TaskbarEdge.Top, 1.0, -1)]
+    [DataRow(TaskbarEdge.Left, 1.0, -1)]
+    [DataRow(TaskbarEdge.Right, 1.0, 100)]
+    [DataRow(TaskbarEdge.Bottom, 1.5, -1)]
+    [DataRow(TaskbarEdge.Top, 1.5, -1)]
+    [DataRow(TaskbarEdge.Left, 1.5, 300)]
+    [DataRow(TaskbarEdge.Right, 1.5, -1)]
+    public void SnapsBackToTheTrayCornerOnEachEdge(TaskbarEdge edge, double scale, int iconY)
+    {
+        var area = Taskbars.WorkArea(edge, scale);
+        var corner = FlyoutPlacement.TrayCorner(area, edge, scale, 400, Taskbars.Icon(iconY));
+        var threshold = FlyoutPlacement.ToPixels(FlyoutPlacement.SnapDistance, scale);
+        var near = corner with { X = corner.X - threshold, Y = corner.Y + threshold };
+
+        Assert.AreEqual(corner, FlyoutPlacement.SnapToCorner(near, area, scale));
+    }
+
+    [TestMethod]
+    [DataRow(TaskbarEdge.Bottom, 1.0, -1)]
+    [DataRow(TaskbarEdge.Top, 1.0, -1)]
+    [DataRow(TaskbarEdge.Left, 1.0, -1)]
+    [DataRow(TaskbarEdge.Left, 1.0, 100)]
+    [DataRow(TaskbarEdge.Right, 1.0, -1)]
+    [DataRow(TaskbarEdge.Right, 1.0, 100)]
+    [DataRow(TaskbarEdge.Bottom, 1.5, -1)]
+    [DataRow(TaskbarEdge.Top, 1.5, -1)]
+    [DataRow(TaskbarEdge.Left, 1.5, 300)]
+    [DataRow(TaskbarEdge.Right, 1.5, -1)]
+    public void RegrowingAtTheTrayCornerKeepsTheTaskbarSide(
+        TaskbarEdge edge, double scale, int iconY)
+    {
+        var area = Taskbars.WorkArea(edge, scale);
+        var icon = Taskbars.Icon(iconY);
+        var pinned = FlyoutPlacement.TrayCorner(area, edge, scale, 400, icon);
+        var taller = FlyoutPlacement.TrayCorner(area, edge, scale, 500, icon);
+
+        var grown = FlyoutPlacement.Regrow(pinned, taller.Height, area);
+
+        Assert.AreEqual(taller, grown);
     }
 
     [TestMethod]

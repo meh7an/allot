@@ -687,7 +687,8 @@ public sealed partial class App : Application
         }
     }
 
-    private void ToggleFlyout() => _flyout?.Toggle();
+    private void ToggleFlyout(TrayCallback click) =>
+        _flyout?.Toggle(new Windows.Graphics.PointInt32(click.X, click.Y));
 
     private void RunServiceItem()
     {
