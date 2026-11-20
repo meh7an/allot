@@ -24,14 +24,14 @@ PlasmoidItem {
     property string stopQuestion: ""
     property bool doNotDisturb: false
     property bool notificationsOff: false
-    property string meterCount: ""
-    property string notificationCount: ""
     property string iconSource: ""
     property string accessibleName: "Allot"
     property bool keepOpen: false
     property var rowData: ({})
     property bool animate: false
     property var scrollRequest: null
+    // Built on the first open and kept: closing only hides it (DESIGN.md D14).
+    property var settingsWindow: null
 
     readonly property string iconDirectory: Qt.resolvedUrl("../icons/").toString()
     readonly property string iconFolder: decodeURIComponent(iconDirectory.replace(/^file:\/\//, ""))
@@ -64,11 +64,24 @@ PlasmoidItem {
         root.serviceItem = root.widget.serviceItem;
         root.stopQuestion = root.widget.stopQuestion;
         root.notificationsOff = root.widget.notificationsOff;
-        root.meterCount = root.widget.meterCount;
-        root.notificationCount = root.widget.notificationCount;
         root.iconSource = root.iconDirectory + root.widget.iconFile;
         root.accessibleName = root.widget.accessibleName;
         root.keepOpen = root.widget.keepOpen;
+    }
+
+    // Configure Allot…: the popup closes, and an open window comes to the front.
+    function openSettings() {
+        if (root.widget === null) {
+            return;
+        }
+        root.expanded = false;
+        if (root.settingsWindow === null) {
+            root.settingsWindow = settingsComponent.createObject(root, {
+                widget: root.widget,
+                timers: root.timers,
+            });
+        }
+        root.settingsWindow.present();
     }
 
     toolTipMainText: "Allot"
@@ -113,12 +126,8 @@ PlasmoidItem {
         snapshot: root.snapshot
         resources: root.resources
         banner: root.banner
-        settings: root.settings
         stopQuestion: root.stopQuestion
-        doNotDisturb: root.doNotDisturb
-        notificationsOff: root.notificationsOff
-        meterCount: root.meterCount
-        notificationCount: root.notificationCount
+        serviceItem: root.serviceItem
         keepOpen: root.keepOpen
         iconDirectory: root.iconDirectory
         rowModel: listRows
@@ -130,10 +139,12 @@ PlasmoidItem {
             root.widget.toggleKeepOpen();
             root.refresh();
         }
+        onSettingsRequested: root.openSettings()
     }
 
-    // The summary, Stop Service or Start Service, and Open Logs. There is no Quit, because a widget
-    // is removed from the panel, which Plasma adds to this menu.
+    // The summary, Configure Allot…, Stop Service or Start Service, and Open Logs (DESIGN.md
+    // section 9). There is no Quit, because a widget is removed from the panel, which Plasma adds
+    // to this menu.
     Plasmoid.contextualActions: [
         PlasmaCore.Action {
             text: root.snapshot === null ? "" : root.snapshot.header.summary
@@ -141,6 +152,11 @@ PlasmoidItem {
         },
         PlasmaCore.Action {
             isSeparator: true
+        },
+        PlasmaCore.Action {
+            text: "Configure Allot…"
+            icon.name: "configure"
+            onTriggered: root.openSettings()
         },
         PlasmaCore.Action {
             text: root.serviceItem.title
@@ -159,6 +175,17 @@ PlasmoidItem {
     Component {
         id: timerComponent
         Timer {}
+    }
+
+    Component {
+        id: settingsComponent
+
+        SettingsWindow {
+            panelSettings: root.settings
+            sharesMemory: root.resources.sharesMemory
+            notificationsOff: root.notificationsOff
+            doNotDisturb: root.doNotDisturb
+        }
     }
 
     NotificationSender {

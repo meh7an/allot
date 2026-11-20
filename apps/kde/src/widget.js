@@ -2,8 +2,8 @@ import { Announcer } from "../../gnome/allot@mehran.tech/lib/accessible-text.js"
 import { DaemonClient } from "../../gnome/allot@mehran.tech/lib/client.js";
 import { DEFAULT_PORT, dataPaths, portFromToml } from "../../gnome/allot@mehran.tech/lib/config.js";
 import { accessibleName, iconFile } from "../../gnome/allot@mehran.tech/lib/indicator-status.js";
-import { meterCount, notificationCount } from "../../gnome/allot@mehran.tech/lib/menu-counts.js";
 import { NotificationRules } from "../../gnome/allot@mehran.tech/lib/notification-rules.js";
+import { resetPanel, setToggle } from "../../gnome/allot@mehran.tech/lib/panel-toggles.js";
 import { DaemonPoller } from "../../gnome/allot@mehran.tech/lib/poller.js";
 import { PopupModel } from "../../gnome/allot@mehran.tech/lib/popup-model.js";
 import { SystemdServiceLauncher } from "../../gnome/allot@mehran.tech/lib/service-launcher.js";
@@ -13,6 +13,7 @@ import {
   stopConfirmation,
 } from "../../gnome/allot@mehran.tech/lib/service-menu.js";
 import { decodeSettings, encodeSettings } from "../../gnome/allot@mehran.tech/lib/settings.js";
+import { SettingsWindowModel } from "../../gnome/allot@mehran.tech/lib/settings-window.js";
 import {
   DO_NOT_DISTURB_TEXT,
   WELCOME_BODY,
@@ -42,13 +43,13 @@ import { Notifier } from "./notifier.js";
 import { RowKeeper, listRows } from "./rows.js";
 
 /** @import { PollResult, ServiceStatus } from "../../gnome/allot@mehran.tech/lib/client.js" */
+/** @import { PanelToggle } from "../../gnome/allot@mehran.tech/lib/panel-toggles.js" */
+/** @import { WindowHost } from "../../gnome/allot@mehran.tech/lib/settings-window.js" */
 /** @import { DataPaths } from "../../gnome/allot@mehran.tech/lib/config.js" */
 /** @import { Timers } from "../../gnome/allot@mehran.tech/lib/poller.js" */
 /** @import { NotificationButton } from "../../gnome/allot@mehran.tech/lib/notification-text.js" */
 /** @import { ModelChange } from "../../gnome/allot@mehran.tech/lib/popup-model.js" */
 /** @import { ServiceMenuItem } from "../../gnome/allot@mehran.tech/lib/service-menu.js" */
-/** @import { MeterToggles } from "../../gnome/allot@mehran.tech/lib/settings.js" */
-/** @import { NotificationToggles } from "../../gnome/allot@mehran.tech/lib/settings.js" */
 /** @import { IdleLine } from "../../gnome/allot@mehran.tech/lib/snapshot.js" */
 /** @import { JobGroupKind } from "../../gnome/allot@mehran.tech/lib/snapshot.js" */
 /** @import { XhrFactory } from "./io.js" */
@@ -87,9 +88,6 @@ export const NOTIFICATIONS_OFF_TEXT = "Turned off in System Settings";
 
 /** The first-run card's line for the same. */
 export const NOTIFICATIONS_OFF_CARD_TEXT = "Notifications are turned off in System Settings.";
-
-/** The menu's count while System Settings has them off. */
-export const NOTIFICATIONS_OFF_COUNT = "Off";
 
 // Times on the cards tick once a second while the popup is open.
 const TICK_MS = 1000;
@@ -158,6 +156,12 @@ export class AllotWidget {
   #announcer = new Announcer();
   /** @type {DaemonPoller | null} */
   #poller = null;
+  /** @type {{ client: DaemonClient, launcher: SystemdServiceLauncher } | null} */
+  #service = null;
+  /** @type {Array<() => void>} */
+  #waitingForService = [];
+  /** @type {SettingsWindowModel | null} */
+  #settingsWindow = null;
   /** @type {ServiceStatus | null} */
   #lastStatus = null;
   /** @type {unknown} */
@@ -240,6 +244,10 @@ export class AllotWidget {
     poller.onUpdate = (result) => this.#show(result);
     poller.setPopupOpen(this.#expanded);
     this.#poller = poller;
+    this.#service = { client, launcher };
+    for (const resume of this.#waitingForService.splice(0)) {
+      resume();
+    }
     try {
       await poller.start();
     } catch (error) {
@@ -250,8 +258,66 @@ export class AllotWidget {
   stop() {
     this.#stopped = true;
     this.#clearTick();
+    this.#settingsWindow?.dispose();
     this.#poller?.stop();
     this.#transport.cancel();
+  }
+
+  /**
+   * The Settings window's model, built on its first open once `start` has made the client, then
+   * kept for the widget's life, since the window only hides (DESIGN.md D14). It shares the
+   * popup's client, so a restart on a new port moves both, and its Start and Stop go through the
+   * popup's poller, so the popup follows at once.
+   *
+   * @param {WindowHost} host
+   * @param {(value: number) => string} number Formats a number for the user's locale.
+   * @returns {Promise<SettingsWindowModel>}
+   */
+  async settingsWindow(host, number) {
+    const service = this.#service ?? (await this.#serviceReady());
+    if (this.#settingsWindow === null) {
+      this.#settingsWindow = new SettingsWindowModel({
+        client: service.client,
+        timers: this.#host.timers,
+        launcher: service.launcher,
+        paths: this.paths,
+        port: service.client.port,
+        number,
+        readStopRecord: () => readTextFile(this.#runner, `${this.paths.root}/stopped.json`),
+        host,
+        stop: () => this.#stopService(),
+        start: () => this.startService(),
+      });
+    }
+    return this.#settingsWindow;
+  }
+
+  /**
+   * A switch on the Settings window's Panel page.
+   *
+   * @param {PanelToggle} toggle
+   * @param {boolean} on
+   */
+  setPanelToggle(toggle, on) {
+    this.model.updateSettings((settings) => setToggle(settings, toggle, on));
+    this.#showPress();
+  }
+
+  /** The Panel page's Reset Page…, once confirmed. */
+  resetPanel() {
+    this.model.updateSettings((settings) => resetPanel(settings));
+    this.#showPress();
+  }
+
+  /** @returns {Promise<{ client: DaemonClient, launcher: SystemdServiceLauncher }>} */
+  #serviceReady() {
+    return new Promise((resolve) => {
+      this.#waitingForService.push(() => {
+        if (this.#service !== null) {
+          resolve(this.#service);
+        }
+      });
+    });
   }
 
   /**
@@ -344,47 +410,28 @@ export class AllotWidget {
     this.#showPress();
   }
 
-  /**
-   * A Meters check item.
-   *
-   * @param {keyof MeterToggles} key
-   */
-  toggleMeter(key) {
-    this.model.updateSettings((settings) => {
-      settings.meters[key] = !settings.meters[key];
-    });
-    this.#showPress();
-  }
-
-  /**
-   * A Notifications check item.
-   *
-   * @param {keyof NotificationToggles} key
-   */
-  toggleNotification(key) {
-    this.model.updateSettings((settings) => {
-      settings.notifications[key] = !settings.notifications[key];
-    });
-    this.#showPress();
-  }
-
   /** The first-run card's Done. */
   finishFirstRun() {
     this.model.finishFirstRun();
     this.#showPress();
   }
 
-  /** The banner's Start Service, or the panel menu's while allotd is down. */
+  /**
+   * The banner's Start Service, the panel menu's while allotd is down, or the Settings window's.
+   *
+   * @returns {Promise<string | null>} `null` when allotd was launched, else why not.
+   */
   async startService() {
     const poller = this.#poller;
     if (poller === null) {
-      return;
+      return "the widget has not started yet";
     }
     this.#showChange(this.model.noteStarting());
     const problem = await poller.startService();
     if (problem !== null) {
       this.#host.log(`Allot: cannot start the service: ${problem}`);
     }
+    return problem;
   }
 
   /** The panel menu's service item: with jobs up, Stop asks in the popup first. */
@@ -473,18 +520,6 @@ export class AllotWidget {
     return serviceMenuItem(this.model.status);
   }
 
-  /** @returns {string} */
-  get meterCount() {
-    return meterCount(this.model.settings.meters);
-  }
-
-  /** @returns {string} */
-  get notificationCount() {
-    return this.notificationsOff
-      ? NOTIFICATIONS_OFF_COUNT
-      : notificationCount(this.model.settings.notifications);
-  }
-
   /** @param {PollResult} result */
   #show(result) {
     if (result.status !== this.#lastStatus) {
@@ -544,10 +579,11 @@ export class AllotWidget {
     this.#host.scrollTo(target);
   }
 
+  /** @returns {Promise<string | null>} `null` when allotd accepted, else why not. */
   async #stopService() {
     const poller = this.#poller;
     if (poller === null) {
-      return;
+      return "the widget has not started yet";
     }
     this.#rules.expectStop();
     try {
@@ -555,9 +591,11 @@ export class AllotWidget {
       if (problem !== null) {
         this.#host.log(`Allot: cannot stop the service: ${problem}`);
       }
+      return problem;
     } catch (error) {
       // Only the widget going away cancels the request.
       this.#host.log(`Allot: stop not finished: ${error}`);
+      return String(error);
     }
   }
 

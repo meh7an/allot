@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { meterCount, notificationCount } from "../allot@mehran.tech/lib/menu-counts.js";
 import {
   decodeSettings,
   defaultSettings,
@@ -11,8 +10,8 @@ import {
 test("the defaults match the handoff: every meter on, three notifications on", () => {
   const settings = defaultSettings();
 
-  assert.equal(meterCount(settings.meters), "5 of 5");
-  assert.equal(notificationCount(settings.notifications), "3 of 5");
+  assert.ok(Object.values(settings.meters).every((on) => on));
+  assert.equal(Object.values(settings.notifications).filter((on) => on).length, 3);
   assert.equal(settings.notifications.service_stopped, true);
   assert.equal(settings.notifications.killed_outside_flyout, false);
   assert.equal(settings.resources_expanded, false);
@@ -67,13 +66,4 @@ test("saving and reading gives the same settings, in the shared format", () => {
   assert.ok(text.endsWith("\n"));
   assert.ok(text.includes('"killed_outside_flyout": false'));
   assert.ok(text.includes('"resources_expanded": false'));
-});
-
-test("Drive activity does not count as a meter", () => {
-  const { meters } = defaultSettings();
-  meters.drive_activity = false;
-  assert.equal(meterCount(meters), "5 of 5");
-
-  meters.gpu = false;
-  assert.equal(meterCount(meters), "4 of 5");
 });

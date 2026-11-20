@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import {
+  meterToggles,
+  notificationToggles,
+} from "../../gnome/allot@mehran.tech/lib/panel-toggles.js";
 import { FakeTimers, fixtureText, settle } from "../../gnome/tests/support.mjs";
 import { fakeHost } from "./support.mjs";
 
@@ -62,6 +66,20 @@ async function service(options = {}) {
   });
 }
 
+/** @param {string} key */
+function meterToggle(key) {
+  const toggle = meterToggles(false).find((candidate) => candidate.key === key);
+  assert.ok(toggle !== undefined, key);
+  return toggle;
+}
+
+/** @param {string} key */
+function notificationToggle(key) {
+  const toggle = notificationToggles().find((candidate) => candidate.key === key);
+  assert.ok(toggle !== undefined, key);
+  return toggle;
+}
+
 /** The daemon goes away and stays away for the two polls a stop takes. */
 async function stopFromOutside(/** @type {Awaited<ReturnType<typeof service>>} */ subject) {
   subject.daemon.up = false;
@@ -109,19 +127,19 @@ test("the saved settings are read at start", async () => {
     },
   });
 
-  assert.equal(subject.widget.meterCount, "4 of 5");
-  assert.equal(subject.widget.notificationCount, "4 of 5");
+  assert.equal(subject.widget.model.settings.meters.gpu, false);
+  assert.equal(subject.widget.model.settings.notifications.job_finished, true);
   assert.equal(subject.widget.model.resources.isExpanded, true);
   assert.deepEqual(subject.saves(), [], "reading them does not save them again");
 });
 
-test("a toggle changes the card and the count, and saves in the other apps' format", async () => {
+test("a Panel page switch changes the card, and saves in the other apps' format", async () => {
   const subject = await service();
 
-  subject.widget.toggleMeter("cpu");
+  subject.widget.setPanelToggle(meterToggle("cpu"), false);
   await settle();
 
-  assert.equal(subject.widget.meterCount, "4 of 5");
+  assert.equal(subject.widget.model.settings.meters.cpu, false);
   assert.ok(!subject.widget.model.resources.meters.some((row) => row.id === "cpu"));
   const [save] = subject.saves();
   assert.ok(save?.startsWith(`mkdir -p -- '${HOME}' && printf %s '{\n  "meters"`));
@@ -132,8 +150,8 @@ test("a toggle changes the card and the count, and saves in the other apps' form
 test("saves run one at a time, in order", async () => {
   const subject = await service();
 
-  subject.widget.toggleNotification("job_finished");
-  subject.widget.toggleNotification("job_finished");
+  subject.widget.setPanelToggle(notificationToggle("job_finished"), true);
+  subject.widget.setPanelToggle(notificationToggle("job_finished"), false);
   subject.widget.toggleResources();
   await settle();
 
@@ -354,13 +372,13 @@ test("Done ends the first run and brings back the empty line", async () => {
   assert.ok(subject.saves().at(-1)?.includes('"first_run_done": true'));
 });
 
-test("Do Not Disturb shows on the card without changing the count", async () => {
+test("Do Not Disturb shows on the card", async () => {
   const subject = await service({ fixture: "first-run", inhibited: "(<true>,)\n" });
   subject.widget.setExpanded(true);
   await settle();
 
   assert.equal(subject.widget.model.doNotDisturb, true);
-  assert.equal(subject.widget.notificationCount, "3 of 5");
+  assert.equal(subject.widget.notificationsOff, false);
   assert.deepEqual(subject.shown.data.welcome, {
     key: "welcome",
     kind: "welcome",
@@ -369,7 +387,7 @@ test("Do Not Disturb shows on the card without changing the count", async () => 
   });
 });
 
-test("notifications off in System Settings show on the card and in the count", async () => {
+test("notifications off in System Settings show on the card", async () => {
   const subject = await service({
     fixture: "first-run",
     files: { [`${CONFIG_HOME}/plasmanotifyrc`]: "[Services][allot]\nShowPopups=false\n" },
@@ -378,11 +396,10 @@ test("notifications off in System Settings show on the card and in the count", a
   await settle();
 
   assert.equal(subject.widget.notificationsOff, true);
-  assert.equal(subject.widget.notificationCount, "Off");
   assert.equal(/** @type {any} */ (subject.shown.data.welcome).notificationsOff, true);
 });
 
-test("the state is read again when More options asks, and a change shows", async () => {
+test("the state is read again when the Panel page asks, and a change shows", async () => {
   const eventFile = `${CONFIG_HOME}/allot.notifyrc`;
   const subject = await service({ files: { [eventFile]: "[Event/notification]\nAction=\n" } });
   assert.equal(subject.widget.notificationsOff, true);
@@ -391,7 +408,7 @@ test("the state is read again when More options asks, and a change shows", async
   delete subject.files[eventFile];
   await subject.widget.refreshNotificationState();
 
-  assert.equal(subject.widget.notificationCount, "3 of 5");
+  assert.equal(subject.widget.notificationsOff, false);
   assert.ok(subject.changes > changes);
 });
 

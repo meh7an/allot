@@ -3,6 +3,7 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { test } from "node:test";
 
 import { INDICATOR_ICONS, iconFile } from "../../gnome/allot@mehran.tech/lib/indicator-status.js";
+import { ALLOTD_PAGES } from "../../gnome/allot@mehran.tech/lib/settings-window.js";
 import { FakeTimers, fixtureText, settle } from "../../gnome/tests/support.mjs";
 import {
   NOTIFY_COMPONENT,
@@ -94,6 +95,38 @@ test("every view exists and imports generated modules that do", () => {
       assert.ok(module.endsWith(".mjs"), `${view} must import ${module} as a .mjs module`);
     }
     assert.doesNotMatch(text, /[ \t]+$/m, `${view} has trailing whitespace`);
+  }
+});
+
+test("the Settings window has a page for each of allotd's pages", () => {
+  const text = readFileSync(new URL("contents/ui/SettingsWindow.qml", PACKAGE_DIR), "utf8");
+  const pages = [...text.matchAll(/entry: View\.ALLOTD_PAGES\[(\d+)\]/g)].map(([, index]) =>
+    Number(index)
+  );
+
+  assert.deepEqual(pages, ALLOTD_PAGES.map((_page, index) => index));
+});
+
+test("every view's brackets balance outside strings and comments", () => {
+  const ui = new URL("contents/ui/", PACKAGE_DIR);
+  /** @type {Record<string, string>} */
+  const pairs = { ")": "(", "]": "[", "}": "{" };
+
+  for (const view of readdirSync(ui)) {
+    const code = readFileSync(new URL(view, ui), "utf8")
+      // A comment starts a line or follows a space; `//` inside a regex or URL does neither.
+      .replace(/(^|\s)\/\/.*$/gm, "$1")
+      .replace(/"(?:[^"\\\n]|\\.)*"|`(?:[^`\\]|\\.)*`|'(?:[^'\\\n]|\\.)*'/g, '""');
+    /** @type {string[]} */
+    const open = [];
+    for (const char of code) {
+      if (char === "(" || char === "[" || char === "{") {
+        open.push(char);
+      } else if (char in pairs) {
+        assert.equal(open.pop(), pairs[char], `${view}: unmatched ${char}`);
+      }
+    }
+    assert.deepEqual(open, [], `${view}: unclosed brackets`);
   }
 });
 

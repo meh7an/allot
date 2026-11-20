@@ -16,12 +16,8 @@ PlasmaExtras.Representation {
     property var snapshot: null
     property var resources: null
     property var banner: null
-    property var settings: ({ meters: {}, notifications: {} })
     property string stopQuestion: ""
-    property bool doNotDisturb: false
-    property bool notificationsOff: false
-    property string meterCount: ""
-    property string notificationCount: ""
+    property var serviceItem: ({ title: "", action: "none" })
     property bool keepOpen: false
     property string iconDirectory: ""
     property var rowModel: null
@@ -33,6 +29,7 @@ PlasmaExtras.Representation {
     property bool moreOpen: false
 
     signal keepOpenToggled()
+    signal settingsRequested()
 
     readonly property bool hasSnapshot: full.snapshot !== null
     readonly property string glyph: full.hasSnapshot ? full.snapshot.header.glyph : "error"
@@ -122,6 +119,12 @@ PlasmaExtras.Representation {
         }
     }
 
+    // DESIGN.md section 11: Ctrl+, opens Settings from the popup, as from the other panels.
+    Shortcut {
+        sequences: ["Ctrl+,"]
+        onActivated: full.settingsRequested()
+    }
+
     // The rows have no position until the popup that has just opened has laid them out.
     Timer {
         id: scrollTimer
@@ -134,12 +137,8 @@ PlasmaExtras.Representation {
         id: moreMenu
 
         widget: full.widget
-        settings: full.settings
-        sharesMemory: full.resources.sharesMemory
-        doNotDisturb: full.doNotDisturb
-        notificationsOff: full.notificationsOff
-        meterCount: full.meterCount
-        notificationCount: full.notificationCount
+        serviceItem: full.serviceItem
+        onSettingsRequested: full.settingsRequested()
         onAboutToShow: full.moreOpen = true
         onAboutToHide: full.moreOpen = false
     }

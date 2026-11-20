@@ -3,35 +3,32 @@ import Gdk from "gi://Gdk";
 import Gio from "gi://Gio";
 import Gtk from "gi://Gtk";
 
-import { CancelledError } from "./lib/client.js";
 import { NOT_YET_TEXT } from "./lib/fit-previews.js";
-import { SERVICE_STOPPED_TEXT } from "./lib/live-text.js";
 import {
-  DRAFT_NOT_READY_TEXT,
   NO_RULES_TEXT,
-  classLabels,
-  ruleArguments,
-  ruleDeletedText,
   ruleDialogTitle,
-  ruleMenuName,
-  ruleRowName,
   rulesStatus,
-  testLines,
   useBuiltInConfirmation,
 } from "./lib/rules-text.js";
 import { issueText } from "./lib/setting-values.js";
-import { SAVE_DELAY_MS } from "./lib/settings-session.js";
+import {
+  debounced,
+  deleteRule,
+  draftRules,
+  moveRule,
+  removeSizeRow,
+  resettableRow,
+  ruleRowItems,
+  sizeDialogFit,
+  sizeRowItems,
+  testCommand,
+} from "./lib/settings-editors.js";
+import { TEST_COMMAND_TITLE, TEST_RULE_HELP } from "./lib/settings-window.js";
 import {
   automaticMinCores,
   deletePresetConfirmation,
-  deleteRowName,
-  dialogFitsText,
-  editRowName,
   renameWarning,
-  resetRowName,
-  rowRemovedText,
   sizeDialogTitle,
-  sizeSummary,
 } from "./lib/sizes-text.js";
 import {
   chipsRows,
@@ -44,12 +41,13 @@ import {
 } from "./prefs-widgets.js";
 
 /**
- * @import { Change, CommandTest, HeavyRule, JobClass } from "./contract.g.mjs"
+ * @import { CommandTest } from "./contract.g.mjs"
  * @import { FitPreviews } from "./lib/fit-previews.js"
  * @import { Timers } from "./lib/poller.js"
- * @import { NumberModel, RowDraft, RuleDraft, RuleListModel, SizeRowView, SizeTableModel }
+ * @import { NumberModel, RowDraft, RuleDraft, RuleListModel, SizeTableModel }
  *   from "./lib/setting-values.js"
  * @import { SettingsSession } from "./lib/settings-session.js"
+ * @import { RuleRowItem, SizeRowItem, TestAgainst } from "./lib/settings-editors.js"
  * @import { RowContext, Sync } from "./prefs-widgets.js"
  */
 
@@ -83,10 +81,8 @@ export function sizeTableRows(context, group, table) {
   let signature = "";
   return () => {
     const readOnly = context.readOnly();
-    const views = table.rows;
-    const summaries = views.map((view) =>
-      sizeSummary(view.row, context.fits.fit(table.key, view.row.name), context.number)
-    );
+    const items = sizeRowItems(table, context.fits, context.number);
+    const summaries = items.map((item) => item.summary);
     const next = JSON.stringify([table.value, summaries, readOnly]);
     if (next === signature) {
       return;
@@ -95,9 +91,7 @@ export function sizeTableRows(context, group, table) {
     for (const widget of shown) {
       group.remove(widget);
     }
-    shown = views.map((view, index) =>
-      sizeRow(context, table, view, summaries[index] ?? "", readOnly)
-    );
+    shown = items.map((item) => sizeRow(context, table, item, readOnly));
     if (table.canAdd) {
       const add = new Adw.ButtonRow({
         title: "Add Preset…",
@@ -116,41 +110,32 @@ export function sizeTableRows(context, group, table) {
 /**
  * @param {TableContext} context
  * @param {SizeTableModel} table
- * @param {SizeRowView} view
- * @param {string} summary
+ * @param {SizeRowItem} item
  * @param {boolean} readOnly
  * @returns {Adw.ActionRow}
  */
-function sizeRow(context, table, view, summary, readOnly) {
-  const name = view.row.name;
-  const key = table.canAdd ? "" : `<small><tt>${escaped(name)}</tt></small>  `;
+function sizeRow(context, table, item, readOnly) {
+  const name = item.name;
+  const key = item.keyText === "" ? "" : `<small><tt>${escaped(item.keyText)}</tt></small>  `;
   const row = new Adw.ActionRow({
-    title: escaped(view.label),
-    subtitle: `${key}${escaped(summary)}`,
+    title: escaped(item.label),
+    subtitle: `${key}${escaped(item.summary)}`,
     subtitle_lines: 0,
   });
-  const old = view.row;
-  const removed = () => {
-    context.toaster.show(rowRemovedText(table, view), () => table.restore(old));
+  const remove = () => {
+    const removed = removeSizeRow(table, item.view);
+    context.toaster.show(removed.text, removed.undo);
   };
-  if (view.builtIn && view.changed) {
+  if (item.resetName !== null) {
+    row.add_suffix(iconButton("edit-undo-symbolic", item.resetName, remove));
+  }
+  if (item.deleteName !== null) {
     row.add_suffix(
-      iconButton("edit-undo-symbolic", resetRowName(table, view), () => {
-        table.remove(name);
-        removed();
-      }),
+      iconButton("user-trash-symbolic", item.deleteName, () =>
+        confirm(context.parent(), deletePresetConfirmation(name), remove)),
     );
   }
-  if (!view.builtIn) {
-    row.add_suffix(
-      iconButton("user-trash-symbolic", deleteRowName(view), () =>
-        confirm(context.parent(), deletePresetConfirmation(name), () => {
-          table.remove(name);
-          removed();
-        })),
-    );
-  }
-  const edit = iconButton("document-edit-symbolic", editRowName(table, view), () => {
+  const edit = iconButton("document-edit-symbolic", item.editName, () => {
     const draft = table.edit(name);
     if (draft !== null) {
       openSizeDialog(context, table, draft);
@@ -230,41 +215,29 @@ function openSizeDialog(context, table, draft) {
   syncs.push(() => {
     live.label = renameWarning(draft) ?? fitText;
   });
-  const preview = debounced(context.timers, async () => {
-    if (context.session.status !== "ready") {
-      fitText = SERVICE_STOPPED_TEXT;
+  const preview = debounced(
+    context.timers,
+    async () => {
+      const text = await sizeDialogFit(context.session, table, draft, context.number);
+      if (text !== null) {
+        fitText = text;
+      }
       sync();
-      return;
-    }
-    const changes = table.proposal(draft);
-    if (changes === null) {
-      fitText = "";
-      sync();
-      return;
-    }
-    const reply = await ask(() => context.session.preview(changes));
-    if (reply?.ok) {
-      const fits = table.key === "classes" ? reply.value.classes : reply.value.presets;
-      const fit = fits.find((candidate) => candidate.name === draft.name);
-      fitText = fit === undefined ? "" : dialogFitsText(fit, context.number);
-    }
-    sync();
-  });
+    },
+    warn,
+  );
 
-  if (draft.original !== null) {
-    const view = table.rows.find((candidate) => candidate.row.name === draft.original);
-    if (view !== undefined && view.builtIn && view.changed) {
-      const footer = new Adw.PreferencesGroup();
-      const reset = new Adw.ButtonRow({ title: "Reset to Default" });
-      reset.connect("activated", () => {
-        const old = view.row;
-        table.remove(view.row.name);
-        context.toaster.show(rowRemovedText(table, view), () => table.restore(old));
-        dialog.close();
-      });
-      footer.add(reset);
-      page.add(footer);
-    }
+  const resettable = resettableRow(table, draft);
+  if (resettable !== null) {
+    const footer = new Adw.PreferencesGroup();
+    const reset = new Adw.ButtonRow({ title: "Reset to Default" });
+    reset.connect("activated", () => {
+      const removed = removeSizeRow(table, resettable);
+      context.toaster.show(removed.text, removed.undo);
+      dialog.close();
+    });
+    footer.add(reset);
+    page.add(footer);
   }
 
   draft.onChange = () => {
@@ -329,8 +302,8 @@ function minimumRows(rows, group, draft, field) {
  *
  * @param {TableContext} context
  * @param {Adw.PreferencesGroup} group
- * @param {() => { changes: Change[], rules: HeavyRule[] } | null} proposal What to test
- *   against: the saved rules give no changes; `null` while a draft is not ready.
+ * @param {() => TestAgainst | null} proposal What to test against: the saved rules give no
+ *   changes; `null` while a draft is not ready.
  * @param {(test: CommandTest | null) => void} onResult
  * @returns {{ run: () => void, cancel: () => void }}
  */
@@ -349,28 +322,16 @@ export function commandTestRows(context, group, proposal, onResult) {
     result.visible = lines.length > 0;
     onResult(test);
   };
-  const test = debounced(context.timers, async () => {
-    const line = entry.text.trim();
-    const against = proposal();
-    if (line === "") {
-      show([], null);
-    } else if (against === null) {
-      show([DRAFT_NOT_READY_TEXT], null);
-    } else if (context.session.status !== "ready") {
-      show([SERVICE_STOPPED_TEXT], null);
-    } else {
-      const reply = await ask(() => context.session.classify(line, "bash", against.changes));
-      if (reply === null) {
-        return;
+  const test = debounced(
+    context.timers,
+    async () => {
+      const outcome = await testCommand(context.session, entry.text, proposal(), context.number);
+      if (outcome !== null) {
+        show(outcome.lines, outcome.test);
       }
-      if (reply.ok) {
-        const label = classLabelOf(context.session);
-        show(testLines(reply.value, against.rules, label, context.number), reply.value);
-      } else {
-        show([reply.failure.message], null);
-      }
-    }
-  });
+    },
+    warn,
+  );
   entry.connect("changed", () => test.run());
   return { run: () => test.run(), cancel: () => test.cancel() };
 }
@@ -395,17 +356,12 @@ export function ruleListRows(context, group, rules) {
   let focus = null;
 
   const removeAt = (/** @type {number} */ index) => {
-    const old = rules.value.slice();
-    rules.remove(index);
-    focus = Math.min(index, rules.value.length - 1);
-    context.toaster.show(ruleDeletedText(index), () => rules.replace(old));
+    const deleted = deleteRule(rules, index);
+    focus = deleted.focus;
+    context.toaster.show(deleted.text, deleted.undo);
   };
   const move = (/** @type {number} */ from, /** @type {number} */ to) => {
-    if (to < 0 || to >= rules.value.length) {
-      return;
-    }
-    focus = to;
-    rules.move(from, to);
+    focus = moveRule(rules, from, to) ?? focus;
   };
   const edit = (/** @type {number} */ index) => {
     const draft = rules.edit(index);
@@ -425,10 +381,10 @@ export function ruleListRows(context, group, rules) {
     for (const widget of shown) {
       group.remove(widget);
     }
-    const label = classLabelOf(context.session);
     /** @type {Gtk.Widget[]} */
-    const widgets = rules.value.map((rule, index) => {
-      const row = ruleRow(rule, index, rules.value.length, label, matched.includes(index), {
+    const widgets = ruleRowItems(rules, context.session, matched).map((item) => {
+      const index = item.index;
+      const row = ruleRow(item, {
         edit: () => edit(index),
         up: () => move(index, index - 1),
         down: () => move(index, index + 1),
@@ -477,23 +433,19 @@ export function ruleListRows(context, group, rules) {
 }
 
 /**
- * @param {HeavyRule} rule
- * @param {number} index
- * @param {number} count
- * @param {(jobClass: JobClass) => string} classLabel
- * @param {boolean} matches
+ * @param {RuleRowItem} item
  * @param {{ edit: () => void, up: () => void, down: () => void, remove: () => void }} actions
  * @returns {Adw.ActionRow}
  */
-function ruleRow(rule, index, count, classLabel, matches, actions) {
+function ruleRow(item, actions) {
   const row = new Adw.ActionRow({
-    title: escaped(`${index + 1}. ${rule.program}`),
-    subtitle: escaped(`${ruleArguments(rule)} → ${classLabel(rule.class)}`),
+    title: escaped(item.title),
+    subtitle: escaped(item.subtitle),
     activatable: true,
   });
-  row.update_property([Gtk.AccessibleProperty.LABEL], [ruleRowName(index, rule, classLabel)]);
+  row.update_property([Gtk.AccessibleProperty.LABEL], [item.name]);
   row.connect("activated", actions.edit);
-  if (matches) {
+  if (item.matches) {
     const mark = new Gtk.Label({ label: "Matches", valign: Gtk.Align.CENTER });
     mark.add_css_class("accent");
     row.add_suffix(mark);
@@ -511,8 +463,8 @@ function ruleRow(rule, index, count, classLabel, matches, actions) {
     group.add_action(item);
   };
   action("edit", actions.edit);
-  action("up", actions.up, index > 0);
-  action("down", actions.down, index < count - 1);
+  action("up", actions.up, item.canMoveUp);
+  action("down", actions.down, item.canMoveDown);
   action("delete", actions.remove);
   row.insert_action_group("rule", group);
   const menu = new Gio.Menu();
@@ -524,10 +476,10 @@ function ruleRow(rule, index, count, classLabel, matches, actions) {
     icon_name: "view-more-symbolic",
     menu_model: menu,
     valign: Gtk.Align.CENTER,
-    tooltip_text: ruleMenuName(index),
+    tooltip_text: item.menuName,
   });
   button.add_css_class("flat");
-  button.update_property([Gtk.AccessibleProperty.LABEL], [ruleMenuName(index)]);
+  button.update_property([Gtk.AccessibleProperty.LABEL], [item.menuName]);
   row.add_suffix(button);
 
   const keys = new Gtk.EventControllerKey();
@@ -619,19 +571,10 @@ function openRuleDialog(context, rules, draft) {
   page.add(classGroup);
 
   const testGroup = new Adw.PreferencesGroup({
-    title: "Test a Command",
-    description: "Shows how the hook would treat this command with this rule.",
+    title: TEST_COMMAND_TITLE,
+    description: TEST_RULE_HELP,
   });
-  const tester = commandTestRows(
-    context,
-    testGroup,
-    () => {
-      const changes = rules.proposal(draft);
-      const set = changes?.[0];
-      return set?.kind === "set_rules" ? { changes: changes ?? [], rules: set.rules } : null;
-    },
-    () => {},
-  );
+  const tester = commandTestRows(context, testGroup, () => draftRules(rules, draft), () => {});
   page.add(testGroup);
 
   draft.onChange = () => {
@@ -681,59 +624,7 @@ function dialogShell(title) {
   return { dialog, page, save };
 }
 
-/**
- * Names a class from the Classes table's spec, such as "CPU heavy".
- *
- * @param {SettingsSession} session
- * @returns {(jobClass: JobClass) => string}
- */
-function classLabelOf(session) {
-  return classLabels(session.setting("classes")?.spec.control);
+/** @param {unknown} error */
+function warn(error) {
+  console.warn(`Allot: ${error}`);
 }
-
-/**
- * Runs `work` once the user has paused for the save delay.
- *
- * @param {Timers} timers
- * @param {() => Promise<void>} work
- * @returns {{ run: () => void, cancel: () => void }}
- */
-function debounced(timers, work) {
-  /** @type {unknown} */
-  let timer = null;
-  const cancel = () => {
-    if (timer !== null) {
-      timers.clearTimeout(timer);
-      timer = null;
-    }
-  };
-  return {
-    cancel,
-    run: () => {
-      cancel();
-      timer = timers.setTimeout(() => {
-        timer = null;
-        work().catch((error) => console.warn(`Allot: ${error}`));
-      }, SAVE_DELAY_MS);
-    },
-  };
-}
-
-/**
- * A request whose window may close before it answers: a cancelled one gives `null`.
- *
- * @template T
- * @param {() => Promise<T>} request
- * @returns {Promise<T | null>}
- */
-async function ask(request) {
-  try {
-    return await request();
-  } catch (error) {
-    if (error instanceof CancelledError) {
-      return null;
-    }
-    throw error;
-  }
-}
-

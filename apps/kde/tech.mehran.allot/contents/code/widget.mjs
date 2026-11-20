@@ -12,13 +12,14 @@ import { Announcer } from "./shared/accessible-text.js";
 import { DaemonClient } from "./shared/client.js";
 import { DEFAULT_PORT, dataPaths, portFromToml } from "./shared/config.js";
 import { accessibleName, iconFile } from "./shared/indicator-status.js";
-import { meterCount, notificationCount } from "./shared/menu-counts.js";
 import { NotificationRules } from "./shared/notification-rules.js";
+import { resetPanel, setToggle } from "./shared/panel-toggles.js";
 import { DaemonPoller } from "./shared/poller.js";
 import { PopupModel } from "./shared/popup-model.js";
 import { SystemdServiceLauncher } from "./shared/service-launcher.js";
 import { STOP_CONFIRM_TITLE, serviceMenuItem, stopConfirmation, } from "./shared/service-menu.js";
 import { decodeSettings, encodeSettings } from "./shared/settings.js";
+import { SettingsWindowModel } from "./shared/settings-window.js";
 import { DO_NOT_DISTURB_TEXT, WELCOME_BODY, WELCOME_TITLE, } from "./shared/snapshot.js";
 import { AppIcons } from "./app-icons.js";
 import { CommandRunner, XhrTransport, copyFile, detachedCommand, localPath, readTextFile, serviceSystem, writeTextFile, } from "./io.js";
@@ -26,13 +27,13 @@ import { INHIBITED_COMMAND, NOTIFY_COMPONENT, NOTIFY_EVENT, NOTIFY_RC_FILE, SETT
 import { Notifier } from "./notifier.js";
 import { RowKeeper, listRows } from "./rows.js";
 /** @import { PollResult, ServiceStatus } from "./shared/client.js" */
+/** @import { PanelToggle } from "./shared/panel-toggles.js" */
+/** @import { WindowHost } from "./shared/settings-window.js" */
 /** @import { DataPaths } from "./shared/config.js" */
 /** @import { Timers } from "./shared/poller.js" */
 /** @import { NotificationButton } from "./shared/notification-text.js" */
 /** @import { ModelChange } from "./shared/popup-model.js" */
 /** @import { ServiceMenuItem } from "./shared/service-menu.js" */
-/** @import { MeterToggles } from "./shared/settings.js" */
-/** @import { NotificationToggles } from "./shared/settings.js" */
 /** @import { IdleLine } from "./shared/snapshot.js" */
 /** @import { JobGroupKind } from "./shared/snapshot.js" */
 /** @import { XhrFactory } from "./io.js" */
@@ -56,8 +57,6 @@ export const MARK_ICON_FILE = "allot-mark-symbolic.svg";
 export const NOTIFICATIONS_OFF_TEXT = "Turned off in System Settings";
 /** The first-run card's line for the same. */
 export const NOTIFICATIONS_OFF_CARD_TEXT = "Notifications are turned off in System Settings.";
-/** The menu's count while System Settings has them off. */
-export const NOTIFICATIONS_OFF_COUNT = "Off";
 // Times on the cards tick once a second while the popup is open.
 const TICK_MS = 1000;
 /**
@@ -108,6 +107,12 @@ export class AllotWidget {
         this._announcer = new Announcer();
         /** @type {DaemonPoller | null} */
         this._poller = null;
+        /** @type {{ client: DaemonClient, launcher: SystemdServiceLauncher } | null} */
+        this._service = null;
+        /** @type {Array<() => void>} */
+        this._waitingForService = [];
+        /** @type {SettingsWindowModel | null} */
+        this._settingsWindow = null;
         /** @type {ServiceStatus | null} */
         this._lastStatus = null;
         /** @type {unknown} */
@@ -177,6 +182,10 @@ export class AllotWidget {
             poller.onUpdate = (result) => this._show(result);
             poller.setPopupOpen(this._expanded);
             this._poller = poller;
+            this._service = { client, launcher };
+            for (const resume of this._waitingForService.splice(0)) {
+                resume();
+            }
             try {
                 yield poller.start();
             }
@@ -186,11 +195,68 @@ export class AllotWidget {
         });
     }
     stop() {
-        var _a;
+        var _a, _b;
         this._stopped = true;
         this._clearTick();
-        (_a = this._poller) === null || _a === void 0 ? void 0 : _a.stop();
+        (_a = this._settingsWindow) === null || _a === void 0 ? void 0 : _a.dispose();
+        (_b = this._poller) === null || _b === void 0 ? void 0 : _b.stop();
         this._transport.cancel();
+    }
+    /**
+     * The Settings window's model, built on its first open once `start` has made the client, then
+     * kept for the widget's life, since the window only hides (DESIGN.md D14). It shares the
+     * popup's client, so a restart on a new port moves both, and its Start and Stop go through the
+     * popup's poller, so the popup follows at once.
+     *
+     * @param {WindowHost} host
+     * @param {(value: number) => string} number Formats a number for the user's locale.
+     * @returns {Promise<SettingsWindowModel>}
+     */
+    settingsWindow(host, number) {
+        return __awaiter(this, void 0, void 0, function* () {
+            var _a;
+            const service = (_a = this._service) !== null && _a !== void 0 ? _a : (yield this._serviceReady());
+            if (this._settingsWindow === null) {
+                this._settingsWindow = new SettingsWindowModel({
+                    client: service.client,
+                    timers: this._host.timers,
+                    launcher: service.launcher,
+                    paths: this.paths,
+                    port: service.client.port,
+                    number,
+                    readStopRecord: () => readTextFile(this._runner, `${this.paths.root}/stopped.json`),
+                    host,
+                    stop: () => this._stopService(),
+                    start: () => this.startService(),
+                });
+            }
+            return this._settingsWindow;
+        });
+    }
+    /**
+     * A switch on the Settings window's Panel page.
+     *
+     * @param {PanelToggle} toggle
+     * @param {boolean} on
+     */
+    setPanelToggle(toggle, on) {
+        this.model.updateSettings((settings) => setToggle(settings, toggle, on));
+        this._showPress();
+    }
+    /** The Panel page's Reset Page…, once confirmed. */
+    resetPanel() {
+        this.model.updateSettings((settings) => resetPanel(settings));
+        this._showPress();
+    }
+    /** @returns {Promise<{ client: DaemonClient, launcher: SystemdServiceLauncher }>} */
+    _serviceReady() {
+        return new Promise((resolve) => {
+            this._waitingForService.push(() => {
+                if (this._service !== null) {
+                    resolve(this._service);
+                }
+            });
+        });
     }
     /**
      * The executable data source's answers.
@@ -275,45 +341,28 @@ export class AllotWidget {
         this.model.toggleResources();
         this._showPress();
     }
-    /**
-     * A Meters check item.
-     *
-     * @param {keyof MeterToggles} key
-     */
-    toggleMeter(key) {
-        this.model.updateSettings((settings) => {
-            settings.meters[key] = !settings.meters[key];
-        });
-        this._showPress();
-    }
-    /**
-     * A Notifications check item.
-     *
-     * @param {keyof NotificationToggles} key
-     */
-    toggleNotification(key) {
-        this.model.updateSettings((settings) => {
-            settings.notifications[key] = !settings.notifications[key];
-        });
-        this._showPress();
-    }
     /** The first-run card's Done. */
     finishFirstRun() {
         this.model.finishFirstRun();
         this._showPress();
     }
-    /** The banner's Start Service, or the panel menu's while allotd is down. */
+    /**
+     * The banner's Start Service, the panel menu's while allotd is down, or the Settings window's.
+     *
+     * @returns {Promise<string | null>} `null` when allotd was launched, else why not.
+     */
     startService() {
         return __awaiter(this, void 0, void 0, function* () {
             const poller = this._poller;
             if (poller === null) {
-                return;
+                return "the widget has not started yet";
             }
             this._showChange(this.model.noteStarting());
             const problem = yield poller.startService();
             if (problem !== null) {
                 this._host.log(`Allot: cannot start the service: ${problem}`);
             }
+            return problem;
         });
     }
     /** The panel menu's service item: with jobs up, Stop asks in the popup first. */
@@ -397,16 +446,6 @@ export class AllotWidget {
     get serviceItem() {
         return serviceMenuItem(this.model.status);
     }
-    /** @returns {string} */
-    get meterCount() {
-        return meterCount(this.model.settings.meters);
-    }
-    /** @returns {string} */
-    get notificationCount() {
-        return this.notificationsOff
-            ? NOTIFICATIONS_OFF_COUNT
-            : notificationCount(this.model.settings.notifications);
-    }
     /** @param {PollResult} result */
     _show(result) {
         var _a, _b;
@@ -466,11 +505,12 @@ export class AllotWidget {
         this._host.expand();
         this._host.scrollTo(target);
     }
+    /** @returns {Promise<string | null>} `null` when allotd accepted, else why not. */
     _stopService() {
         return __awaiter(this, void 0, void 0, function* () {
             const poller = this._poller;
             if (poller === null) {
-                return;
+                return "the widget has not started yet";
             }
             this._rules.expectStop();
             try {
@@ -478,10 +518,12 @@ export class AllotWidget {
                 if (problem !== null) {
                     this._host.log(`Allot: cannot stop the service: ${problem}`);
                 }
+                return problem;
             }
             catch (error) {
                 // Only the widget going away cancels the request.
                 this._host.log(`Allot: stop not finished: ${error}`);
+                return String(error);
             }
         });
     }

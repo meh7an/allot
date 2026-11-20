@@ -35,7 +35,6 @@ export const SHARED_MODULES = [
   "job-card",
   "job-stops",
   "live-text",
-  "menu-counts",
   "notification-rules",
   "notification-text",
   "panel-toggles",
@@ -51,8 +50,10 @@ export const SHARED_MODULES = [
   "setting-values",
   "settings",
   "settings-banners",
+  "settings-editors",
   "settings-session",
   "settings-text",
+  "settings-window",
   "sizes-text",
   "snapshot",
   "state-clock",
@@ -70,6 +71,7 @@ const KDE_MODULES = {
   "notification-state": "notification-state.js",
   notifier: "notifier.js",
   rows: "rows.js",
+  "settings-view": "settings-view.mjs",
   widget: "widget.mjs",
 };
 
