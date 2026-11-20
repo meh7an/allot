@@ -7,6 +7,7 @@ import {
   decodeKillResponse,
   decodeRemoveResponse,
   decodeSettingsSpec,
+  decodeStopRecord,
   decodeUiState,
 } from "./contract.g.mjs";
 
@@ -18,6 +19,7 @@ const DECODERS = [
   ["kill-response-", decodeKillResponse],
   ["remove-response", decodeRemoveResponse],
   ["settings-spec", decodeSettingsSpec],
+  ["stop-record", decodeStopRecord],
 ];
 
 /**
@@ -126,6 +128,15 @@ test("the settings spec decodes every control kind and fills its optional member
   assert.equal(settings.get("classifier.rules").control.fields[0].control.pattern, null);
   assert.equal(settings.get("daemon.port").needs_restart, true);
   assert.deepEqual(settings.get("linux.scopes").platforms, ["linux"]);
+});
+
+test("the stop record decodes and rejects an unknown source", () => {
+  const record = decodeStopRecord(readFixture("stop-record"));
+  assert.deepEqual(record, { by: "panel", stopped_at_ms: 1_792_824_120_000 });
+
+  const json = readFixture("stop-record");
+  json.by = "tray";
+  assert.throws(() => decodeStopRecord(json), ContractError);
 });
 
 test("an unknown setting control kind is rejected", () => {

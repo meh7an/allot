@@ -1,5 +1,7 @@
 use std::path::PathBuf;
 
+use allot_shared::stop::StopRecord;
+
 /// Everything a client call can fail with.
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
@@ -48,6 +50,15 @@ pub enum ClientError {
          allot outside the sandbox (the hooks and the allot MCP server already run outside it)"
     )]
     Sandboxed,
+    /// allotd is not running because the user stopped it, and the stop record keeps it
+    /// stopped, so the client did not start it.
+    #[error(
+        "allotd is stopped: the user stopped it {}, and it stays stopped until `allot daemon \
+         start`, Start service in the panel, or the next sign-in; heavy commands run without \
+         leases until then",
+        .0.by.how()
+    )]
+    Stopped(StopRecord),
     /// Starting allotd in the background failed or it never became ready.
     #[error("could not start allotd: {0}")]
     Spawn(String),
@@ -60,19 +71,25 @@ pub enum ClientError {
 }
 
 impl ClientError {
-    /// `true` when the daemon is not running, not set up, or stopped answering, as opposed to
-    /// refusing the request. The hook fails open on these.
+    /// `true` when the daemon is not running, not set up, stopped by the user, or stopped
+    /// answering, as opposed to refusing the request. The hook fails open on these.
     pub fn is_unreachable(&self) -> bool {
         matches!(
             self,
-            Self::Unreachable { .. } | Self::Interrupted { .. } | Self::NoToken(_)
+            Self::Unreachable { .. }
+                | Self::Interrupted { .. }
+                | Self::NoToken(_)
+                | Self::Stopped(_)
         )
     }
 
     /// `true` when the request never reached a daemon, so starting one and sending it again
     /// cannot apply it twice.
     pub fn is_unsent(&self) -> bool {
-        matches!(self, Self::Unreachable { .. } | Self::NoToken(_))
+        matches!(
+            self,
+            Self::Unreachable { .. } | Self::NoToken(_) | Self::Stopped(_)
+        )
     }
 
     /// The HTTP status for [`ClientError::Http`].

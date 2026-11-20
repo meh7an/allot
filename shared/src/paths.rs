@@ -85,6 +85,11 @@ impl Paths {
         self.root.join("allotd.lock")
     }
 
+    /// The stop record, present while the user keeps allotd stopped (see [`crate::stop`]).
+    pub fn stop_file(&self) -> PathBuf {
+        self.root.join("stopped.json")
+    }
+
     /// Directory for the daemon's log files.
     pub fn log_dir(&self) -> PathBuf {
         self.root.join("logs")
@@ -108,6 +113,7 @@ mod tests {
         assert_eq!(paths.database_file(), root.join("allot.db"));
         assert_eq!(paths.log_dir(), root.join("logs"));
         assert_eq!(paths.lock_file(), root.join("allotd.lock"));
+        assert_eq!(paths.stop_file(), root.join("stopped.json"));
     }
 
     #[test]

@@ -14,14 +14,17 @@ use allot_shared::{
     config::Config,
     paths::Paths,
     platform::{ALLOT_BINARIES, CLI_EXE},
+    stop::StopRecord,
 };
 use anstyle::Style;
 use anyhow::bail;
 use serde::Serialize;
 
 use crate::{
+    daemon::describe_stop,
     output::{BAD, GOOD, WAIT, paint, print_json},
     registration::{self, State},
+    status::now_ms,
 };
 
 /// The fix for anything `allot install` sets up: running it again.
@@ -260,12 +263,9 @@ fn check_config_and_daemon(paths: &Paths) -> Vec<Check> {
     };
     let daemon = match client.health() {
         Ok(health) => check_running(&health, client.base_url()),
-        Err(error) if error.is_unreachable() => Check::problem(
-            "allotd",
-            Outcome::Warn,
-            format!("not running at {}", client.base_url()),
-            "`allot daemon start`; sessions also start it on their first heavy command",
-        ),
+        Err(error) if error.is_unreachable() => {
+            check_not_running(client.stop_record().as_ref(), client.base_url(), now_ms())
+        }
         Err(error) => Check::problem(
             "allotd",
             Outcome::Fail,
@@ -274,6 +274,23 @@ fn check_config_and_daemon(paths: &Paths) -> Vec<Check> {
         ),
     };
     vec![config, daemon]
+}
+
+fn check_not_running(stopped: Option<&StopRecord>, url: &str, now_ms: i64) -> Check {
+    match stopped {
+        Some(record) => Check::problem(
+            "allotd",
+            Outcome::Warn,
+            format!("stopped: {}", describe_stop(record, now_ms)),
+            "`allot daemon start` when you want leases again",
+        ),
+        None => Check::problem(
+            "allotd",
+            Outcome::Warn,
+            format!("not running at {url}"),
+            "`allot daemon start`; sessions also start it on their first heavy command",
+        ),
+    }
 }
 
 fn check_running(health: &HealthResponse, url: &str) -> Check {
@@ -337,6 +354,32 @@ mod tests {
             rejected.detail.ends_with("bad cores"),
             "{}",
             rejected.detail
+        );
+    }
+
+    #[test]
+    fn test_check_not_running_tells_a_stop_by_the_user_from_a_missing_allotd() {
+        let url = "http://127.0.0.1:47800";
+        let missing = check_not_running(None, url, 0);
+        assert_eq!(missing.outcome, Outcome::Warn);
+        assert_eq!(missing.detail, format!("not running at {url}"));
+
+        let record = StopRecord {
+            stopped_at_ms: 0,
+            by: allot_shared::stop::StoppedBy::Cli,
+        };
+        let stopped = check_not_running(Some(&record), url, 61_000);
+        assert_eq!(stopped.outcome, Outcome::Warn);
+        assert!(
+            stopped
+                .detail
+                .starts_with("stopped: you stopped it with `allot daemon stop` 1m 01s ago;"),
+            "{}",
+            stopped.detail
+        );
+        assert_eq!(
+            stopped.fix.as_deref(),
+            Some("`allot daemon start` when you want leases again")
         );
     }
 

@@ -267,13 +267,15 @@ enum Switch {
 
 #[derive(Debug, Subcommand)]
 enum DaemonAction {
-    /// Start allotd in the background unless it is already running.
+    /// Start allotd in the background unless it is already running, and end a stop.
     Start,
-    /// Ask allotd to shut down and wait until it has.
+    /// Stop allotd and keep it stopped: sessions do not start it again until `allot daemon
+    /// start`, Start service in the panel, or your next sign-in.
     Stop,
-    /// Report whether allotd is running, without starting it.
+    /// Report whether allotd is running or stopped by you, without starting it.
     Status {
-        /// Print allotd's health as JSON, or {"running": false} when it is not running.
+        /// Print allotd's health as JSON, or {"running": false} when it is not running, with
+        /// "stopped" while you keep it stopped.
         #[arg(long)]
         json: bool,
     },

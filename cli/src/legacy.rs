@@ -166,6 +166,7 @@ fn stop_daemon_at(old: &Path) -> anyhow::Result<bool> {
         connect_timeout: DEFAULT_CONNECT_TIMEOUT,
         request_timeout: DEFAULT_REQUEST_TIMEOUT,
         spawn: None,
+        stop_file: None,
     })?;
     let Some(old_pid) = daemon::shutdown(&client)? else {
         return Ok(false);

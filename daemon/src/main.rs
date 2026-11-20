@@ -41,6 +41,7 @@ async fn daemon() -> anyhow::Result<()> {
     startup::create_data_dir(paths.root())?;
     let _lock = startup::InstanceLock::acquire(&paths.lock_file())?;
     startup::init_logging(&paths.log_dir())?;
+    startup::clear_stop_record(&paths.stop_file());
 
     // A detached allotd has no console, so the log is the only place a failure shows up.
     let result = run(&paths).await;

@@ -128,6 +128,22 @@ public sealed record SettingsSpec
 }
 
 /// <summary>
+/// The JSON in <c>~/.allot/stopped.json</c>.
+/// </summary>
+public sealed record StopRecord
+{
+    /// <summary>
+    /// Who stopped it.
+    /// </summary>
+    public required StoppedBy By { get; init; }
+
+    /// <summary>
+    /// When allotd was stopped, in Unix milliseconds.
+    /// </summary>
+    public required long StoppedAtMs { get; init; }
+}
+
+/// <summary>
 /// How well a GPU source measures something per process.
 /// </summary>
 [JsonConverter(typeof(StrictEnumConverter<Accuracy>))]
@@ -1581,6 +1597,25 @@ public sealed record SizeRowSpec
 }
 
 /// <summary>
+/// Where the stop came from.
+/// </summary>
+[JsonConverter(typeof(StrictEnumConverter<StoppedBy>))]
+public enum StoppedBy
+{
+    /// <summary>
+    /// <c>allot daemon stop</c>.
+    /// </summary>
+    [JsonStringEnumMemberName("cli")]
+    Cli,
+
+    /// <summary>
+    /// Stop service in a panel.
+    /// </summary>
+    [JsonStringEnumMemberName("panel")]
+    Panel,
+}
+
+/// <summary>
 /// One registered Claude session.
 /// </summary>
 public sealed record UiSession
@@ -1675,6 +1710,7 @@ public sealed class StrictEnumConverter<TEnum> : JsonStringEnumConverter<TEnum>
 [JsonSerializable(typeof(KillResponse))]
 [JsonSerializable(typeof(RemoveResponse))]
 [JsonSerializable(typeof(SettingsSpec))]
+[JsonSerializable(typeof(StopRecord))]
 public sealed partial class ContractJsonContext : JsonSerializerContext
 {
 }

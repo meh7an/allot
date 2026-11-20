@@ -40,6 +40,9 @@ private func reencode(_ name: String) throws -> Data {
     if name.hasPrefix("remove-response") {
         return try reencode(RemoveResponse.self)
     }
+    if name.hasPrefix("stop-record") {
+        return try reencode(StopRecord.self)
+    }
     if name.hasPrefix("settings-spec") {
         return try reencode(SettingsSpec.self)
     }
@@ -87,6 +90,12 @@ private func expectContains(_ expected: Any, _ actual: Any?, at path: String) {
 
 @Test func fixturesAreFound() {
     #expect(fixtureNames.count >= 10)
+}
+
+@Test func stopRecordNamesThePanel() throws {
+    let record = try decode(StopRecord.self, "stop-record")
+    #expect(record.by == .panel)
+    #expect(record.stoppedAtMs == 1_792_824_120_000)
 }
 
 @Test func settingsSpecDecodesEveryControlKind() throws {

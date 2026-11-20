@@ -15,6 +15,7 @@ use allot_core::sampler::{RawProcess, RawSample, Sampler};
 use allot_shared::{
     api::{AcquireRequest, BindRequest, CanFitRequest, LeaseQuery, ProfileSpec},
     config::Config,
+    stop::{StopRecord, StoppedBy},
     types::{
         EndCause, Holder, JobClass, LeaseKind, LeaseState, MemStats, ResourceUsage, SessionKey,
     },
@@ -88,6 +89,7 @@ fn options(addr: SocketAddr, token: TokenSource) -> ClientOptions {
         connect_timeout: DEFAULT_CONNECT_TIMEOUT,
         request_timeout: DEFAULT_REQUEST_TIMEOUT,
         spawn: None,
+        stop_file: None,
     }
 }
 
@@ -402,6 +404,90 @@ async fn test_blocking_client_works_outside_the_runtime() {
     .unwrap();
     assert_eq!(state, LeaseState::Released);
     daemon.stop().await;
+}
+
+/// A client as a session's `allot-mcp` builds it: it starts allotd when it is down, and reads
+/// the stop record in `stop_dir`. The allotd it would start does not exist, so an attempt to
+/// start one fails with `Spawn`, never with `Stopped`.
+fn session_client(addr: SocketAddr, stop_dir: &TempDir) -> Client {
+    let mut options = options(addr, TokenSource::Fixed(TOKEN.into()));
+    options.spawn = Some(SpawnOptions {
+        daemon_exe: PathBuf::from("Z:\\no\\such\\allotd.exe"),
+        ready_timeout: Duration::from_millis(200),
+    });
+    options.stop_file = Some(stop_dir.path().join("stopped.json"));
+    Client::new(options).unwrap()
+}
+
+#[tokio::test]
+async fn test_stopped_allotd_stays_stopped_for_a_new_session() {
+    let daemon = Daemon::start().await;
+    let addr = daemon.addr;
+    let stop_dir = TempDir::new().unwrap();
+    let stopper = session_client(addr, &stop_dir);
+
+    // `allot daemon stop`: the record first, then the shutdown.
+    assert!(stopper.record_stop(StoppedBy::Cli).unwrap());
+    stopper.shutdown().await.unwrap();
+    daemon.stop().await;
+
+    let session = session_client(addr, &stop_dir);
+    let error = session.acquire(&build_request(0)).await.unwrap_err();
+    let ClientError::Stopped(record) = &error else {
+        panic!("expected Stopped, got {error}");
+    };
+    assert_eq!(record.by, StoppedBy::Cli);
+    assert!(error.is_unreachable() && error.is_unsent());
+    assert!(
+        error
+            .to_string()
+            .contains("the user stopped it with `allot daemon stop`"),
+        "{error}"
+    );
+    let error = session.ensure_running().await.unwrap_err();
+    assert!(matches!(error, ClientError::Stopped(_)), "{error}");
+    assert!(session.health().await.unwrap_err().is_unreachable());
+    assert!(session.stop_record().is_some());
+}
+
+#[tokio::test]
+async fn test_start_clears_the_stop_record_and_sessions_lease_again() {
+    let stop_dir = TempDir::new().unwrap();
+    let record = StopRecord::now(StoppedBy::Panel);
+    record.write(&stop_dir.path().join("stopped.json")).unwrap();
+    // Started by hand or from a panel, while the record still exists.
+    let daemon = Daemon::start().await;
+    let session = session_client(daemon.addr, &stop_dir);
+    assert!(session.stop_record().is_some());
+    let lease = session.acquire(&build_request(0)).await.unwrap().lease;
+    session.release(lease.id, &holder().session).await.unwrap();
+
+    // `allot daemon start`: clear the record, then make sure allotd runs.
+    let starter = session_client(daemon.addr, &stop_dir);
+    assert!(starter.clear_stop_record().unwrap());
+    assert_eq!(
+        starter.ensure_running().await.unwrap(),
+        DaemonStart::AlreadyRunning
+    );
+
+    assert!(session.stop_record().is_none());
+    assert!(!stop_dir.path().join("stopped.json").exists());
+    daemon.stop().await;
+
+    // With the record gone, a session tries to start allotd again.
+    let error = session.snapshot().await.unwrap_err();
+    assert!(matches!(error, ClientError::Spawn(_)), "{error}");
+}
+
+#[tokio::test]
+async fn test_record_stop_writes_nothing_before_allotd_ever_ran() {
+    let home = TempDir::new().unwrap();
+    let mut options = options(closed_addr().await, TokenSource::Fixed(TOKEN.into()));
+    options.stop_file = Some(home.path().join(".allot").join("stopped.json"));
+    let client = Client::new(options).unwrap();
+
+    assert!(!client.record_stop(StoppedBy::Cli).unwrap());
+    assert!(client.stop_record().is_none());
 }
 
 /// The client starts a stand-in for allotd, a script that reports its directory and PID and

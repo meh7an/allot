@@ -23,7 +23,7 @@ use std::{
     time::Duration,
 };
 
-use allot_client::{BlockingClient, ClientOptions};
+use allot_client::{BlockingClient, ClientError, ClientOptions};
 use allot_core::classifier::{Classification, Classifier, Shell, describe_rule};
 use allot_shared::{
     api::{BindRequest, LeaseQuery},
@@ -235,6 +235,18 @@ fn evaluate<D: HookDaemon>(
     });
     let (daemon, leases) = match found {
         Ok(found) => found,
+        // A stop by the user is a choice, so it lets commands through whatever fail_open says,
+        // and only Claude is told, so it does not try to lease or restart allotd.
+        Err(ClientError::Stopped(_)) => {
+            return Outcome::Context {
+                event: "PreToolUse",
+                context: format!(
+                    "{MCP_SERVER}: the user stopped allotd, so `{command}` runs without a lease. \
+                     Run heavy commands without leases, and do not start allotd, until the user \
+                     starts it again."
+                ),
+            };
+        }
         Err(error) if config.hook.fail_open => {
             return skipped(format_args!(
                 "allotd is unavailable, `{command}` runs unchecked: {error}"
@@ -630,6 +642,26 @@ mod tests {
         config.hook.fail_open = false;
         let reason = denial(evaluate(BASH_CARGO_BUILD, &config, unreachable));
         assert!(reason.contains("allot daemon start"), "{reason}");
+    }
+
+    #[test]
+    fn test_evaluate_stopped_by_the_user_passes_and_tells_claude_even_with_fail_open_off() {
+        let mut config = Config::default();
+        config.hook.fail_open = false;
+        let stopped = || -> allot_client::Result<FakeDaemon> {
+            Err(ClientError::Stopped(allot_shared::stop::StopRecord::now(
+                allot_shared::stop::StoppedBy::Cli,
+            )))
+        };
+        let outcome = evaluate(BASH_CARGO_BUILD, &config, stopped);
+        let Outcome::Context { event, context } = outcome else {
+            panic!("expected context for Claude, got {outcome:?}");
+        };
+        assert_eq!(event, "PreToolUse");
+        assert!(
+            context.contains("the user stopped allotd") && context.contains("cargo build"),
+            "{context}"
+        );
     }
 
     #[test]

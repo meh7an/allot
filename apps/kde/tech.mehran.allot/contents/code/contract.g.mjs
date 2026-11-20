@@ -72,6 +72,16 @@
  */
 
 /**
+ * The JSON in `~/.allot/stopped.json`.
+ *
+ * @typedef {object} StopRecord
+ * @property {StoppedBy} by
+ *   Who stopped it.
+ * @property {number} stopped_at_ms
+ *   When allotd was stopped, in Unix milliseconds.
+ */
+
+/**
  * How well a GPU source measures something per process.
  *
  * - `exact`: Measured per process.
@@ -855,6 +865,15 @@
  */
 
 /**
+ * Where the stop came from.
+ *
+ * - `cli`: `allot daemon stop`.
+ * - `panel`: Stop service in a panel.
+ *
+ * @typedef {"cli" | "panel"} StoppedBy
+ */
+
+/**
  * One registered Claude session.
  *
  * @typedef {object} UiSession
@@ -949,6 +968,12 @@ const TYPES = {
   SettingsSpec: {
     fields: {
       pages: { array: { type: "SettingsPageSpec" } },
+    },
+  },
+  StopRecord: {
+    fields: {
+      by: { type: "StoppedBy" },
+      stopped_at_ms: { type: "int64" },
     },
   },
   Accuracy: { values: ["exact", "estimated", "unavailable"] },
@@ -1319,6 +1344,7 @@ const TYPES = {
       name: { type: "string" },
     },
   },
+  StoppedBy: { values: ["cli", "panel"] },
   UiSession: {
     fields: {
       cwd: { type: "string", nullable: true, absent: null },
@@ -1557,4 +1583,15 @@ export function decodeRemoveResponse(json) {
  */
 export function decodeSettingsSpec(json) {
   return /** @type {SettingsSpec} */ (decodeType(json, "SettingsSpec", "SettingsSpec"));
+}
+
+/**
+ * Decodes a parsed `StopRecord` body.
+ *
+ * @param {unknown} json The value `JSON.parse` returned.
+ * @returns {StopRecord}
+ * @throws {ContractError} When the value does not match the contract.
+ */
+export function decodeStopRecord(json) {
+  return /** @type {StopRecord} */ (decodeType(json, "StopRecord", "StopRecord"));
 }

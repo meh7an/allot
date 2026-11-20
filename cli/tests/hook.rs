@@ -92,6 +92,22 @@ fn test_hook_daemon_down_with_fail_open_off_denies() {
 }
 
 #[test]
+fn test_hook_stopped_by_the_user_lets_the_command_through_and_tells_claude() {
+    let home = Home::new("stopped", "[hook]\nfail_open = false\n");
+    fs::write(
+        home.0.join(".allot").join("stopped.json"),
+        r#"{"stopped_at_ms":1,"by":"cli"}"#,
+    )
+    .unwrap();
+    let json = stdout_json(&run(&home, &["hook", "pre-tool"], BASH_CARGO_BUILD));
+    let specific = &json["hookSpecificOutput"];
+    assert!(specific.get("permissionDecision").is_none(), "{json}");
+    assert!(json.get("systemMessage").is_none(), "{json}");
+    let context = specific["additionalContext"].as_str().unwrap();
+    assert!(context.contains("the user stopped allotd"), "{context}");
+}
+
+#[test]
 fn test_hook_bad_arguments_warn_and_exit_zero() {
     let home = Home::new("args", "");
     let json = stdout_json(&run(

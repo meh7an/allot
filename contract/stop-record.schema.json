@@ -1,0 +1,42 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "StopRecord",
+  "description": "The JSON in `~/.allot/stopped.json`.",
+  "type": "object",
+  "properties": {
+    "by": {
+      "description": "Who stopped it.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/StoppedBy"
+        }
+      ]
+    },
+    "stopped_at_ms": {
+      "description": "When allotd was stopped, in Unix milliseconds.",
+      "type": "integer",
+      "format": "int64"
+    }
+  },
+  "required": [
+    "stopped_at_ms",
+    "by"
+  ],
+  "definitions": {
+    "StoppedBy": {
+      "description": "Where the stop came from.",
+      "oneOf": [
+        {
+          "description": "`allot daemon stop`.",
+          "type": "string",
+          "const": "cli"
+        },
+        {
+          "description": "Stop service in a panel.",
+          "type": "string",
+          "const": "panel"
+        }
+      ]
+    }
+  }
+}

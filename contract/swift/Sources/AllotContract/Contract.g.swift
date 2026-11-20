@@ -115,6 +115,20 @@ public struct SettingsSpec: Codable, Sendable, Equatable {
     }
 }
 
+/// The JSON in `~/.allot/stopped.json`.
+public struct StopRecord: Codable, Sendable, Equatable {
+    /// Who stopped it.
+    public let by: StoppedBy
+
+    /// When allotd was stopped, in Unix milliseconds.
+    public let stoppedAtMs: Int64
+
+    private enum CodingKeys: String, CodingKey {
+        case by
+        case stoppedAtMs = "stopped_at_ms"
+    }
+}
+
 /// How well a GPU source measures something per process.
 public enum Accuracy: String, Codable, Sendable, Equatable {
     /// Measured per process.
@@ -1383,6 +1397,14 @@ public struct SizeRowSpec: Codable, Sendable, Equatable {
         case label
         case name
     }
+}
+
+/// Where the stop came from.
+public enum StoppedBy: String, Codable, Sendable, Equatable {
+    /// `allot daemon stop`.
+    case cli
+    /// Stop service in a panel.
+    case panel
 }
 
 /// One registered Claude session.

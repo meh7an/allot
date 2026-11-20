@@ -8,6 +8,7 @@ use std::{
     sync::Mutex,
 };
 
+use allot_shared::stop::StopRecord;
 use anyhow::{Context, anyhow, bail};
 
 use crate::logfile::{KEPT_LOG_FILES, MAX_LOG_BYTES, RotatingFile};
@@ -157,11 +158,37 @@ pub fn init_logging(log_dir: &Path) -> anyhow::Result<()> {
         .map_err(|error| anyhow!("initializing logging: {error}"))
 }
 
+/// Removes the stop record at `path`: whatever started this allotd ends a stop by the user,
+/// be it Start in a panel, `allot daemon start` or a sign-in launcher, since sessions never
+/// start allotd while the record exists. A record that cannot be removed is logged, not fatal.
+pub fn clear_stop_record(path: &Path) {
+    match StopRecord::clear(path) {
+        Ok(true) => tracing::info!("stop record cleared: started again after a stop by the user"),
+        Ok(false) => {}
+        Err(error) => tracing::warn!(
+            "cannot remove the stop record {}, sessions will not start allotd again: {error}",
+            path.display()
+        ),
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use allot_shared::stop::StoppedBy;
     use tempfile::TempDir;
 
     use super::*;
+
+    #[test]
+    fn test_clear_stop_record_removes_a_record_and_ignores_a_missing_one() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("stopped.json");
+        StopRecord::now(StoppedBy::Panel).write(&path).unwrap();
+
+        clear_stop_record(&path);
+        assert!(!path.exists());
+        clear_stop_record(&path);
+    }
 
     #[test]
     fn test_instance_lock_second_acquire_refuses_until_first_is_dropped() {

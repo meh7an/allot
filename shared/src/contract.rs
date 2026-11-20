@@ -1,9 +1,9 @@
 //! Golden files for the desktop apps: the JSON Schemas of [`UiState`], of the kill and remove
-//! responses and of [`SettingsSpec`], one fixture per flyout scenario and response shape plus
-//! the full settings spec, kept in `contract/` at
-//! the repository root, and the types generated from the schemas: C# in the tray's logic
-//! library, a Swift package and a JavaScript module with JSDoc types in `contract/`. The other
-//! responses `allot --json` prints get schemas there too.
+//! responses, of [`SettingsSpec`] and of the [`StopRecord`] file, one fixture per flyout
+//! scenario and response shape plus the full settings spec and a stop record, kept in
+//! `contract/` at the repository root, and the types generated from the schemas: C# in the
+//! tray's logic library, a Swift package and a JavaScript module with JSDoc types in
+//! `contract/`. The other responses `allot --json` prints get schemas there too.
 //!
 //! The tests fail when a file no longer matches the types. Rerun them with
 //! `ALLOT_UPDATE_CONTRACT=1` to rewrite the files, then review the diff.
@@ -24,6 +24,7 @@ use crate::{
         RunStats, UnkilledProcess, Verdict,
     },
     settings::SettingsSpec,
+    stop::{StopRecord, StoppedBy},
     types::{
         Accuracy, BoundProcess, DriveUsage, EndCause, EnforcedLimits, Holder, IsolationKind,
         JobClass, JobProfile, JobRun, Lease, LeaseBinding, LeaseId, LeaseIsolation, LeaseKind,
@@ -41,6 +42,8 @@ const KILL_SCHEMA_FILE: &str = "contract/kill-response.schema.json";
 const REMOVE_SCHEMA_FILE: &str = "contract/remove-response.schema.json";
 const SETTINGS_SCHEMA_FILE: &str = "contract/settings-spec.schema.json";
 const SETTINGS_FIXTURE_FILE: &str = "contract/fixtures/settings-spec.json";
+const STOP_SCHEMA_FILE: &str = "contract/stop-record.schema.json";
+const STOP_FIXTURE_FILE: &str = "contract/fixtures/stop-record.json";
 const LEASES_SCHEMA_FILE: &str = "contract/leases.schema.json";
 const JOBS_SCHEMA_FILE: &str = "contract/job-summaries.schema.json";
 const RUNS_SCHEMA_FILE: &str = "contract/job-runs.schema.json";
@@ -889,12 +892,13 @@ fn root_schema<T: schemars::JsonSchema>() -> Schema {
 }
 
 /// Every root the desktop apps decode, with its committed schema file; `UiState` first.
-fn contract_schemas() -> [(&'static str, Schema); 4] {
+fn contract_schemas() -> [(&'static str, Schema); 5] {
     [
         (SCHEMA_FILE, root_schema::<UiState>()),
         (KILL_SCHEMA_FILE, root_schema::<KillResponse>()),
         (REMOVE_SCHEMA_FILE, root_schema::<RemoveResponse>()),
         (SETTINGS_SCHEMA_FILE, root_schema::<SettingsSpec>()),
+        (STOP_SCHEMA_FILE, root_schema::<StopRecord>()),
     ]
 }
 
@@ -959,6 +963,19 @@ fn test_response_fixtures_match_committed_files() {
 #[test]
 fn test_settings_spec_fixture_matches_committed_file() {
     assert_matches_file(SETTINGS_FIXTURE_FILE, &pretty_json(&SettingsSpec::new()));
+}
+
+/// allotd stopped from a panel ten minutes before [`NOW_MS`].
+fn stop_scenario() -> StopRecord {
+    StopRecord {
+        stopped_at_ms: NOW_MS - 10 * MINUTE_MS,
+        by: StoppedBy::Panel,
+    }
+}
+
+#[test]
+fn test_stop_record_fixture_matches_committed_file() {
+    assert_matches_file(STOP_FIXTURE_FILE, &pretty_json(&stop_scenario()));
 }
 
 #[test]

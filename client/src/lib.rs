@@ -8,7 +8,7 @@ mod error;
 mod spawn;
 
 use std::{
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::{Mutex, PoisonError},
     time::{Duration, Instant},
 };
@@ -23,6 +23,7 @@ use allot_shared::{
     config::Config,
     paths::Paths,
     platform::DAEMON_LOG_TEXT,
+    stop::{StopRecord, StoppedBy},
     types::{Holder, JobRun, Lease, LeaseId, SessionKey, SessionUsage, Snapshot},
     ui::{Notice, UiState},
 };
@@ -68,6 +69,9 @@ pub struct ClientOptions {
     pub request_timeout: Duration,
     /// Start allotd and retry once when it is unreachable; `None` never starts it.
     pub spawn: Option<SpawnOptions>,
+    /// The stop record. While it exists the client never starts allotd, and a request allotd
+    /// did not receive fails with [`ClientError::Stopped`]; `None` ignores it.
+    pub stop_file: Option<PathBuf>,
 }
 
 impl ClientOptions {
@@ -84,7 +88,7 @@ impl ClientOptions {
     }
 
     /// Options for an install at `paths` with an already loaded `config`, with the default
-    /// timeouts.
+    /// timeouts and the install's stop record.
     pub fn local(paths: &Paths, config: &Config, auto_spawn: bool) -> Self {
         Self {
             base_url: format!("http://127.0.0.1:{}", config.daemon.port),
@@ -92,6 +96,7 @@ impl ClientOptions {
             connect_timeout: DEFAULT_CONNECT_TIMEOUT,
             request_timeout: DEFAULT_REQUEST_TIMEOUT,
             spawn: auto_spawn.then(SpawnOptions::beside_current_exe),
+            stop_file: Some(paths.stop_file()),
         }
     }
 }
@@ -159,11 +164,48 @@ impl Client {
         decode(checked(response).await?).await
     }
 
+    /// The stop record, when the options name one and it exists.
+    pub fn stop_record(&self) -> Option<StopRecord> {
+        self.options.stop_file.as_deref().and_then(StopRecord::read)
+    }
+
+    /// Writes a stop record of a stop by `by` now, so no client starts allotd again. Returns
+    /// `false`, writing nothing, when the options name no record or its folder does not exist
+    /// yet, which means allotd never ran here.
+    ///
+    /// # Errors
+    ///
+    /// [`ClientError::Local`] when the record cannot be written.
+    pub fn record_stop(&self, by: StoppedBy) -> Result<bool> {
+        let Some(path) = &self.options.stop_file else {
+            return Ok(false);
+        };
+        if !path.parent().is_some_and(Path::is_dir) {
+            return Ok(false);
+        }
+        StopRecord::now(by).write(path)?;
+        Ok(true)
+    }
+
+    /// Removes the stop record, so the client starts allotd again when it needs it. Returns
+    /// whether there was one.
+    ///
+    /// # Errors
+    ///
+    /// [`ClientError::Local`] when the record exists but cannot be removed.
+    pub fn clear_stop_record(&self) -> Result<bool> {
+        match &self.options.stop_file {
+            Some(path) => Ok(StopRecord::clear(path)?),
+            None => Ok(false),
+        }
+    }
+
     /// Starts the daemon unless it already answers, and waits until it does.
     ///
     /// # Errors
     ///
-    /// [`ClientError::Spawn`] when it cannot be started or does not become ready in time.
+    /// [`ClientError::Stopped`] while the stop record exists; [`ClientError::Spawn`] when it
+    /// cannot be started or does not become ready in time.
     pub async fn ensure_running(&self) -> Result<DaemonStart> {
         if self.health().await.is_ok() {
             return Ok(DaemonStart::AlreadyRunning);
@@ -468,20 +510,22 @@ impl Client {
         decode(response).await
     }
 
-    /// Sends the request `build` makes. When no daemon received it and spawning is allowed,
-    /// starts one and sends once more; when the token was refused, reads the token file again
+    /// Sends the request `build` makes. When no daemon received it: fails with
+    /// [`ClientError::Stopped`] while the stop record exists, else, when spawning is allowed,
+    /// starts one and sends once more. When the token was refused, reads the token file again
     /// and sends once more.
     async fn execute<F>(&self, build: F) -> Result<Response>
     where
         F: Fn(&reqwest::Client, &str) -> RequestBuilder,
     {
         match self.attempt(&build).await {
-            Err(error) if error.is_unsent() => match &self.options.spawn {
-                Some(spawn) => {
+            Err(error) if error.is_unsent() => match (self.stop_record(), &self.options.spawn) {
+                (Some(record), _) => Err(ClientError::Stopped(record)),
+                (None, Some(spawn)) => {
                     self.start_daemon(spawn).await?;
                     self.attempt(&build).await
                 }
-                None => Err(error),
+                (None, None) => Err(error),
             },
             // The daemon writes a new token when its token file was deleted, and a long-lived
             // client still holds the old one.
@@ -533,6 +577,9 @@ impl Client {
     }
 
     async fn start_daemon(&self, spawn: &SpawnOptions) -> Result<()> {
+        if let Some(record) = self.stop_record() {
+            return Err(ClientError::Stopped(record));
+        }
         if spawn::in_claude_sandbox() {
             return Err(ClientError::Sandboxed);
         }

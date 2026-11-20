@@ -30,6 +30,7 @@ async fn test_client_inside_claude_sandbox_does_not_start_allotd() {
             daemon_exe: PathBuf::from("no-such-allotd"),
             ready_timeout: Duration::from_millis(200),
         }),
+        stop_file: None,
     })
     .unwrap();
 

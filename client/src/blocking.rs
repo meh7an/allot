@@ -6,6 +6,7 @@ use allot_shared::{
         HeartbeatResponse, HistoryRunsResponse, JobSummary, KillResponse, LeaseQuery,
         ReleaseResponse, RemoveResponse, Verdict,
     },
+    stop::{StopRecord, StoppedBy},
     types::{Holder, JobRun, Lease, LeaseId, SessionKey, SessionUsage, Snapshot},
     ui::{Notice, UiState},
 };
@@ -59,6 +60,29 @@ impl BlockingClient {
     /// As [`Client::health`].
     pub fn health(&self) -> Result<HealthResponse> {
         self.runtime.block_on(self.client.health())
+    }
+
+    /// See [`Client::stop_record`].
+    pub fn stop_record(&self) -> Option<StopRecord> {
+        self.client.stop_record()
+    }
+
+    /// See [`Client::record_stop`].
+    ///
+    /// # Errors
+    ///
+    /// As [`Client::record_stop`].
+    pub fn record_stop(&self, by: StoppedBy) -> Result<bool> {
+        self.client.record_stop(by)
+    }
+
+    /// See [`Client::clear_stop_record`].
+    ///
+    /// # Errors
+    ///
+    /// As [`Client::clear_stop_record`].
+    pub fn clear_stop_record(&self) -> Result<bool> {
+        self.client.clear_stop_record()
     }
 
     /// See [`Client::ensure_running`].

@@ -29,6 +29,7 @@ public sealed class ContractFixtureTests
             ["kill-response-"] = typeof(KillResponse),
             ["remove-response"] = typeof(RemoveResponse),
             ["settings-spec"] = typeof(SettingsSpec),
+            ["stop-record"] = typeof(StopRecord),
         };
 
     public static IEnumerable<object[]> FixtureFiles =>
@@ -286,6 +287,15 @@ public sealed class ContractFixtureTests
         Assert.IsTrue(settings["daemon.port"].NeedsRestart);
         CollectionAssert.AreEqual(
             new[] { Platform.Linux }, settings["linux.scopes"].Platforms.ToArray());
+    }
+
+    [TestMethod]
+    public void StopRecordFixtureNamesThePanel()
+    {
+        var record = DecodeResponse("stop-record", ContractJsonContext.Default.StopRecord);
+
+        Assert.AreEqual(StoppedBy.Panel, record.By);
+        Assert.AreEqual(1_792_824_120_000L, record.StoppedAtMs);
     }
 
     private static string ReadFixture(string scenario) =>

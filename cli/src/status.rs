@@ -7,15 +7,19 @@ use std::{
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
-use allot_client::BlockingClient;
+use allot_client::{BlockingClient, ClientError};
 use allot_shared::{
     api::{HealthResponse, LeaseQuery},
+    stop::StopRecord,
     types::{EndCause, JobClass, Lease, LeaseState, ResourceUsage, SessionKey, Snapshot},
     ui::Notice,
 };
 use anstyle::Style;
 
-use crate::output::{BAD, DIM, GOOD, HEADING, WAIT, paint, print_json};
+use crate::{
+    daemon::describe_stop,
+    output::{BAD, DIM, GOOD, HEADING, WAIT, paint, print_json},
+};
 
 const SNAPSHOT_WAIT: Duration = Duration::from_secs(5);
 const SNAPSHOT_POLL: Duration = Duration::from_millis(200);
@@ -38,12 +42,14 @@ pub enum StatusMode {
 }
 
 /// Prints machine usage, every session with its leases, and the rest, once or every interval,
-/// or the daemon's whole UI state as JSON. Starts allotd when it is not running.
+/// or the daemon's whole UI state as JSON. Starts allotd when it is not running, unless the
+/// user stopped it: the text then says so.
 ///
 /// # Errors
 ///
-/// Fails when allotd cannot be reached or started. While watching, only the first frame can
-/// fail; later failures are shown in the frame and retried.
+/// Fails when allotd cannot be reached or started, and as JSON also when the user stopped it.
+/// While watching, only the first frame can fail; later failures are shown in the frame and
+/// retried.
 pub fn status(mode: StatusMode) -> anyhow::Result<()> {
     let client = BlockingClient::discover(true)?;
     match mode {
@@ -54,8 +60,17 @@ pub fn status(mode: StatusMode) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// The status as text; a stop by the user is a status, not an error.
 fn status_text(client: &BlockingClient) -> anyhow::Result<String> {
-    let snapshot = snapshot_when_ready(client)?;
+    let snapshot = match snapshot_when_ready(client) {
+        Ok(snapshot) => snapshot,
+        Err(error) => {
+            return match error.downcast_ref::<ClientError>() {
+                Some(ClientError::Stopped(record)) => Ok(format_stopped(record, now_ms())),
+                _ => Err(error),
+            };
+        }
+    };
     let health = client.health()?;
     let leases = current_leases(client)?;
     let notices = recent_notices(client)?;
@@ -184,6 +199,14 @@ fn current_leases(client: &BlockingClient) -> anyhow::Result<Vec<Lease>> {
         leases.extend(client.leases(&query)?);
     }
     Ok(leases)
+}
+
+fn format_stopped(record: &StopRecord, now_ms: i64) -> String {
+    format!(
+        "allotd  {}: {}\n",
+        paint(WAIT, "STOPPED"),
+        describe_stop(record, now_ms)
+    )
 }
 
 fn format_status(
@@ -580,6 +603,19 @@ mod tests {
         let text = plain(format_status(&health, &snapshot(), &[], &[], 0));
         assert!(
             text.contains("config  REJECTED, still using the previous one: config.toml:"),
+            "{text}"
+        );
+    }
+
+    #[test]
+    fn test_format_stopped_says_the_user_stopped_it() {
+        let record = StopRecord {
+            stopped_at_ms: 0,
+            by: allot_shared::stop::StoppedBy::Panel,
+        };
+        let text = plain(format_stopped(&record, 30_000));
+        assert!(
+            text.starts_with("allotd  STOPPED: you stopped it from the panel 30s ago;"),
             "{text}"
         );
     }

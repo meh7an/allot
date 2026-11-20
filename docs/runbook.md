@@ -27,8 +27,11 @@ same files are in `~/.allot`; the Linux and macOS sections cover what differs.
 - `allot-mcp` (on a tool call or a heartbeat) and `allot status` start it when it is down,
   using the `allotd.exe` beside their own executable.
 - The hook never starts it, so a heavy command never waits on a daemon start.
-- `allot daemon start` starts it by hand; `allot daemon stop` stops it gracefully. The tray
-  app's Start service and Stop service do the same.
+- `allot daemon start` starts it by hand; `allot daemon stop` stops it gracefully and keeps it
+  stopped: it writes `stopped.json` in the data folder, and while that file exists `allot-mcp`
+  and `allot status` do not start allotd, and the hook lets heavy commands run without leases.
+  Any start of allotd removes the file: `allot daemon start`, Start service in the tray app, or
+  the logon task at your next logon. The tray app's Stop service does not keep it stopped yet.
 
 The tray app itself starts at logon from the Run key value `Allot` (Launch at logon in its
 tray menu, or Startup apps in Task Manager). `allot install` turns it on the first time it
@@ -146,9 +149,10 @@ Remove (`allot remove <id>`) ends a queued lease before it starts. Either way th
 a notice through its next hook call or MCP tool result, and Claude tells you and asks whether
 to retry or skip. The notice is delivered once.
 
-Only one allotd runs per user: a second one finds `allotd.lock` taken and exits. Stopping
-allotd while sessions are open is temporary: a session holding a lease starts it again on its next
-heartbeat (within about 20 s), and any session does on its next tool call.
+Only one allotd runs per user: a second one finds `allotd.lock` taken and exits. When allotd
+stops without `allot daemon stop`, such as a crash or the tray app's Stop service, it is down only
+for a while: a session holding a lease starts it again on its next heartbeat (within about 20 s),
+and any session does on its next tool call. After `allot daemon stop` no session starts it.
 
 ## Fail-open behavior
 
@@ -330,8 +334,7 @@ are rejected. `allot classes` prints the classifier rules and class profiles in 
 
 This deletes all leases and job history; learned profiles start over.
 
-1. `allot daemon stop` (and close the sessions that hold leases, or their `allot-mcp` starts
-   allotd again).
+1. `allot daemon stop`, which keeps sessions from starting allotd again.
 2. Delete `allot.db`, `allot.db-wal`, and `allot.db-shm`.
 3. `allot daemon start`. allotd creates the database and applies the migrations.
 

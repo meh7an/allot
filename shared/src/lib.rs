@@ -11,6 +11,7 @@ pub mod mutate;
 pub mod paths;
 pub mod platform;
 pub mod settings;
+pub mod stop;
 #[cfg(test)]
 mod test_support;
 pub mod types;
