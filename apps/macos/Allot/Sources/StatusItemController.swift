@@ -2,7 +2,7 @@ import AllotKit
 import AppKit
 import Observation
 
-/// What the right-click menu's service and login items act on; the app delegate supplies it.
+/// What the menus' Settings and service items act on; the app delegate supplies it.
 @MainActor
 struct ServiceControls {
     /// The service status of the latest poll.
@@ -13,7 +13,34 @@ struct ServiceControls {
 
     let start: () -> Void
     let stop: () -> Void
-    let setLaunchAtLogin: (Bool) -> Void
+    let openSettings: () -> Void
+
+    /// Stop or Start Service, by the latest poll; Stop asks first while jobs run or wait.
+    func chooseService() {
+        switch ServiceMenu.item(for: status()).action {
+        case .stop:
+            if let text = stopConfirmation(), !Self.confirmStop(text) {
+                return
+            }
+            stop()
+        case .start:
+            start()
+        case .none:
+            break
+        }
+    }
+
+    private static func confirmStop(_ text: String) -> Bool {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = ServiceMenu.confirmTitle
+        alert.informativeText = text
+        alert.addButton(withTitle: "Stop Service")
+        alert.addButton(withTitle: "Cancel")
+        // A menu bar app is never frontmost by itself, and the alert must not open behind.
+        NSApp.activate()
+        return alert.runModal() == .alertFirstButtonReturn
+    }
 }
 
 /// Owns the menu bar item: its icon follows the service and job state, a left click toggles the
@@ -25,7 +52,7 @@ final class StatusItemController: NSObject {
     private let panel: PanelController
     private let controls: ServiceControls?
 
-    /// - Parameter controls: The service and login items; a Debug scenario has none.
+    /// - Parameter controls: The Settings and service items; a Debug scenario has none.
     init(model: PanelModel, panel: PanelController, controls: ServiceControls? = nil) {
         self.model = model
         self.panel = panel
@@ -70,28 +97,27 @@ final class StatusItemController: NSObject {
         }
     }
 
+    // The shrunk menu of DESIGN.md section 9: Settings, Stop or Start Service, Open Logs, Quit.
     private func showMenu() {
         panel.close()
-        model.refreshLogin()
         let menu = NSMenu()
         let summary = NSMenuItem(title: model.menuBar.summary, action: nil, keyEquivalent: "")
         summary.isEnabled = false
         menu.addItem(summary)
         menu.addItem(.separator())
         if let controls {
+            let settings = NSMenuItem(
+                title: ServiceMenu.settingsTitle, action: #selector(openSettings),
+                keyEquivalent: ",")
+            settings.target = self
+            menu.addItem(settings)
             let service = ServiceMenu.item(for: controls.status())
             let serviceItem = NSMenuItem(
-                title: service.title, action: #selector(serviceChosen(_:)), keyEquivalent: "")
+                title: service.title, action: #selector(serviceChosen), keyEquivalent: "")
             serviceItem.target = self
             serviceItem.isEnabled = service.isEnabled
-            serviceItem.representedObject = service.action == .stop
             menu.addItem(serviceItem)
-            let login = NSMenuItem(
-                title: "Launch at Login", action: #selector(toggleLogin), keyEquivalent: "")
-            login.target = self
-            login.state = model.login.isOn ? .on : .off
-            login.isEnabled = model.login.canToggle
-            menu.addItem(login)
+            menu.addItem(.separator())
         }
         let logs = NSMenuItem(title: "Open Logs", action: #selector(openLogs), keyEquivalent: "")
         logs.target = self
@@ -107,34 +133,12 @@ final class StatusItemController: NSObject {
         item.menu = nil
     }
 
-    @objc private func serviceChosen(_ sender: NSMenuItem) {
-        guard let controls else {
-            return
-        }
-        guard sender.representedObject as? Bool == true else {
-            controls.start()
-            return
-        }
-        if let text = controls.stopConfirmation(), !confirmStop(text) {
-            return
-        }
-        controls.stop()
+    @objc private func serviceChosen() {
+        controls?.chooseService()
     }
 
-    private func confirmStop(_ text: String) -> Bool {
-        let alert = NSAlert()
-        alert.alertStyle = .warning
-        alert.messageText = ServiceMenu.confirmTitle
-        alert.informativeText = text
-        alert.addButton(withTitle: "Stop Service")
-        alert.addButton(withTitle: "Cancel")
-        // A menu bar app is never frontmost by itself, and the alert must not open behind.
-        NSApp.activate()
-        return alert.runModal() == .alertFirstButtonReturn
-    }
-
-    @objc private func toggleLogin() {
-        controls?.setLaunchAtLogin(!model.login.isOn)
+    @objc private func openSettings() {
+        controls?.openSettings()
     }
 
     @objc private func openLogs() {

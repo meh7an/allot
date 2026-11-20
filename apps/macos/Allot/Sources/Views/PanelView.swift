@@ -16,6 +16,10 @@ struct PanelActions {
     /// System Settings › Notifications › Allot, while notifications are off there.
     let openNotificationSettings: () -> Void
 
+    /// More options' Settings… and Stop or Start Service; `nil` in a Debug scenario.
+    let openSettings: (() -> Void)?
+    let chooseService: (() -> Void)?
+
     /// Debug builds: the handoff scenarios More options lists, and showing one.
     let scenarios: [String]
     let showScenario: (String) -> Void

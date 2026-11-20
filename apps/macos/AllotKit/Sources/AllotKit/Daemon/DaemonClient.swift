@@ -10,7 +10,7 @@ public actor DaemonClient: JobStopper, SettingsClient {
     // period of the processes that ignore SIGTERM.
     private static let stopTimeout: TimeInterval = 10
 
-    private let base: URL
+    private var base: URL
     private let tokenFile: URL
     private let transport: any HTTPTransport
     private var token: String?
@@ -20,10 +20,14 @@ public actor DaemonClient: JobStopper, SettingsClient {
     ///   - tokenFile: The bearer token file, read on first use and after a 401.
     ///   - transport: Sends the requests; the tests pass a fake.
     public init(port: UInt16, tokenFile: URL, transport: any HTTPTransport) {
-        // A literal URL with a numeric port always parses.
-        base = URL(string: "http://127.0.0.1:\(port)/")!
+        base = Self.url(port: port)
         self.tokenFile = tokenFile
         self.transport = transport
+    }
+
+    /// Sends every later request to `port`, after a restart moved allotd there.
+    public func usePort(_ port: UInt16) {
+        base = Self.url(port: port)
     }
 
     /// A client for the local install: the port from `config.toml`, the token file beside it.
@@ -82,12 +86,14 @@ public actor DaemonClient: JobStopper, SettingsClient {
     /// it again, then accepts and stops. Start service needs nothing of the kind, since every
     /// start of allotd clears the record.
     ///
+    /// - Parameter record: Whether allotd writes the stop record; a restart sends no body, so
+    ///   no record is written.
     /// - Returns: `nil` when allotd accepted, else why not.
     /// - Throws: Only `CancellationError`.
-    public func shutdown() async throws -> String? {
+    public func shutdown(record: Bool = true) async throws -> String? {
         do {
-            guard let (_, response) = try await sendWithToken(
-                "POST", "shutdown", body: Self.encode(ShutdownBody(by: .panel)))
+            let body = record ? Self.encode(ShutdownBody(by: .panel)) : nil
+            guard let (_, response) = try await sendWithToken("POST", "shutdown", body: body)
             else {
                 return "no token in \(tokenFile.path)"
             }
@@ -277,6 +283,11 @@ public actor DaemonClient: JobStopper, SettingsClient {
             .trimmingCharacters(in: .whitespacesAndNewlines)
         return SettingsFailure(
             kind: kind, message: text.isEmpty ? "the service answered \(status)" : text)
+    }
+
+    private static func url(port: UInt16) -> URL {
+        // A literal URL with a numeric port always parses.
+        URL(string: "http://127.0.0.1:\(port)/")!
     }
 
     private static func encode<Body: Encodable>(_ body: Body) -> Data? {

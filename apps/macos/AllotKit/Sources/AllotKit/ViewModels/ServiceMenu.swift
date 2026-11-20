@@ -21,7 +21,9 @@ public struct ServiceMenuItem: Sendable, Equatable {
 
 /// The Windows tray menu's service item, in macOS title case.
 public enum ServiceMenu {
-    public static let confirmTitle = "Stop Allot?"
+    public static let confirmTitle = "Stop the service?"
+
+    public static let settingsTitle = "Settings…"
 
     public static func item(for status: ServiceStatus) -> ServiceMenuItem {
         switch status {
@@ -35,8 +37,7 @@ public enum ServiceMenu {
     }
 
     /// The confirmation shown before stopping allotd, or `nil` when no lease is running or
-    /// waiting. Every Claude session's MCP server starts allotd again on its next call, so the
-    /// text says the stop lasts only until then.
+    /// waiting. The stop lasts until the user starts allotd again (the stop record).
     public static func stopConfirmation(_ state: UiState?) -> String? {
         let running = state?.active.count ?? 0
         let waiting = state?.queue.count ?? 0
@@ -52,7 +53,7 @@ public enum ServiceMenu {
                 waiting == 1 ? "1 request is waiting" : "\(waiting) requests are waiting")
         }
         return "\(parts.joined(separator: " and ")).\n\n"
-            + "Heavy commands run unchecked while the service is stopped. A Claude session "
-            + "starts it again the next time it asks for resources."
+            + "Jobs keep running, and new heavy commands run without leases until you start "
+            + "the service again."
     }
 }

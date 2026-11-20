@@ -41,9 +41,9 @@ struct HeaderView: View {
                     isOn: mode.isStayOpen,
                     action: actions.toggleStayOpen)
                 MoreOptionsMenu(
-                    model: model, actions: actions, settings: model.settings,
-                    login: model.login, sharesMemory: model.resources.sharesMemory,
-                    notificationsOff: model.notificationPermission.isOff,
+                    actions: actions,
+                    service: actions.chooseService == nil
+                        ? nil : ServiceMenu.item(for: model.serviceStatus),
                     scenarios: actions.scenarios)
                     .equatable()
                     .padding(.leading, Tokens.buttonGap)
@@ -103,73 +103,35 @@ private struct HeaderButton: View {
     }
 }
 
-/// More options: the Meters and Notifications check items with their counts, Launch at Login,
-/// Open Logs and Quit; Debug builds add the handoff scenarios and Test Notifications. A check
-/// item closes the menu, as every macOS menu does.
+/// More options, shrunk to DESIGN.md section 9: Settings…, Stop or Start Service, Open Logs and
+/// Quit; Debug builds add the handoff scenarios and Test Notifications. Meters, Notifications,
+/// Text Size and Launch at Login live on the Settings window's Panel page.
 ///
-/// It is rebuilt only when what it shows changes: every rebuild replaces the native menu and
-/// closes an open submenu, and the header around it updates with every poll and every second.
+/// It is rebuilt only when what it shows changes: every rebuild replaces the native menu, and
+/// the header around it updates with every poll and every second.
 private struct MoreOptionsMenu: View, Equatable {
-    let model: PanelModel
     let actions: PanelActions
-    let settings: TraySettings
-    let login: LoginItemStatus
-    let sharesMemory: Bool
-    let notificationsOff: Bool
+
+    /// The service item, or `nil` where the menu has none.
+    let service: ServiceMenuItem?
+
     let scenarios: [String]
 
     nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
-        lhs.settings == rhs.settings && lhs.login == rhs.login
-            && lhs.sharesMemory == rhs.sharesMemory
-            && lhs.notificationsOff == rhs.notificationsOff && lhs.scenarios == rhs.scenarios
+        lhs.service == rhs.service && lhs.scenarios == rhs.scenarios
     }
 
     var body: some View {
         Menu {
-            Menu {
-                check("CPU", \.meters.cpu)
-                check("RAM", \.meters.ram)
-                check("GPU", \.meters.gpu)
-                check(sharesMemory ? "GPU Memory" : "VRAM", \.meters.vram)
-                check("Drives", \.meters.drives)
-                check("Drive Activity", \.meters.driveActivity)
-                    .disabled(!settings.meters.drives)
-            } label: {
-                Label("Meters", systemImage: "chart.bar.xaxis")
+            if let openSettings = actions.openSettings {
+                Button(ServiceMenu.settingsTitle, systemImage: "gearshape", action: openSettings)
+                    .keyboardShortcut(",")
             }
-            .badge(Text(MenuCounts.meters(settings.meters)))
-            Menu {
-                // With notifications off in System Settings none of the items below can show.
-                if notificationsOff {
-                    Text(NotificationPermission.offHint)
-                    Button("Open Notification Settings…", action: actions.openNotificationSettings)
-                    Divider()
-                }
-                check("Service Stopped", \.notifications.serviceStopped)
-                check("Running Long", \.notifications.runningLong)
-                check("Benchmark Finished", \.notifications.benchmarkFinished)
-                check("Job Finished", \.notifications.jobFinished)
-                check("Killed Outside the Panel", \.notifications.killedOutsidePanel)
-            } label: {
-                Label("Notifications", systemImage: "bell")
+            if let service, let chooseService = actions.chooseService {
+                Button(service.title, action: chooseService)
+                    .disabled(!service.isEnabled)
             }
-            .badge(Text(MenuCounts.notifications(settings.notifications, off: notificationsOff)))
-            Picker(selection: Binding(
-                get: { settings.textSize },
-                set: { size in model.updateSettings { $0.textSize = size } })
-            ) {
-                ForEach(TextSize.allCases) { size in
-                    Text(size.title).tag(size)
-                }
-            } label: {
-                Label("Text Size", systemImage: "textformat.size")
-            }
-            .pickerStyle(.menu)
             Divider()
-            Toggle("Launch at Login", isOn: Binding(
-                get: { login.isOn },
-                set: { actions.setLaunchAtLogin($0) }))
-                .disabled(!login.canToggle)
             Button("Open Logs", systemImage: "doc.text", action: actions.openLogs)
             if !scenarios.isEmpty {
                 Menu("Scenario") {
@@ -193,11 +155,5 @@ private struct MoreOptionsMenu: View, Equatable {
         .frame(width: Tokens.buttonSize, height: Tokens.buttonSize)
         .help("More options")
         .accessibilityLabel("More options")
-    }
-
-    private func check(_ title: String, _ key: WritableKeyPath<TraySettings, Bool>) -> some View {
-        Toggle(title, isOn: Binding(
-            get: { settings[keyPath: key] },
-            set: { on in model.updateSettings { $0[keyPath: key] = on } }))
     }
 }

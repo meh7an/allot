@@ -8,6 +8,11 @@ public final class DaemonPoller {
     /// How long Start Service reports ``ServiceStatus/starting`` before giving up.
     public static let startTimeout = Duration.seconds(10)
 
+    /// How long a restart waits for the old allotd to stop answering.
+    public static let stopTimeout = Duration.seconds(10)
+
+    private static let stopCheck = Duration.milliseconds(200)
+
     /// Called after every poll.
     public var onUpdate: ((PollResult) -> Void)?
 
@@ -74,6 +79,38 @@ public final class DaemonPoller {
         let problem = try? await client.shutdown()
         pollNow()
         return problem ?? nil
+    }
+
+    /// Restarts allotd so a new port or token takes effect: stops it without a stop record,
+    /// waits until it no longer answers, then starts it and polls it on `port`.
+    ///
+    /// - Parameter port: The port `config.toml` names now.
+    /// - Returns: `nil` when allotd stopped and was launched again, else why not.
+    @discardableResult
+    public func restartService(port: UInt16) async -> String? {
+        let problem: String?
+        do {
+            problem = try await client.shutdown(record: false)
+        } catch {
+            return "the restart was cancelled"
+        }
+        if let problem {
+            pollNow()
+            return problem
+        }
+        // A new allotd started while the old one still holds its instance lock exits at once.
+        let until = now() + Self.stopTimeout
+        while (try? await client.health()) != nil {
+            if now() >= until {
+                pollNow()
+                return "the service did not stop within \(Self.stopTimeout.components.seconds) s"
+            }
+            guard (try? await Task.sleep(for: Self.stopCheck)) != nil else {
+                return "the restart was cancelled"
+            }
+        }
+        await client.usePort(port)
+        return await startService()
     }
 
     /// Polls at once and restarts the backoff. A wake that arrives mid-poll ends the next wait

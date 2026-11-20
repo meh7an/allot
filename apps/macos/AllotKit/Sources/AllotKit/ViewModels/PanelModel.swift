@@ -44,6 +44,10 @@ public final class PanelModel {
     /// Whether macOS lets the app notify, as last read; the app reads it when the panel opens.
     public private(set) var notificationPermission = NotificationPermission.notAsked
 
+    /// The latest poll's status, for the menus' Stop or Start Service; set only when it changes,
+    /// so the menu is not rebuilt on every poll.
+    public private(set) var serviceStatus = ServiceStatus.starting
+
     /// The row a notification's Show asked for (`job:<lease>` or `recent`), until the panel
     /// has scrolled to it; empty for the top.
     public var scrollTarget: String?
@@ -113,6 +117,9 @@ public final class PanelModel {
     /// - Parameter startProblem: Why the last Start Service failed, for the banner.
     public func apply(_ result: PollResult, lastKnown: UiState?, startProblem: String? = nil) {
         status = result.status
+        if serviceStatus != result.status {
+            serviceStatus = result.status
+        }
         shown = result.state ?? lastKnown
         self.lastKnown = lastKnown
         self.startProblem = startProblem

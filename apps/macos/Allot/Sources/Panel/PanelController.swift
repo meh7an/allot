@@ -24,11 +24,17 @@ final class PanelController: NSObject, NSWindowDelegate {
     /// The banner's Start Service.
     var onStartService: (() -> Void)?
 
-    /// The first-run card's and More options' Launch at Login.
+    /// The first-run card's Launch at Login.
     var onSetLaunchAtLogin: ((Bool) -> Void)?
 
     /// The first-run card's Open Login Items.
     var onOpenLoginItems: (() -> Void)?
+
+    /// More options › Settings….
+    var onOpenSettings: (() -> Void)?
+
+    /// More options › Stop or Start Service.
+    var onChooseService: (() -> Void)?
 
     /// Debug builds: More options › Test Notifications.
     var onTestNotifications: (() -> Void)?
@@ -36,6 +42,7 @@ final class PanelController: NSObject, NSWindowDelegate {
     private let model: PanelModel
     private let logDirectory: URL
     private let scenarios: [String]
+    private let offersSettings: Bool
     private let offersTestNotifications: Bool
     private let layout = PanelLayout()
     private let panel = AllotPanel()
@@ -55,16 +62,20 @@ final class PanelController: NSObject, NSWindowDelegate {
 
     /// - Parameters:
     ///   - scenarios: Debug builds: the handoff scenarios More options lists.
+    ///   - offersSettings: More options lists Settings… and Stop or Start Service; a Debug
+    ///     scenario has neither.
     ///   - offersTestNotifications: Debug builds: More options lists Test Notifications.
     init(
         model: PanelModel,
         logDirectory: URL,
         scenarios: [String] = [],
+        offersSettings: Bool = false,
         offersTestNotifications: Bool = false
     ) {
         self.model = model
         self.logDirectory = logDirectory
         self.scenarios = scenarios
+        self.offersSettings = offersSettings
         self.offersTestNotifications = offersTestNotifications
         super.init()
         installContent()
@@ -389,6 +400,8 @@ final class PanelController: NSObject, NSWindowDelegate {
             setLaunchAtLogin: { [weak self] in self?.onSetLaunchAtLogin?($0) },
             openLoginItems: { [weak self] in self?.onOpenLoginItems?() },
             openNotificationSettings: { Notifier.openSettings() },
+            openSettings: offersSettings ? { [weak self] in self?.onOpenSettings?() } : nil,
+            chooseService: offersSettings ? { [weak self] in self?.onChooseService?() } : nil,
             scenarios: scenarios,
             showScenario: { [weak self] in self?.onShowScenario?($0) },
             testNotifications: offersTestNotifications

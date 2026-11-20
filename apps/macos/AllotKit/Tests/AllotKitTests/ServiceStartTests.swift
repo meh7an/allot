@@ -203,4 +203,41 @@ private func stoppedPoller(
         #expect(try JSONDecoder().decode(ShutdownRequest.self, from: body) == expected)
         #expect(request.value(forHTTPHeaderField: "Content-Type") == "application/json")
     }
+
+    @Test func restartStopsWithoutARecordThenStartsOnTheNewPort() async throws {
+        let home = try TemporaryHome()
+        try home.write("t", to: home.data.tokenFile)
+        let transport = FakeTransport { request in
+            guard request.url?.path == "/shutdown" else {
+                throw URLError(.cannotConnectToHost)
+            }
+            return (202, Data())
+        }
+        let launcher = FakeLauncher()
+        let client = DaemonClient(
+            port: 47823, tokenFile: home.data.tokenFile, transport: transport)
+        let poller = DaemonPoller(client: client, launcher: launcher)
+
+        #expect(await poller.restartService(port: 47999) == nil)
+
+        let shutdown = try #require(transport.requests.first)
+        #expect(shutdown.url?.absoluteString == "http://127.0.0.1:47823/shutdown")
+        #expect(shutdown.httpBody == nil)
+        #expect(launcher.starts == 1)
+        _ = try await client.poll()
+        #expect(transport.requests.last?.url?.port == 47999)
+    }
+
+    @Test func aRefusedRestartStartsNothing() async throws {
+        let home = try TemporaryHome()
+        try home.write("t", to: home.data.tokenFile)
+        let transport = FakeTransport { _ in (500, Data()) }
+        let launcher = FakeLauncher()
+        let poller = DaemonPoller(
+            client: DaemonClient(port: 1, tokenFile: home.data.tokenFile, transport: transport),
+            launcher: launcher)
+
+        #expect(await poller.restartService(port: 47999) == "POST /shutdown answered 500")
+        #expect(launcher.starts == 0)
+    }
 }

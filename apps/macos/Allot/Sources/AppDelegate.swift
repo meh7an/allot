@@ -18,6 +18,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var ticker: CardTicker?
     private var pollTask: Task<Void, Never>?
     private var lastStatus: ServiceStatus?
+    private var settingsModel: SettingsWindowModel?
+    private var settingsWindow: SettingsWindowController?
     #if DEBUG
     private var scenarios: ScenarioPlayer?
     #endif
@@ -53,12 +55,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.poller = poller
         #if DEBUG
         let panel = PanelController(
-            model: model, logDirectory: data.logDirectory, offersTestNotifications: true)
+            model: model, logDirectory: data.logDirectory, offersSettings: true,
+            offersTestNotifications: true)
         panel.onTestNotifications = { [weak notifier] in
             notifier?.show((try? Handoff.notifications()) ?? [])
         }
         #else
-        let panel = PanelController(model: model, logDirectory: data.logDirectory)
+        let panel = PanelController(
+            model: model, logDirectory: data.logDirectory, offersSettings: true)
         #endif
         self.panel = panel
         panel.onOpenChanged = { [weak self, weak poller, weak notifier] open in
@@ -88,16 +92,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Self.logStop(lease, kind, result)
             poller?.pollNow()
         }
-        statusController = StatusItemController(
-            model: model, panel: panel,
-            controls: ServiceControls(
-                status: { [weak poller] in poller?.latest?.status ?? .starting },
-                stopConfirmation: { [weak poller] in
-                    ServiceMenu.stopConfirmation(poller?.latest?.state)
-                },
-                start: { [weak self] in self?.startService() },
-                stop: { [weak self] in self?.stopService() },
-                setLaunchAtLogin: { [weak self] in self?.setLaunchAtLogin($0) }))
+        let controls = ServiceControls(
+            status: { [weak poller] in poller?.latest?.status ?? .starting },
+            stopConfirmation: { [weak poller] in
+                ServiceMenu.stopConfirmation(poller?.latest?.state)
+            },
+            start: { [weak self] in self?.startService() },
+            stop: { [weak self] in self?.stopService() },
+            openSettings: { [weak self] in self?.openSettings() })
+        panel.onOpenSettings = controls.openSettings
+        panel.onChooseService = { controls.chooseService() }
+        statusController = StatusItemController(model: model, panel: panel, controls: controls)
+        settingsModel = SettingsWindowModel(
+            session: SettingsSession.forInstall(client: client, data: data),
+            panel: model,
+            data: data,
+            actions: SettingsActions(
+                startService: { [weak self] in self?.startService() },
+                stopConfirmation: controls.stopConfirmation,
+                stopService: { [weak self] in self?.stopService() },
+                restartService: { [weak self] in await self?.restartService() },
+                openLogs: { [weak panel] in panel?.openLogs() },
+                setLaunchAtLogin: { [weak self] in self?.setLaunchAtLogin($0) },
+                openLoginItems: { AppLoginItem.openSettings() }))
+        installMainMenu()
         pollTask = Task {
             await poller.run()
         }
@@ -117,6 +135,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool {
         true
+    }
+
+    /// The Dock icon while Settings shows, or opening the app again, opens Settings.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
+        openSettings()
+        return false
+    }
+
+    /// Closing Settings must never quit a menu bar app.
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        false
     }
 
     // Settings, login item, drive names and the ticker, shared by the real app and scenarios.
@@ -156,6 +185,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         model.apply(result, lastKnown: poller.lastKnown, startProblem: poller.startProblem)
+        settingsModel?.apply(result)
         panel.prepareOnce()
         logStatusChange(result)
         let update = rules.observe(
@@ -196,6 +226,71 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 Self.log.info("start service: launched")
             }
         }
+    }
+
+    // Built on the first open; a Debug scenario has no Settings.
+    private func openSettings() {
+        guard let settingsModel else {
+            return
+        }
+        panel?.close()
+        let window = settingsWindow ?? SettingsWindowController(model: settingsModel)
+        settingsWindow = window
+        window.show()
+    }
+
+    private func restartService() async -> String? {
+        guard let poller else {
+            return "the app does not poll the service"
+        }
+        rules.expectStop()
+        let port = DaemonConfig.readPort(data)
+        let problem = await poller.restartService(port: port)
+        if let problem {
+            Self.log.error("restart service: \(problem, privacy: .public)")
+        } else {
+            Self.log.info("restart service: launched on port \(port)")
+        }
+        return problem
+    }
+
+    /// An app menu with Settings… and Quit, File › Close and an Edit menu. It shows only while
+    /// Settings puts the app in the Dock, but its keys work in the Settings window always:
+    /// Cmd-W, Cmd-Q, and copy and paste in its fields (DESIGN.md R5).
+    private func installMainMenu() {
+        let main = NSMenu()
+        let appMenu = NSMenu(title: "Allot")
+        let settings = appMenu.addItem(
+            withTitle: ServiceMenu.settingsTitle, action: #selector(openSettingsFromMenu),
+            keyEquivalent: ",")
+        settings.target = self
+        appMenu.addItem(.separator())
+        appMenu.addItem(
+            withTitle: "Quit Allot", action: #selector(NSApplication.terminate(_:)),
+            keyEquivalent: "q")
+        main.addSubmenu(appMenu)
+
+        let fileMenu = NSMenu(title: "File")
+        fileMenu.addItem(
+            withTitle: "Close", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+        main.addSubmenu(fileMenu)
+
+        let editMenu = NSMenu(title: "Edit")
+        editMenu.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
+        editMenu.addItem(withTitle: "Redo", action: Selector(("redo:")), keyEquivalent: "Z")
+        editMenu.addItem(.separator())
+        editMenu.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        editMenu.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        editMenu.addItem(
+            withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        editMenu.addItem(
+            withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        main.addSubmenu(editMenu)
+        NSApp.mainMenu = main
+    }
+
+    @objc private func openSettingsFromMenu() {
+        openSettings()
     }
 
     private func stopService() {
@@ -292,4 +387,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
     #endif
+}
+
+private extension NSMenu {
+    func addSubmenu(_ submenu: NSMenu) {
+        let item = NSMenuItem(title: submenu.title, action: nil, keyEquivalent: "")
+        item.submenu = submenu
+        addItem(item)
+    }
 }
