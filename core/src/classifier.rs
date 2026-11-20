@@ -45,6 +45,33 @@ pub enum Classification {
     },
 }
 
+/// How the rules treat one simple command.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum CommandMatch {
+    /// The rule at `rule_index` of the configured list matches, so it needs a lease.
+    Heavy {
+        /// Position of the first matching rule, from 0.
+        rule_index: usize,
+    },
+    /// A rule matches, but `flag` is a light flag, so the command only prints and exits.
+    PrintOnly {
+        /// The first light flag among its arguments.
+        flag: String,
+    },
+    /// No rule matches.
+    NotHeavy,
+}
+
+/// One simple command of a line and how the rules treat it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SimpleCommand {
+    /// Its words joined by spaces, wrappers such as `sudo` included.
+    pub command: String,
+    /// How the rules treat it.
+    pub matched: CommandMatch,
+}
+
 /// Classifies command lines against the rules of a [`ClassifierConfig`].
 #[derive(Debug, Clone)]
 pub struct Classifier {
@@ -57,13 +84,6 @@ struct CompiledRule {
     program: String,
     args: Vec<String>,
     rule: HeavyRule,
-}
-
-#[derive(Debug)]
-struct Hit {
-    class: JobClass,
-    rule: HeavyRule,
-    command: String,
 }
 
 enum Unwrapped<'a> {
@@ -92,54 +112,64 @@ impl Classifier {
 
     /// Classifies `line` as written for `shell`.
     pub fn classify(&self, line: &str, shell: Shell) -> Classification {
-        let mut hits = Vec::new();
-        self.collect_hits(line, shell, 0, &mut hits);
-        let Some(first) = hits.first() else {
+        let commands = self.explain(line, shell);
+        let mut heavy = commands.iter().filter_map(|simple| match simple.matched {
+            CommandMatch::Heavy { rule_index } => Some((&self.rules[rule_index].rule, simple)),
+            _ => None,
+        });
+        let Some((first, first_command)) = heavy.next() else {
             return Classification::Light;
         };
-        let class = hits.iter().map(|hit| hit.class).fold(first.class, combine);
+        let class = heavy.map(|(rule, _)| rule.class).fold(first.class, combine);
         Classification::Heavy {
             class,
-            matched_rule: first.rule.clone(),
-            command: first.command.clone(),
+            matched_rule: first.clone(),
+            command: first_command.command.clone(),
         }
     }
 
-    fn collect_hits(&self, line: &str, shell: Shell, depth: usize, hits: &mut Vec<Hit>) {
+    /// Every simple command of `line` as written for `shell`, in order, with the commands of
+    /// nested shells in place of the shell, and how the rules treat each.
+    pub fn explain(&self, line: &str, shell: Shell) -> Vec<SimpleCommand> {
+        let mut commands = Vec::new();
+        self.collect(line, shell, 0, &mut commands);
+        commands
+    }
+
+    fn collect(&self, line: &str, shell: Shell, depth: usize, commands: &mut Vec<SimpleCommand>) {
         if depth > MAX_NESTING {
             return;
         }
         for words in split_commands(line, shell) {
             match unwrap(&words) {
                 Unwrapped::Nested(script, nested_shell) => {
-                    self.collect_hits(&script, nested_shell, depth + 1, hits);
+                    self.collect(&script, nested_shell, depth + 1, commands);
                 }
-                Unwrapped::Command(command) => {
-                    if let Some(rule) = self.matching_rule(command) {
-                        hits.push(Hit {
-                            class: rule.class,
-                            rule: rule.clone(),
-                            command: words.join(" "),
-                        });
-                    }
-                }
+                Unwrapped::Command(command) => commands.push(SimpleCommand {
+                    command: words.join(" "),
+                    matched: self.match_command(command),
+                }),
                 Unwrapped::Empty => {}
             }
         }
     }
 
-    fn matching_rule(&self, command: &[String]) -> Option<&HeavyRule> {
-        let (first, args) = command.split_first()?;
-        if args.iter().any(|arg| self.light_flags.contains(arg)) {
-            return None;
-        }
+    fn match_command(&self, command: &[String]) -> CommandMatch {
+        let Some((first, args)) = command.split_first() else {
+            return CommandMatch::NotHeavy;
+        };
         let program = program_name(first);
         let lowered: Vec<String> = args.iter().map(|arg| arg.to_lowercase()).collect();
         let positional = first_positional(&program, &lowered);
-        self.rules
-            .iter()
-            .find(|rule| glob(&rule.program, &program) && rule.matches_args(&lowered, positional))
-            .map(|rule| &rule.rule)
+        let Some(rule_index) = self.rules.iter().position(|rule| {
+            glob(&rule.program, &program) && rule.matches_args(&lowered, positional)
+        }) else {
+            return CommandMatch::NotHeavy;
+        };
+        match args.iter().find(|arg| self.light_flags.contains(arg)) {
+            Some(flag) => CommandMatch::PrintOnly { flag: flag.clone() },
+            None => CommandMatch::Heavy { rule_index },
+        }
     }
 }
 
@@ -611,5 +641,38 @@ mod tests {
             describe_rule(&rules[2]),
             "msbuild (any arguments) -> cpu_heavy"
         );
+    }
+
+    #[test]
+    fn test_explain_lists_every_simple_command_with_its_rule_index() {
+        let commands = classifier().explain("cd core && sudo msbuild x.sln; cargo test", Bash);
+        let found: Vec<(&str, &CommandMatch)> = commands
+            .iter()
+            .map(|simple| (simple.command.as_str(), &simple.matched))
+            .collect();
+        assert_eq!(
+            found,
+            [
+                ("cd core", &CommandMatch::NotHeavy),
+                ("sudo msbuild x.sln", &CommandMatch::Heavy { rule_index: 2 }),
+                ("cargo test", &CommandMatch::Heavy { rule_index: 0 }),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_explain_print_only_only_when_a_rule_matches() {
+        let commands = classifier().explain("cargo test -h; ls --help", Bash);
+        let print_only = CommandMatch::PrintOnly { flag: "-h".into() };
+        assert_eq!(commands[0].matched, print_only);
+        assert_eq!(commands[1].matched, CommandMatch::NotHeavy);
+    }
+
+    #[test]
+    fn test_explain_nested_shell_lists_its_commands_in_place() {
+        let commands = classifier().explain("bash -c 'cargo fmt && cargo build'", PowerShell);
+        let texts: Vec<&str> = commands.iter().map(|c| c.command.as_str()).collect();
+        assert_eq!(texts, ["cargo fmt", "cargo build"]);
+        assert_eq!(commands[1].matched, CommandMatch::Heavy { rule_index: 0 });
     }
 }

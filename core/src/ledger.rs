@@ -436,8 +436,19 @@ impl Ledger {
     /// The most a single request could get once every active lease ended: usable capacity
     /// minus the background load.
     pub fn ceiling(&self, snapshot: &Snapshot) -> Room {
+        self.ceiling_with(snapshot, self.settings.headroom_pct)
+    }
+
+    /// What is free for new leases now, beside the active ones, if `headroom_pct` were the
+    /// headroom.
+    pub fn room_with(&self, snapshot: &Snapshot, headroom_pct: f32) -> Room {
+        Room::measure(snapshot, &self.active(), headroom_pct)
+    }
+
+    /// [`Ledger::ceiling`] if `headroom_pct` were the headroom.
+    pub fn ceiling_with(&self, snapshot: &Snapshot, headroom_pct: f32) -> Room {
         let active = self.active();
-        let mut room = Room::measure(snapshot, &active, self.settings.headroom_pct);
+        let mut room = Room::measure(snapshot, &active, headroom_pct);
         for running in admission::running(snapshot, &active) {
             room.end(&running);
         }

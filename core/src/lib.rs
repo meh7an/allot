@@ -6,6 +6,7 @@ pub mod ancestry;
 pub mod benchmark;
 pub mod binding;
 pub mod classifier;
+pub mod explain;
 pub mod history;
 pub mod idle;
 pub mod kill;
