@@ -2,7 +2,7 @@ import Gio from "gi://Gio";
 import GLib from "gi://GLib";
 import Soup from "gi://Soup?version=3.0";
 
-import { CancelledError, TimeoutError } from "./lib/client.js";
+import { CancelledError, DaemonClient, TimeoutError } from "./lib/client.js";
 
 /** @import { HttpRequest, HttpResponse } from "./lib/client.js" */
 /** @import { Timers } from "./lib/poller.js" */
@@ -13,8 +13,34 @@ Gio._promisify(Gio.File.prototype, "replace_contents_bytes_async", "replace_cont
 Gio._promisify(Gio.File.prototype, "query_info_async");
 Gio._promisify(Gio.Subprocess.prototype, "wait_check_async");
 
+/**
+ * How the shell and the Settings window reach allotd: the one place that picks the transport,
+ * so moving to D-Bus (M6.1b) replaces this class and leaves its callers, which see only the
+ * client, as they are. Today it is loopback HTTP through libsoup.
+ */
+export class DaemonConnection {
+  #transport = new SoupTransport();
+
+  /**
+   * A client over this connection; every client of one connection shares its `cancel`.
+   *
+   * @param {object} options
+   * @param {number} options.port allotd's loopback port.
+   * @param {() => Promise<string | null>} options.readToken Read on first use and after a 401.
+   * @returns {DaemonClient}
+   */
+  client(options) {
+    return new DaemonClient({ ...options, send: this.#transport.send });
+  }
+
+  /** Ends every request in flight. */
+  cancel() {
+    this.#transport.cancel();
+  }
+}
+
 /** Sends the client's requests with libsoup; `cancel` ends every one in flight. */
-export class SoupTransport {
+class SoupTransport {
   // One session per timeout: a session's timeout applies to all its requests, and a poll must
   // not shorten the wait of a kill in flight.
   /** @type {Map<number, Soup.Session>} */

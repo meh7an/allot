@@ -6,13 +6,13 @@ import Gtk from "gi://Gtk";
 import { ExtensionPreferences } from "resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js";
 
 import {
-  SoupTransport,
+  DaemonConnection,
   createServiceSystem,
   glibTimers,
   readTextFile,
   writeTextFile,
 } from "./daemon-io.js";
-import { CancelledError, DaemonClient } from "./lib/client.js";
+import { CancelledError } from "./lib/client.js";
 import { DEFAULT_PORT, dataPaths, portFromToml } from "./lib/config.js";
 import { FitPreviews, NOT_YET_TEXT } from "./lib/fit-previews.js";
 import {
@@ -149,10 +149,9 @@ class SettingsWindow {
     window.set_default_size(DEFAULT_WIDTH, DEFAULT_HEIGHT);
 
     const toml = readFileNow(this.#paths.config);
-    const transport = new SoupTransport();
-    this.#client = new DaemonClient({
+    // Never cancelled: a change sent as the window closes must still arrive (M0.3).
+    this.#client = new DaemonConnection().client({
       port: toml === null ? DEFAULT_PORT : portFromToml(toml),
-      send: transport.send,
       readToken: () => readTextFile(this.#paths.token, this.#cancellable),
     });
     this.#session = new SettingsSession(this.#client, glibTimers, {

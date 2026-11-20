@@ -7,14 +7,13 @@ import * as Main from "resource:///org/gnome/shell/ui/main.js";
 import * as PopupMenu from "resource:///org/gnome/shell/ui/popupMenu.js";
 
 import {
-  SoupTransport,
+  DaemonConnection,
   createServiceSystem,
   glibTimers,
   readTextFile,
   writeTextFile,
 } from "./daemon-io.js";
 import { AllotIndicator } from "./indicator.js";
-import { DaemonClient } from "./lib/client.js";
 import { DEFAULT_PORT, dataPaths, portFromToml } from "./lib/config.js";
 import { NotificationRules } from "./lib/notification-rules.js";
 import { DaemonPoller } from "./lib/poller.js";
@@ -64,7 +63,7 @@ export default class AllotExtension extends Extension {
     };
     this._rules = new NotificationRules(monotonicMs);
     this._model.onKillSent = (lease) => this._rules?.noteLocalKill(lease);
-    this._transport = new SoupTransport();
+    this._connection = new DaemonConnection();
     this._indicator = new AllotIndicator(
       iconDirectory,
       (byKeyboard) => this._popup?.toggle(byKeyboard),
@@ -113,7 +112,7 @@ export default class AllotExtension extends Extension {
     this._lastStatus = null;
     this._followingPort = false;
     this._watchSettings(paths);
-    this._startPolling(paths, this._transport, this._files);
+    this._startPolling(paths, this._connection, this._files);
   }
 
   disable() {
@@ -125,7 +124,7 @@ export default class AllotExtension extends Extension {
     this._clearShowIdle();
     this._stopDialog?.close();
     this._poller?.stop();
-    this._transport?.cancel();
+    this._connection?.cancel();
     this._files?.cancel();
     this._notifier?.destroy();
     this._notificationSettings?.disconnect(this._notificationSettingsId);
@@ -135,7 +134,7 @@ export default class AllotExtension extends Extension {
     // Closing the popup cancels its confirms, which schedules a tick.
     this._clearTick();
     this._poller = null;
-    this._transport = null;
+    this._connection = null;
     this._files = null;
     this._notifier = null;
     this._notificationSettings = null;
@@ -155,23 +154,22 @@ export default class AllotExtension extends Extension {
    * `disable`.
    *
    * @param {import("./lib/config.js").DataPaths} paths
-   * @param {SoupTransport} transport
+   * @param {DaemonConnection} connection
    * @param {Gio.Cancellable} files Ends the file reads and service waits in flight.
    */
-  async _startPolling(paths, transport, files) {
+  async _startPolling(paths, connection, files) {
     const [toml, settings] = await Promise.all([
       readTextFile(paths.config, files),
       readTextFile(paths.settings, files),
     ]);
     // A disable, or a disable and enable, while the files were being read.
-    if (this._transport !== transport) {
+    if (this._connection !== connection) {
       return;
     }
     this._showChange(this._model.loadSettings(decodeSettings(settings)));
     this._popup.syncMenu();
-    const client = new DaemonClient({
+    const client = connection.client({
       port: toml === null ? DEFAULT_PORT : portFromToml(toml),
-      send: transport.send,
       readToken: () => readTextFile(paths.token, files),
     });
     this._model.stopper = client;
