@@ -6,7 +6,7 @@ import Testing
 
 // The cases are contract/text-fixtures/live-text.json, which the GNOME and Windows tests run
 // too, so every port reads the same value as the same text.
-@Suite struct LiveTextTests {
+@Suite struct LiveTextFixtureTests {
     private typealias Object = [String: Any]
 
     private static func cases() throws -> Object {

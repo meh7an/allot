@@ -19,11 +19,16 @@ case ${1:-} in
 esac
 
 work=$(mktemp -d)
+# Relative, so cargo reads it the same on Windows; removed at the end, so no cache keeps it.
+dry_run_target=target/publish-dry-run
 restore() {
     if [ -d "$work/backup" ]; then
         cp -R "$work/backup/." .
     fi
     rm -rf "$work"
+    if [ -n "$dry_run" ]; then
+        rm -rf "$dry_run_target"
+    fi
 }
 trap restore EXIT
 
@@ -87,20 +92,16 @@ fi
 
 if [ -n "$dry_run" ]; then
     arguments+=(--dry-run)
-    # cargo verifies each crate against its packaged siblings: it keeps them in a registry under
-    # target/package, unpacks them under CARGO_HOME, and never rebuilds a registry crate it has
-    # built at that name and version. The CI cache keeps all three, so the crates an earlier run
-    # packaged at the same version would be used instead of these sources; drop them first.
-    target_dir=$(cargo metadata --no-deps --format-version 1 | jq -r .target_directory | tr -d '\r')
-    rm -rf "$target_dir/package" "$target_dir"/debug/.fingerprint/allot*
+    # cargo verifies each crate against its packaged siblings through a registry of its own,
+    # whose folders under CARGO_HOME start with a dash, and never rebuilds a registry crate of a
+    # name and version it has built. The CI cache keeps CARGO_HOME and target, so the crates an
+    # earlier run packaged at this version would be used instead of these sources. So the dry
+    # run drops that registry and builds in a target folder of its own that no cache keeps.
     cargo_home=${CARGO_HOME:-$HOME/.cargo}
-    while read -r name version; do
-        [ -n "$name" ] || continue
-        for stale in "$version" "$version-ci"; do
-            rm -rf "$cargo_home"/registry/src/*/"$name-$stale" \
-                "$cargo_home"/registry/cache/*/"$name-$stale.crate"
-        done
-    done <<<"$packages"
+    rm -rf "$cargo_home"/registry/src/-* "$cargo_home"/registry/cache/-* \
+        "$cargo_home"/registry/index/-*
+    rm -rf "$dry_run_target"
+    export CARGO_TARGET_DIR=$dry_run_target
     if [ -n "$any_published" ]; then
         echo "::notice::crates.io already has $release; packaging these sources as $release-ci"
         stand_in "$release" "$release-ci"
