@@ -22,6 +22,8 @@ All notable changes to this project are documented in this file. The format foll
   rules being edited, and marks the matching rule.
 - `GET` and `PATCH /settings`, `POST /settings/preview` and `POST /classify` on allotd, with
   their schemas in `contract/`.
+- `POST /shutdown` takes an optional body, `{ "by": "cli" }` or `{ "by": "panel" }`. With it,
+  allotd writes the stop record before it stops (`contract/shutdown-request.schema.json`).
 - Screen readers hear errors, banners, the outcome of a save and the result of Test a command
   without a focus change, and read each class or preset row as one sentence.
 
@@ -38,11 +40,50 @@ All notable changes to this project are documented in this file. The format foll
   `JobsChanged` signal and needs the allotd of the same release.
 - On Windows the flyout opens next to the tray icon and slides from whichever edge the taskbar
   is on: bottom, top, left or right. The tray icon's menu opens away from the taskbar.
+- allotd refuses a request whose `Host` is not `127.0.0.1` or `localhost` on its port, `/health`
+  included, so a web page cannot reach it through DNS rebinding. Lease labels and command lines
+  are cut to 512 characters.
+- A settings request whose body is not the JSON the route takes gets a `SettingsRefusal` over
+  HTTP and D-Bus, as every other settings refusal does.
+- The GNOME extension's Settings window no longer names a port; it says when allotd is not on
+  the session bus. The extension ships with its license and without the HTTP client, which
+  only the KDE widget uses.
 
 ### Fixed
 
 - allotd shuts down gracefully when it is stopped right after it starts. A stop signal
   sent once its port answered, but before its handlers were in place, ended it at once.
+- On Windows a Kill no longer ends processes that another program started after it was given
+  the PID of a process the kill had already ended.
+- A lease no longer binds to another lease's command, or to a command its session started
+  after the lease's own command ended, so Kill and idle release act on the right processes.
+- Lowering Lease timeout in Settings no longer expires the leases of sessions already open:
+  allot-mcp sends each heartbeat by the expiry allotd last gave, not by the startup config.
+- A mistake in `config.toml` no longer locks clients out of a running allotd. allot-mcp,
+  `allot daemon stop`, `allot status` and `allot doctor` use the file's port, or the default
+  one, and print a warning.
+- A start of allotd that fails, such as on a taken port or an invalid config, keeps the user's
+  stop on record.
+- `allot install` keeps the file mode of Claude Code's files and never overwrites a change
+  Claude Code saved while it ran.
+- A Kill or Stop sent over D-Bus while allotd shuts down finishes first, and a slow session bus
+  no longer holds up the HTTP API at start.
+- Settings in every panel: a save refused for any reason but a file in use waits for Try again
+  instead of retrying every 600 ms, and one refused because allotd did not answer is sent again
+  once it answers. A refresh can no longer bring back an old revision and report a change
+  outside Settings. A refusal no setting owns is shown before the edits are undone. A blank or
+  duplicate entry no longer counts as an unsaved change. Values round half away from zero in
+  every panel, so 256 MB reads 0.3 GB everywhere.
+- Settings on Windows and macOS show why Start service or Stop service failed and name the port
+  the panel dials, and Quit saves changes not sent yet. A Cores value too large for a number
+  is refused instead of crashing the macOS app.
+- On Windows, banners no longer take keyboard focus every few seconds, the Headroom slider stops
+  below 100, and values shown in larger units keep their decimals.
+- On macOS, the Settings window keeps its place when left at the top of the screen, and a
+  cancelled Stop service no longer reads as stopped.
+- The GNOME extension and the KDE widget keep polling after an error while showing an update,
+  and GNOME's Stop service shows a short reason instead of the D-Bus error.
+- KDE's Open logs works when the home folder's path holds `#` or `%`.
 
 ## [0.5.0] - 2026-11-17
 
