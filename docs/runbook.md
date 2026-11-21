@@ -431,6 +431,18 @@ Publishing the draft release is the one gate: nothing reaches a package manager 
 | crates.io (`allot-cli`, `allotd`, `allot-mcp` and four library crates) | `crates` | None; trusted publishing (OIDC), set on each crate |
 | Manual stores issue | `checklist` | None; the job's own token |
 
+### A pre-release
+
+A version like `0.6.0-beta.1` goes through the same steps and reaches no channel. `cargo xtask
+version 0.6.0-beta.1` sets every place except the install snippet in `docs/install.md`, which
+keeps the last release, and leaves the notes under `[Unreleased]`, where `release.yml` reads
+them. The draft is marked as a pre-release, and it stays one when published, so `distribute.yml`
+skips it and the install scripts keep installing the latest release. Install it from the
+release page's assets.
+
+To ship the checked pre-release, `cargo xtask version 0.6.0` promotes `[Unreleased]` with a
+compare link from the last release, and its tag goes through the steps above.
+
 ### Re-running a channel
 
 Each channel fails alone, so Re-run failed jobs on the run's page finishes a release. Running a

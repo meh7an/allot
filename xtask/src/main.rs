@@ -9,8 +9,9 @@ use std::{
 mod version;
 
 const USAGE: &str = "usage:
-  cargo xtask version <x.y.z>   set the version everywhere and promote the changelog
-  cargo xtask version --check   check that every place agrees";
+  cargo xtask version <x.y.z>          set the version everywhere and promote the changelog
+  cargo xtask version <x.y.z-beta.n>   set a pre-release; the changelog keeps [Unreleased]
+  cargo xtask version --check          check that every place agrees";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();

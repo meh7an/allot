@@ -39,6 +39,11 @@ All notable changes to this project are documented in this file. The format foll
 - On Windows the flyout opens next to the tray icon and slides from whichever edge the taskbar
   is on: bottom, top, left or right. The tray icon's menu opens away from the taskbar.
 
+### Fixed
+
+- allotd shuts down gracefully when it is stopped right after it starts. A stop signal
+  sent once its port answered, but before its handlers were in place, ended it at once.
+
 ## [0.5.0] - 2026-11-17
 
 ### Added

@@ -110,25 +110,32 @@ jobs:
           "$hash  $setup" | Set-Content -NoNewline "$setup.sha256"
           "SETUP=$setup" >> $env:GITHUB_ENV
 
+      # A pre-release such as 0.6.0-beta.1 has no section of its own: `cargo xtask version`
+      # leaves its notes under [Unreleased] until the release promotes them.
       - name: Extract release notes
         shell: bash
         run: |
-          awk -v v="$VERSION" '
+          section=$VERSION
+          [[ $VERSION == *-* ]] && section=Unreleased
+          awk -v v="$section" '
             /^## \[/ { p = index($0, "## [" v "]") == 1; next }
             /^\[[^]]+\]: / { p = 0 }
             p
           ' CHANGELOG.md > notes.md
           test -s notes.md
 
-      # A draft, published by hand once every platform's packages are on it and checked.
+      # A draft, published by hand once every platform's packages are on it and checked. A
+      # pre-release stays one when published, so distribute.yml sends it to no channel.
       - name: Create the draft release
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          pre_release=()
+          [[ $VERSION == *-* ]] && pre_release=(--prerelease)
           gh release create "$GITHUB_REF_NAME" "$SETUP" "$SETUP.sha256" \
             "$ASSET.zip" "$ASSET.zip.sha256" --title "$GITHUB_REF_NAME" --notes-file notes.md \
-            --verify-tag --draft
+            --verify-tag --draft "${pre_release[@]}"
 
   linux:
     uses: ./.github/workflows/package-linux.yml
