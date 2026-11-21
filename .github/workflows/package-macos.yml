@@ -96,26 +96,78 @@ jobs:
           unzip -q "$zip" -d "$RUNNER_TEMP"
           echo "$RUNNER_TEMP/xcodegen/bin" >> "$GITHUB_PATH"
 
-      # project.yml signs it ad hoc. ditto, because zip would drop what the signature covers.
+      # project.yml signs it ad hoc, with the binaries above in Contents/Helpers: the app
+      # installs them into ~/.allot/bin when it finds older ones. ditto, because zip would drop
+      # what the signature covers.
       - name: Package the app
         run: |
           (
             cd apps/macos
             xcodegen generate
             xcodebuild -project Allot.xcodeproj -scheme Allot -configuration Release \
-              -derivedDataPath build ARCHS=arm64 ONLY_ACTIVE_ARCH=NO build
+              -derivedDataPath build ARCHS=arm64 ONLY_ACTIVE_ARCH=NO \
+              ALLOT_HELPERS="$GITHUB_WORKSPACE/target/release" build
           )
           app=apps/macos/build/Build/Products/Release/Allot.app
           asset="allot-$VERSION-macos-app.zip"
-          codesign --verify --strict "$app"
+          codesign --verify --strict --deep "$app"
           test "$(lipo -archs "$app/Contents/MacOS/Allot")" = arm64
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' \
             "$app/Contents/Info.plist")" = "$VERSION"
+          for file in allot allotd allot-mcp; do
+            "$app/Contents/Helpers/$file" --version | grep -qx "$file $VERSION"
+          done
           ditto -c -k --keepParent "$app" "$asset"
           shasum -a 256 "$asset" > "$asset.sha256"
           check=$(mktemp -d)
           ditto -x -k "$asset" "$check"
-          codesign --verify --strict "$check/Allot.app"
+          codesign --verify --strict --deep "$check/Allot.app"
+          echo "APP=$app" >> "$GITHUB_ENV"
+
+      # What the app runs when it updates the service, minus Claude Code and the LaunchAgent.
+      - name: Try the app's service
+        run: |
+          try=$(mktemp -d)
+          export HOME="$try/home"
+          mkdir -p "$HOME/.local/bin"
+          "$APP/Contents/Helpers/allot" install --no-claude --no-autostart
+          "$HOME/.allot/bin/allotd" --version | grep -qx "allotd $VERSION"
+          "$HOME/.local/bin/allot" uninstall --purge
+          test ! -e "$HOME/.allot"
+
+      # dmgbuild writes the window's layout without scripting Finder, so it runs headless;
+      # rsvg-convert renders the background at exact sizes. Both pinned: dmgbuild by hash.
+      - name: Install the DMG tools
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: "1"
+          HOMEBREW_NO_INSTALL_CLEANUP: "1"
+        run: |
+          brew install librsvg
+          # dmgbuild 1.6.7 needs 3.10; the image's python3 is Homebrew's, not the CLT's 3.9.
+          python3 -c 'import sys; sys.exit(sys.version_info < (3, 10))'
+          python3 -m venv "$RUNNER_TEMP/dmgbuild"
+          "$RUNNER_TEMP/dmgbuild/bin/pip" install --quiet --require-hashes --only-binary :all: \
+            -r apps/macos/dmg/requirements.txt
+          echo "$RUNNER_TEMP/dmgbuild/bin" >> "$GITHUB_PATH"
+
+      # The window of design/dmg/DESIGN.md; the background as one TIFF with its 1x and 2x.
+      - name: Build the DMG
+        run: |
+          art=$(mktemp -d)
+          rsvg-convert -w 640 -h 400 -o "$art/background.png" design/dmg/background.svg
+          rsvg-convert -w 1280 -h 800 -o "$art/background@2x.png" design/dmg/background.svg
+          tiffutil -cathidpicheck "$art/background.png" "$art/background@2x.png" \
+            -out "$art/background.tiff"
+          dmg="allot-$VERSION.dmg"
+          dmgbuild -s apps/macos/dmg/settings.py -D app="$APP" \
+            -D background="$art/background.tiff" Allot "$dmg"
+          shasum -a 256 "$dmg" > "$dmg.sha256"
+          mount=$(mktemp -d)
+          hdiutil attach -readonly -nobrowse -mountpoint "$mount" "$dmg"
+          codesign --verify --strict --deep "$mount/Allot.app"
+          test "$(readlink "$mount/Applications")" = /Applications
+          test -f "$mount/.DS_Store"
+          hdiutil detach "$mount"
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -125,4 +177,6 @@ jobs:
             ${{ env.ASSET }}.tar.gz.sha256
             allot-*-macos-app.zip
             allot-*-macos-app.zip.sha256
+            allot-*.dmg
+            allot-*.dmg.sha256
           if-no-files-found: error
