@@ -43,8 +43,7 @@ internal sealed class CommandTestBox
     private readonly TextBox _line;
     private readonly ComboBox _shellBox = new() { MinWidth = 132 };
     private readonly TextBlock _result = SettingsUi.LiveSentence();
-    private readonly DispatcherQueueTimer _debounce;
-    private int _request;
+    private readonly DebouncedRequest _test;
 
     /// <param name="context">The page's context.</param>
     /// <param name="help">The help line under the label.</param>
@@ -77,10 +76,7 @@ internal sealed class CommandTestBox
             _shell.Value = _shellBox.SelectedIndex == 1 ? Shell.Powershell : Shell.Bash;
             Retest();
         };
-        _debounce = DispatcherQueue.GetForCurrentThread().CreateTimer();
-        _debounce.Interval = Pause;
-        _debounce.IsRepeating = false;
-        _debounce.Tick += (_, _) => _ = RunAsync();
+        _test = new DebouncedRequest(DispatcherQueue.GetForCurrentThread(), Pause, RunAsync);
 
         var entry = new Grid { ColumnSpacing = 8 };
         entry.ColumnDefinitions.Add(new ColumnDefinition { Width = SettingsUi.Star });
@@ -113,11 +109,12 @@ internal sealed class CommandTestBox
     /// <summary>
     /// Tests the line again after a short pause, such as after the rules changed.
     /// </summary>
-    public void Retest()
-    {
-        _debounce.Stop();
-        _debounce.Start();
-    }
+    public void Retest() => _test.Restart();
+
+    /// <summary>
+    /// Cancels a test that has not started, for when the box goes away.
+    /// </summary>
+    public void Stop() => _test.Stop();
 
     /// <summary>
     /// Shows the shared shell choice, which the other box may have changed.
@@ -127,7 +124,7 @@ internal sealed class CommandTestBox
     private async Task RunAsync()
     {
         var line = _line.Text;
-        var request = ++_request;
+        var request = _test.Begin();
         if (line.Trim().Length == 0)
         {
             Show(string.Empty, null);
@@ -149,7 +146,7 @@ internal sealed class CommandTestBox
 
         var reply = await session.ClassifyAsync(line, _shell.Value, scope.Changes)
             .ConfigureAwait(true);
-        if (request != _request)
+        if (!_test.IsCurrent(request))
         {
             return;
         }

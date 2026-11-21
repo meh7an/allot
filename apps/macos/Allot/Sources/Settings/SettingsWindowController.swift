@@ -8,7 +8,7 @@ import SwiftUI
 /// its position is remembered.
 ///
 /// While it is open the app shows in the Dock and Cmd-Tab, then goes back to a menu bar app
-/// (M0.2's spike default; its checklist decides, DESIGN.md R4).
+/// (DESIGN.md R4).
 @MainActor
 final class SettingsWindowController: NSObject, NSWindowDelegate {
     private static let topLeftKey = "SettingsWindowTopLeft"
@@ -73,7 +73,11 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         }
         let wasVisible = window.isVisible
         window.makeKeyAndOrderFront(nil)
-        NSApp.activate()
+        // The activation policy change takes effect on the next run-loop turn; activating in the
+        // same turn can leave the window behind other apps on the first open.
+        Task { @MainActor in
+            NSApp.activate()
+        }
         if !wasVisible {
             model.setVisible(true)
         }
@@ -116,7 +120,12 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
             return
         }
         let topLeft = NSPointFromString(saved)
-        let onScreen = NSScreen.screens.contains { $0.visibleFrame.contains(topLeft) }
+        // The top-left corner may rest on the top edge, which `NSRect.contains` leaves out.
+        let onScreen = NSScreen.screens.contains { screen in
+            let visible = screen.visibleFrame
+            return (visible.minX...visible.maxX).contains(topLeft.x)
+                && (visible.minY...visible.maxY).contains(topLeft.y)
+        }
         if onScreen {
             window.setFrameTopLeftPoint(topLeft)
         } else {

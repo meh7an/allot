@@ -149,13 +149,11 @@ final class FakeSettings: SettingsClient, @unchecked Sendable {
 func failure<Value: Sendable>(
     _ kind: SettingsFailureKind,
     message: String? = nil,
-    problems: [FieldError] = [],
-    revision: String? = nil
+    problems: [FieldError] = []
 ) -> SettingsReply<Value> {
     .failure(
         SettingsFailure(
-            kind: kind, message: message ?? kind.rawValue, problems: problems,
-            revision: revision))
+            kind: kind, message: message ?? kind.rawValue, problems: problems))
 }
 
 /// The generated types have no initializers outside their module, so a test builds one from

@@ -1,3 +1,5 @@
+using Allot.Tray.Core.ServiceSettings;
+
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Automation.Peers;
@@ -30,6 +32,20 @@ internal static class SettingsUi
         AutomationProperties.SetAccessibilityView(element, AccessibilityView.Raw);
         return element;
     }
+
+    /// <summary>
+    /// The error note under a field for <paramref name="issue"/>, or <c>null</c> without one.
+    /// </summary>
+    /// <param name="issue">What is wrong with the value.</param>
+    /// <param name="number">Formats a number for the user's locale.</param>
+    /// <param name="undo">What the note's button does, if it has one.</param>
+    public static RowNote? NoteFor(
+        ValueIssue? issue,
+        Func<double, string> number,
+        Action? undo = null) =>
+        issue is null
+            ? null
+            : new RowNote(RowNoteKind.Error, ValueText.IssueText(issue, number), undo);
 
     public static TextBlock Text(string text, string style) =>
         new() { Text = text, Style = Style(style), TextWrapping = TextWrapping.WrapWholeWords };

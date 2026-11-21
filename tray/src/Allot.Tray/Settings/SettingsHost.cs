@@ -10,7 +10,7 @@ using Windows.Graphics;
 namespace Allot.Tray.Settings;
 
 /// <summary>
-/// Owns the one Settings window (DESIGN.md section 10, M0.2 findings 3, 6 and 7): built on the
+/// Owns the one Settings window (DESIGN.md section 10): built on the
 /// first open, then hidden on close and shown again, since rebuilding it leaks native memory. It
 /// owns its presenter, remembers its restored rect in <c>tray.json</c>, keeps its minimum size per
 /// DPI, and opening it while open brings it to the front.
@@ -46,6 +46,13 @@ internal sealed class SettingsHost(
         _window.SelectPage(pageId);
         BringToFront(_window);
     }
+
+    /// <summary>
+    /// Sends what Settings has not saved yet, for Quit; gives up after
+    /// <paramref name="timeout"/>.
+    /// </summary>
+    public Task SettleAsync(TimeSpan timeout) =>
+        _window?.SettleAsync(timeout) ?? Task.CompletedTask;
 
     private static double ScaleOf(nint hwnd) => NativeMethods.GetDpiForWindow(hwnd) / 96.0;
 

@@ -114,6 +114,30 @@ public static class SettingsBanners
     }
 
     /// <summary>
+    /// Whether two banner lists read and act the same, so a window showing one need not rebuild
+    /// for the other.
+    /// </summary>
+    public static bool Same(IReadOnlyList<SettingsBanner> left, IReadOnlyList<SettingsBanner> right)
+    {
+        if (left.Count != right.Count)
+        {
+            return false;
+        }
+
+        for (var i = 0; i < left.Count; i++)
+        {
+            if (left[i].Severity != right[i].Severity
+                || left[i].Message != right[i].Message
+                || !left[i].Actions.SequenceEqual(right[i].Actions))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>
     /// The line under Port while a new port waits for a restart, or <c>null</c>.
     /// </summary>
     public static string? RestartNote(SettingsSession session, string key) =>

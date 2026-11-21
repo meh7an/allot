@@ -35,18 +35,19 @@ internal sealed class NumberEditor
             ValidationMode = NumberBoxValidationMode.Disabled,
             SmallChange = 1,
             LargeChange = 10,
-            NumberFormatter = Formatter(model.Quantity, model.Control.Integer),
+            NumberFormatter = Formatter(model.Quantity, model.ShowsWholeNumbers),
         };
         _box.ValueChanged += OnBoxChanged;
         _box.PreviewKeyDown += OnKeyDown;
         var panel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
         if (model.Quantity == Quantity.Percent)
         {
+            var (minimum, maximum) = model.SliderRange;
             _slider = new Slider
             {
                 Width = 160,
-                Minimum = model.Control.Min?.Value ?? 0,
-                Maximum = model.Control.Max?.Value ?? 100,
+                Minimum = minimum,
+                Maximum = maximum,
                 StepFrequency = 1,
                 VerticalAlignment = VerticalAlignment.Center,
             };
@@ -148,7 +149,7 @@ internal sealed class NumberEditor
     };
 
     // Grouped digits in the user's format, except the port; at most two decimals.
-    private static DecimalFormatter Formatter(Quantity quantity, bool integer) =>
+    private static DecimalFormatter Formatter(Quantity quantity, bool whole) =>
         new()
         {
             IsGrouped = quantity != Quantity.Port,
@@ -156,7 +157,7 @@ internal sealed class NumberEditor
             FractionDigits = 0,
             NumberRounder = new IncrementNumberRounder
             {
-                Increment = integer ? 1 : 0.01,
+                Increment = whole ? 1 : 0.01,
                 RoundingAlgorithm = RoundingAlgorithm.RoundHalfAwayFromZero,
             },
         };

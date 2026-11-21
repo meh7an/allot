@@ -148,8 +148,7 @@ public sealed class SettingsWindowTests
         var timers = new FakeSessionTimers();
         var session = await LoadAsync(client: client, timers: timers);
         client.Writes.Enqueue(FakeSettingsClient.Failure<SettingsState>(
-            SettingsFailureKind.Conflict,
-            revision: "0000000000000001"));
+            SettingsFailureKind.Conflict));
         Setting<NumberModel>(session, "estimates.margin_pct").Commit(15);
 
         Fire(client, timers);
@@ -298,6 +297,23 @@ public sealed class SettingsWindowTests
         var starting = ServiceRow.From(ServiceStatus.Starting, SessionStatus.Down, null, 47823);
         Assert.AreEqual(ServiceButton.Starting, starting.Button);
         Assert.AreEqual("Starting…", starting.ButtonText);
+    }
+
+    [TestMethod]
+    public void BannerListsAreTheSameWhenTheyReadAndActTheSame()
+    {
+        static SettingsBanner Banner(string message, params BannerAction[] actions) =>
+            new(BannerSeverity.Warning, message, actions);
+
+        var shown = new[] { Banner("Stopped.", BannerAction.StartService) };
+
+        Assert.IsTrue(SettingsBanners.Same(
+            shown, [Banner("Stopped.", BannerAction.StartService)]));
+        Assert.IsFalse(SettingsBanners.Same(
+            shown, [Banner("Stopped!", BannerAction.StartService)]));
+        Assert.IsFalse(SettingsBanners.Same(
+            shown, [Banner("Stopped.", BannerAction.OpenLogs)]));
+        Assert.IsFalse(SettingsBanners.Same(shown, []));
     }
 
     [TestMethod]

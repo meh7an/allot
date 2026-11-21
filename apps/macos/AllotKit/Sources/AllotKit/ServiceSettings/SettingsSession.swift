@@ -271,7 +271,8 @@ public final class SettingsSession: ValueHost {
         do {
             reply = try await client.changeSettings(revision: revision, changes: sent)
         } catch {
-            // Only a cancellation reaches here, when the window is being closed.
+            // Only a cancellation reaches here: the task awaiting the save was cancelled, as when
+            // the quit timeout in ``settle(timeout:)`` runs out.
             saving = false
             saveEpoch += 1
             return
@@ -301,6 +302,26 @@ public final class SettingsSession: ValueHost {
             schedule(Self.saveDelay)
         }
         notify()
+    }
+
+    /// For Quit: waits for a save in flight, sends what is pending, and gives up after
+    /// `timeout`.
+    public func settle(timeout: Duration) async {
+        await withTaskGroup(of: Void.self) { group in
+            group.addTask { @MainActor [self] in
+                while saving && !Task.isCancelled {
+                    try? await Task.sleep(for: .milliseconds(25))
+                }
+                if !Task.isCancelled {
+                    await flush()
+                }
+            }
+            group.addTask {
+                try? await Task.sleep(for: timeout)
+            }
+            _ = await group.next()
+            group.cancelAll()
+        }
     }
 
     /// Sends the changes a hand edit got in the way of again, over the file's values.

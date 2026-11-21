@@ -32,6 +32,9 @@ public sealed partial class App : Application
 {
     private static readonly TimeSpan TickerFallback = TimeSpan.FromMilliseconds(1250);
 
+    // How long Quit waits for Settings to save; allotd answers a write in milliseconds.
+    private static readonly TimeSpan QuitSettleTimeout = TimeSpan.FromSeconds(2);
+
     private readonly CancellationTokenSource _stopping = new();
     private readonly FlyoutModel _model = new();
     private readonly StateClock _clock = new(TimeProvider.System);
@@ -68,6 +71,7 @@ public sealed partial class App : Application
     private bool _launchAtLogon;
     private bool _notificationsOff;
     private bool _flyoutOpen;
+    private bool _quitting;
 
     public App()
     {
@@ -82,7 +86,22 @@ public sealed partial class App : Application
     /// </summary>
     public void Quit()
     {
+        if (!_quitting)
+        {
+            _quitting = true;
+            _ = QuitAsync();
+        }
+    }
+
+    private async Task QuitAsync()
+    {
         AppLog.Write("quit");
+        if (_settingsHost is { } host)
+        {
+            // An edit inside the save burst, or a save in flight, would be lost to the exit.
+            await host.SettleAsync(QuitSettleTimeout).ConfigureAwait(true);
+        }
+
         _stopping.Cancel();
         _tray?.Dispose();
         _client?.Dispose();

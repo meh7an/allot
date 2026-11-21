@@ -242,4 +242,14 @@ private func stoppedPoller(
         #expect(await poller.restartService(port: 47999) == "POST /shutdown answered 500")
         #expect(launcher.starts == 0)
     }
+
+    @Test func aCancelledStopIsNotReportedAsAccepted() async throws {
+        let home = try TemporaryHome()
+        try home.write("t", to: home.data.tokenFile)
+        let transport = FakeTransport { _ in throw URLError(.cancelled) }
+        let poller = DaemonPoller(
+            client: DaemonClient(port: 1, tokenFile: home.data.tokenFile, transport: transport))
+
+        #expect(await poller.stopService() == "the stop was cancelled")
+    }
 }

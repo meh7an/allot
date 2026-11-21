@@ -45,6 +45,7 @@ public sealed partial class SettingsWindow : Window
     private Action? _noticeUndo;
     private string _pageId = SettingsBanners.PanelPage;
     private string _saveStatus = string.Empty;
+    private IReadOnlyList<SettingsBanner> _shownBanners = [];
     private bool _visible;
 
     internal SettingsWindow(SettingsServices services)
@@ -104,6 +105,11 @@ public sealed partial class SettingsWindow : Window
             }
         }
     }
+
+    /// <summary>
+    /// Sends what the session has not saved yet; see <see cref="SettingsSession.SettleAsync"/>.
+    /// </summary>
+    internal Task SettleAsync(TimeSpan timeout) => _services.Session.SettleAsync(timeout);
 
     /// <summary>
     /// The window was shown or hidden: fetching runs only while it shows, and hiding sends what
@@ -250,7 +256,7 @@ public sealed partial class SettingsWindow : Window
         Speak(ShowBanners());
     }
 
-    // Errors and outcomes only (M7.1); the announcer follows the state while hidden too, so
+    // Errors and outcomes only; the announcer follows the state while hidden too, so
     // showing the window again speaks nothing that was already there.
     private void Speak(IReadOnlyList<SettingsBanner> banners)
     {
@@ -268,6 +274,14 @@ public sealed partial class SettingsWindow : Window
             _pageId,
             _services.Service.Port,
             _context.Number);
+        // Rebuilding replaces the buttons, which drops the keyboard focus on one and can make a
+        // screen reader read the banner again, so an unchanged list stays as it is.
+        if (SettingsBanners.Same(banners, _shownBanners))
+        {
+            return banners;
+        }
+
+        _shownBanners = banners;
         Banners.Children.Clear();
         foreach (var banner in banners)
         {
@@ -354,7 +368,7 @@ public sealed partial class SettingsWindow : Window
         Notice.Message = message;
         Notice.ActionButton.Visibility = SettingsUi.Shows(undo is not null);
         // An InfoBar speaks itself when it opens; a notice that replaces an open one is spoken
-        // here, since it is the outcome of what the user just did (M7.1).
+        // here, since it is the outcome of what the user just did.
         if (Notice.IsOpen)
         {
             SettingsUi.Announce(Notice, message);

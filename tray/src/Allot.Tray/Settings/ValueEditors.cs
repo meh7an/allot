@@ -176,7 +176,7 @@ internal static class ValueEditors
         if (model.Issue is { } issue)
         {
             var undo = issue.Kind == IssueKind.Service ? model.Undo : (Action?)null;
-            return new RowNote(RowNoteKind.Error, ValueText.IssueText(issue, context.Number), undo);
+            return SettingsUi.NoteFor(issue, context.Number, undo);
         }
 
         if (model.DisabledNote is { } disabled)

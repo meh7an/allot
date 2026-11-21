@@ -84,9 +84,14 @@ public final class DaemonPoller {
     /// - Returns: `nil` when allotd accepted, else why not.
     @discardableResult
     public func stopService() async -> String? {
-        let problem = try? await client.shutdown()
+        let problem: String?
+        do {
+            problem = try await client.shutdown()
+        } catch {
+            return "the stop was cancelled"
+        }
         pollNow()
-        return problem ?? nil
+        return problem
     }
 
     /// Restarts allotd so a new port or token takes effect: stops it without a stop record,

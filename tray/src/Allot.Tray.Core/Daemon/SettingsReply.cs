@@ -8,8 +8,7 @@ namespace Allot.Tray.Core.Daemon;
 public enum SettingsFailureKind
 {
     /// <summary>
-    /// 409: <c>config.toml</c> changed since its revision was read; the failure carries the
-    /// file's revision now.
+    /// 409: <c>config.toml</c> changed since its revision was read.
     /// </summary>
     Conflict,
 
@@ -51,12 +50,10 @@ public enum SettingsFailureKind
 /// <param name="Kind">What went wrong.</param>
 /// <param name="Message">allotd's sentence, or what went wrong on the way.</param>
 /// <param name="Problems">The refused values, when values were the cause.</param>
-/// <param name="Revision">The file's revision now, for a conflict.</param>
 public sealed record SettingsFailure(
     SettingsFailureKind Kind,
     string Message,
-    IReadOnlyList<FieldError> Problems,
-    string? Revision);
+    IReadOnlyList<FieldError> Problems);
 
 /// <summary>
 /// The answer of a settings route: the decoded value, or why there is none. Exactly one of

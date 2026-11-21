@@ -132,6 +132,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Self.log.info("launched from \(Bundle.main.bundlePath, privacy: .public)")
     }
 
+    /// Quit sends what Settings has not saved first: an edit inside the 600 ms burst or a save in
+    /// flight would be lost to the exit. It waits at most two seconds.
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard let session = settingsModel?.session else {
+            return .terminateNow
+        }
+        Task {
+            await session.settle(timeout: .seconds(2))
+            NSApp.reply(toApplicationShouldTerminate: true)
+        }
+        return .terminateLater
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         pollTask?.cancel()
     }
@@ -347,7 +360,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         lastStatus = result.status
         let status = String(describing: result.status)
         let detail = result.detail ?? result.version ?? ""
-        Self.log.info("service \(status, privacy: .public): \(detail, privacy: .public)")
+        // The detail can hold the account name, as in the path of the token file.
+        Self.log.info("service \(status, privacy: .public): \(detail, privacy: .private)")
     }
 
     private static func logStop(_ lease: Int64, _ kind: StopKind, _ result: StopResult) {

@@ -18,23 +18,18 @@ internal sealed class FitPreviews
     public const string NotYet = "Can't work this out yet. Trying again in a moment.";
 
     private readonly SettingsSession _session;
-    private readonly DispatcherQueueTimer _debounce;
-    private int _request;
+    private readonly DebouncedRequest _preview;
     private bool _active;
 
     public FitPreviews(SettingsSession session, DispatcherQueue dispatcher)
     {
         _session = session;
-        _debounce = dispatcher.CreateTimer();
-        _debounce.Interval = SettingsSession.SaveDelay;
-        _debounce.IsRepeating = false;
-        _debounce.Tick += (_, _) => _ = RequestAsync();
+        _preview = new DebouncedRequest(dispatcher, SettingsSession.SaveDelay, RequestAsync);
         session.PropertyChanged += (_, _) =>
         {
             if (_active)
             {
-                _debounce.Stop();
-                _debounce.Start();
+                _preview.Restart();
             }
         };
     }
@@ -78,7 +73,7 @@ internal sealed class FitPreviews
     public void SetActive(bool active)
     {
         _active = active;
-        _debounce.Stop();
+        _preview.Stop();
         if (active)
         {
             _ = RequestAsync();
@@ -93,9 +88,9 @@ internal sealed class FitPreviews
             return;
         }
 
-        var request = ++_request;
+        var request = _preview.Begin();
         var reply = await _session.PreviewAsync().ConfigureAwait(true);
-        if (request != _request)
+        if (!_preview.IsCurrent(request))
         {
             return;
         }

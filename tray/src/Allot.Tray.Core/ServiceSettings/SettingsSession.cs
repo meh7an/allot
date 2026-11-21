@@ -29,6 +29,8 @@ public sealed class SettingsSession : Observable, IValueHost, IDisposable
     /// </summary>
     public static readonly TimeSpan RefreshInterval = TimeSpan.FromSeconds(5);
 
+    private static readonly TimeSpan SettleStep = TimeSpan.FromMilliseconds(25);
+
     private readonly ISettingsClient _client;
     private readonly ISessionTimers _timers;
     private readonly Platform _platform;
@@ -47,6 +49,10 @@ public sealed class SettingsSession : Observable, IValueHost, IDisposable
 
     // Counts the saves that started or finished, so a refresh sent before one is dropped.
     private int _saveEpoch;
+
+    // Which timer is current, so a callback of a cancelled one is ignored.
+    private int _saveGeneration;
+    private int _refreshGeneration;
     private bool _visible;
     private bool _disposed;
 
@@ -268,6 +274,28 @@ public sealed class SettingsSession : Observable, IValueHost, IDisposable
         catch (OperationCanceledException) when (_disposed)
         {
             // The session was disposed while the request was out.
+        }
+    }
+
+    /// <summary>
+    /// For Quit: waits for a save in flight, sends what is pending, and gives up after
+    /// <paramref name="timeout"/>.
+    /// </summary>
+    public async Task SettleAsync(TimeSpan timeout)
+    {
+        using var limit = new CancellationTokenSource(timeout);
+        try
+        {
+            while (_saving)
+            {
+                await Task.Delay(SettleStep, limit.Token);
+            }
+
+            await FlushAsync().WaitAsync(limit.Token);
+        }
+        catch (OperationCanceledException) when (limit.IsCancellationRequested)
+        {
+            // Out of time: the exit goes on without the rest.
         }
     }
 
@@ -685,11 +713,19 @@ public sealed class SettingsSession : Observable, IValueHost, IDisposable
     private void Schedule(TimeSpan delay)
     {
         ClearSave();
-        _saveTimer = _timers.Schedule(delay, OnSaveTimer);
+        var generation = ++_saveGeneration;
+        _saveTimer = _timers.Schedule(delay, () => OnSaveTimer(generation));
     }
 
-    private void OnSaveTimer()
+    // A timer cancelled after its callback was queued still calls back; its generation is no
+    // longer current then, so it must not touch the newer timer's handle.
+    private void OnSaveTimer(int generation)
     {
+        if (generation != _saveGeneration)
+        {
+            return;
+        }
+
         _saveTimer = null;
         if (!_disposed)
         {
@@ -699,12 +735,18 @@ public sealed class SettingsSession : Observable, IValueHost, IDisposable
 
     private void Tick()
     {
-        _refreshTimer = _timers.Schedule(RefreshInterval, OnRefreshTimer);
+        var generation = ++_refreshGeneration;
+        _refreshTimer = _timers.Schedule(RefreshInterval, () => OnRefreshTimer(generation));
         _ = RefreshAsync();
     }
 
-    private void OnRefreshTimer()
+    private void OnRefreshTimer(int generation)
     {
+        if (generation != _refreshGeneration)
+        {
+            return;
+        }
+
         _refreshTimer = null;
         if (_visible && !_disposed)
         {
@@ -714,12 +756,14 @@ public sealed class SettingsSession : Observable, IValueHost, IDisposable
 
     private void ClearSave()
     {
+        _saveGeneration++;
         _saveTimer?.Dispose();
         _saveTimer = null;
     }
 
     private void ClearRefresh()
     {
+        _refreshGeneration++;
         _refreshTimer?.Dispose();
         _refreshTimer = null;
     }

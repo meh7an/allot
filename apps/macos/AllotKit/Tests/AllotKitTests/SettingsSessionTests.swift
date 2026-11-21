@@ -186,7 +186,7 @@ private func model<Model: ValueModel>(
     @Test func aHandEditInBetweenShowsTheFilesValuesAndCanApplyTheChangeAgain() async throws {
         let (session, client, timers) = try await loadedParts()
         let margin = try model(session, "estimates.margin_pct", NumberModel.self)
-        client.queueWrite(failure(.conflict, revision: "f38fd8b70ab492ce"))
+        client.queueWrite(failure(.conflict))
         client.queueRead(.value(try fixtureState { $0["revision"] = "f38fd8b70ab492ce" }))
         let change = #"[{"kind": "set_number", "key": "estimates.margin_pct", "value": 15}]"#
 
@@ -269,6 +269,16 @@ private func model<Model: ValueModel>(
         await fire(timers)
 
         #expect(client.patches[1].revision == "after-save")
+    }
+
+    @Test func settlingSendsWhatIsPendingBeforeTheBurstEnds() async throws {
+        let (session, client, _) = try await loadedParts()
+        try model(session, "hook.fail_open", SwitchModel.self).set(false)
+
+        await session.settle(timeout: .seconds(30))
+
+        #expect(client.patches.count == 1)
+        #expect(session.saveStatus == .saved)
     }
 
     @Test func aRefusalNoBatchedSettingOwnsIsShownBeforeTheEditsAreUndone() async throws {

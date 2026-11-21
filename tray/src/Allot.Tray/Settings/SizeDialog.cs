@@ -19,18 +19,15 @@ internal sealed class SizeDialog
     private readonly List<Action> _syncs = [];
     private readonly TextBlock _warning = SettingsUi.Text(string.Empty, "SettingsCautionTextStyle");
     private readonly TextBlock _live = SettingsUi.LiveSentence();
-    private readonly DispatcherQueueTimer _debounce;
-    private int _request;
+    private readonly DebouncedRequest _preview;
 
     private SizeDialog(PageContext context, SizeTableModel table, RowDraft draft)
     {
         _context = context;
         _table = table;
         _draft = draft;
-        _debounce = DispatcherQueue.GetForCurrentThread().CreateTimer();
-        _debounce.Interval = SettingsSession.SaveDelay;
-        _debounce.IsRepeating = false;
-        _debounce.Tick += (_, _) => _ = PreviewAsync();
+        _preview = new DebouncedRequest(
+            DispatcherQueue.GetForCurrentThread(), SettingsSession.SaveDelay, PreviewAsync);
     }
 
     /// <summary>
@@ -53,7 +50,7 @@ internal sealed class SizeDialog
         }
         finally
         {
-            dialog._debounce.Stop();
+            dialog._preview.Stop();
         }
     }
 
@@ -112,7 +109,7 @@ internal sealed class SizeDialog
         };
         box.TextChanged += (_, _) => _draft.SetName(box.Text);
         var row = new SettingRow(label, help, null, box);
-        _syncs.Add(() => row.SetNote(IssueNote(_draft.NameIssue)));
+        _syncs.Add(() => row.SetNote(SettingsUi.NoteFor(_draft.NameIssue, _context.Number)));
         return row;
     }
 
@@ -123,7 +120,7 @@ internal sealed class SizeDialog
         _syncs.Add(() =>
         {
             editor.Sync(true);
-            row.SetNote(IssueNote(field.Issue));
+            row.SetNote(SettingsUi.NoteFor(field.Issue, _context.Number));
         });
         return row;
     }
@@ -167,7 +164,7 @@ internal sealed class SizeDialog
             custom.IsChecked = !field.Automatic;
             syncing = false;
             editor.Sync(!field.Automatic);
-            row.SetNote(IssueNote(field.Issue));
+            row.SetNote(SettingsUi.NoteFor(field.Issue, _context.Number));
         });
         return row;
     }
@@ -175,16 +172,10 @@ internal sealed class SizeDialog
     private double AutomaticCores() =>
         SizesText.AutomaticMinCores(_draft.Field("cores")?.Value ?? 0);
 
-    private RowNote? IssueNote(ValueIssue? issue) =>
-        issue is null
-            ? null
-            : new RowNote(RowNoteKind.Error, ValueText.IssueText(issue, _context.Number));
-
     private void OnDraftChanged()
     {
         Sync();
-        _debounce.Stop();
-        _debounce.Start();
+        _preview.Restart();
     }
 
     private void Sync()
@@ -214,10 +205,10 @@ internal sealed class SizeDialog
             return;
         }
 
-        var request = ++_request;
+        var request = _preview.Begin();
         var name = _draft.Name;
         var reply = await session.PreviewAsync(changes).ConfigureAwait(true);
-        if (request != _request)
+        if (!_preview.IsCurrent(request))
         {
             return;
         }

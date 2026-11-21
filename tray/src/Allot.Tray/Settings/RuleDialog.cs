@@ -24,10 +24,7 @@ internal static class RuleDialog
         ShellChoice shell)
     {
         var syncs = new List<Action>();
-        RowNote? Note(ValueIssue? issue) =>
-            issue is null
-                ? null
-                : new RowNote(RowNoteKind.Error, ValueText.IssueText(issue, context.Number));
+        RowNote? Note(ValueIssue? issue) => SettingsUi.NoteFor(issue, context.Number);
 
         var program = new TextBox
         {
@@ -114,6 +111,7 @@ internal static class RuleDialog
         dialog.Resources["ContentDialogMaxWidth"] = 720.0;
         dialog.PrimaryButtonClick += (_, args) => args.Cancel = !rules.Save(draft);
         var result = await context.Dialog(dialog).ConfigureAwait(true);
+        test.Stop();
         return result == ContentDialogResult.Primary;
     }
 

@@ -64,12 +64,11 @@ private func failure<Value>(_ reply: SettingsReply<Value>) throws -> SettingsFai
         let fixture = try Fixtures.data("settings-patch.json")
         let patch = try JSONDecoder().decode(SettingsPatch.self, from: fixture)
 
-        _ = try value(try await client.changeSettings(patch))
         _ = try value(
             try await client.changeSettings(revision: patch.revision, changes: patch.changes))
 
         let requests = transport.requests
-        #expect(requests.count == 2)
+        #expect(requests.count == 1)
         for request in requests {
             #expect(request.httpMethod == "PATCH")
             #expect(request.url?.absoluteString == "http://127.0.0.1:1/settings")
@@ -80,6 +79,21 @@ private func failure<Value>(_ reply: SettingsReply<Value>) throws -> SettingsFai
         withExtendedLifetime(home) {}
     }
 
+    @Test func anAnswerThatDoesNotDecodeGetsAShortSentenceNotTheDecoderDump() async throws {
+        let home = try TemporaryHome()
+        let (client, _) = try daemon(home) { _ in (200, Data("{}".utf8)) }
+
+        let reply = try await client.settings()
+
+        guard case .failure(let failure) = reply else {
+            Issue.record("a body that is not a settings state decoded")
+            return
+        }
+        #expect(failure.kind == .failed)
+        #expect(failure.message == "the service's answer could not be read")
+        withExtendedLifetime(home) {}
+    }
+
     @Test func aCommandTestSendsTheClassifyRequestFixtureAndDecodesTheAnswer() async throws {
         let home = try TemporaryHome()
         let body = try Fixtures.data("command-test.json")
@@ -87,15 +101,14 @@ private func failure<Value>(_ reply: SettingsReply<Value>) throws -> SettingsFai
         let fixture = try Fixtures.data("classify-request.json")
         let request = try JSONDecoder().decode(ClassifyRequest.self, from: fixture)
 
-        let test = try value(try await client.classify(request))
-        _ = try value(
+        let test = try value(
             try await client.classify(
                 line: request.line, shell: request.shell, changes: request.changes))
 
         #expect(test.commands.map(\.kind) == [.heavy, .printOnly, .notHeavy])
         #expect(test.lease?.`class` == .cpuHeavy)
         let requests = transport.requests
-        #expect(requests.count == 2)
+        #expect(requests.count == 1)
         for sent in requests {
             #expect(sent.url?.absoluteString == "http://127.0.0.1:1/classify")
             #expect(sent.httpMethod == "POST")
@@ -143,7 +156,6 @@ private func failure<Value>(_ reply: SettingsReply<Value>) throws -> SettingsFai
         #expect(failed.kind == kind)
         #expect(failed.message == refusal.message)
         #expect(failed.problems == refusal.problems)
-        #expect(failed.revision == refusal.revision)
         withExtendedLifetime(home) {}
     }
 

@@ -108,7 +108,7 @@ public sealed class SettingsClientTests
     }
 
     [TestMethod]
-    public async Task RefusalsKeepAllotdsMessageProblemsAndRevision()
+    public async Task RefusalsKeepAllotdsMessageAndProblems()
     {
         await AssertRefusalAsync(
             HttpStatusCode.Conflict,
@@ -218,7 +218,6 @@ public sealed class SettingsClientTests
         Assert.AreEqual(kind, reply.Failure.Kind);
         Assert.AreEqual(refusal.Message, reply.Failure.Message);
         CollectionAssert.AreEqual(refusal.Problems.ToList(), reply.Failure.Problems.ToList());
-        Assert.AreEqual(refusal.Revision, reply.Failure.Revision);
     }
 
     private static DaemonClient Client(

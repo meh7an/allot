@@ -53,6 +53,27 @@ public class NumberModel : ValueModel<double?>
     public double? Shown => Value is { } number ? number / Unit.Factor : null;
 
     /// <summary>
+    /// Whether the number box shows whole numbers only. A number with units shows decimals even
+    /// when the file holds whole numbers, since 1.5 hours is whole seconds; <see cref="Commit"/>
+    /// rounds to the file's unit.
+    /// </summary>
+    public bool ShowsWholeNumbers => Control.Integer && _units.Count == 0;
+
+    /// <summary>
+    /// The slider's range in whole steps: an exclusive bound is one step inside the limit, so
+    /// the slider cannot reach a value the setting refuses.
+    /// </summary>
+    public (double Minimum, double Maximum) SliderRange
+    {
+        get
+        {
+            var low = Control.Min is { } min ? (min.Exclusive ? min.Value + 1 : min.Value) : 0;
+            var high = Control.Max is { } max ? (max.Exclusive ? max.Value - 1 : max.Value) : 100;
+            return (low, Math.Max(low, high));
+        }
+    }
+
+    /// <summary>
     /// Whether the value is worked out by allotd, as <c>automatic</c> describes.
     /// </summary>
     public bool Automatic => Value is null;

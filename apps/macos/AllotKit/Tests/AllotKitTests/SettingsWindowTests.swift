@@ -196,7 +196,7 @@ private func counts(_ full: Int, _ shrunk: Int, more: Bool = false) throws -> Fi
 
     @Test func aHandEditConflictNamesTheChangeThatWasNotSaved() async throws {
         let parts = try await loaded()
-        parts.client.queueWrite(failure(.conflict, revision: "0000000000000001"))
+        parts.client.queueWrite(failure(.conflict))
         try setting(parts.session, "estimates.margin_pct", NumberModel.self).commit(15)
 
         await fire(parts.timers)

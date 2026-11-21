@@ -161,7 +161,7 @@ public sealed class SettingsSessionTests
         var margin = As<NumberModel>(session.Setting("estimates.margin_pct"));
         harness.Client.Writes.Enqueue(
             FakeSettingsClient.Failure<SettingsState>(
-                SettingsFailureKind.Conflict, revision: "f38fd8b70ab492ce"));
+                SettingsFailureKind.Conflict));
         harness.Client.Reads.Enqueue(
             new SettingsReply<SettingsState>(
                 harness.Client.State with { Revision = "f38fd8b70ab492ce" }));
@@ -332,6 +332,67 @@ public sealed class SettingsSessionTests
         Assert.AreEqual(ValueIssue.Duplicate, flags.Issue);
         flags.EntryChanged();
         Assert.IsNull(flags.Issue);
+    }
+
+    [TestMethod]
+    public async Task ACancelledTimersLateCallbackLeavesTheNewerTimerAlone()
+    {
+        var harness = await LoadAsync();
+        var session = harness.Session;
+
+        As<SwitchModel>(session.Setting("estimates.lower")).Turn(false);
+        As<NumberModel>(session.Setting("admission.headroom_pct")).Commit(20);
+        harness.Timers.FireCancelled();
+
+        Assert.IsEmpty(harness.Client.Patches);
+        AssertDelays(harness.Timers, SettingsSession.SaveDelay);
+    }
+
+    [TestMethod]
+    public async Task SettlingSendsWhatIsPendingAndWaitsForTheAnswer()
+    {
+        var harness = await LoadAsync();
+        var session = harness.Session;
+        As<SwitchModel>(session.Setting("estimates.lower")).Turn(false);
+
+        var settle = session.SettleAsync(TimeSpan.FromSeconds(30));
+        harness.Client.CompleteAll();
+        await settle;
+
+        Assert.HasCount(1, harness.Client.Patches);
+        Assert.AreEqual(new SaveStatus(SaveKind.Saved), session.SaveStatus);
+    }
+
+    [TestMethod]
+    public async Task SettlingGivesUpWhenAllotdDoesNotAnswerInTime()
+    {
+        var harness = await LoadAsync();
+        var session = harness.Session;
+        As<SwitchModel>(session.Setting("estimates.lower")).Turn(false);
+
+        await session.SettleAsync(TimeSpan.FromMilliseconds(50));
+
+        Assert.HasCount(1, harness.Client.Patches);
+        Assert.AreEqual(new SaveStatus(SaveKind.Saving), session.SaveStatus);
+    }
+
+    [TestMethod]
+    public async Task APercentSliderStopsOneStepBelowAnExclusiveMaximum()
+    {
+        var session = (await LoadAsync()).Session;
+        var headroom = As<NumberModel>(session.Setting("admission.headroom_pct"));
+
+        Assert.AreEqual((0.0, 99.0), headroom.SliderRange);
+    }
+
+    [TestMethod]
+    public async Task NumbersWithUnitsShowDecimalsAndWholeOnesDoNot()
+    {
+        var session = (await LoadAsync()).Session;
+
+        Assert.IsTrue(As<NumberModel>(session.Setting("daemon.port")).ShowsWholeNumbers);
+        Assert.IsFalse(As<DurationModel>(session.Setting("leases.idle_release_secs"))
+            .ShowsWholeNumbers);
     }
 
     [TestMethod]

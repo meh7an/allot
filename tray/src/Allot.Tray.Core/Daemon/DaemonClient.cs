@@ -331,7 +331,7 @@ public sealed class DaemonClient(HttpClient http, string tokenFile)
 
     private static SettingsReply<T> Failed<T>(SettingsFailureKind kind, string message)
         where T : class =>
-        new(new SettingsFailure(kind, message, [], null));
+        new(new SettingsFailure(kind, message, []));
 
     // Settings routes refuse with a SettingsRefusal; a body that is not one, such as a 500's plain
     // text, keeps its text as the message.
@@ -351,14 +351,14 @@ public sealed class DaemonClient(HttpClient http, string tokenFile)
             .ConfigureAwait(false);
         if (TryDecodeRefusal(body) is { } refusal)
         {
-            return new SettingsFailure(kind, refusal.Message, refusal.Problems, refusal.Revision);
+            return new SettingsFailure(kind, refusal.Message, refusal.Problems);
         }
 
         var text = body.Trim();
         var message = text.Length == 0
             ? $"the service answered {(int)response.StatusCode}"
             : text;
-        return new SettingsFailure(kind, message, [], null);
+        return new SettingsFailure(kind, message, []);
     }
 
     private static SettingsRefusal? TryDecodeRefusal(string body)

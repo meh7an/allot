@@ -8,6 +8,7 @@ namespace Allot.Tray.Core.Tests.Support;
 internal sealed class FakeSessionTimers : ISessionTimers
 {
     private readonly List<PendingTimer> _pending = [];
+    private readonly List<PendingTimer> _cancelled = [];
 
     /// <summary>
     /// The delays of the timers that have neither fired nor been cancelled.
@@ -34,6 +35,20 @@ internal sealed class FakeSessionTimers : ISessionTimers
         }
     }
 
+    /// <summary>
+    /// Calls back the timers that were cancelled, as a real timer does when its callback was
+    /// already queued on the UI thread.
+    /// </summary>
+    public void FireCancelled()
+    {
+        var timers = _cancelled.ToList();
+        _cancelled.Clear();
+        foreach (var timer in timers)
+        {
+            timer.Fire();
+        }
+    }
+
     private sealed class PendingTimer(FakeSessionTimers owner, TimeSpan delay, Action callback)
         : IDisposable
     {
@@ -41,6 +56,12 @@ internal sealed class FakeSessionTimers : ISessionTimers
 
         public void Fire() => callback();
 
-        public void Dispose() => _ = owner._pending.Remove(this);
+        public void Dispose()
+        {
+            if (owner._pending.Remove(this))
+            {
+                owner._cancelled.Add(this);
+            }
+        }
     }
 }

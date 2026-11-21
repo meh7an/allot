@@ -1,9 +1,12 @@
 import AllotContract
 import Foundation
+import os
 
 /// HTTP client for the daemon routes the app uses. It never starts allotd by itself; that is
 /// the user's Start service.
 public actor DaemonClient: JobStopper, SettingsClient {
+    private static let log = Logger(subsystem: "tech.mehran.allot", category: "daemon")
+
     private static let requestTimeout: TimeInterval = 3
 
     // allotd answers a kill after up to three sweeps over the tree, each waiting out the grace
@@ -112,20 +115,11 @@ public actor DaemonClient: JobStopper, SettingsClient {
         try await settingsRoute("GET", "settings", body: nil, as: SettingsState.self)
     }
 
-    /// `PATCH /settings`: writes the changes together or not at all.
+    /// `PATCH /settings` with the revision the changes were made against: writes the changes
+    /// together or not at all. The generated ``SettingsPatch`` has no initializer outside its
+    /// module, so the session sends the pieces.
     ///
     /// - Returns: The new state.
-    /// - Throws: Only `CancellationError`.
-    public func changeSettings(
-        _ patch: SettingsPatch
-    ) async throws -> SettingsReply<SettingsState> {
-        try await settingsRoute(
-            "PATCH", "settings", body: Self.encode(patch), as: SettingsState.self)
-    }
-
-    /// `PATCH /settings` with the revision the changes were made against. The generated
-    /// ``SettingsPatch`` has no initializer outside its module, so the session sends the pieces.
-    ///
     /// - Throws: Only `CancellationError`.
     public func changeSettings(
         revision: String,
@@ -146,16 +140,8 @@ public actor DaemonClient: JobStopper, SettingsClient {
             as: FitPreview.self)
     }
 
-    /// `POST /classify`: how the hook treats a command line under the file's rules, or under
-    /// unsaved changes to them.
-    ///
-    /// - Throws: Only `CancellationError`.
-    public func classify(_ request: ClassifyRequest) async throws -> SettingsReply<CommandTest> {
-        try await settingsRoute(
-            "POST", "classify", body: Self.encode(request), as: CommandTest.self)
-    }
-
-    /// `POST /classify` for a line, the shell it is written for and unsaved changes.
+    /// `POST /classify`: how the hook treats a line, the shell it is written for, under the
+    /// file's rules or unsaved changes to them.
     ///
     /// - Throws: Only `CancellationError`.
     public func classify(
@@ -245,9 +231,12 @@ public actor DaemonClient: JobStopper, SettingsClient {
                 do {
                     return .value(try JSONDecoder().decode(type, from: data))
                 } catch {
+                    // The decoder's dump names fields and paths; the log keeps it, the banner
+                    // gets a sentence.
+                    let dump = String(describing: error)
+                    Self.log.error("settings answer: \(dump, privacy: .public)")
                     return .failure(SettingsFailure(
-                        kind: .failed,
-                        message: "the service's answer could not be read: \(error)"))
+                        kind: .failed, message: "the service's answer could not be read"))
                 }
             case 401:
                 return .failure(
@@ -276,8 +265,7 @@ public actor DaemonClient: JobStopper, SettingsClient {
             return SettingsFailure(
                 kind: kind,
                 message: refusal.message,
-                problems: refusal.problems,
-                revision: refusal.revision)
+                problems: refusal.problems)
         }
         let text = String(decoding: data, as: UTF8.self)
             .trimmingCharacters(in: .whitespacesAndNewlines)

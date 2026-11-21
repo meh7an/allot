@@ -59,10 +59,9 @@ internal sealed class FakeSettingsClient : ISettingsClient
     public static SettingsReply<T> Failure<T>(
         SettingsFailureKind kind,
         string? message = null,
-        IReadOnlyList<FieldError>? problems = null,
-        string? revision = null)
+        IReadOnlyList<FieldError>? problems = null)
         where T : class =>
-        new(new SettingsFailure(kind, message ?? kind.ToString(), problems ?? [], revision));
+        new(new SettingsFailure(kind, message ?? kind.ToString(), problems ?? []));
 
     public Task<SettingsReply<SettingsState>> SettingsAsync(CancellationToken cancellationToken)
     {

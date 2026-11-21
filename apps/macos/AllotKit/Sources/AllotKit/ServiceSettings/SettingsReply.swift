@@ -2,8 +2,7 @@ import AllotContract
 
 /// Why a settings route did not answer as asked.
 public enum SettingsFailureKind: String, Sendable, Equatable {
-    /// 409: `config.toml` changed since its revision was read; the failure's revision is the
-    /// file's now.
+    /// 409: `config.toml` changed since its revision was read.
     case conflict
 
     /// 422: nothing written. With problems, the values that were refused (or the file's own
@@ -35,18 +34,14 @@ public struct SettingsFailure: Sendable, Equatable {
 
     public let problems: [FieldError]
 
-    public let revision: String?
-
     public init(
         kind: SettingsFailureKind,
         message: String,
-        problems: [FieldError] = [],
-        revision: String? = nil
+        problems: [FieldError] = []
     ) {
         self.kind = kind
         self.message = message
         self.problems = problems
-        self.revision = revision
     }
 }
 
