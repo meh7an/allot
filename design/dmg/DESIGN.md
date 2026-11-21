@@ -29,14 +29,15 @@ folder on the right, and one job, dragging the app across. The app inside carrie
 | Allot.app center | (190, 144) |
 | Applications center | (450, 144) |
 | Label text size | 13 |
-| Label pills | Allot: x 160, y 223, 61 x 22; Applications: x 394, y 223, 113 x 22; radius 11 |
+| Label text, as Finder draws it | cap top 222.5, baseline 232, descenders to 234 (measured on a Mac) |
+| Label pills | Allot: x 160, y 216, 61 x 22; Applications: x 394, y 216, 113 x 22; radius 11; centered on the label text, 6.5 above the caps and 4 below the descenders |
 | Arrow | four capsules at y 140, height 8: x 276 w 10, x 296 w 13, x 316 w 16, x 336 w 19 |
 | Horizon | y 290, 1 pt `#2A2C33`; floor below it `#1B1C21` |
 | Floor rows | y 298, 309, 322, 337, 355; heights 6, 7, 8, 9, 11 (nearer is larger) |
 | Allot's lease | front row, x 150 w 80, lit |
 | Reserved slot | front row, x 412 w 76, dashed outline |
 
-The slot sits about 110 pt below the Applications label, inside the floor, so it reads as part
+The slot sits about 117 pt below the Applications label's pill, inside the floor, so it reads as part
 of the picture and not as a place to drop; Finder accepts the drop on the folder only.
 
 ## 3. Palette
@@ -75,10 +76,15 @@ by eye, not sampled; check them against the icon file before the first build.
 ## 6. Checks still to run (manual, on a Mac)
 
 1. The label pills sit under Finder's labels at text size 13 in both Light and Dark Mode, and
-   neither label overflows its pill.
+   neither label overflows its pill. The first run, on the 0.6.1 DMG, found the text 7 pt above
+   the pills' centers; the pills moved up (change log, 2026-11-22), so run it again.
 2. The palette matches the icon file (section 3).
 3. The window opens at 640 x 400 with nothing to scroll on a 13-inch display.
 
 ## Change log
 
 - 2026-11-21: first version (light path).
+- 2026-11-22: label pills up 7 pt, from y 223 to y 216, after Mehran's Mac showed the text over
+  their top halves. Measured from his 2x screenshot of the 0.6.1 DMG: cap top 222.5, baseline 232,
+  so the text centers on 227.25 and the pills now center on 227. Height stays 22: the text with
+  descenders spans 12 pt and keeps at least 4 pt clear on each side.

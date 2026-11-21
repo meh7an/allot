@@ -105,7 +105,8 @@
   <rect x="336" y="140" width="19" height="8" rx="4" fill="#7DC6FF"/>
 
   <!-- Label pills: Finder draws labels black in Light Mode and white in Dark Mode; this grey keeps
-       both at 4.5:1 or more. -->
-  <rect x="160" y="223" width="61" height="22" rx="11" fill="#74757B"/>
-  <rect x="394" y="223" width="113" height="22" rx="11" fill="#74757B"/>
+       both at 4.5:1 or more. Centered on the text Finder draws (cap top 222.5, baseline 232),
+       measured on a Mac. -->
+  <rect x="160" y="216" width="61" height="22" rx="11" fill="#74757B"/>
+  <rect x="394" y="216" width="113" height="22" rx="11" fill="#74757B"/>
 </svg>
