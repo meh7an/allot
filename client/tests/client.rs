@@ -117,6 +117,7 @@ impl Daemon {
         let options = DaemonOptions {
             config: Config::default(),
             token: TOKEN.into(),
+            token_file: None,
             pool,
             sampler: Box::new(move || Ok(Box::new(FakeSampler(sampled)) as Box<dyn Sampler>)),
             sample_interval: Duration::from_millis(20),

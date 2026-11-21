@@ -287,14 +287,18 @@ impl fmt::Display for RangeIssue {
     }
 }
 
+/// The most cores one job may reserve: more than any machine has, and small enough that every
+/// panel holds the value exactly as a 32-bit float.
+pub const MAX_CORES: f32 = 4_096.0;
+
 impl JobProfile {
     /// Every value out of range, in field order; empty when the profile is usable.
     pub fn range_issues(&self) -> Vec<RangeIssue> {
         let mut issues = Vec::new();
-        if !(self.cores.is_finite() && self.cores >= 0.0) {
+        if !(0.0..=MAX_CORES).contains(&self.cores) {
             issues.push(RangeIssue {
                 field: "cores",
-                allowed: "must be a finite number of at least 0",
+                allowed: "must be between 0 and 4096",
             });
         }
         if !(0.0..=100.0).contains(&self.gpu_pct) {
@@ -1047,7 +1051,11 @@ mod tests {
         let issues = profile_with(-1.0, 101.0).range_issues();
         let fields: Vec<_> = issues.iter().map(|issue| issue.field).collect();
         assert_eq!(fields, ["cores", "gpu_pct"]);
+        assert_eq!(issues[0].to_string(), "cores must be between 0 and 4096");
         assert_eq!(issues[1].to_string(), "gpu_pct must be between 0 and 100");
+        assert!(profile_with(MAX_CORES, 0.0).range_issues().is_empty());
+        assert_eq!(profile_with(MAX_CORES + 1.0, 0.0).range_issues().len(), 1);
+        assert_eq!(profile_with(f32::INFINITY, 0.0).range_issues().len(), 1);
         let min = profile_with(2.0, 0.0).min_cores_reason(3.0).unwrap();
         assert_eq!(min.to_string(), "min_cores must be at most cores");
     }

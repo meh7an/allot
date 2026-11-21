@@ -118,7 +118,11 @@ async fn require_token(
         .get(AUTHORIZATION)
         .and_then(|value| value.to_str().ok())
         .and_then(|value| value.strip_prefix("Bearer "));
-    if !presented.is_some_and(|presented| same_secret(presented, &state.token)) {
+    let accepted = presented.is_some_and(|presented| {
+        same_secret(presented, &state.token())
+            || (state.reread_token() && same_secret(presented, &state.token()))
+    });
+    if !accepted {
         return Err(AppError::Unauthorized);
     }
     Ok(next.run(request).await)
@@ -162,7 +166,25 @@ fn same_secret(presented: &str, token: &str) -> bool {
 }
 
 async fn health(State(state): State<AppState>) -> Json<HealthResponse> {
-    Json(health_of(&state))
+    let mut health = health_of(&state);
+    // Anything on the machine can read `/health`, a web page included, so its config error
+    // names the file without the folder, which holds the user's name. The routes behind the
+    // token keep the whole path.
+    if let Some(path) = &state.config_path {
+        health.config_error = health
+            .config_error
+            .map(|error| without_folder(&error, path));
+    }
+    Json(health)
+}
+
+/// `error` with the full `path` it starts with cut to the file's name.
+fn without_folder(error: &str, path: &std::path::Path) -> String {
+    let full = path.display().to_string();
+    match (error.strip_prefix(&full), path.file_name()) {
+        (Some(rest), Some(name)) => format!("{}{rest}", name.to_string_lossy()),
+        _ => error.to_owned(),
+    }
 }
 
 pub(crate) fn health_of(state: &Shared) -> HealthResponse {

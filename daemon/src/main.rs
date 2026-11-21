@@ -74,6 +74,7 @@ async fn run(paths: &Paths) -> anyhow::Result<()> {
     let options = DaemonOptions {
         config,
         token,
+        token_file: Some(paths.token_file()),
         pool,
         sampler: Box::new(|| Ok(Box::new(SystemSampler::new()?) as Box<dyn Sampler>)),
         sample_interval: Duration::from_secs(1),

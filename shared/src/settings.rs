@@ -11,8 +11,8 @@ use serde::{Deserialize, Serialize};
 
 pub use self::values::{SettingValue, SizeRow};
 use crate::{
-    config::{Config, HeavyRule, PRESET_EST_SECS, Sizing},
-    types::{JobClass, JobProfile, QUICK_MAX_SECS},
+    config::{Config, HeavyRule, MIN_HEARTBEAT_TTL_SECS, PRESET_EST_SECS, Sizing},
+    types::{JobClass, JobProfile, MAX_CORES, QUICK_MAX_SECS},
 };
 
 /// Every allotd setting, page by page, in the order the Settings window shows them.
@@ -467,7 +467,13 @@ fn size_fields() -> Vec<SettingSpec> {
             "cores",
             "Cores",
             "Cores a job of this size reserves. Fractions such as 0.5 are allowed.",
-            field_number(Quantity::Cores, None, Limits::default().at_least(0.0)),
+            field_number(
+                Quantity::Cores,
+                None,
+                Limits::default()
+                    .at_least(0.0)
+                    .at_most(f64::from(MAX_CORES)),
+            ),
         ),
         setting(
             "min_cores",
@@ -670,7 +676,7 @@ fn leases(config: &Config) -> SettingsPageSpec {
                         number(
                             Quantity::Seconds,
                             whole(config.leases.heartbeat_ttl_secs),
-                            Limits::default().above(0.0),
+                            Limits::default().at_least(MIN_HEARTBEAT_TTL_SECS as f64),
                         ),
                     ),
                     setting(

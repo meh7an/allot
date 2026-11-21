@@ -68,11 +68,18 @@ pub struct Requested {
     pub lowering: Option<Lowering>,
 }
 
+/// The shortest time between two reads of the token file after wrong tokens.
+const TOKEN_REREAD: Duration = Duration::from_secs(1);
+
 /// Everything the daemon shares between tasks.
 #[derive(Debug)]
 pub struct Shared {
-    /// The bearer token every authenticated request must carry.
-    pub token: String,
+    /// The bearer token every authenticated request must carry, see [`Shared::token`].
+    token: RwLock<String>,
+    token_file: Option<PathBuf>,
+    /// When the token file was last read again, which happens at most every
+    /// [`TOKEN_REREAD`].
+    token_read_at: Mutex<Option<Instant>>,
     /// Database connections.
     pub pool: DbPool,
     /// The ledger. It stays locked while its transitions are written, so the database sees
@@ -117,6 +124,8 @@ pub struct Service {
     pub listening_port: u16,
     /// The stop record's file.
     pub stop_file: Option<PathBuf>,
+    /// The token's file, read again when a request presents another token.
+    pub token_file: Option<PathBuf>,
 }
 
 impl Shared {
@@ -130,7 +139,9 @@ impl Shared {
     ) -> Self {
         let ledger = Ledger::new(LedgerSettings::from_config(&config));
         Self {
-            token,
+            token: RwLock::new(token),
+            token_file: service.token_file,
+            token_read_at: Mutex::new(None),
             pool,
             ledger: AsyncMutex::new(ledger),
             changes: watch::Sender::new(0),
@@ -148,6 +159,46 @@ impl Shared {
             requests: Mutex::new(HashMap::new()),
             first_session_noted: AtomicBool::new(false),
         }
+    }
+
+    /// The bearer token every authenticated request must carry.
+    pub fn token(&self) -> String {
+        self.token
+            .read()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+
+    /// Reads the token file again after a request presented another token, and returns
+    /// whether the token changed. The file stays the truth: a token file replaced while
+    /// allotd runs, as by reinstalling, holds the token from then on, so panels that read the
+    /// new file get in and `POST /shutdown` still works. At most once a second, so wrong
+    /// tokens cannot keep allotd reading the disk.
+    pub fn reread_token(&self) -> bool {
+        let Some(path) = &self.token_file else {
+            return false;
+        };
+        {
+            let mut read_at = self
+                .token_read_at
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner);
+            if read_at.is_some_and(|at| at.elapsed() < TOKEN_REREAD) {
+                return false;
+            }
+            *read_at = Some(Instant::now());
+        }
+        let Ok(text) = std::fs::read_to_string(path) else {
+            return false;
+        };
+        let fresh = text.trim();
+        let mut token = self.token.write().unwrap_or_else(PoisonError::into_inner);
+        if fresh.is_empty() || *token == fresh {
+            return false;
+        }
+        tracing::info!("the token file changed; allotd takes the new token");
+        fresh.clone_into(&mut token);
+        true
     }
 
     /// The configuration in effect. Hold the returned value for one request, so it sees one

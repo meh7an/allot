@@ -36,6 +36,9 @@ pub struct DaemonOptions {
     pub config: Config,
     /// The bearer token clients must send.
     pub token: String,
+    /// The file `token` came from. A request with another token reads it again, so a token
+    /// file replaced while allotd runs holds the token from then on; `None` keeps `token`.
+    pub token_file: Option<PathBuf>,
     /// The opened, migrated database.
     pub pool: DbPool,
     /// Builds the sampler on the sampling thread.
@@ -73,6 +76,7 @@ pub async fn serve(
         config_path: options.maintenance.config_path.clone(),
         listening_port: listener.local_addr()?.port(),
         stop_file: options.stop_file,
+        token_file: options.token_file,
     };
     let state = Arc::new(Shared::new(
         options.config,

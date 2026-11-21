@@ -140,9 +140,9 @@ impl Config {
             "must be at least quiet_secs",
         );
         check(
-            self.leases.heartbeat_ttl_secs > 0,
+            self.leases.heartbeat_ttl_secs >= MIN_HEARTBEAT_TTL_SECS,
             "leases.heartbeat_ttl_secs",
-            "must be positive",
+            "must be at least 10",
         );
         let retention = &self.retention;
         check(
@@ -327,11 +327,16 @@ impl Default for BenchmarkConfig {
     }
 }
 
+/// The shortest lease timeout. allot-mcp sends a heartbeat every third of it, so a shorter one
+/// leaves too little room for a heartbeat that arrives late on a busy machine.
+pub const MIN_HEARTBEAT_TTL_SECS: u64 = 10;
+
 /// Lease lifetime settings.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct LeaseConfig {
-    /// A lease without a heartbeat for this long expires.
+    /// A lease without a heartbeat for this long expires; at least
+    /// [`MIN_HEARTBEAT_TTL_SECS`].
     pub heartbeat_ttl_secs: u64,
     /// An active lease ends once no command runs under it and its holder's session has been
     /// idle for this long, for holders that forget `release_lease`; 0 turns this off.
@@ -1035,7 +1040,7 @@ mod tests {
             problems,
             [
                 "daemon.port must not be 0",
-                "classes.mixed.cores must be a finite number of at least 0",
+                "classes.mixed.cores must be between 0 and 4096",
                 "classes.mixed.gpu_pct must be between 0 and 100",
                 "presets.light is the name of a class",
                 "classifier.rules[0].args must not contain blank entries",

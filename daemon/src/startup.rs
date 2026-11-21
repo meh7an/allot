@@ -47,7 +47,11 @@ pub struct InstanceLock {
 }
 
 impl InstanceLock {
-    /// Takes the exclusive lock on `path`, creating the file when missing.
+    /// Takes the exclusive lock on `path`, creating the file when missing, and writes this
+    /// process's ID into it with a newline.
+    ///
+    /// The ID lets the GNOME extension, which reaches allotd only over the session bus, tell
+    /// an allotd running without the bus from one that is stopped, by reading files alone.
     ///
     /// # Errors
     ///
@@ -60,7 +64,14 @@ impl InstanceLock {
             .open(path)
             .with_context(|| format!("opening lock file {}", path.display()))?;
         match file.try_lock() {
-            Ok(()) => Ok(Self { _file: file }),
+            Ok(()) => {
+                // Only the GNOME extension's hint depends on it, so a failed write leaves
+                // allotd running.
+                let _ = file
+                    .set_len(0)
+                    .and_then(|()| writeln!(&file, "{}", std::process::id()));
+                Ok(Self { _file: file })
+            }
             Err(TryLockError::WouldBlock) => {
                 bail!(
                     "another allotd is already running (it holds {})",
@@ -201,6 +212,19 @@ mod tests {
 
         drop(first);
         InstanceLock::acquire(&path).unwrap();
+    }
+
+    #[test]
+    fn test_instance_lock_holds_the_pid_and_a_refused_acquire_keeps_it() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("allotd.lock");
+        fs::write(&path, "123456789 left by an allotd that crashed\n").unwrap();
+        let first = InstanceLock::acquire(&path).unwrap();
+        InstanceLock::acquire(&path).unwrap_err();
+        // Read after the drop: Windows keeps others from reading a locked file.
+        drop(first);
+        let pid = format!("{}\n", std::process::id());
+        assert_eq!(fs::read_to_string(&path).unwrap(), pid);
     }
 
     #[test]

@@ -33,7 +33,7 @@ use allotd::db::{
     open_pool,
     repo::{self, LeaseDraft},
 };
-use common::{ALICE_PID, BOB_PID, Daemon, alice, bob, eventually, holder, process, send};
+use common::{ALICE_PID, BOB_PID, Daemon, TOKEN, alice, bob, eventually, holder, process, send};
 use diesel::sqlite::SqliteConnection;
 use reqwest::{RequestBuilder, Response, StatusCode};
 use serde_json::Value;
@@ -167,6 +167,20 @@ async fn test_health_is_open_and_every_other_route_needs_the_token() {
         wrong.send().await.unwrap().status(),
         StatusCode::UNAUTHORIZED
     );
+    daemon.stop().await;
+}
+
+#[tokio::test]
+async fn test_a_token_file_replaced_while_allotd_runs_holds_the_token() {
+    let daemon = Daemon::start().await;
+    std::fs::write(daemon.dir.path().join("token"), "fresh-token\n").unwrap();
+    let with = |token: &'static str| {
+        let request = daemon.client.get(daemon.url("/leases")).bearer_auth(token);
+        async move { request.send().await.unwrap().status() }
+    };
+    // A panel that read the new file gets in; the old token no longer does.
+    assert_eq!(with("fresh-token").await, StatusCode::OK);
+    assert_eq!(with(TOKEN).await, StatusCode::UNAUTHORIZED);
     daemon.stop().await;
 }
 
@@ -792,6 +806,11 @@ async fn test_config_change_takes_effect_and_a_rejected_one_is_reported() {
             .is_some_and(|error| error.contains("leases.heartbeat_ttl_secs"))
     })
     .await;
+    // `/health` needs no token, so it names the file but not the folder it is in.
+    let folder = daemon.dir.path().display().to_string();
+    let error = daemon.health().await.config_error.unwrap();
+    assert!(error.starts_with("config.toml"), "{error}");
+    assert!(!error.contains(&folder), "{error}");
     let kept = acquire().await.lease;
     assert_eq!(kept.profile.cores, 2.0);
     daemon.release(kept.id, "alice").await;

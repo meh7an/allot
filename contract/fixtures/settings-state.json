@@ -174,6 +174,10 @@
                         "min": {
                           "value": 0.0,
                           "exclusive": false
+                        },
+                        "max": {
+                          "value": 4096.0,
+                          "exclusive": false
                         }
                       },
                       "advanced": false,
@@ -360,6 +364,10 @@
                         "integer": false,
                         "min": {
                           "value": 0.0,
+                          "exclusive": false
+                        },
+                        "max": {
+                          "value": 4096.0,
                           "exclusive": false
                         }
                       },
@@ -730,8 +738,8 @@
                   "integer": true,
                   "default": 60.0,
                   "min": {
-                    "value": 0.0,
-                    "exclusive": true
+                    "value": 10.0,
+                    "exclusive": false
                   }
                 },
                 "advanced": false,

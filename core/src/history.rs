@@ -610,12 +610,30 @@ fn raise(declared: f64, p90: f64, cap: Option<f64>) -> Option<Raised> {
 
 #[cfg(test)]
 mod tests {
+    use std::{fs, path::Path};
+
     use allot_shared::{
         config::ClassifierConfig,
         types::{BusyUsage, JobProfile, ResourceUsage},
     };
 
     use super::*;
+
+    #[test]
+    fn test_every_panel_and_the_runbook_name_the_floors_estimates_use() {
+        // The panels write the floors into their text by hand, so nothing else ties them here.
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+        let floors = format!("{FLOOR_CORES} cores, {FLOOR_RAM_MB} MB");
+        for file in [
+            "tray/src/Allot.Tray.Core/ServiceSettings/LiveText.cs",
+            "apps/macos/AllotKit/Sources/AllotKit/ServiceSettings/LiveText.swift",
+            "apps/gnome/allot@mehran.tech/lib/live-text.js",
+            "docs/runbook.md",
+        ] {
+            let text = fs::read_to_string(root.join(file)).unwrap();
+            assert!(text.contains(&floors), "{file} does not say `{floors}`");
+        }
+    }
 
     fn classifier() -> Classifier {
         Classifier::new(&ClassifierConfig::default())

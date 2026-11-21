@@ -179,9 +179,12 @@ impl Daemon {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let base = format!("http://{}", listener.local_addr().unwrap());
         let sampled = machine.clone();
+        let token_file = dir.path().join("token");
+        std::fs::write(&token_file, TOKEN).unwrap();
         let mut options = DaemonOptions {
             config,
             token: TOKEN.into(),
+            token_file: Some(token_file),
             pool,
             sampler: Box::new(move || Ok(Box::new(FakeSampler(sampled)) as Box<dyn Sampler>)),
             sample_interval: Duration::from_millis(20),
