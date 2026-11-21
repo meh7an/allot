@@ -270,6 +270,36 @@ fn test_install_copies_binaries_links_allot_and_registers_hooks() {
     assert!(!stdout.contains("allotd is not running"), "{stdout}");
 }
 
+/// What a browser download carries; the install's copies must not, or Gatekeeper stops them.
+#[cfg(target_os = "macos")]
+#[test]
+fn test_install_clears_the_quarantine_flag_of_the_copies() {
+    const QUARANTINE: &str = "com.apple.quarantine";
+    let xattr = |args: &[&str], file: &Path| {
+        let output = Command::new("/usr/bin/xattr")
+            .args(args)
+            .arg(file)
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{output:?}");
+        String::from_utf8(output.stdout).unwrap()
+    };
+    let home = Home::new("quarantine");
+    for name in BINARIES {
+        xattr(
+            &["-w", QUARANTINE, "0081;00000000;Safari;"],
+            &home.build().join(name),
+        );
+    }
+
+    let stdout = home.install();
+
+    for name in BINARIES {
+        let names = xattr(&[], &home.bin().join(name));
+        assert!(!names.contains(QUARANTINE), "{name}: {names}\n{stdout}");
+    }
+}
+
 #[test]
 fn test_install_sets_up_autostart_once() {
     let home = Home::new("autostart");

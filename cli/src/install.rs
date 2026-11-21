@@ -427,6 +427,7 @@ fn replace_binary(source: &Path, target: &Path) -> anyhow::Result<()> {
     let copied = fs::copy(source, &temporary)
         .and_then(|_| fs::set_permissions(&temporary, fs::Permissions::from_mode(0o755)))
         .with_context(|| format!("copying {} to {}", source.display(), temporary.display()))
+        .and_then(|()| clear_quarantine(&temporary))
         .and_then(|()| {
             fs::rename(&temporary, target)
                 .with_context(|| format!("replacing {}", target.display()))
@@ -435,6 +436,33 @@ fn replace_binary(source: &Path, target: &Path) -> anyhow::Result<()> {
         let _ = fs::remove_file(&temporary);
     }
     copied
+}
+
+/// Removes the flag macOS sets on what a browser downloads, which the copy keeps from a DMG or
+/// an unpacked archive. The release is signed ad hoc and not notarized, so Gatekeeper would stop
+/// an installed binary that carries it the first time launchd or a session runs it. Installing
+/// is the user's choice to run these binaries, as Homebrew takes it for what it installs.
+#[cfg(target_os = "macos")]
+fn clear_quarantine(path: &Path) -> anyhow::Result<()> {
+    use std::{ffi::CString, os::unix::ffi::OsStrExt};
+
+    let file = CString::new(path.as_os_str().as_bytes())
+        .with_context(|| format!("{} has a NUL byte", path.display()))?;
+    // SAFETY: both arguments are NUL-terminated strings that outlive the call.
+    let result = unsafe { libc::removexattr(file.as_ptr(), c"com.apple.quarantine".as_ptr(), 0) };
+    if result == 0 {
+        return Ok(());
+    }
+    let error = io::Error::last_os_error();
+    if error.raw_os_error() == Some(libc::ENOATTR) {
+        return Ok(());
+    }
+    Err(error).with_context(|| format!("clearing the quarantine flag of {}", path.display()))
+}
+
+#[cfg(all(unix, not(target_os = "macos")))]
+fn clear_quarantine(_path: &Path) -> anyhow::Result<()> {
+    Ok(())
 }
 
 /// `<stem>.old-<unix millis>` beside `target`, with `.exe` on Windows.
