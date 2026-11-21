@@ -36,8 +36,15 @@ import {
 import { FakeSettings, as, english, failure, settleAll } from "./settings-support.mjs";
 import { FakeTimers, fixtureState } from "./support.mjs";
 
+/** @import { Reach } from "../allot@mehran.tech/lib/service-row.js" */
+
+/** @type {Reach} */
+const PORT_REACH = { kind: "port", port: 47823 };
+/** @type {Reach} */
+const BUS_REACH = { kind: "bus" };
+
 /**
- * @import { PollResult } from "../allot@mehran.tech/lib/client.js"
+ * @import { PollResult } from "../allot@mehran.tech/lib/results.js"
  * @import { Confirmation } from "../allot@mehran.tech/lib/settings-text.js"
  * @import { PageSection } from "../allot@mehran.tech/lib/settings-window.js"
  */
@@ -61,15 +68,14 @@ class FakeDaemon extends FakeSettings {
   };
 
   healthVersion = async () => this.version;
-
-  /** @param {number} port */
-  usePort = (port) => {
-    this.ports.push(port);
-  };
 }
 
-/** A window model on fakes, loaded once from the settings-state fixture. */
-async function windowModel(options = { load: true }) {
+/**
+ * A window model on fakes, loaded once from the settings-state fixture.
+ *
+ * @param {{ load: boolean, reach?: Reach }} [options]
+ */
+async function windowModel(options = { load: true, reach: PORT_REACH }) {
   const client = new FakeDaemon();
   const timers = new FakeTimers();
   /** @type {Array<{ confirmation: Confirmation, onConfirm: () => void }>} */
@@ -78,6 +84,8 @@ async function windowModel(options = { load: true }) {
   const notices = [];
   /** @type {string[]} */
   const opened = [];
+  /** @type {string[]} */
+  const logged = [];
   /** @type {string[]} */
   const calls = [];
   let clock = 0;
@@ -92,12 +100,14 @@ async function windowModel(options = { load: true }) {
       restartThroughUnit: async () => false,
     },
     paths: dataPaths("/home/u"),
-    port: 47823,
+    reach: options.reach ?? PORT_REACH,
+    followPort: (port) => client.ports.push(port),
     number: english,
     readStopRecord: async () => null,
     host: {
       confirm: (confirmation, onConfirm) => asked.push({ confirmation, onConfirm }),
       notify: (text) => notices.push(text),
+      log: (text) => logged.push(text),
       openPath: (path) => opened.push(path),
       now: () => clock,
     },
@@ -120,6 +130,7 @@ async function windowModel(options = { load: true }) {
     timers,
     asked,
     notices,
+    logged,
     opened,
     calls,
     changes: () => changes,
@@ -291,7 +302,53 @@ test("Restart Service moves the client to the saved port", async () => {
   assert.equal(port.saved, 47999);
   assert.deepEqual(client.shutdowns, [false]);
   assert.deepEqual(client.ports, [47999]);
-  assert.equal(model.port, 47999);
+  assert.deepEqual(model.reach, { kind: "port", port: 47999 });
+});
+
+test("Restart Service on the bus follows no port", async () => {
+  const { model, client, timers } = await windowModel({ load: true, reach: BUS_REACH });
+  client.version = null;
+
+  model.act("restart_service");
+  await settleAll();
+  timers.fireAll();
+  await settleAll();
+
+  assert.deepEqual(client.shutdowns, [false]);
+  assert.deepEqual(client.ports, []);
+  assert.deepEqual(model.reach, { kind: "bus" });
+  assert.equal(model.serviceRow?.text.includes("port"), false);
+});
+
+test("the bus panel's Service row has no port, and its window says it is off the bus", async () => {
+  const { model, client } = await windowModel({ load: true, reach: BUS_REACH });
+
+  assert.equal(model.serviceRow?.text, "Running · version 0.6.0");
+
+  client.reads.push(failure("unreachable"));
+  await model.refresh();
+  await settleAll();
+  model.showPage("service");
+
+  assert.equal(model.serviceRow?.text, "Not on the session bus.");
+  assert.equal(
+    model.pageState("service").banners[0]?.message,
+    "The service isn't on the session bus. Trying again every 5 s.",
+  );
+});
+
+test("a window that closes while Start Service waits sets no timer and shows no notice", async () => {
+  const { model, timers, notices } = await windowModel();
+
+  model.act("start_service");
+  await settleAll();
+  assert.ok(timers.pending.size > 0);
+  model.dispose();
+  assert.equal(timers.pending.size, 0);
+  timers.fireAll();
+  await settleAll();
+  assert.equal(timers.pending.size, 0);
+  assert.deepEqual(notices, []);
 });
 
 test("Reset Page and Reset All ask first, and only with something to reset", async () => {
@@ -440,4 +497,16 @@ test("the window speaks a banner that appears on the page shown, and not on anot
   assert.deepEqual(spoken, [
     "The service isn't answering on port 47823. Trying again every 5 s.",
   ]);
+});
+
+test("a version that cannot be read is logged, not swallowed", async () => {
+  const { model, client, logged } = await windowModel({ load: false });
+  client.healthVersion = async () => {
+    throw new Error("the bus dropped");
+  };
+
+  await model.refresh();
+  await settleAll();
+
+  assert.deepEqual(logged, ["Allot: cannot read the service version: Error: the bus dropped"]);
 });

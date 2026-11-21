@@ -6,6 +6,7 @@ import {
   notificationToggles,
 } from "../../gnome/allot@mehran.tech/lib/panel-toggles.js";
 import { FakeTimers, fixtureText, settle } from "../../gnome/tests/support.mjs";
+import { fileUrl } from "../src/io.js";
 import { fakeHost } from "./support.mjs";
 
 const HOME = "/home/user one/.allot";
@@ -308,7 +309,7 @@ test("a stop from outside notifies after two polls and its buttons work", async 
   );
 
   sent?.press("Open Logs");
-  assert.deepEqual(subject.opened, [`file://${HOME}/logs`]);
+  assert.deepEqual(subject.opened, [fileUrl(`${HOME}/logs`)]);
 
   sent?.press("Start Service");
   await settle();

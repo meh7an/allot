@@ -14,7 +14,7 @@ import { quantityText } from "./setting-values.js";
  */
 
 // The Commands page's sentences: the rule list's status and rows, its confirmations and notices,
-// and the lines of Test a command (DESIGN.md section 4, Commands).
+// and the lines of Test a command.
 
 export const BUILT_IN_RULES_TEXT = "Built-in rules.";
 

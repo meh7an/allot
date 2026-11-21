@@ -9,8 +9,7 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
     });
 };
 import { Announcer } from "./shared/accessible-text.js";
-import { DaemonClient } from "./shared/client.js";
-import { DEFAULT_PORT, dataPaths, portFromToml } from "./shared/config.js";
+import { dataPaths } from "./shared/config.js";
 import { accessibleName, iconFile } from "./shared/indicator-status.js";
 import { NotificationRules } from "./shared/notification-rules.js";
 import { resetPanel, setToggle } from "./shared/panel-toggles.js";
@@ -22,11 +21,13 @@ import { decodeSettings, encodeSettings } from "./shared/settings.js";
 import { SettingsWindowModel } from "./shared/settings-window.js";
 import { DO_NOT_DISTURB_TEXT, WELCOME_BODY, WELCOME_TITLE, } from "./shared/snapshot.js";
 import { AppIcons } from "./app-icons.js";
-import { CommandRunner, XhrTransport, copyFile, detachedCommand, localPath, readTextFile, serviceSystem, writeTextFile, } from "./io.js";
+import { DEFAULT_PORT, portFromToml, tokenPath } from "./daemon-config.js";
+import { DaemonClient } from "./http-client.js";
+import { CommandRunner, XhrTransport, copyFile, detachedCommand, fileUrl, localPath, readTextFile, serviceSystem, writeTextFile, } from "./io.js";
 import { INHIBITED_COMMAND, NOTIFY_COMPONENT, NOTIFY_EVENT, NOTIFY_RC_FILE, SETTINGS_ARGV, isOffInSettings, parseInhibited, } from "./notification-state.js";
 import { Notifier } from "./notifier.js";
 import { RowKeeper, listRows } from "./rows.js";
-/** @import { PollResult, ServiceStatus } from "./shared/client.js" */
+/** @import { PollResult, ServiceStatus } from "./shared/results.js" */
 /** @import { PanelToggle } from "./shared/panel-toggles.js" */
 /** @import { WindowHost } from "./shared/settings-window.js" */
 /** @import { DataPaths } from "./shared/config.js" */
@@ -170,7 +171,7 @@ export class AllotWidget {
             const client = new DaemonClient({
                 port: toml === null ? DEFAULT_PORT : portFromToml(toml),
                 send: this._transport.send,
-                readToken: () => readTextFile(this._runner, this.paths.token),
+                readToken: () => readTextFile(this._runner, tokenPath(this.paths.root)),
             });
             this.model.stopper = client;
             const launcher = new SystemdServiceLauncher({
@@ -205,9 +206,9 @@ export class AllotWidget {
     }
     /**
      * The Settings window's model, built on its first open once `start` has made the client, then
-     * kept for the widget's life, since the window only hides (DESIGN.md D14). It shares the
-     * popup's client, so a restart on a new port moves both, and its Start and Stop go through the
-     * popup's poller, so the popup follows at once.
+     * kept for the widget's life, since the window only hides. It shares the popup's client, so a
+     * restart on a new port moves both, and its Start and Stop go through the popup's poller, so the
+     * popup follows at once.
      *
      * @param {WindowHost} host
      * @param {(value: number) => string} number Formats a number for the user's locale.
@@ -223,10 +224,11 @@ export class AllotWidget {
                     timers: this._host.timers,
                     launcher: service.launcher,
                     paths: this.paths,
-                    port: service.client.port,
+                    reach: { kind: "port", port: service.client.port },
+                    followPort: (port) => service.client.usePort(port),
                     number,
                     readStopRecord: () => readTextFile(this._runner, `${this.paths.root}/stopped.json`),
-                    host,
+                    host: Object.assign(Object.assign({}, host), { log: (text) => this._host.log(text) }),
                     stop: () => this._stopService(),
                     start: () => this.startService(),
                 });
@@ -429,7 +431,7 @@ export class AllotWidget {
     }
     /** Opens the logs folder. */
     openLogs() {
-        this._host.openUrl(`file://${this.paths.logs}`);
+        this._host.openUrl(fileUrl(this.paths.logs));
     }
     /** @returns {boolean} */
     get keepOpen() {

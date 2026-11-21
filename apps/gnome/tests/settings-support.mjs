@@ -6,7 +6,7 @@ import { FakeTimers, fixtureText, settle } from "./support.mjs";
 
 /**
  * @import { Change, SettingsState, Shell } from "../allot@mehran.tech/contract.g.mjs"
- * @import { SettingsFailure, SettingsReply } from "../allot@mehran.tech/lib/client.js"
+ * @import { SettingsFailure, SettingsReply } from "../allot@mehran.tech/lib/results.js"
  * @import { ValueModel } from "../allot@mehran.tech/lib/setting-values.js"
  */
 

@@ -8,9 +8,9 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
         step((generator = generator.apply(thisArg, _arguments || [])).next());
     });
 };
-import { CancelledError } from "./client.js";
+import { CancelledError } from "./results.js";
 import { PollSchedule } from "./schedule.js";
-/** @import { DaemonClient, PollResult } from "./client.js" */
+/** @import { PollResult } from "./results.js" */
 /** @import { UiState } from "../contract.g.mjs" */
 /**
  * The timer calls the poller needs: GLib sources in the shell, fakes in the tests.
@@ -18,6 +18,13 @@ import { PollSchedule } from "./schedule.js";
  * @typedef {object} Timers
  * @property {(callback: () => void, ms: number) => unknown} setTimeout
  * @property {(id: unknown) => void} clearTimeout
+ */
+/**
+ * The client a poller polls: GNOME's `BusClient`, the widget's client, or a fake.
+ *
+ * @typedef {object} PollClient
+ * @property {() => Promise<PollResult>} poll
+ * @property {(options?: { record: boolean }) => Promise<string | null>} shutdown
  */
 /**
  * Starts allotd for Start Service.
@@ -35,7 +42,7 @@ export const START_TIMEOUT_MS = 10000;
  */
 export class DaemonPoller {
     /**
-     * @param {DaemonClient} client
+     * @param {PollClient} client
      * @param {Timers} timers
      * @param {object} [options]
      * @param {ServiceLauncher | null} [options.launcher] Starts allotd for Start Service; without

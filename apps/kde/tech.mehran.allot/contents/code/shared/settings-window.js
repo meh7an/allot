@@ -8,7 +8,7 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
         step((generator = generator.apply(thisArg, _arguments || [])).next());
     });
 };
-import { CancelledError } from "./client.js";
+import { CancelledError } from "./results.js";
 import { FitPreviews, NOT_YET_TEXT } from "./fit-previews.js";
 import { benchmarksText, estimatesText, fitsCaption, fitsText, headroomText, historyText, } from "./live-text.js";
 import { START_TIMEOUT_MS } from "./poller.js";
@@ -22,20 +22,21 @@ import { SettingsAnnouncer, announcerView } from "./settings-announcer.js";
 import { SettingsSession } from "./settings-session.js";
 import { LOADING_TEXT, resetAllConfirmation, resetPageConfirmation, saveStatusText, } from "./settings-text.js";
 /**
- * @import { PollResult } from "./client.js"
+ * @import { PollResult } from "./results.js"
  * @import { DataPaths } from "./config.js"
  * @import { Timers } from "./poller.js"
  * @import { MeterToggles } from "./settings.js"
  * @import { RestartClient, RestartLauncher } from "./service-launcher.js"
+ * @import { Reach } from "./service-row.js"
  * @import { BannerAction, SettingsBanner } from "./settings-banners.js"
  * @import { PageModel, SettingsClient } from "./settings-session.js"
  * @import { Confirmation } from "./settings-text.js"
  * @import { ValueModel } from "./setting-values.js"
  */
-// The Settings window of the GNOME and KDE panels without its toolkit (DESIGN.md sections 2 and
-// 5 to 8): the session with allotd, what each page shows, the live sentences, and the service's
-// Start, Stop and Restart. Each panel builds its widgets from this and calls back into it.
-/** allotd's pages in the order DESIGN.md gives, with each panel's icon for them. */
+// The Settings window of the GNOME and KDE panels without its toolkit: the session with allotd,
+// what each page shows, the live sentences, and the service's Start, Stop and Restart. Each panel
+// builds its widgets from this and calls back into it.
+/** allotd's pages in their order, with each panel's icon for them. */
 export const ALLOTD_PAGES = [
     {
         id: "admission",
@@ -85,7 +86,7 @@ const START_POLL_MS = 500;
  */
 /**
  * The parts of an allotd page: the spec's groups, rarely changed keys last under an Advanced
- * heading (DESIGN.md D11), the page's own groups where they go, then Reset.
+ * heading, the page's own groups where they go, then Reset.
  *
  * @param {PageModel} model
  * @returns {PageSection[]}
@@ -167,6 +168,8 @@ function settingsSection(title, settings, live) {
  * @property {(confirmation: Confirmation, onConfirm: () => void) => void} confirm Asks first;
  *   the primary button is destructive.
  * @property {(text: string) => void} notify A brief notice.
+ * @property {(text: string) => void} [log] A line for the panel's log, for what the user need not
+ *   see.
  * @property {(path: string) => void} openPath Opens a file or folder in its default app.
  * @property {() => number} now A monotonic clock in milliseconds.
  */
@@ -179,7 +182,10 @@ function settingsSection(title, settings, live) {
  * @property {Timers} timers
  * @property {RestartLauncher} launcher
  * @property {DataPaths} paths
- * @property {number} port The port in `config.toml`, which allotd listens on for HTTP clients.
+ * @property {Reach} reach How the panel reaches allotd, which its texts name when it does not
+ *   answer.
+ * @property {(port: number) => void} [followPort] Called after a restart that moved allotd to a
+ *   new port, for a panel that dials one.
  * @property {(value: number) => string} number Formats a number for the user's locale.
  * @property {() => Promise<string | null>} readStopRecord
  * @property {WindowHost} host
@@ -195,13 +201,13 @@ function settingsSection(title, settings, live) {
 export class SettingsWindowModel {
     /** @param {WindowOptions} options */
     constructor(options) {
-        var _a, _b;
+        var _a, _b, _c;
         /** Whether a GPU shares system memory, so the VRAM meter reads "GPU memory". */
         this.sharesMemory = false;
         /** @type {(() => void) | null} */
         this.onChange = null;
         /**
-         * Speaks a text to screen readers without moving focus: errors and outcomes (M7.1).
+         * Speaks a text to screen readers without moving focus: errors and outcomes.
          *
          * @type {((text: string) => void) | null}
          */
@@ -213,14 +219,17 @@ export class SettingsWindowModel {
         this._version = null;
         this._starting = false;
         this._startedAt = 0;
+        /** @type {unknown} */
+        this._startTimer = null;
         this._disposed = false;
         this._client = options.client;
         this._timers = options.timers;
         this._launcher = options.launcher;
         this._host = options.host;
-        this._port = options.port;
-        this._stop = (_a = options.stop) !== null && _a !== void 0 ? _a : (() => options.client.shutdown());
-        this._start = (_b = options.start) !== null && _b !== void 0 ? _b : (() => options.launcher.start());
+        this._reach = options.reach;
+        this._followPort = (_a = options.followPort) !== null && _a !== void 0 ? _a : null;
+        this._stop = (_b = options.stop) !== null && _b !== void 0 ? _b : (() => options.client.shutdown());
+        this._start = (_c = options.start) !== null && _c !== void 0 ? _c : (() => options.launcher.start());
         this.number = options.number;
         this.paths = options.paths;
         this.session = new SettingsSession(options.client, options.timers, {
@@ -239,9 +248,9 @@ export class SettingsWindowModel {
         };
         this.fits.onChange = () => this._changed();
     }
-    /** @returns {number} */
-    get port() {
-        return this._port;
+    /** @returns {Reach} */
+    get reach() {
+        return this._reach;
     }
     /**
      * Fetches now and every 5 s while shown; hiding sends what is pending.
@@ -258,6 +267,10 @@ export class SettingsWindowModel {
         this.fits.onChange = null;
         this.fits.dispose();
         this.session.dispose();
+        if (this._startTimer !== null) {
+            this._timers.clearTimeout(this._startTimer);
+            this._startTimer = null;
+        }
     }
     /**
      * The page now shown: fit previews run only while a page that shows them is open.
@@ -286,7 +299,7 @@ export class SettingsWindowModel {
         });
     }
     /**
-     * Whether a GPU shares system memory, from one `GET /ui/state`.
+     * Whether a GPU shares system memory, from one poll of allotd.
      *
      * @param {MeterToggles} meters
      */
@@ -317,13 +330,13 @@ export class SettingsWindowModel {
         const quiet = session.status !== "ready" && save.kind === "saved";
         const status = session.status === "loading" ? LOADING_TEXT : quiet ? "" : saveStatusText(save);
         return {
-            banners: settingsBanners(session, pageId, this._port, this.number),
+            banners: settingsBanners(session, pageId, this._reach, this.number),
             status,
             readOnly: session.readOnly,
         };
     }
     /**
-     * A group's live sentence (DESIGN.md D10), or `null` for a group without one.
+     * A group's live sentence, or `null` for a group without one.
      *
      * @param {string} pageId
      * @param {string} groupId
@@ -403,7 +416,7 @@ export class SettingsWindowModel {
         if (status === null) {
             return null;
         }
-        const shown = serviceRow(status, this.session.status, this._version, this._port);
+        const shown = serviceRow(status, this.session.status, this._version, this._reach);
         return {
             text: shown.text,
             button: serviceButtonText(shown.button),
@@ -506,7 +519,7 @@ export class SettingsWindowModel {
         if (this._shownPage === null) {
             return;
         }
-        const banners = settingsBanners(this.session, this._shownPage, this._port, this.number);
+        const banners = settingsBanners(this.session, this._shownPage, this._reach, this.number);
         const text = this._announcer.update(announcerView(this.session, banners, this.number));
         if (text !== "") {
             (_a = this.onAnnounce) === null || _a === void 0 ? void 0 : _a.call(this, text);
@@ -522,10 +535,26 @@ export class SettingsWindowModel {
                 this._version = version;
                 this._changed();
             })
-                .catch(() => { });
+                .catch((error) => {
+                var _a, _b;
+                // The version is only a label, so a failed read does not stop the window.
+                if (!(error instanceof CancelledError)) {
+                    (_b = (_a = this._host).log) === null || _b === void 0 ? void 0 : _b.call(_a, `Allot: cannot read the service version: ${error}`);
+                }
+            });
         }
     }
-    /** Stop asks only while leases are active; the stop lasts until a start (M2.1). */
+    /**
+     * A brief notice, unless the window is gone: its host may have destroyed what shows it.
+     *
+     * @param {string} text
+     */
+    _notify(text) {
+        if (!this._disposed) {
+            this._host.notify(text);
+        }
+    }
+    /** Stop asks only while leases are active; the stop lasts until a start. */
     _stopService() {
         return __awaiter(this, void 0, void 0, function* () {
             var _a;
@@ -534,7 +563,7 @@ export class SettingsWindowModel {
             const stop = () => __awaiter(this, void 0, void 0, function* () {
                 const problem = yield this._stop();
                 if (problem !== null) {
-                    this._host.notify(`The service did not stop: ${problem}`);
+                    this._notify(`The service did not stop: ${problem}`);
                 }
                 yield this.refresh();
             });
@@ -551,7 +580,7 @@ export class SettingsWindowModel {
             const problem = yield this._start();
             if (problem !== null) {
                 this._starting = false;
-                this._host.notify(`The service did not start: ${problem}`);
+                this._notify(`The service did not start: ${problem}`);
             }
             this._changed();
         });
@@ -559,15 +588,18 @@ export class SettingsWindowModel {
     /** For a new port or a refused key: through systemd when its unit runs allotd. */
     _restartService() {
         return __awaiter(this, void 0, void 0, function* () {
-            var _a;
+            var _a, _b;
             this._beginStarting();
             const saved = (_a = this.session.setting(PORT_KEY)) === null || _a === void 0 ? void 0 : _a.saved;
-            const port = typeof saved === "number" ? saved : this._port;
-            const problem = yield restartService(this._client, this._launcher, this._timers, port);
-            this._port = port;
+            const problem = yield restartService(this._client, this._launcher, this._timers);
+            if (problem === null && this._reach.kind === "port" && typeof saved === "number") {
+                // The restarted allotd listens on the port now in config.toml.
+                this._reach = { kind: "port", port: saved };
+                (_b = this._followPort) === null || _b === void 0 ? void 0 : _b.call(this, saved);
+            }
             if (problem !== null) {
                 this._starting = false;
-                this._host.notify(`The service did not restart: ${problem}`);
+                this._notify(`The service did not restart: ${problem}`);
             }
             this._changed();
         });
@@ -578,6 +610,7 @@ export class SettingsWindowModel {
         this._startedAt = this._host.now();
         this._changed();
         const tick = () => {
+            this._startTimer = null;
             if (this._disposed || !this._starting) {
                 return;
             }
@@ -586,8 +619,15 @@ export class SettingsWindowModel {
                 this._changed();
                 return;
             }
-            void this.refresh().then(() => this._timers.setTimeout(tick, START_POLL_MS));
+            void this.refresh().then(() => {
+                if (!this._disposed) {
+                    this._startTimer = this._timers.setTimeout(tick, START_POLL_MS);
+                }
+            });
         };
-        this._timers.setTimeout(tick, START_POLL_MS);
+        if (this._startTimer !== null) {
+            this._timers.clearTimeout(this._startTimer);
+        }
+        this._startTimer = this._timers.setTimeout(tick, START_POLL_MS);
     }
 }

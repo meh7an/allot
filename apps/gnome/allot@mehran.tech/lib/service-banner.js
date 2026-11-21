@@ -1,4 +1,4 @@
-/** @import { ServiceStatus } from "./client.js" */
+/** @import { ServiceStatus } from "./results.js" */
 /** @import { UiState } from "../contract.g.mjs" */
 
 /**
@@ -11,7 +11,7 @@
 
 /**
  * The banner at the top of the popup while the service is down, and the caption above the last
- * known cards (handoff section 6).
+ * known cards.
  *
  * @typedef {object} ServiceBanner
  * @property {string} text

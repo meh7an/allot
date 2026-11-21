@@ -1,7 +1,7 @@
-import { CancelledError } from "./client.js";
+import { CancelledError } from "./results.js";
 import { PollSchedule } from "./schedule.js";
 
-/** @import { DaemonClient, PollResult } from "./client.js" */
+/** @import { PollResult } from "./results.js" */
 /** @import { UiState } from "../contract.g.mjs" */
 
 /**
@@ -10,6 +10,14 @@ import { PollSchedule } from "./schedule.js";
  * @typedef {object} Timers
  * @property {(callback: () => void, ms: number) => unknown} setTimeout
  * @property {(id: unknown) => void} clearTimeout
+ */
+
+/**
+ * The client a poller polls: GNOME's `BusClient`, the widget's client, or a fake.
+ *
+ * @typedef {object} PollClient
+ * @property {() => Promise<PollResult>} poll
+ * @property {(options?: { record: boolean }) => Promise<string | null>} shutdown
  */
 
 /**
@@ -81,7 +89,7 @@ export class DaemonPoller {
   #wake = null;
 
   /**
-   * @param {DaemonClient} client
+   * @param {PollClient} client
    * @param {Timers} timers
    * @param {object} [options]
    * @param {ServiceLauncher | null} [options.launcher] Starts allotd for Start Service; without

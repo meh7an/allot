@@ -4,8 +4,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { FakeTimers, fixtureText, settle } from "../../gnome/tests/support.mjs";
-import { DaemonClient } from "../tech.mehran.allot/contents/code/shared/client.js";
 import { SettingsSession } from "../tech.mehran.allot/contents/code/shared/settings-session.js";
+import { DaemonClient } from "../tech.mehran.allot/contents/code/http-client.js";
 import { XhrTransport } from "../tech.mehran.allot/contents/code/io.js";
 import { fakeRequests } from "./support.mjs";
 

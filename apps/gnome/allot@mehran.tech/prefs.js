@@ -12,7 +12,7 @@ import {
   readTextFile,
   writeTextFile,
 } from "./daemon-io.js";
-import { DEFAULT_PORT, dataPaths, portFromToml } from "./lib/config.js";
+import { dataPaths } from "./lib/config.js";
 import {
   METERS_HELP,
   METERS_TITLE,
@@ -65,12 +65,13 @@ import {
  * @import { TableContext } from "./prefs-tables.js"
  */
 
-// The Settings window on GNOME (DESIGN.md section 10): the shell's preferences window with the
-// seven pages in its view switcher. It runs in the org.gnome.Shell.Extensions process, which
-// builds a new window on every open, so it always opens on Panel (D14) and keeps nothing between
-// opens. fillPreferencesWindow never waits for allotd: the window maps only once it returns
-// (M0.3), so allotd's pages fill in after. What the pages show comes from the shared
-// `SettingsWindowModel`; this file only builds libadwaita widgets around it.
+// The Settings window on GNOME: the shell's preferences window with the seven pages in its view
+// switcher. It runs in the org.gnome.Shell.Extensions process, which builds a new window on every
+// open, so it always opens on Panel and keeps nothing between opens. fillPreferencesWindow never
+// waits for allotd: the window maps only once it returns, so allotd's pages fill in after. What
+// the pages show comes from the shared `SettingsWindowModel`; this file only builds libadwaita
+// widgets around it. Written for GNOME Shell 48 and 49 (GTK 4.18 and 4.20, libadwaita 1.7 and
+// 1.8), where every call below exists.
 
 const DEFAULT_WIDTH = 760;
 const DEFAULT_HEIGHT = 680;
@@ -80,11 +81,7 @@ const SHOW_BANNERS = "show-banners";
 export default class AllotPreferences extends ExtensionPreferences {
   /** @param {Adw.PreferencesWindow} window */
   fillPreferencesWindow(window) {
-    const settings = new SettingsWindow(window);
-    window.connect("close-request", () => {
-      settings.close();
-      return false;
-    });
+    new SettingsWindow(window);
   }
 }
 
@@ -106,6 +103,13 @@ class SettingsWindow {
   /** @type {TraySettings} */
   #panel;
   #closed = false;
+  /**
+   * Undoes what the window connected to objects that outlive it: its own signals and the
+   * notification settings'.
+   *
+   * @type {Array<() => void>}
+   */
+  #disconnects = [];
 
   /** @param {Adw.PreferencesWindow} window */
   constructor(window) {
@@ -113,7 +117,6 @@ class SettingsWindow {
     this.#toaster = new Toaster(window);
     window.set_default_size(DEFAULT_WIDTH, DEFAULT_HEIGHT);
 
-    const toml = readFileNow(this.#paths.config);
     this.#model = new SettingsWindowModel({
       client: this.#connection.client(),
       timers: glibTimers,
@@ -126,12 +129,13 @@ class SettingsWindow {
         createServiceSystem(this.#cancellable),
       ),
       paths: this.#paths,
-      port: toml === null ? DEFAULT_PORT : portFromToml(toml),
+      reach: { kind: "bus" },
       number: localeNumbers(),
       readStopRecord: () => readTextFile(`${this.#paths.root}/stopped.json`, this.#cancellable),
       host: {
         confirm: (confirmation, onConfirm) => confirm(this.#window, confirmation, onConfirm),
         notify: (text) => this.#toaster.show(text),
+        log: (text) => console.warn(text),
         openPath,
         now: () => GLib.get_monotonic_time() / 1000,
       },
@@ -148,11 +152,19 @@ class SettingsWindow {
     this.#model.onChange = () => this.sync();
     this.#model.onAnnounce = (text) => this.#announce(text);
     this.#connection.onOwnerChanged = () => void this.#model.refresh();
-    window.connect("notify::visible-page", () => this.#followPage());
-    window.connect("notify::is-active", () => {
-      if (window.is_active) {
+    this.#connect("notify::visible-page", () => {
+      if (!this.#closed) {
+        this.#followPage();
+      }
+    });
+    this.#connect("notify::is-active", () => {
+      if (!this.#closed && window.is_active) {
         void this.#model.refresh();
       }
+    });
+    this.#connect("close-request", () => {
+      this.close();
+      return false;
     });
     this.#model.setVisible(true);
     this.#followPage();
@@ -162,10 +174,16 @@ class SettingsWindow {
 
   /**
    * Sends what is still pending, then stops the timers. Calls are never cancelled: a change
-   * sent as the window closes must still arrive (M0.3).
+   * sent as the window closes must still arrive.
    */
   close() {
+    if (this.#closed) {
+      return;
+    }
     this.#closed = true;
+    for (const disconnect of this.#disconnects.splice(0)) {
+      disconnect();
+    }
     this.#connection.onOwnerChanged = null;
     this.#connection.stopWatching();
     this.#model.onChange = null;
@@ -175,13 +193,23 @@ class SettingsWindow {
   }
 
   /**
-   * Speaks an error or an outcome without moving focus. Gtk.Accessible.announce needs GTK 4.14,
-   * so an older GTK just skips it.
+   * Connects a window signal that `close` disconnects.
+   *
+   * @param {string} signal
+   * @param {() => void | boolean} handler
+   */
+  #connect(signal, handler) {
+    const id = this.#window.connect(signal, handler);
+    this.#disconnects.push(() => this.#window.disconnect(id));
+  }
+
+  /**
+   * Speaks an error or an outcome without moving focus.
    *
    * @param {string} text
    */
   #announce(text) {
-    if (this.#closed || typeof this.#window.announce !== "function") {
+    if (this.#closed) {
       return;
     }
     try {
@@ -331,7 +359,7 @@ class SettingsWindow {
 
   /**
    * The Panel page: the panel's own settings in `tray.json`, which work in every allotd state
-   * and save at once. The shell follows the file through its file monitor (M0.3).
+   * and save at once. The shell follows the file through its file monitor.
    *
    * @returns {Adw.PreferencesPage}
    */
@@ -341,12 +369,18 @@ class SettingsWindow {
       title: "Panel",
       icon_name: "preferences-desktop-display-symbolic",
     });
-    const meters = new Adw.PreferencesGroup({ title: METERS_TITLE, description: METERS_HELP });
+    const meters = new Adw.PreferencesGroup({
+      title: escaped(METERS_TITLE),
+      description: escaped(METERS_HELP),
+    });
     for (const toggle of meterToggles(false)) {
       const row = this.#panelSwitch(meters, toggle);
       if (toggle.key === "vram") {
         this.#panelSyncs.push(() => {
-          row.title = escaped(meterToggles(this.#model.sharesMemory)[3]?.label ?? toggle.label);
+          const shown = meterToggles(this.#model.sharesMemory).find(
+            (item) => item.key === toggle.key,
+          );
+          row.title = escaped(shown?.label ?? toggle.label);
         });
       }
       if (toggle.parent !== null) {
@@ -355,7 +389,7 @@ class SettingsWindow {
     }
     page.add(meters);
 
-    const notifications = new Adw.PreferencesGroup({ title: NOTIFICATIONS_TITLE });
+    const notifications = new Adw.PreferencesGroup({ title: escaped(NOTIFICATIONS_TITLE) });
     const doNotDisturb = new Adw.ActionRow({ title: escaped(DO_NOT_DISTURB_TEXT), title_lines: 0 });
     doNotDisturb.add_prefix(new Gtk.Image({ icon_name: "notifications-disabled-symbolic" }));
     notifications.add(doNotDisturb);
@@ -364,10 +398,7 @@ class SettingsWindow {
       doNotDisturb.visible = !notificationSettings.get_boolean(SHOW_BANNERS);
     };
     const signal = notificationSettings.connect(`changed::${SHOW_BANNERS}`, showDoNotDisturb);
-    this.#window.connect("close-request", () => {
-      notificationSettings.disconnect(signal);
-      return false;
-    });
+    this.#disconnects.push(() => notificationSettings.disconnect(signal));
     showDoNotDisturb();
     for (const toggle of notificationToggles()) {
       this.#panelSwitch(notifications, toggle);
@@ -457,7 +488,7 @@ class SettingsWindow {
 
 /**
  * One of allotd's pages: banners and the save status first, built from the spec once
- * `GET /settings` has answered, then Reset (DESIGN.md sections 4 to 7).
+ * allotd's settings have arrived, then Reset.
  */
 class AllotdPage {
   page;
@@ -497,7 +528,7 @@ class AllotdPage {
   build(model, context) {
     this.built = true;
     if (model.spec.intro !== null) {
-      this.page.description = model.spec.intro;
+      this.page.description = escaped(model.spec.intro);
     }
     for (const section of pageSections(model)) {
       switch (section.kind) {
@@ -508,7 +539,7 @@ class AllotdPage {
           this.#addGroup(context, section.title, section.settings, section.live);
           break;
         case "sizes": {
-          const group = new Adw.PreferencesGroup({ title: section.title });
+          const group = new Adw.PreferencesGroup({ title: escaped(section.title) });
           this.#settingGroups.push(group);
           this.page.add(group);
           this.#syncs.push(sizeTableRows(context.table, group, section.table));
@@ -526,7 +557,7 @@ class AllotdPage {
 
   /** @param {PageState} state */
   sync(state) {
-    this.#bannerGroup.description = state.status;
+    this.#bannerGroup.description = escaped(state.status);
     this.#banners(state.banners);
     this.#bannerGroup.visible = state.banners.length > 0 || state.status !== "";
     for (const group of this.#settingGroups) {
@@ -545,7 +576,7 @@ class AllotdPage {
    * @param {string | null} liveGroupId The group whose live sentence ends this one.
    */
   #addGroup(context, title, settings, liveGroupId) {
-    const group = new Adw.PreferencesGroup({ title });
+    const group = new Adw.PreferencesGroup({ title: escaped(title) });
     this.#settingGroups.push(group);
     this.page.add(group);
     for (const setting of settings) {
@@ -562,7 +593,7 @@ class AllotdPage {
   }
 
   /**
-   * Test a command above the rules, its matches marked on them (D6).
+   * Test a command above the rules, its matches marked on them.
    *
    * @param {PageContext} context
    * @param {string} title
@@ -570,10 +601,10 @@ class AllotdPage {
    */
   #addRules(context, title, rules) {
     const test = new Adw.PreferencesGroup({
-      title: TEST_COMMAND_TITLE,
-      description: TEST_COMMAND_HELP,
+      title: escaped(TEST_COMMAND_TITLE),
+      description: escaped(TEST_COMMAND_HELP),
     });
-    const rulesGroup = new Adw.PreferencesGroup({ title });
+    const rulesGroup = new Adw.PreferencesGroup({ title: escaped(title) });
     this.page.add(test);
     this.page.add(rulesGroup);
     this.#settingGroups.push(test, rulesGroup);
@@ -581,6 +612,7 @@ class AllotdPage {
     commandTestRows(
       context.table,
       test,
+      TEST_COMMAND_HELP,
       () => savedRules(rules),
       (result) => list.setMatched(matchedRules(result)),
     );

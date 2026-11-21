@@ -55,7 +55,7 @@ import {
  * @import { RowContext, Sync } from "./prefs-widgets.js"
  */
 
-// The Sizes and Commands pages' sections on GNOME (DESIGN.md sections 4 and 10): a class or
+// The Sizes and Commands pages' sections on GNOME: a class or
 // preset is a row with a summary and an edit dialog, a rule is a row with a menu and its own
 // dialog, and Test a command sits above the rules. A table or list is rebuilt only when its rows
 // change, so focus survives the 5 s refresh.
@@ -170,7 +170,7 @@ function sizeRow(context, table, item, readOnly, restoreFocus) {
 }
 
 /**
- * The edit dialog of a class or preset: Save writes the whole row at once (DESIGN.md D2, D5).
+ * The edit dialog of a class or preset: Save writes the whole row at once.
  *
  * @param {TableContext} context
  * @param {SizeTableModel} table
@@ -321,19 +321,20 @@ function minimumRows(rows, group, draft, field) {
 }
 
 /**
- * Test a command (DESIGN.md D6): the line as the hook would treat it, with the rules on screen
+ * Test a command: the line as the hook would treat it, with the rules on screen
  * or a draft's, and the rules it matched.
  *
  * @param {TableContext} context
  * @param {Adw.PreferencesGroup} group
+ * @param {string} help What the group says about the test, as plain text.
  * @param {() => TestAgainst | null} proposal What to test against: the saved rules give no
  *   changes; `null` while a draft is not ready.
  * @param {(test: CommandTest | null) => void} onResult
  * @returns {{ run: () => void, cancel: () => void }}
  */
-export function commandTestRows(context, group, proposal, onResult) {
+export function commandTestRows(context, group, help, proposal, onResult) {
   const entry = new Adw.EntryRow({ title: "Command line" });
-  describe(innerEntry(entry), group.description);
+  describe(innerEntry(entry), help);
   const result = dimLabel();
   result.visible = false;
   group.add(entry);
@@ -344,9 +345,8 @@ export function commandTestRows(context, group, proposal, onResult) {
    */
   const show = (lines, test) => {
     const text = lines.join("\n");
-    // The result is the outcome of the user's typing, so it is spoken (M7.1), once per new
-    // result. `announce` needs GTK 4.14; older versions skip it.
-    if (text !== "" && text !== result.label && typeof result.announce === "function") {
+    // The result is the outcome of the user's typing, so it is spoken, once per new result.
+    if (text !== "" && text !== result.label) {
       result.announce(lines.join(" "), Gtk.AccessibleAnnouncementPriority.MEDIUM);
     }
     result.label = text;
@@ -407,7 +407,7 @@ export function ruleListRows(context, group, rules) {
   };
 
   const sync = () => {
-    group.description = rulesStatus(rules);
+    group.description = escaped(rulesStatus(rules));
     const readOnly = context.readOnly();
     const next = JSON.stringify([rules.value, matched, readOnly]);
     if (next === signature) {
@@ -586,7 +586,7 @@ function openRuleDialog(context, rules, draft, restoreFocus) {
 
   const argsGroup = new Adw.PreferencesGroup({
     title: escaped(draft.args.label),
-    description: draft.args.spec.help,
+    description: escaped(draft.args.spec.help),
   });
   syncs.push(chipsRows(rows, argsGroup, draft.args, false));
   page.add(argsGroup);
@@ -611,10 +611,16 @@ function openRuleDialog(context, rules, draft, restoreFocus) {
   page.add(classGroup);
 
   const testGroup = new Adw.PreferencesGroup({
-    title: TEST_COMMAND_TITLE,
-    description: TEST_RULE_HELP,
+    title: escaped(TEST_COMMAND_TITLE),
+    description: escaped(TEST_RULE_HELP),
   });
-  const tester = commandTestRows(context, testGroup, () => draftRules(rules, draft), () => {});
+  const tester = commandTestRows(
+    context,
+    testGroup,
+    TEST_RULE_HELP,
+    () => draftRules(rules, draft),
+    () => {},
+  );
   page.add(testGroup);
 
   draft.onChange = () => {

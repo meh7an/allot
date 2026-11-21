@@ -29,7 +29,7 @@ import { fixtureText } from "./support.mjs";
 
 /**
  * @import { SettingsState } from "../allot@mehran.tech/contract.g.mjs"
- * @import { SettingsReply } from "../allot@mehran.tech/lib/client.js"
+ * @import { SettingsReply } from "../allot@mehran.tech/lib/results.js"
  * @import { SettingsSession } from "../allot@mehran.tech/lib/settings-session.js"
  */
 
@@ -569,4 +569,22 @@ test("a number that is not finite gets the number error", async () => {
   wait.setUnit("hours");
   wait.commit(1e306);
   assert.deepEqual(wait.issue, { kind: "not_a_number" });
+});
+
+test("no label, help or intro in the spec holds markup characters", () => {
+  const texts = [];
+  for (const page of fixtureState().spec.pages) {
+    texts.push(["page", page.label], ["page intro", page.intro ?? ""]);
+    for (const group of page.groups) {
+      texts.push(["group", group.label]);
+      for (const setting of group.settings) {
+        texts.push([setting.key, setting.label], [setting.key, setting.help]);
+      }
+    }
+  }
+
+  assert.ok(texts.length > 20);
+  for (const [name, text] of texts) {
+    assert.doesNotMatch(text, /[&<]/, `${name}: ${text}`);
+  }
 });

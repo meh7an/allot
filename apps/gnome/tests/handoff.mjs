@@ -1,7 +1,7 @@
 import { decodeUiState } from "../allot@mehran.tech/contract.g.mjs";
 
 /** @import { RecentRun, UiState } from "../allot@mehran.tech/contract.g.mjs" */
-/** @import { ServiceStatus } from "../allot@mehran.tech/lib/client.js" */
+/** @import { ServiceStatus } from "../allot@mehran.tech/lib/results.js" */
 /** @import { StopView } from "../allot@mehran.tech/lib/job-stops.js" */
 
 // The sample jobs of the handoff prototype (`JOBS` in `Flyout.dc.html`) as daemon state, so

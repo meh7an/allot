@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { BusClient, BusRefusal } from "../allot@mehran.tech/lib/bus-client.js";
-import { CancelledError, TimeoutError } from "../allot@mehran.tech/lib/client.js";
+import { CancelledError, TimeoutError } from "../allot@mehran.tech/lib/results.js";
 import { restartService } from "../allot@mehran.tech/lib/service-launcher.js";
 import { FakeBus, FakeTimers, fixtureText } from "./support.mjs";
 

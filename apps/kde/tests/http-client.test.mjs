@@ -1,15 +1,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import {
-  CancelledError,
-  DaemonClient,
-  TimeoutError,
-  conflictReason,
-} from "../allot@mehran.tech/lib/client.js";
-import { FakeTransport, fixtureText } from "./support.mjs";
+import { fixtureText } from "../../gnome/tests/support.mjs";
+import { CancelledError, TimeoutError, conflictReason } from "../../gnome/allot@mehran.tech/lib/results.js";
+import { DaemonClient } from "../src/http-client.js";
+import { FakeTransport } from "./support.mjs";
 
-/** @import { HttpRequest, HttpResponse } from "../allot@mehran.tech/lib/client.js" */
+/** @import { HttpRequest, HttpResponse } from "../src/http-client.js" */
 
 /**
  * A client of port 47999 whose token file holds `token.value` (`null`: no file).

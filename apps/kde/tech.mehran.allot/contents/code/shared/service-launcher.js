@@ -78,7 +78,7 @@ export class SystemdServiceLauncher {
     }
     /**
      * Restarts allotd through the systemd user unit, when that unit runs this install's allotd.
-     * Needs no token, so it also mends a refused one, and writes no stop record.
+     * Asks allotd for nothing, so it also mends a refused key, and writes no stop record.
      *
      * @returns {Promise<boolean>} Whether systemd restarted it; false leaves allotd as it was.
      */
@@ -103,13 +103,12 @@ export class SystemdServiceLauncher {
 export const RESTART_WAIT_MS = 10000;
 const RESTART_POLL_MS = 250;
 /**
- * What Restart Service needs from the client: `DaemonClient`, GNOME's `BusClient`, or a fake
- * in tests. Only an HTTP client has a port to follow.
+ * What Restart Service needs from the client: GNOME's `BusClient`, the widget's client, or
+ * a fake in tests.
  *
  * @typedef {object} RestartClient
  * @property {(options: { record: boolean }) => Promise<string | null>} shutdown
  * @property {() => Promise<string | null>} healthVersion
- * @property {(port: number) => void} [usePort]
  */
 /**
  * What Restart Service needs from the launcher.
@@ -119,21 +118,18 @@ const RESTART_POLL_MS = 250;
  * @property {() => Promise<string | null>} start
  */
 /**
- * Restarts allotd, for a new port or a refused token: through the systemd unit when it runs this
+ * Restarts allotd, for a new port or a refused key: through the systemd unit when it runs this
  * allotd, else a shutdown with no stop record, a wait of up to 10 s for allotd to stop
- * answering, and a start. An HTTP client then sends every later request to `port`.
+ * answering, and a start.
  *
  * @param {RestartClient} client
  * @param {RestartLauncher} launcher
  * @param {import("./poller.js").Timers} timers
- * @param {number} port The port in `config.toml`, which the new allotd listens on.
  * @returns {Promise<string | null>} `null` when allotd was started again, else why not.
  */
-export function restartService(client, launcher, timers, port) {
+export function restartService(client, launcher, timers) {
     return __awaiter(this, void 0, void 0, function* () {
-        var _a, _b;
         if (yield launcher.restartThroughUnit()) {
-            (_a = client.usePort) === null || _a === void 0 ? void 0 : _a.call(client, port);
             return null;
         }
         const problem = yield client.shutdown({ record: false });
@@ -146,7 +142,6 @@ export function restartService(client, launcher, timers, port) {
             }
             yield new Promise((resolve) => timers.setTimeout(() => resolve(undefined), RESTART_POLL_MS));
         }
-        (_b = client.usePort) === null || _b === void 0 ? void 0 : _b.call(client, port);
         return launcher.start();
     });
 }

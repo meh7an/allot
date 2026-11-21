@@ -4,6 +4,7 @@ import { test } from "node:test";
 import { FakeTimers, fixtureText, settle } from "../../gnome/tests/support.mjs";
 import { NOW_MS, leaseId, scenarioJson } from "../../gnome/tests/handoff.mjs";
 import { DESKTOP_ENTRIES_COMMAND } from "../src/app-icons.js";
+import { tokenPath } from "../src/daemon-config.js";
 import { GROUP_ICONS, groupIcon, idleText } from "../src/widget.js";
 import { fakeHost } from "./support.mjs";
 
@@ -37,7 +38,7 @@ function started(options = {}) {
 test("the data paths come from the home URL", () => {
   const { widget } = fakeHost({ timers: new FakeTimers(), daemon: () => null });
 
-  assert.equal(widget.paths.token, TOKEN_FILE);
+  assert.equal(tokenPath(widget.paths.root), TOKEN_FILE);
   assert.equal(widget.paths.logs, `${HOME}/logs`);
 });
 

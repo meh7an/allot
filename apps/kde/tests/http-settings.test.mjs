@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { CancelledError, DaemonClient } from "../allot@mehran.tech/lib/client.js";
-import { FakeTransport, fixtureText } from "./support.mjs";
+import { fixtureText } from "../../gnome/tests/support.mjs";
+import { CancelledError } from "../../gnome/allot@mehran.tech/lib/results.js";
+import { DaemonClient } from "../src/http-client.js";
+import { FakeTransport } from "./support.mjs";
 
-/** @import { HttpRequest, HttpResponse } from "../allot@mehran.tech/lib/client.js" */
+/** @import { HttpRequest, HttpResponse } from "../src/http-client.js" */
 
 /**
  * @param {(request: HttpRequest) => HttpResponse} handler
@@ -122,7 +124,7 @@ test("each other answer has its own kind", async () => {
     { response: { status: 423, body: held }, kind: "held", message: "config.toml is open" },
     { response: { status: 503, body: "" }, kind: "unavailable", message: "the service answered 503" },
     { response: { status: 500, body: "internal error\n" }, kind: "failed", message: "internal error" },
-    { response: { status: 401, body: "" }, kind: "token", message: "the service refused the token" },
+    { response: { status: 401, body: "" }, kind: "key", message: "the service refused the token" },
   ];
   for (const { response, kind, message } of cases) {
     const { daemon } = client(() => response);
@@ -156,7 +158,7 @@ test("no token and no answer are told apart, and a cancel rejects", async () => 
   const missing = await noToken.daemon.settings();
   const unreachable = await down.daemon.settings();
 
-  assert.ok(!missing.ok && missing.failure.kind === "token");
+  assert.ok(!missing.ok && missing.failure.kind === "key");
   assert.equal(noToken.transport.requests.length, 0);
   assert.ok(!unreachable.ok && unreachable.failure.kind === "unreachable");
   assert.equal(unreachable.failure.message, "Connection refused");

@@ -1,22 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { CancelledError, DaemonClient } from "../allot@mehran.tech/lib/client.js";
+import { BusClient } from "../allot@mehran.tech/lib/bus-client.js";
 import * as format from "../allot@mehran.tech/lib/format.js";
 import { DaemonPoller, START_TIMEOUT_MS } from "../allot@mehran.tech/lib/poller.js";
-import { FakeTimers, FakeTransport, fixtureText, settle } from "./support.mjs";
-
-/** @import { HttpRequest, HttpResponse } from "../allot@mehran.tech/lib/client.js" */
-
-/**
- * @param {(request: HttpRequest) => HttpResponse} handler
- * @param {string | null} [token]
- */
-function client(handler, token = "t") {
-  const transport = new FakeTransport(handler);
-  const daemon = new DaemonClient({ port: 1, send: transport.send, readToken: async () => token });
-  return { daemon, transport };
-}
+import { FakeBus, FakeTimers, fixtureText, settle } from "./support.mjs";
 
 /**
  * A poller whose launcher answers `problem`, with a clock the test moves.
@@ -26,12 +14,13 @@ function client(handler, token = "t") {
  */
 function starter(state, problem = null) {
   const body = fixtureText("ui-state-idle.json");
-  const { daemon, transport } = client(() => {
+  const transport = new FakeBus(() => {
     if (!state.up) {
-      throw new Error("Connection refused");
+      throw new Error("The name is not activatable");
     }
-    return { status: 200, body };
+    return body;
   });
+  const daemon = new BusClient(transport.bus());
   const clock = { nowMs: 0, starts: 0 };
   const poller = new DaemonPoller(daemon, new FakeTimers(), {
     launcher: {
@@ -93,57 +82,14 @@ test("Start Service wakes the poll loop", async () => {
   const { poller, transport } = starter({ up: true });
   const loop = poller.start();
   await settle();
-  const before = transport.requests.length;
+  const before = transport.calls.length;
 
   await poller.startService();
   await settle();
 
-  assert.ok(transport.requests.length > before);
+  assert.ok(transport.calls.length > before);
   poller.stop();
   await loop;
-});
-
-test("Stop Service posts /shutdown and polls at once", async () => {
-  const { daemon, transport } = client((request) =>
-    request.url.endsWith("/shutdown")
-      ? { status: 202, body: "" }
-      : { status: 200, body: fixtureText("ui-state-idle.json") },
-  );
-  const poller = new DaemonPoller(daemon, new FakeTimers());
-  const loop = poller.start();
-  await settle();
-
-  assert.equal(await poller.stopService(), null);
-  await settle();
-
-  const sent = transport.requests.map((request) => `${request.method} ${request.url}`);
-  assert.ok(sent.includes("POST http://127.0.0.1:1/shutdown"));
-  assert.equal(sent[sent.length - 1], "GET http://127.0.0.1:1/ui/state");
-  poller.stop();
-  await loop;
-});
-
-test("shutdown expects 202 and says why not", async () => {
-  const accepted = client(() => ({ status: 202, body: "" }));
-  assert.equal(await accepted.daemon.shutdown(), null);
-  assert.equal(accepted.transport.requests[0]?.method, "POST");
-  assert.equal(accepted.transport.requests[0]?.token, "t");
-
-  const refused = client(() => ({ status: 500, body: "" }));
-  assert.equal(await refused.daemon.shutdown(), "POST /shutdown answered 500");
-
-  const noToken = client(() => ({ status: 202, body: "" }), null);
-  assert.equal(await noToken.daemon.shutdown(), "no token in ~/.allot/token");
-
-  const down = client(() => {
-    throw new Error("Connection refused");
-  });
-  assert.equal(await down.daemon.shutdown(), "Connection refused");
-
-  const cancelled = client(() => {
-    throw new CancelledError();
-  });
-  await assert.rejects(cancelled.daemon.shutdown(), CancelledError);
 });
 
 test("up to two decimals drops trailing zeros", () => {

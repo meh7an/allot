@@ -18,6 +18,7 @@ import { dataPaths } from "./lib/config.js";
 import { NotificationRules } from "./lib/notification-rules.js";
 import { DaemonPoller } from "./lib/poller.js";
 import { PopupModel } from "./lib/popup-model.js";
+import { CancelledError } from "./lib/results.js";
 import { SystemdServiceLauncher } from "./lib/service-launcher.js";
 import { serviceMenuItem, stopConfirmation } from "./lib/service-menu.js";
 import { decodeSettings, encodeSettings } from "./lib/settings.js";
@@ -26,7 +27,7 @@ import { Notifier } from "./notifier.js";
 import { AllotPopup } from "./popup.js";
 import { confirmStop } from "./stop-dialog.js";
 
-/** @import { PollResult } from "./lib/client.js" */
+/** @import { PollResult } from "./lib/results.js" */
 /** @import { NotificationButton } from "./lib/notification-text.js" */
 /** @import { ModelChange } from "./lib/popup-model.js" */
 
@@ -38,6 +39,9 @@ const SHOW_BANNERS = "show-banners";
 const PREFS_APP_ID = "org.gnome.Shell.Extensions";
 const OTHER_PREFS_TEXT =
   "Another extension's settings are open. Close them first, then open Settings again.";
+// How long after enable the shell's startup animation is assumed over, when its signal has not
+// come. The animation lasts about a second.
+const STARTUP_GRACE_MS = 5000;
 // Lets a write's burst of monitor events end before the file is read.
 const SETTINGS_READ_DELAY_MS = 100;
 
@@ -47,6 +51,7 @@ export default class AllotExtension extends Extension {
     this._showIdleId = 0;
     this._firstOpenWait = null;
     this._stopDialog = null;
+    this._watchStartup();
     this._files = new Gio.Cancellable();
     const paths = dataPaths(GLib.get_home_dir());
     const iconDirectory = this.dir.get_child("icons");
@@ -109,7 +114,6 @@ export default class AllotExtension extends Extension {
 
     this._indicator.showStatus(this._model.indicator);
     Main.panel.addToStatusArea(this.uuid, this._indicator);
-    this._lastStatus = null;
     this._watchSettings(paths);
     this._startPolling(paths, this._connection, this._files);
   }
@@ -119,6 +123,7 @@ export default class AllotExtension extends Extension {
     if (this._settingsReadId) {
       GLib.source_remove(this._settingsReadId);
     }
+    this._clearStartupWatch();
     this._clearFirstOpenWait();
     this._clearShowIdle();
     this._stopDialog?.close();
@@ -190,13 +195,49 @@ export default class AllotExtension extends Extension {
     }
   }
 
+  /**
+   * Learns when the shell's startup animation is over, which the first-run popup waits for. The
+   * shell offers no public flag, and the signal never comes for an extension turned on after
+   * login, so a grace period ends the wait.
+   */
+  _watchStartup() {
+    this._startupComplete = false;
+    this._whenStarted = null;
+    const done = () => {
+      this._startupComplete = true;
+      const whenStarted = this._whenStarted;
+      this._whenStarted = null;
+      whenStarted?.();
+    };
+    this._startupSignalId = Main.layoutManager.connect("startup-complete", () => {
+      this._clearStartupTimer();
+      done();
+    });
+    this._startupTimerId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, STARTUP_GRACE_MS, () => {
+      this._startupTimerId = 0;
+      done();
+      return GLib.SOURCE_REMOVE;
+    });
+  }
+
+  _clearStartupTimer() {
+    if (this._startupTimerId) {
+      GLib.source_remove(this._startupTimerId);
+      this._startupTimerId = 0;
+    }
+  }
+
+  _clearStartupWatch() {
+    this._clearStartupTimer();
+    if (this._startupSignalId) {
+      Main.layoutManager.disconnect(this._startupSignalId);
+      this._startupSignalId = 0;
+    }
+    this._whenStarted = null;
+  }
+
   /** @param {PollResult} result */
   _show(result) {
-    if (result.status !== this._lastStatus) {
-      this._lastStatus = result.status;
-      const detail = result.version ?? result.detail ?? "";
-      console.log(`Allot: service ${result.status}${detail === "" ? "" : `: ${detail}`}`);
-    }
     const lastKnown = this._poller?.lastKnown ?? null;
     this._showChange(this._model.apply(result, lastKnown, this._poller?.startProblem ?? null));
     this._notify(result, lastKnown);
@@ -211,10 +252,8 @@ export default class AllotExtension extends Extension {
    * promises.
    */
   _openForFirstRun() {
-    if (Main.layoutManager._startingUp) {
-      this._waitForFirstOpen(Main.layoutManager, "startup-complete", () =>
-        this._openForFirstRun(),
-      );
+    if (!this._startupComplete) {
+      this._whenStarted = () => this._openForFirstRun();
       return;
     }
     this._indicator.queue_redraw();
@@ -289,7 +328,7 @@ export default class AllotExtension extends Extension {
 
   /**
    * Raises the open Settings window, since `openPreferences()` refuses to while one is open and
-   * does not raise it (M0.3); opens one otherwise.
+   * does not raise it; opens one otherwise.
    */
   _openSettings() {
     this._popup?.close();
@@ -303,12 +342,12 @@ export default class AllotExtension extends Extension {
       return;
     }
     if (prefsWindows.length > 0) {
-      // Only one preferences window exists for all extensions (DESIGN.md R6).
+      // The shell keeps one preferences window for all extensions, so another one may be open.
       Main.notify(this.metadata.name, OTHER_PREFS_TEXT);
       return;
     }
-    // GNOME 50 returns undefined and reports a refusal as an unhandled rejection; older shells
-    // return a promise.
+    // GNOME 48 and 49 return a promise that rejects when the shell refuses to open the window;
+    // GNOME 50 and later return nothing and report a refusal as an unhandled rejection.
     const opened = /** @type {unknown} */ (this.openPreferences());
     if (opened instanceof Promise) {
       opened.catch((error) => console.warn(`Allot: cannot open Settings: ${error}`));
@@ -317,7 +356,7 @@ export default class AllotExtension extends Extension {
 
   /**
    * Follows `tray.json` while the Settings window, in its own process, changes the panel's
-   * settings: its atomic writes reach the monitor at once (M0.3). Each burst of events is read
+   * settings: its atomic writes reach the monitor at once. Each burst of events is read
    * once.
    *
    * @param {import("./lib/config.js").DataPaths} paths
@@ -412,8 +451,10 @@ export default class AllotExtension extends Extension {
         console.warn(`Allot: cannot stop the service: ${problem}`);
       }
     } catch (error) {
-      // Only the extension being disabled cancels the request.
-      console.log(`Allot: stop not finished: ${error}`);
+      // Disabling the extension cancels the request, which is no failure.
+      if (!(error instanceof CancelledError)) {
+        console.warn(`Allot: stop not finished: ${error}`);
+      }
     }
   }
 
@@ -491,7 +532,7 @@ export default class AllotExtension extends Extension {
 
 /**
  * Whether a window is the preferences service's. On Wayland the app id arrives as the window
- * class; the GTK application id may stay unset (M0.3).
+ * class; the GTK application id may stay unset.
  *
  * @param {import("gi://Meta").default.Window} window
  * @returns {boolean}

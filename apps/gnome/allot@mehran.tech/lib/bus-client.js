@@ -13,7 +13,7 @@ import {
   rethrowCancelled,
   runningState,
   settingsFailure,
-} from "./client.js";
+} from "./results.js";
 import * as stopResult from "./stop-result.js";
 
 /**
@@ -26,7 +26,7 @@ import * as stopResult from "./stop-result.js";
  *   SettingsState,
  * } from "../contract.g.mjs"
  */
-/** @import { PollResult, SettingsFailureKind, SettingsReply } from "./client.js" */
+/** @import { PollResult, SettingsFailureKind, SettingsReply } from "./results.js" */
 /** @import { StopResult } from "./stop-result.js" */
 
 /**
@@ -89,9 +89,9 @@ const NOT_ON_BUS = "the service is not on the session bus";
 const RETRY_LATER = "the service could not answer; see logs/allotd.log";
 
 /**
- * The GNOME extension's client of allotd over D-Bus, with the methods of `DaemonClient` that
- * the shell and the Settings window use. The session bus says who calls, so there is no token.
- * It never starts allotd by itself; that is the user's Start service.
+ * The GNOME extension's client of allotd over D-Bus, for the shell and the Settings window. The
+ * session bus says who calls, so it sends no key. It never starts allotd by itself; that is the
+ * user's Start service.
  */
 export class BusClient {
   #bus;
@@ -323,7 +323,7 @@ function stopRefusal(error, timeoutMs = STOP_TIMEOUT_MS, gone = "the service is 
  * its text as the message.
  *
  * @param {BusRefusal} refusal
- * @returns {import("./client.js").SettingsFailure}
+ * @returns {import("./results.js").SettingsFailure}
  */
 function settingsRefusal(refusal) {
   const kind = REFUSAL_KINDS[refusal.name] ?? "failed";

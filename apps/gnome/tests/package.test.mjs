@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync, readdirSync } from "node:fs";
+import { readFileSync, readdirSync, statSync } from "node:fs";
 import { test } from "node:test";
 
 import { EXTENSION_DIR, REPO_DIR } from "./support.mjs";
@@ -22,6 +22,51 @@ test("the extension reaches allotd over D-Bus only: no libsoup anywhere in it", 
   for (const name of scripts) {
     const text = readFileSync(new URL(name.replaceAll("\\", "/"), EXTENSION_DIR), "utf8");
     assert.doesNotMatch(text, /soup/i, `${name} mentions libsoup`);
+  }
+});
+
+// The zip is `git archive` of the extension folder, so every file in it ships. allotd is reached
+// over D-Bus only: no loopback address, no plain-HTTP URL and no bearer key may be left behind.
+const FORBIDDEN = [
+  [/127\.0\.0\.1/i, "a loopback address"],
+  [/http:\/\//i, "a plain-HTTP URL"],
+  [/bearer/i, "a bearer"],
+  [/token/i, "a token"],
+];
+
+/** The SVG namespace is an identifier, not a URL anything fetches. */
+const SVG_NAMESPACE = "http://www.w3.org/2000/svg";
+
+test("no shipped file talks HTTP or handles a token", () => {
+  const files = readdirSync(EXTENSION_DIR, { recursive: true, encoding: "utf8" }).filter(
+    (name) => statSync(new URL(name.replaceAll("\\", "/"), EXTENSION_DIR)).isFile(),
+  );
+
+  assert.ok(files.length > 30);
+  for (const name of files) {
+    const text = readFileSync(new URL(name.replaceAll("\\", "/"), EXTENSION_DIR), "utf8");
+    const checked = text.replaceAll(SVG_NAMESPACE, "");
+    for (const [pattern, what] of FORBIDDEN) {
+      assert.doesNotMatch(checked, pattern, `${name} mentions ${what}`);
+    }
+  }
+});
+
+test("the folder carries the license the package is published under", () => {
+  const license = readFileSync(new URL("LICENSE", EXTENSION_DIR), "utf8");
+  const root = readFileSync(new URL("LICENSE-MIT", REPO_DIR), "utf8");
+
+  assert.equal(license, root);
+});
+
+test("a shipped script names no design document, milestone or person", () => {
+  const files = readdirSync(EXTENSION_DIR, { recursive: true, encoding: "utf8" }).filter(
+    (name) => name.endsWith(".js") && !name.endsWith("contract.g.mjs"),
+  );
+
+  for (const name of files) {
+    const text = readFileSync(new URL(name.replaceAll("\\", "/"), EXTENSION_DIR), "utf8");
+    assert.doesNotMatch(text, /DESIGN\.md|handoff section|\bM\d\.\d\b|\bD\d{1,2}\b|Mehran/, name);
   }
 });
 

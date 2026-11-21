@@ -9,7 +9,7 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
     });
 };
 import { decodeStopRecord } from "../contract.g.mjs";
-import { CancelledError } from "./client.js";
+import { CancelledError } from "./results.js";
 import { valueModel } from "./setting-values.js";
 /**
  * @import {
@@ -23,7 +23,7 @@ import { valueModel } from "./setting-values.js";
  *   Shell,
  *   StopRecord,
  * } from "../contract.g.mjs"
- * @import { SettingsFailure, SettingsReply } from "./client.js"
+ * @import { SettingsFailure, SettingsReply } from "./results.js"
  * @import { Timers } from "./poller.js"
  * @import { ValueHost, ValueModel } from "./setting-values.js"
  */
@@ -36,12 +36,12 @@ export const REFRESH_INTERVAL_MS = 5000;
  * - `ready`: allotd answered; the values can be changed unless `fileError` is set.
  * - `stopped`: allotd does not answer and the stop record says the user stopped it.
  * - `down`: allotd does not answer.
- * - `token`: allotd refused this panel's key.
+ * - `key`: allotd refused this panel's key.
  * - `failed`: allotd answered something unusable; `detail` says what.
  *
  * Every state but `ready` keeps the last values read-only.
  *
- * @typedef {"loading" | "ready" | "stopped" | "down" | "token" | "failed"} SessionStatus
+ * @typedef {"loading" | "ready" | "stopped" | "down" | "key" | "failed"} SessionStatus
  */
 /**
  * The save status line: "All changes saved", "Saving…" or "{n} changes not saved".
@@ -75,7 +75,7 @@ export const REFRESH_INTERVAL_MS = 5000;
  * @property {ConflictEdit[]} edits
  */
 /**
- * The settings routes the session uses: a `DaemonClient`, or a fake in tests.
+ * The settings calls the session uses: a panel's client, or a fake in tests.
  *
  * @typedef {object} SettingsClient
  * @property {() => Promise<SettingsReply<SettingsState>>} settings
@@ -92,10 +92,10 @@ export const REFRESH_INTERVAL_MS = 5000;
  * @property {number} generation
  */
 /**
- * The Settings window's allotd settings: one view model per setting, fetched from
- * `GET /settings` and saved through `PATCH /settings` with the file's revision. Single values
- * save as one burst 600 ms after the last change; tables, rules and chips save at once. The
- * Panel page's own settings are not here: they stay in each panel's store.
+ * The Settings window's allotd settings: one view model per setting, fetched from the daemon and
+ * saved with the file's revision. Single values save as one burst 600 ms after the last change;
+ * tables, rules and chips save at once. The Panel page's own settings are not here: they stay in
+ * each panel's store.
  *
  * @implements {ValueHost}
  */
@@ -462,8 +462,8 @@ export class SettingsSession {
                     this.stopRecord = parseStopRecord(yield this._readStopRecord());
                     this.status = this.stopRecord === null ? "down" : "stopped";
                     break;
-                case "token":
-                    this.status = "token";
+                case "key":
+                    this.status = "key";
                     break;
                 default:
                     this.status = "failed";
@@ -498,7 +498,7 @@ export class SettingsSession {
                     }
                     yield this.refresh();
                     return;
-                case "token":
+                case "key":
                 case "unreachable":
                     this._restore(batch);
                     yield this._unanswered(failure);

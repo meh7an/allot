@@ -10,7 +10,7 @@ import { defaultSettings } from "../allot@mehran.tech/lib/settings.js";
 import { NOW_MS, decodeState, scenarioJson, sessionOf, leaseId } from "./handoff.mjs";
 
 /** @import { NotificationToggles } from "../allot@mehran.tech/lib/settings.js" */
-/** @import { ServiceStatus } from "../allot@mehran.tech/lib/client.js" */
+/** @import { ServiceStatus } from "../allot@mehran.tech/lib/results.js" */
 /** @import { UiState } from "../allot@mehran.tech/contract.g.mjs" */
 
 const ALL_ON = {

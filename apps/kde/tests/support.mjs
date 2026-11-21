@@ -2,11 +2,34 @@ import { DESKTOP_ENTRIES_COMMAND } from "../src/app-icons.js";
 import { INHIBITED_COMMAND } from "../src/notification-state.js";
 import { AllotWidget } from "../src/widget.js";
 
+/** @import { HttpRequest, HttpResponse } from "../src/http-client.js" */
 /** @import { Xhr, XhrFactory } from "../src/io.js" */
 /** @import { NotificationFields } from "../src/notifier.js" */
 /** @import { Row, RowModel } from "../src/rows.js" */
 /** @import { WidgetHost } from "../src/widget.js" */
 /** @import { FakeTimers } from "../../gnome/tests/support.mjs" */
+
+/** Answers each request from a handler and records what was sent. */
+export class FakeTransport {
+  /** @type {HttpRequest[]} */
+  requests = [];
+
+  #handler;
+
+  /** @param {(request: HttpRequest) => HttpResponse | Promise<HttpResponse>} handler */
+  constructor(handler) {
+    this.#handler = handler;
+  }
+
+  /**
+   * @param {HttpRequest} request
+   * @returns {Promise<HttpResponse>}
+   */
+  send = async (request) => {
+    this.requests.push(request);
+    return this.#handler(request);
+  };
+}
 
 export const KDE_DIR = new URL("../", import.meta.url);
 export const PACKAGE_DIR = new URL("tech.mehran.allot/", KDE_DIR);

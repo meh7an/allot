@@ -1,4 +1,4 @@
-// What the Settings window speaks to screen readers by itself: errors and outcomes (M7.1).
+// What the Settings window speaks to screen readers by itself: errors and outcomes.
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
@@ -14,7 +14,11 @@ import { as, english, failure, fire, loaded, settleAll } from "./settings-suppor
 
 /**
  * @import { AnnouncerView } from "../allot@mehran.tech/lib/settings-announcer.js"
+ * @import { Reach } from "../allot@mehran.tech/lib/service-row.js"
  */
+
+/** @type {Reach} */
+const PORT_REACH = { kind: "port", port: 47823 };
 
 /**
  * @param {Partial<AnnouncerView>} view
@@ -88,7 +92,7 @@ test("a session's out-of-range value is spoken with its label, then the save", a
   const announcer = new SettingsAnnouncer();
   const speak = () =>
     announcer.update(
-      announcerView(session, settingsBanners(session, "admission", 47823, english), english),
+      announcerView(session, settingsBanners(session, "admission", PORT_REACH, english), english),
     );
   speak();
   /** @type {string[]} */
@@ -116,7 +120,7 @@ test("allotd going away speaks its banner", async () => {
   const announcer = new SettingsAnnouncer();
   const speak = () =>
     announcer.update(
-      announcerView(session, settingsBanners(session, "admission", 47823, english), english),
+      announcerView(session, settingsBanners(session, "admission", PORT_REACH, english), english),
     );
   speak();
 

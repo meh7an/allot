@@ -3,7 +3,7 @@ import { joined } from "./settings-text.js";
 
 /** @import { Fits, KeptFree } from "../contract.g.mjs" */
 
-// The live sentence at the end of each group with numbers (DESIGN.md D10), built from the values
+// The live sentence at the end of each group with numbers, built from the values
 // on screen or from allotd's fit preview.
 
 export const SERVICE_STOPPED_TEXT = "Can't work this out while the service is stopped.";

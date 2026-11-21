@@ -77,6 +77,8 @@ import { DO_NOT_DISTURB_TEXT } from "../../gnome/allot@mehran.tech/lib/snapshot.
 // (DESIGN.md section 10, KDE): one plain object per row, read again whenever the window's
 // revision moves on, and the shared texts and editors the views call.
 
+export { fileUrl } from "./io.js";
+
 export {
   ALLOTD_PAGES,
   DO_NOT_DISTURB_TEXT,

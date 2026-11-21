@@ -2,7 +2,7 @@ import Gio from "gi://Gio";
 import GLib from "gi://GLib";
 
 import { BusClient, BusRefusal } from "./lib/bus-client.js";
-import { CancelledError, TimeoutError } from "./lib/client.js";
+import { CancelledError, TimeoutError } from "./lib/results.js";
 
 /** @import { BusCall } from "./lib/bus-client.js" */
 /** @import { Timers } from "./lib/poller.js" */

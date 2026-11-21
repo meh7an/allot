@@ -8,7 +8,7 @@ import { quantityText } from "./setting-values.js";
  */
 
 // The Sizes page's sentences: table cells, the Fits now column, the edit dialog's title and live
-// line, and the row actions' names, notices and confirmations (DESIGN.md section 4, Sizes).
+// line, and the row actions' names, notices and confirmations.
 
 /**
  * The cells of a class or preset row, each with its unit.

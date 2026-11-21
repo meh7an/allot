@@ -36,7 +36,7 @@ import * as format from "./format.js";
  *   How much of the Run step is filled, from 0 to 1.
  */
 /**
- * A benchmark card's status line and stepper (handoff section 4, Benchmark).
+ * A benchmark card's status line and stepper.
  *
  * @typedef {object} BenchmarkStatus
  * @property {string} text

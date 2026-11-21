@@ -1,4 +1,4 @@
-import { CancelledError } from "./client.js";
+import { CancelledError } from "./results.js";
 import { SERVICE_STOPPED_TEXT } from "./live-text.js";
 import {
   DRAFT_NOT_READY_TEXT,
@@ -35,7 +35,7 @@ import {
 
 /**
  * The lines under a setting's label: its help, then notes such as a disabled note, a restart
- * note or an issue. The key goes at the end of the help (DESIGN.md D4); each panel styles it.
+ * note or an issue. The key goes at the end of the help; each panel styles it.
  *
  * @param {ValueModel<unknown>} model
  * @param {(value: number) => string} number
@@ -314,7 +314,7 @@ export function draftRules(rules, draft) {
 }
 
 /**
- * Test a command (DESIGN.md D6): the line as the hook would treat it, in Bash, and the test
+ * Test a command: the line as the hook would treat it, in Bash, and the test
  * allotd answered, whose rules each panel marks.
  *
  * @param {SettingsSession} session

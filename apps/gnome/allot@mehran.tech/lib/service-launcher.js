@@ -75,7 +75,7 @@ export class SystemdServiceLauncher {
 
   /**
    * Restarts allotd through the systemd user unit, when that unit runs this install's allotd.
-   * Needs no token, so it also mends a refused one, and writes no stop record.
+   * Asks allotd for nothing, so it also mends a refused key, and writes no stop record.
    *
    * @returns {Promise<boolean>} Whether systemd restarted it; false leaves allotd as it was.
    */
@@ -100,13 +100,12 @@ export const RESTART_WAIT_MS = 10_000;
 const RESTART_POLL_MS = 250;
 
 /**
- * What Restart Service needs from the client: `DaemonClient`, GNOME's `BusClient`, or a fake
- * in tests. Only an HTTP client has a port to follow.
+ * What Restart Service needs from the client: GNOME's `BusClient`, the widget's client, or
+ * a fake in tests.
  *
  * @typedef {object} RestartClient
  * @property {(options: { record: boolean }) => Promise<string | null>} shutdown
  * @property {() => Promise<string | null>} healthVersion
- * @property {(port: number) => void} [usePort]
  */
 
 /**
@@ -118,19 +117,17 @@ const RESTART_POLL_MS = 250;
  */
 
 /**
- * Restarts allotd, for a new port or a refused token: through the systemd unit when it runs this
+ * Restarts allotd, for a new port or a refused key: through the systemd unit when it runs this
  * allotd, else a shutdown with no stop record, a wait of up to 10 s for allotd to stop
- * answering, and a start. An HTTP client then sends every later request to `port`.
+ * answering, and a start.
  *
  * @param {RestartClient} client
  * @param {RestartLauncher} launcher
  * @param {import("./poller.js").Timers} timers
- * @param {number} port The port in `config.toml`, which the new allotd listens on.
  * @returns {Promise<string | null>} `null` when allotd was started again, else why not.
  */
-export async function restartService(client, launcher, timers, port) {
+export async function restartService(client, launcher, timers) {
   if (await launcher.restartThroughUnit()) {
-    client.usePort?.(port);
     return null;
   }
   const problem = await client.shutdown({ record: false });
@@ -143,7 +140,6 @@ export async function restartService(client, launcher, timers, port) {
     }
     await new Promise((resolve) => timers.setTimeout(() => resolve(undefined), RESTART_POLL_MS));
   }
-  client.usePort?.(port);
   return launcher.start();
 }
 

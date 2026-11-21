@@ -1,5 +1,5 @@
 // Generated from apps/gnome/allot@mehran.tech/lib/service-banner.js by apps/kde/tools/emit.mjs (pnpm build); do not edit.
-/** @import { ServiceStatus } from "./client.js" */
+/** @import { ServiceStatus } from "./results.js" */
 /** @import { UiState } from "../contract.g.mjs" */
 /**
  * - `none`: no button, because starting allotd again would not help.
@@ -10,7 +10,7 @@
  */
 /**
  * The banner at the top of the popup while the service is down, and the caption above the last
- * known cards (handoff section 6).
+ * known cards.
  *
  * @typedef {object} ServiceBanner
  * @property {string} text

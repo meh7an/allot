@@ -8,7 +8,7 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
         step((generator = generator.apply(thisArg, _arguments || [])).next());
     });
 };
-import { CancelledError } from "./client.js";
+import { CancelledError } from "./results.js";
 import { SERVICE_STOPPED_TEXT } from "./live-text.js";
 import { DRAFT_NOT_READY_TEXT, classLabels, ruleArguments, ruleDeletedText, ruleMenuName, ruleRowName, testLines, } from "./rules-text.js";
 import { DurationModel, issueText } from "./setting-values.js";
@@ -27,7 +27,7 @@ import { deleteRowName, dialogFitsText, editRowName, resetRowName, rowRemovedTex
 // actions, and Test a command.
 /**
  * The lines under a setting's label: its help, then notes such as a disabled note, a restart
- * note or an issue. The key goes at the end of the help (DESIGN.md D4); each panel styles it.
+ * note or an issue. The key goes at the end of the help; each panel styles it.
  *
  * @param {ValueModel<unknown>} model
  * @param {(value: number) => string} number
@@ -294,7 +294,7 @@ export function draftRules(rules, draft) {
     return (set === null || set === void 0 ? void 0 : set.kind) === "set_rules" ? { changes: changes !== null && changes !== void 0 ? changes : [], rules: set.rules } : null;
 }
 /**
- * Test a command (DESIGN.md D6): the line as the hook would treat it, in Bash, and the test
+ * Test a command: the line as the hook would treat it, in Bash, and the test
  * allotd answered, whose rules each panel marks.
  *
  * @param {SettingsSession} session

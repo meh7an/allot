@@ -1,4 +1,4 @@
-import { CancelledError } from "./client.js";
+import { CancelledError } from "./results.js";
 import { FitPreviews, NOT_YET_TEXT } from "./fit-previews.js";
 import {
   benchmarksText,
@@ -30,22 +30,23 @@ import {
 } from "./settings-text.js";
 
 /**
- * @import { PollResult } from "./client.js"
+ * @import { PollResult } from "./results.js"
  * @import { DataPaths } from "./config.js"
  * @import { Timers } from "./poller.js"
  * @import { MeterToggles } from "./settings.js"
  * @import { RestartClient, RestartLauncher } from "./service-launcher.js"
+ * @import { Reach } from "./service-row.js"
  * @import { BannerAction, SettingsBanner } from "./settings-banners.js"
  * @import { PageModel, SettingsClient } from "./settings-session.js"
  * @import { Confirmation } from "./settings-text.js"
  * @import { ValueModel } from "./setting-values.js"
  */
 
-// The Settings window of the GNOME and KDE panels without its toolkit (DESIGN.md sections 2 and
-// 5 to 8): the session with allotd, what each page shows, the live sentences, and the service's
-// Start, Stop and Restart. Each panel builds its widgets from this and calls back into it.
+// The Settings window of the GNOME and KDE panels without its toolkit: the session with allotd,
+// what each page shows, the live sentences, and the service's Start, Stop and Restart. Each panel
+// builds its widgets from this and calls back into it.
 
-/** allotd's pages in the order DESIGN.md gives, with each panel's icon for them. */
+/** allotd's pages in their order, with each panel's icon for them. */
 export const ALLOTD_PAGES = [
   {
     id: "admission",
@@ -104,7 +105,7 @@ const START_POLL_MS = 500;
 
 /**
  * The parts of an allotd page: the spec's groups, rarely changed keys last under an Advanced
- * heading (DESIGN.md D11), the page's own groups where they go, then Reset.
+ * heading, the page's own groups where they go, then Reset.
  *
  * @param {PageModel} model
  * @returns {PageSection[]}
@@ -191,6 +192,8 @@ function settingsSection(title, settings, live) {
  * @property {(confirmation: Confirmation, onConfirm: () => void) => void} confirm Asks first;
  *   the primary button is destructive.
  * @property {(text: string) => void} notify A brief notice.
+ * @property {(text: string) => void} [log] A line for the panel's log, for what the user need not
+ *   see.
  * @property {(path: string) => void} openPath Opens a file or folder in its default app.
  * @property {() => number} now A monotonic clock in milliseconds.
  */
@@ -204,7 +207,10 @@ function settingsSection(title, settings, live) {
  * @property {Timers} timers
  * @property {RestartLauncher} launcher
  * @property {DataPaths} paths
- * @property {number} port The port in `config.toml`, which allotd listens on for HTTP clients.
+ * @property {Reach} reach How the panel reaches allotd, which its texts name when it does not
+ *   answer.
+ * @property {(port: number) => void} [followPort] Called after a restart that moved allotd to a
+ *   new port, for a panel that dials one.
  * @property {(value: number) => string} number Formats a number for the user's locale.
  * @property {() => Promise<string | null>} readStopRecord
  * @property {WindowHost} host
@@ -228,7 +234,7 @@ export class SettingsWindowModel {
   /** @type {(() => void) | null} */
   onChange = null;
   /**
-   * Speaks a text to screen readers without moving focus: errors and outcomes (M7.1).
+   * Speaks a text to screen readers without moving focus: errors and outcomes.
    *
    * @type {((text: string) => void) | null}
    */
@@ -243,12 +249,15 @@ export class SettingsWindowModel {
   #host;
   #stop;
   #start;
-  /** The port in `config.toml`, which allotd listens on for its HTTP clients. */
-  #port;
+  #followPort;
+  /** @type {Reach} */
+  #reach;
   /** @type {string | null} */
   #version = null;
   #starting = false;
   #startedAt = 0;
+  /** @type {unknown} */
+  #startTimer = null;
   #disposed = false;
 
   /** @param {WindowOptions} options */
@@ -257,7 +266,8 @@ export class SettingsWindowModel {
     this.#timers = options.timers;
     this.#launcher = options.launcher;
     this.#host = options.host;
-    this.#port = options.port;
+    this.#reach = options.reach;
+    this.#followPort = options.followPort ?? null;
     this.#stop = options.stop ?? (() => options.client.shutdown());
     this.#start = options.start ?? (() => options.launcher.start());
     this.number = options.number;
@@ -280,9 +290,9 @@ export class SettingsWindowModel {
     this.fits.onChange = () => this.#changed();
   }
 
-  /** @returns {number} */
-  get port() {
-    return this.#port;
+  /** @returns {Reach} */
+  get reach() {
+    return this.#reach;
   }
 
   /**
@@ -301,6 +311,10 @@ export class SettingsWindowModel {
     this.fits.onChange = null;
     this.fits.dispose();
     this.session.dispose();
+    if (this.#startTimer !== null) {
+      this.#timers.clearTimeout(this.#startTimer);
+      this.#startTimer = null;
+    }
   }
 
   /**
@@ -329,7 +343,7 @@ export class SettingsWindowModel {
   }
 
   /**
-   * Whether a GPU shares system memory, from one `GET /ui/state`.
+   * Whether a GPU shares system memory, from one poll of allotd.
    *
    * @param {MeterToggles} meters
    */
@@ -358,14 +372,14 @@ export class SettingsWindowModel {
     const quiet = session.status !== "ready" && save.kind === "saved";
     const status = session.status === "loading" ? LOADING_TEXT : quiet ? "" : saveStatusText(save);
     return {
-      banners: settingsBanners(session, pageId, this.#port, this.number),
+      banners: settingsBanners(session, pageId, this.#reach, this.number),
       status,
       readOnly: session.readOnly,
     };
   }
 
   /**
-   * A group's live sentence (DESIGN.md D10), or `null` for a group without one.
+   * A group's live sentence, or `null` for a group without one.
    *
    * @param {string} pageId
    * @param {string} groupId
@@ -455,7 +469,7 @@ export class SettingsWindowModel {
     if (status === null) {
       return null;
     }
-    const shown = serviceRow(status, this.session.status, this.#version, this.#port);
+    const shown = serviceRow(status, this.session.status, this.#version, this.#reach);
     return {
       text: shown.text,
       button: serviceButtonText(shown.button),
@@ -567,7 +581,7 @@ export class SettingsWindowModel {
     if (this.#shownPage === null) {
       return;
     }
-    const banners = settingsBanners(this.session, this.#shownPage, this.#port, this.number);
+    const banners = settingsBanners(this.session, this.#shownPage, this.#reach, this.number);
     const text = this.#announcer.update(announcerView(this.session, banners, this.number));
     if (text !== "") {
       this.onAnnounce?.(text);
@@ -584,18 +598,34 @@ export class SettingsWindowModel {
           this.#version = version;
           this.#changed();
         })
-        .catch(() => {});
+        .catch((error) => {
+          // The version is only a label, so a failed read does not stop the window.
+          if (!(error instanceof CancelledError)) {
+            this.#host.log?.(`Allot: cannot read the service version: ${error}`);
+          }
+        });
     }
   }
 
-  /** Stop asks only while leases are active; the stop lasts until a start (M2.1). */
+  /**
+   * A brief notice, unless the window is gone: its host may have destroyed what shows it.
+   *
+   * @param {string} text
+   */
+  #notify(text) {
+    if (!this.#disposed) {
+      this.#host.notify(text);
+    }
+  }
+
+  /** Stop asks only while leases are active; the stop lasts until a start. */
   async #stopService() {
     const poll = await this.#client.poll().catch(() => null);
     const question = stopConfirmation(poll?.state ?? null);
     const stop = async () => {
       const problem = await this.#stop();
       if (problem !== null) {
-        this.#host.notify(`The service did not stop: ${problem}`);
+        this.#notify(`The service did not stop: ${problem}`);
       }
       await this.refresh();
     };
@@ -614,7 +644,7 @@ export class SettingsWindowModel {
     const problem = await this.#start();
     if (problem !== null) {
       this.#starting = false;
-      this.#host.notify(`The service did not start: ${problem}`);
+      this.#notify(`The service did not start: ${problem}`);
     }
     this.#changed();
   }
@@ -623,12 +653,15 @@ export class SettingsWindowModel {
   async #restartService() {
     this.#beginStarting();
     const saved = this.session.setting(PORT_KEY)?.saved;
-    const port = typeof saved === "number" ? saved : this.#port;
-    const problem = await restartService(this.#client, this.#launcher, this.#timers, port);
-    this.#port = port;
+    const problem = await restartService(this.#client, this.#launcher, this.#timers);
+    if (problem === null && this.#reach.kind === "port" && typeof saved === "number") {
+      // The restarted allotd listens on the port now in config.toml.
+      this.#reach = { kind: "port", port: saved };
+      this.#followPort?.(saved);
+    }
     if (problem !== null) {
       this.#starting = false;
-      this.#host.notify(`The service did not restart: ${problem}`);
+      this.#notify(`The service did not restart: ${problem}`);
     }
     this.#changed();
   }
@@ -639,6 +672,7 @@ export class SettingsWindowModel {
     this.#startedAt = this.#host.now();
     this.#changed();
     const tick = () => {
+      this.#startTimer = null;
       if (this.#disposed || !this.#starting) {
         return;
       }
@@ -647,8 +681,15 @@ export class SettingsWindowModel {
         this.#changed();
         return;
       }
-      void this.refresh().then(() => this.#timers.setTimeout(tick, START_POLL_MS));
+      void this.refresh().then(() => {
+        if (!this.#disposed) {
+          this.#startTimer = this.#timers.setTimeout(tick, START_POLL_MS);
+        }
+      });
     };
-    this.#timers.setTimeout(tick, START_POLL_MS);
+    if (this.#startTimer !== null) {
+      this.#timers.clearTimeout(this.#startTimer);
+    }
+    this.#startTimer = this.#timers.setTimeout(tick, START_POLL_MS);
   }
 }

@@ -66,7 +66,14 @@ import {
 } from "./settings-support.mjs";
 import { fixtureState as uiFixtureState, fixtureText } from "./support.mjs";
 
-// The Settings window's shared texts and helpers (M6.1, ported from M4.1's and M5.1's tests).
+/** @import { Reach } from "../allot@mehran.tech/lib/service-row.js" */
+
+/** @type {Reach} */
+const PORT_REACH = { kind: "port", port: 47823 };
+/** @type {Reach} */
+const BUS_REACH = { kind: "bus" };
+
+// The Settings window's shared texts and helpers.
 
 /**
  * @param {number} full
@@ -123,7 +130,7 @@ test("reset texts name the default, with title-case buttons", async () => {
 test("the Panel page shows no service banner", async () => {
   const { session } = await loaded();
 
-  assert.deepEqual(settingsBanners(session, PANEL_PAGE, 47823, english), []);
+  assert.deepEqual(settingsBanners(session, PANEL_PAGE, PORT_REACH, english), []);
 });
 
 test("stopped by you offers Start Service", async () => {
@@ -131,7 +138,7 @@ test("stopped by you offers Start Service", async () => {
   client.reads.push(failure("unreachable"));
   await session.refresh();
 
-  const banners = settingsBanners(session, "admission", 47823, english);
+  const banners = settingsBanners(session, "admission", PORT_REACH, english);
 
   assert.equal(banners.length, 1);
   assert.equal(banners[0]?.message, "The service is stopped. Start it to change these settings.");
@@ -144,7 +151,7 @@ test("not answering names the port this panel dials", async () => {
   client.reads.push(failure("unreachable"));
   await session.refresh();
 
-  const [banner] = settingsBanners(session, "leases", 47823, english);
+  const [banner] = settingsBanners(session, "leases", PORT_REACH, english);
 
   assert.equal(banner?.severity, "warning");
   assert.equal(
@@ -156,10 +163,10 @@ test("not answering names the port this panel dials", async () => {
 
 test("a refused key offers Restart Service", async () => {
   const { session, client } = await loaded();
-  client.reads.push(failure("token"));
+  client.reads.push(failure("key"));
   await session.refresh();
 
-  const [banner] = settingsBanners(session, SERVICE_PAGE, 47823, english);
+  const [banner] = settingsBanners(session, SERVICE_PAGE, PORT_REACH, english);
 
   assert.equal(banner?.severity, "error");
   assert.equal(
@@ -172,14 +179,14 @@ test("a refused key offers Restart Service", async () => {
 test("a new port waits for a restart on the Service page only", async () => {
   const { session } = await loaded();
 
-  const service = settingsBanners(session, SERVICE_PAGE, 47823, english);
+  const service = settingsBanners(session, SERVICE_PAGE, PORT_REACH, english);
 
   assert.deepEqual(
     service.map((banner) => banner.message),
     ["Restart the service to use port 47999."],
   );
   assert.deepEqual(service[0]?.actions, ["restart_service"]);
-  assert.deepEqual(settingsBanners(session, "admission", 47823, english), []);
+  assert.deepEqual(settingsBanners(session, "admission", PORT_REACH, english), []);
   assert.equal(
     restartNote(session, "daemon.port"),
     "Restart needed. The service still listens on 47823.",
@@ -193,7 +200,7 @@ test("a rejected file is an error banner and keeps the pages read-only", async (
   });
   const { session } = await loaded({ state });
 
-  const [banner] = settingsBanners(session, "admission", 47823, english);
+  const [banner] = settingsBanners(session, "admission", PORT_REACH, english);
 
   assert.ok(session.readOnly);
   assert.equal(banner?.severity, "error");
@@ -212,7 +219,7 @@ test("a hand-edit conflict names the change that was not saved", async () => {
 
   await fire(timers);
 
-  const [banner] = settingsBanners(session, "admission", 47823, english);
+  const [banner] = settingsBanners(session, "admission", PORT_REACH, english);
   assert.equal(banner?.severity, "warning");
   assert.equal(
     banner?.message,
@@ -230,7 +237,7 @@ test("a held file keeps the changes and offers Try Again", async () => {
 
   await fire(timers);
 
-  const [banner] = settingsBanners(session, "admission", 47823, english);
+  const [banner] = settingsBanners(session, "admission", PORT_REACH, english);
   assert.equal(banner?.message, `Your changes are not saved yet. ${held}`);
   assert.deepEqual(banner?.actions, ["save_again"]);
   assert.deepEqual(session.saveStatus, { kind: "unsaved", count: 1 });
@@ -329,24 +336,42 @@ test("the history sentence groups large counts", () => {
 });
 
 test("the service row follows the status and the stop record", () => {
-  const running = serviceRow("running", "ready", "0.5.0", 47823);
+  const running = serviceRow("running", "ready", "0.5.0", PORT_REACH);
   assert.equal(running.text, "Running · version 0.5.0 · port 47823");
   assert.equal(serviceButtonText(running.button), "Stop Service…");
   assert.equal(running.opensLogs, false);
 
-  const stopped = serviceRow("stopped", "stopped", null, 47823);
+  const stopped = serviceRow("stopped", "stopped", null, PORT_REACH);
   assert.equal(stopped.text, STOPPED_BY_YOU_TEXT);
   assert.equal(stopped.button, "start");
   assert.equal(stopped.opensLogs, false);
 
-  const down = serviceRow("stopped", "down", null, 47823);
+  const down = serviceRow("stopped", "down", null, PORT_REACH);
   assert.equal(down.text, "Not answering on port 47823.");
   assert.equal(serviceButtonText(down.button), "Start Service");
   assert.equal(down.opensLogs, true);
 
-  const starting = serviceRow("starting", "down", null, 47823);
+  const starting = serviceRow("starting", "down", null, PORT_REACH);
   assert.equal(starting.button, "starting");
   assert.equal(serviceButtonText(starting.button), "Starting…");
+});
+
+test("a panel on the session bus names the bus, never a port", async () => {
+  const running = serviceRow("running", "ready", "0.5.0", BUS_REACH);
+  assert.equal(running.text, "Running · version 0.5.0");
+  assert.equal(serviceRow("running", "ready", null, BUS_REACH).text, "Running");
+  const down = serviceRow("stopped", "down", null, BUS_REACH);
+  assert.equal(down.text, "Not on the session bus.");
+  assert.equal(down.opensLogs, true);
+
+  const { session, client } = await loaded();
+  client.reads.push(failure("unreachable"));
+  await session.refresh();
+  const [banner] = settingsBanners(session, "leases", BUS_REACH, english);
+  assert.equal(
+    banner?.message,
+    "The service isn't on the session bus. Trying again every 5 s.",
+  );
 });
 
 test("the preferences window reads the service status from its session", () => {
@@ -354,7 +379,7 @@ test("the preferences window reads the service status from its session", () => {
   assert.equal(sessionServiceStatus("ready", false), "running");
   assert.equal(sessionServiceStatus("stopped", false), "stopped");
   assert.equal(sessionServiceStatus("down", false), "stopped");
-  assert.equal(sessionServiceStatus("token", false), "incompatible");
+  assert.equal(sessionServiceStatus("key", false), "incompatible");
   assert.equal(sessionServiceStatus("down", true), "starting");
 });
 
@@ -516,7 +541,6 @@ function restartFakes(/** @type {{ unit: boolean, healthy?: number }} */ options
       healthy -= 1;
       return healthy >= 0 ? "0.5.0" : null;
     },
-    usePort: (/** @type {number} */ port) => calls.push(`port ${port}`),
   };
   const launcher = {
     restartThroughUnit: async () => {
@@ -541,15 +565,15 @@ function restartFakes(/** @type {{ unit: boolean, healthy?: number }} */ options
 test("restart goes through the systemd unit when it runs this allotd", async () => {
   const { calls, client, launcher, timers } = restartFakes({ unit: true });
 
-  assert.equal(await restartService(client, launcher, timers, 47999), null);
+  assert.equal(await restartService(client, launcher, timers), null);
 
-  assert.deepEqual(calls, ["systemctl restart", "port 47999"]);
+  assert.deepEqual(calls, ["systemctl restart"]);
 });
 
 test("restart without the unit stops with no stop record, waits, then starts", async () => {
   const { calls, client, launcher, timers } = restartFakes({ unit: false, healthy: 2 });
 
-  assert.equal(await restartService(client, launcher, timers, 47999), null);
+  assert.equal(await restartService(client, launcher, timers), null);
 
   assert.deepEqual(calls, [
     "systemctl restart",
@@ -557,7 +581,6 @@ test("restart without the unit stops with no stop record, waits, then starts", a
     "health",
     "health",
     "health",
-    "port 47999",
     "start",
   ]);
 });

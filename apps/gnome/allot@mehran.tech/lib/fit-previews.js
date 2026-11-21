@@ -1,4 +1,4 @@
-import { CancelledError } from "./client.js";
+import { CancelledError } from "./results.js";
 import { SERVICE_STOPPED_TEXT } from "./live-text.js";
 import { SAVE_DELAY_MS } from "./settings-session.js";
 

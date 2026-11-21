@@ -2,7 +2,7 @@ import * as format from "./format.js";
 import * as jobCard from "./job-card.js";
 
 /** @import { Lease, UiSession, UiState } from "../contract.g.mjs" */
-/** @import { ServiceStatus } from "./client.js" */
+/** @import { ServiceStatus } from "./results.js" */
 /** @import { JobCard } from "./job-card.js" */
 /** @import { ShownJobs, StopView } from "./job-stops.js" */
 

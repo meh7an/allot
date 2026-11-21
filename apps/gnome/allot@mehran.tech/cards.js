@@ -655,19 +655,28 @@ export function fadeIn(actor) {
 }
 
 /**
- * Collapses a leaving row's height and opacity, then destroys it.
+ * Collapses a leaving row's height and opacity, then destroys it, unless something destroyed it
+ * first, such as the popup closing for good while the row was still easing out.
  *
  * @param {Clutter.Actor} actor
  */
 export function collapse(actor) {
   actor.reactive = false;
   actor.set_height(actor.height);
+  let destroyed = false;
+  actor.connect("destroy", () => {
+    destroyed = true;
+  });
   actor.ease({
     opacity: 0,
     height: 0,
     duration: FADE_MS,
     mode: Clutter.AnimationMode.EASE_OUT_QUAD,
-    onStopped: () => actor.destroy(),
+    onStopped: () => {
+      if (!destroyed) {
+        actor.destroy();
+      }
+    },
   });
 }
 

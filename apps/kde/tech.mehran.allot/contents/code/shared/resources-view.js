@@ -2,7 +2,7 @@
 import * as format from "./format.js";
 /** @import { CpuMeter, DriveUsage, GpuMeter } from "../contract.g.mjs" */
 /** @import { Meters, RamMeter, UiState } from "../contract.g.mjs" */
-/** @import { ServiceStatus } from "./client.js" */
+/** @import { ServiceStatus } from "./results.js" */
 /** @import { MeterToggles } from "./settings.js" */
 /**
  * One bullet-bar row of the Resources card: CPU, RAM, or a GPU's engine load or video memory.
@@ -44,7 +44,7 @@ import * as format from "./format.js";
  *   For example `612 / 953 GB` or `1.21 / 1.82 TB`.
  */
 /**
- * The docked Resources card for one poll (handoff section 5). The Windows tray app's
+ * The docked Resources card for one poll. The Windows tray app's
  * `ResourcesView`, except that a GPU sharing RAM has no VRAM row: its memory shows as a tint
  * inside the RAM bar.
  *
@@ -69,7 +69,7 @@ import * as format from "./format.js";
  * @property {boolean} showsSharedLegend
  *   The RAM bar has a GPU tint, so the legend names it.
  * @property {boolean} sharesMemory
- *   Some GPU uses RAM as its memory, so the Meters menu calls VRAM `GPU Memory`.
+ *   Some GPU uses RAM as its memory, so the Meters switches call VRAM `GPU Memory`.
  */
 /**
  * What the leases reserve as a whole, for the rows' details.

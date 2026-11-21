@@ -2,9 +2,10 @@ import { changeValueText, joined } from "./settings-text.js";
 
 /**
  * @import { Conflict, ConflictEdit, SettingsSession } from "./settings-session.js"
+ * @import { Reach } from "./service-row.js"
  */
 
-// Which banners a Settings page shows for the session's state (DESIGN.md section 7). The Panel
+// Which banners a Settings page shows for the session's state. The Panel
 // page shows none of allotd's: it keeps working in every state.
 
 /** @typedef {"info" | "warning" | "error"} BannerSeverity */
@@ -74,15 +75,15 @@ export function bannerActionLabel(action) {
  *
  * @param {SettingsSession} session
  * @param {string} pageId The page shown.
- * @param {number} port The port this panel reaches allotd on.
+ * @param {Reach} reach How this panel reaches allotd.
  * @param {(value: number) => string} number Formats a number for the user's locale.
  * @returns {SettingsBanner[]}
  */
-export function settingsBanners(session, pageId, port, number) {
+export function settingsBanners(session, pageId, reach, number) {
   if (pageId === PANEL_PAGE) {
     return [];
   }
-  const unanswered = unansweredBanner(session, port);
+  const unanswered = unansweredBanner(session, reach);
   if (unanswered !== null) {
     return [unanswered];
   }
@@ -147,10 +148,10 @@ export function restartNote(session, key) {
 
 /**
  * @param {SettingsSession} session
- * @param {number} port
+ * @param {Reach} reach
  * @returns {SettingsBanner | null}
  */
-function unansweredBanner(session, port) {
+function unansweredBanner(session, reach) {
   switch (session.status) {
     case "stopped":
       return {
@@ -161,10 +162,13 @@ function unansweredBanner(session, port) {
     case "down":
       return {
         severity: "warning",
-        message: `The service isn't answering on port ${String(port)}. Trying again every 5 s.`,
+        message:
+          reach.kind === "port"
+            ? `The service isn't answering on port ${String(reach.port)}. Trying again every 5 s.`
+            : "The service isn't on the session bus. Trying again every 5 s.",
         actions: ["try_now", "open_logs"],
       };
-    case "token":
+    case "key":
       return {
         severity: "error",
         message: "The service refused this panel's key. Restart the service to make a new one.",

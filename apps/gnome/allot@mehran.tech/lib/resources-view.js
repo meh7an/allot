@@ -2,7 +2,7 @@ import * as format from "./format.js";
 
 /** @import { CpuMeter, DriveUsage, GpuMeter } from "../contract.g.mjs" */
 /** @import { Meters, RamMeter, UiState } from "../contract.g.mjs" */
-/** @import { ServiceStatus } from "./client.js" */
+/** @import { ServiceStatus } from "./results.js" */
 /** @import { MeterToggles } from "./settings.js" */
 
 /**
@@ -47,7 +47,7 @@ import * as format from "./format.js";
  */
 
 /**
- * The docked Resources card for one poll (handoff section 5). The Windows tray app's
+ * The docked Resources card for one poll. The Windows tray app's
  * `ResourcesView`, except that a GPU sharing RAM has no VRAM row: its memory shows as a tint
  * inside the RAM bar.
  *
@@ -72,7 +72,7 @@ import * as format from "./format.js";
  * @property {boolean} showsSharedLegend
  *   The RAM bar has a GPU tint, so the legend names it.
  * @property {boolean} sharesMemory
- *   Some GPU uses RAM as its memory, so the Meters menu calls VRAM `GPU Memory`.
+ *   Some GPU uses RAM as its memory, so the Meters switches call VRAM `GPU Memory`.
  */
 
 /**

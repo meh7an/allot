@@ -45,7 +45,6 @@ export class Notifier {
       // In place, so a merged "3 jobs finished" replaces its banner without closing the source.
       existing.set({ title: message.title, body: message.body, gicon: this.#currentIcon() });
       existing.acknowledged = false;
-      console.log(`Allot: notified ${message.tag} again`);
       return;
     }
     const source = this.#ensureSource();
@@ -68,7 +67,6 @@ export class Notifier {
     });
     this.#shown.set(message.tag, notification);
     source.addNotification(notification);
-    console.log(`Allot: notified ${message.tag}`);
   }
 
   /** @param {string} tag */

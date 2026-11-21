@@ -3,7 +3,6 @@ import { readFileSync } from "node:fs";
 import { decodeUiState } from "../allot@mehran.tech/contract.g.mjs";
 
 /** @import { UiState } from "../allot@mehran.tech/contract.g.mjs" */
-/** @import { HttpRequest, HttpResponse } from "../allot@mehran.tech/lib/client.js" */
 /** @import { Bus, BusCall } from "../allot@mehran.tech/lib/bus-client.js" */
 
 export const EXTENSION_DIR = new URL("../allot@mehran.tech/", import.meta.url);
@@ -134,28 +133,6 @@ function lease(id, holder, label, options, state) {
     granted_at_ms: state === "active" ? 1_792_824_710_000 : null,
     ended_at_ms: null,
     expires_at_ms: 1_792_824_765_000,
-  };
-}
-
-/** Answers each request from a handler and records what was sent. */
-export class FakeTransport {
-  /** @type {HttpRequest[]} */
-  requests = [];
-
-  #handler;
-
-  /** @param {(request: HttpRequest) => HttpResponse | Promise<HttpResponse>} handler */
-  constructor(handler) {
-    this.#handler = handler;
-  }
-
-  /**
-   * @param {HttpRequest} request
-   * @returns {Promise<HttpResponse>}
-   */
-  send = async (request) => {
-    this.requests.push(request);
-    return this.#handler(request);
   };
 }
 

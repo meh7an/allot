@@ -1,4 +1,4 @@
-/** @import { ServiceStatus } from "./client.js" */
+/** @import { ServiceStatus } from "./results.js" */
 /** @import { UiState } from "../contract.g.mjs" */
 
 /**

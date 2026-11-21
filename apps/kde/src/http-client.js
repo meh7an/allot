@@ -5,48 +5,38 @@ import {
   decodeRemoveResponse,
   decodeSettingsRefusal,
   decodeSettingsState,
-  decodeUiState,
-} from "../contract.g.mjs";
-import * as stopResult from "./stop-result.js";
+} from "../../gnome/allot@mehran.tech/contract.g.mjs";
+import {
+  TimeoutError,
+  conflictReason,
+  pollResult,
+  rethrowCancelled,
+  runningState,
+  settingsFailure,
+  stoppedOrRethrow,
+} from "../../gnome/allot@mehran.tech/lib/results.js";
+import * as stopResult from "../../gnome/allot@mehran.tech/lib/stop-result.js";
 
 /**
  * @import {
  *   Change,
  *   ClassifyRequest,
  *   CommandTest,
- *   FieldError,
  *   FitPreview,
  *   SettingsPatch,
  *   SettingsState,
  *   ShutdownRequest,
- *   UiState,
- * } from "../contract.g.mjs"
+ * } from "../../gnome/allot@mehran.tech/contract.g.mjs"
  */
-/** @import { StopResult } from "./stop-result.js" */
-
 /**
- * - `running`: allotd answered with UI state.
- * - `starting`: allotd answers but has no first sample yet.
- * - `stopped`: nothing answers on the port, or no token exists yet.
- * - `incompatible`: allotd answers but cannot serve this extension: an older build without
- *   `/ui/state`, a state shape the generated types reject, or a token it refuses. Starting it
- *   again does not help; reinstalling does.
- *
- * @typedef {"running" | "starting" | "stopped" | "incompatible"} ServiceStatus
+ * @import {
+ *   PollResult,
+ *   SettingsFailure,
+ *   SettingsFailureKind,
+ *   SettingsReply,
+ * } from "../../gnome/allot@mehran.tech/lib/results.js"
  */
-
-/**
- * The outcome of one poll.
- *
- * @typedef {object} PollResult
- * @property {ServiceStatus} status
- * @property {UiState | null} state
- *   The UI state; only set while `running`.
- * @property {string | null} version
- *   The daemon version, when it is known.
- * @property {string | null} detail
- *   Why the service is not running, for logs and the service-down view.
- */
+/** @import { StopResult } from "../../gnome/allot@mehran.tech/lib/stop-result.js" */
 
 /** @typedef {"GET" | "POST" | "PATCH"} HttpMethod */
 
@@ -68,7 +58,7 @@ import * as stopResult from "./stop-result.js";
  */
 
 /**
- * Sends one request. Rejects with `CancelledError` when the extension is being disabled, with
+ * Sends one request. Rejects with `CancelledError` when the widget is being closed, with
  * `TimeoutError` when nothing answers in time, and with any other error when nothing answers.
  *
  * @callback SendRequest
@@ -83,69 +73,18 @@ import * as stopResult from "./stop-result.js";
  * @returns {Promise<string | null>}
  */
 
-/**
- * Why a settings route did not answer as asked:
- *
- * - `conflict`: 409, `config.toml` changed since its revision was read; `revision` is the
- *   file's now.
- * - `invalid`: 422, nothing written. With `problems`, the values that were refused (or the
- *   file's own problems); without, the file is not TOML or not UTF-8.
- * - `held`: 423, another program holds `config.toml`.
- * - `unavailable`: 503, allotd has no machine sample or no config file yet.
- * - `token`: no token file, or allotd refused the token after one fresh read.
- * - `unreachable`: nothing answered in time.
- * - `failed`: anything else, such as a 500 or an answer that does not decode.
- *
- * @typedef {"conflict" | "invalid" | "held" | "unavailable" | "token" | "unreachable" | "failed"}
- *   SettingsFailureKind
- */
-
-/**
- * @typedef {object} SettingsFailure
- * @property {SettingsFailureKind} kind
- * @property {string} message
- *   allotd's sentence, or what went wrong on the way.
- * @property {FieldError[]} problems
- * @property {string | null} revision
- */
-
-/**
- * The answer of a settings route: the decoded value, or why there is none.
- *
- * @template T
- * @typedef {{ ok: true, value: T } | { ok: false, failure: SettingsFailure }} SettingsReply
- */
-
-/** A request was cancelled; it must never read as a stopped service. */
-export class CancelledError extends Error {
-  constructor() {
-    super("cancelled");
-    this.name = "CancelledError";
-  }
-}
-
-/** No answer came within the request's timeout. */
-export class TimeoutError extends Error {
-  constructor() {
-    super("timed out");
-    this.name = "TimeoutError";
-  }
-}
-
 const REQUEST_TIMEOUT_SECS = 3;
 
 // allotd answers a kill after up to three sweeps over the tree, each waiting out the grace
 // period of the processes that ignore SIGTERM.
 const STOP_TIMEOUT_SECS = 10;
 
-const NOT_KILLED = " was not killed: ";
-
 /** @type {ShutdownRequest} */
 const PANEL_STOP = { by: "panel" };
 
 /**
- * HTTP client for the daemon routes the extension uses. It never starts allotd by itself; that
- * is the user's Start service.
+ * The widget's HTTP client for allotd's routes, with the token from `~/.allot/token`. It never
+ * starts allotd by itself; that is the user's Start service.
  */
 export class DaemonClient {
   #port;
@@ -377,7 +316,7 @@ export class DaemonClient {
       return settingsFailure("unreachable", error instanceof Error ? error.message : String(error));
     }
     if (response === null) {
-      return settingsFailure("token", "no token in ~/.allot/token");
+      return settingsFailure("key", "no token in ~/.allot/token");
     }
     if (response.status === 200) {
       try {
@@ -387,7 +326,7 @@ export class DaemonClient {
       }
     }
     if (response.status === 401) {
-      return settingsFailure("token", "the service refused the token");
+      return settingsFailure("key", "the service refused the token");
     }
     return { ok: false, failure: settingsRefusal(response) };
   }
@@ -455,24 +394,6 @@ export class DaemonClient {
 }
 
 /**
- * The reason in an error body of the kill or remove route, for a card that already names the
- * job: allotd's text starts with the lease.
- *
- * @param {string} body
- * @returns {string}
- */
-export function conflictReason(body) {
-  const cut = body.indexOf(NOT_KILLED);
-  if (cut >= 0) {
-    return body.slice(cut + NOT_KILLED.length);
-  }
-  if (body.includes(" has already ended")) {
-    return "the job has already ended";
-  }
-  return body === "" ? "the service refused" : body;
-}
-
-/**
  * @param {number} status
  * @param {string} body
  * @returns {string}
@@ -490,17 +411,6 @@ function stopRefusal(status, body) {
     default:
       return `the service answered ${status}`;
   }
-}
-
-/**
- * A settings call that got no answer from allotd's settings code.
- *
- * @param {SettingsFailureKind} kind
- * @param {string} message
- * @returns {{ ok: false, failure: SettingsFailure }}
- */
-export function settingsFailure(kind, message) {
-  return { ok: false, failure: { kind, message, problems: [], revision: null } };
 }
 
 /** @type {Readonly<Record<number, SettingsFailureKind>>} */
@@ -532,56 +442,4 @@ function settingsRefusal(response) {
       revision: null,
     };
   }
-}
-
-/**
- * The poll of a `UiState` answer: running, or incompatible when it does not decode.
- *
- * @param {string} body
- * @returns {PollResult}
- */
-export function runningState(body) {
-  try {
-    const state = decodeUiState(JSON.parse(body));
-    return pollResult("running", { state, version: state.service.version });
-  } catch (error) {
-    return pollResult("incompatible", { detail: String(error) });
-  }
-}
-
-/**
- * Nothing answered, which reads as stopped; a cancel is passed on.
- *
- * @param {unknown} error
- * @returns {PollResult}
- */
-export function stoppedOrRethrow(error) {
-  rethrowCancelled(error);
-  const detail = error instanceof Error ? error.message : String(error);
-  return pollResult("stopped", { detail });
-}
-
-/**
- * A cancel must never read as a stopped service.
- *
- * @param {unknown} error
- */
-export function rethrowCancelled(error) {
-  if (error instanceof CancelledError) {
-    throw error;
-  }
-}
-
-/**
- * @param {ServiceStatus} status
- * @param {{ state?: UiState, version?: string, detail?: string }} [fields]
- * @returns {PollResult}
- */
-export function pollResult(status, fields = {}) {
-  return {
-    status,
-    state: fields.state ?? null,
-    version: fields.version ?? null,
-    detail: fields.detail ?? null,
-  };
 }

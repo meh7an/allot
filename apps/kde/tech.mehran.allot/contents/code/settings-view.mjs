@@ -22,6 +22,7 @@ import { DO_NOT_DISTURB_TEXT } from "./shared/snapshot.js";
 // What the KDE Settings window's QML shows, worked out here so the views only bind to it
 // (DESIGN.md section 10, KDE): one plain object per row, read again whenever the window's
 // revision moves on, and the shared texts and editors the views call.
+export { fileUrl } from "./io.js";
 export { ALLOTD_PAGES, DO_NOT_DISTURB_TEXT, LOADING_TEXT, METERS_HELP, METERS_TITLE, NOTHING_TO_RESET, NOTIFICATIONS_TITLE, NOT_YET_TEXT, NO_RULES_TEXT, TEST_COMMAND_HELP, TEST_COMMAND_TITLE, TEST_RULE_HELP, WHAT_FITS_TITLE, debounced, deletePresetConfirmation, deleteRule, draftRules, matchedRules, moveRule, pageSections, removeSizeRow, renameWarning, resettableRow, ruleDialogTitle, ruleRowItems, rulesStatus, savedRules, sizeDialogFit, sizeDialogTitle, sizeRowItems, testCommand, useBuiltInConfirmation, };
 /** The Panel page's entry in the window's page list, before allotd's pages. */
 export const PANEL_PAGE_ENTRY = { id: "panel", label: "Panel", kdeIcon: "speedometer" };

@@ -91,7 +91,7 @@ export const FAILED_FOR_MS = 6000;
 const SECOND_MS = 1000;
 
 /**
- * The Kill and Remove state of every card (handoff section 4): the two-step Kill? confirm, the
+ * The Kill and Remove state of every card: the two-step Kill? confirm, the
  * request in flight, and the Stopped, Removed or refused line that holds before the card goes.
  * It keeps the last seen copy of a job whose stop is under way or done, because allotd stops
  * listing the lease the moment it ends, while the card still holds for `ENDED_FOR_MS`.

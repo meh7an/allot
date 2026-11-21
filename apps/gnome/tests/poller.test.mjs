@@ -1,29 +1,29 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { CancelledError, DaemonClient } from "../allot@mehran.tech/lib/client.js";
+import { BusClient } from "../allot@mehran.tech/lib/bus-client.js";
 import { DaemonPoller } from "../allot@mehran.tech/lib/poller.js";
-import { FakeTimers, FakeTransport, fixtureText, settle } from "./support.mjs";
+import { CancelledError } from "../allot@mehran.tech/lib/results.js";
+import { FakeBus, FakeTimers, fixtureText, settle } from "./support.mjs";
 
 /**
- * A poller of a daemon that serves the idle fixture while `daemon.up` says so and refuses the
- * connection otherwise.
+ * A poller of a daemon that serves the idle fixture while `daemon.up` says so and is not on the
+ * bus otherwise.
  */
 function poller(daemon = { up: true }) {
   const body = fixtureText("ui-state-idle.json");
-  const transport = new FakeTransport(() => {
+  const transport = new FakeBus(() => {
     if (!daemon.up) {
-      throw new Error("Connection refused");
+      throw new Error("The name is not activatable");
     }
-    return { status: 200, body };
-  });
-  const client = new DaemonClient({
-    port: 1,
-    send: transport.send,
-    readToken: async () => "t",
+    return body;
   });
   const timers = new FakeTimers();
-  return { poller: new DaemonPoller(client, timers), timers, transport };
+  return {
+    poller: new DaemonPoller(new BusClient(transport.bus()), timers),
+    timers,
+    transport,
+  };
 }
 
 test("running polls every five seconds closed and every second open", async () => {
@@ -65,18 +65,18 @@ test("the loop waits on the schedule and pollNow wakes it early", async () => {
   const { poller: subject, timers, transport } = poller();
   const loop = subject.start();
   await settle();
-  assert.equal(transport.requests.length, 1);
+  assert.equal(transport.calls.length, 1);
   assert.deepEqual(timers.delays, [5000]);
 
   subject.pollNow();
   await settle();
 
-  assert.equal(transport.requests.length, 2);
+  assert.equal(transport.calls.length, 2);
   assert.deepEqual(timers.delays, [5000]);
 
   timers.fireAll();
   await settle();
-  assert.equal(transport.requests.length, 3);
+  assert.equal(transport.calls.length, 3);
 
   subject.stop();
   await loop;
@@ -87,12 +87,9 @@ test("a wake that arrives mid-poll skips the next wait", async () => {
   /** @type {() => void} */
   let answer = () => {};
   const body = fixtureText("ui-state-idle.json");
-  const transport = new FakeTransport(
-    () => new Promise((resolve) => (answer = () => resolve({ status: 200, body }))),
-  );
-  const client = new DaemonClient({ port: 1, send: transport.send, readToken: async () => "t" });
+  const transport = new FakeBus(() => new Promise((resolve) => (answer = () => resolve(body))));
   const timers = new FakeTimers();
-  const subject = new DaemonPoller(client, timers);
+  const subject = new DaemonPoller(new BusClient(transport.bus()), timers);
   const loop = subject.start();
   await settle();
 
@@ -100,7 +97,7 @@ test("a wake that arrives mid-poll skips the next wait", async () => {
   answer();
   await settle();
 
-  assert.equal(transport.requests.length, 2);
+  assert.equal(transport.calls.length, 2);
   assert.equal(timers.pending.size, 0);
   subject.stop();
   answer();
@@ -111,11 +108,8 @@ test("stop drops the poll in flight", async () => {
   /** @type {() => void} */
   let answer = () => {};
   const body = fixtureText("ui-state-idle.json");
-  const transport = new FakeTransport(
-    () => new Promise((resolve) => (answer = () => resolve({ status: 200, body }))),
-  );
-  const client = new DaemonClient({ port: 1, send: transport.send, readToken: async () => "t" });
-  const subject = new DaemonPoller(client, new FakeTimers());
+  const transport = new FakeBus(() => new Promise((resolve) => (answer = () => resolve(body))));
+  const subject = new DaemonPoller(new BusClient(transport.bus()), new FakeTimers());
   let updates = 0;
   subject.onUpdate = () => updates++;
   const loop = subject.start();
@@ -133,11 +127,10 @@ test("stop drops the poll in flight", async () => {
 });
 
 test("a cancelled request ends the loop", async () => {
-  const transport = new FakeTransport(() => {
+  const transport = new FakeBus(() => {
     throw new CancelledError();
   });
-  const client = new DaemonClient({ port: 1, send: transport.send, readToken: async () => "t" });
-  const subject = new DaemonPoller(client, new FakeTimers());
+  const subject = new DaemonPoller(new BusClient(transport.bus()), new FakeTimers());
 
   await subject.start();
 
@@ -162,7 +155,7 @@ test("an onUpdate that throws is reported once per message and polling goes on",
   timers.fireAll();
   await settle();
 
-  assert.equal(transport.requests.length, 3);
+  assert.equal(transport.calls.length, 3);
   assert.deepEqual(reported, ["Error: card failed", "Error: popup failed"]);
   assert.equal(subject.latest?.status, "running");
   subject.stop();

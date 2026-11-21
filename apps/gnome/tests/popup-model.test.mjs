@@ -5,7 +5,7 @@ import { PopupModel } from "../allot@mehran.tech/lib/popup-model.js";
 import { NOW_MS, leaseId, scenario, without } from "./handoff.mjs";
 import { fixtureState } from "./support.mjs";
 
-/** @import { PollResult } from "../allot@mehran.tech/lib/client.js" */
+/** @import { PollResult } from "../allot@mehran.tech/lib/results.js" */
 
 /**
  * @param {PollResult["status"]} status

@@ -80,7 +80,7 @@ Kirigami.ApplicationWindow {
     }
 
     function openPath(path) {
-        Qt.openUrlExternally("file://" + encodeURI(path));
+        Qt.openUrlExternally(View.fileUrl(path));
     }
 
     // The dialogs return focus to `opener`'s row once they close: `opener.focusRow(row)`.

@@ -7,7 +7,7 @@ import { DurationModel, NumberModel, quantityText } from "./setting-values.js";
  */
 // The Settings window's fixed sentences: the save status, the reset confirmations and notices,
 // and a saved or pending value as the user reads it. Buttons are title case, as GNOME's and
-// KDE's are (DESIGN.md section 12, as Mehran chose for M6.1).
+// KDE's are.
 /**
  * A confirmation, such as Reset Page or Stop Service.
  *

@@ -6,7 +6,7 @@ import { serviceBanner } from "./service-banner.js";
 import { defaultSettings } from "./settings.js";
 import { panelSnapshot } from "./snapshot.js";
 import { StateClock } from "./state-clock.js";
-/** @import { PollResult, ServiceStatus } from "./client.js" */
+/** @import { PollResult, ServiceStatus } from "./results.js" */
 /** @import { IndicatorStatus } from "./indicator-status.js" */
 /** @import { StopKind } from "./job-stops.js" */
 /** @import { ResourcesView } from "./resources-view.js" */
@@ -34,7 +34,7 @@ import { StateClock } from "./state-clock.js";
  * @property {boolean} indicator
  */
 /**
- * Ends leases on the user's behalf: `DaemonClient`, or a fake for the tests and scenarios.
+ * Ends leases on the user's behalf: a panel's client, or a fake for the tests and scenarios.
  * Both calls resolve with allotd's answer and reject only with `CancelledError`.
  *
  * @typedef {object} JobStopper

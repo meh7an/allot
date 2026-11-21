@@ -199,7 +199,7 @@ test("the Settings window waits for the widget's client, then keeps one model", 
   const model = await early;
   await settle();
 
-  assert.equal(model.port, 47823);
+  assert.deepEqual(model.reach, { kind: "port", port: 47823 });
   assert.equal(await subject.widget.settingsWindow(windowHost(), english), model);
   await model.refresh();
   assert.equal(model.session.status, "ready");

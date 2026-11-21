@@ -30,7 +30,7 @@ import * as format from "./format.js";
  */
 
 /**
- * The job row of a card at one moment (handoff section 4).
+ * The job row of a card at one moment.
  *
  * @typedef {object} JobCard
  * @property {string} tile

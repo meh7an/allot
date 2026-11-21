@@ -1,5 +1,5 @@
 // Generated from apps/gnome/allot@mehran.tech/lib/service-menu.js by apps/kde/tools/emit.mjs (pnpm build); do not edit.
-/** @import { ServiceStatus } from "./client.js" */
+/** @import { ServiceStatus } from "./results.js" */
 /** @import { UiState } from "../contract.g.mjs" */
 /**
  * - `stop`: allotd answers, so it can be stopped.

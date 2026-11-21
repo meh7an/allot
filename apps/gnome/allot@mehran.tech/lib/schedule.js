@@ -1,4 +1,4 @@
-/** @import { ServiceStatus } from "./client.js" */
+/** @import { ServiceStatus } from "./results.js" */
 
 // Live data ticks at 1 Hz while the popup is open; the closed popup only drives the panel
 // icon. While allotd is unreachable the wait doubles, capped lower while the popup is open, so a

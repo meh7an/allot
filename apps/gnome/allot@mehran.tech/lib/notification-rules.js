@@ -1,7 +1,7 @@
 import * as text from "./notification-text.js";
 
 /** @import { ActiveJob, RecentRun, UiSession, UiState } from "../contract.g.mjs" */
-/** @import { ServiceStatus } from "./client.js" */
+/** @import { ServiceStatus } from "./results.js" */
 /** @import { NotificationMessage } from "./notification-text.js" */
 /** @import { NotificationToggles } from "./settings.js" */
 
@@ -48,8 +48,8 @@ const SILENT = {
 };
 
 /**
- * Decides from each poll which notifications to show (handoff section 9), as the Windows tray
- * app's `ToastRules`. Everything is kept in memory: the first live state after the extension
+ * Decides from each poll which notifications to show, as the Windows tray
+ * app's `ToastRules` does. Everything is kept in memory: the first live state after the extension
  * starts is a baseline whose jobs, runs and notices never notify, so a restart repeats nothing,
  * and an event from while it was not running is not shown. An event that comes while its toggle
  * is off or the popup is open counts as seen without a notification.

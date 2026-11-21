@@ -20,9 +20,8 @@ import { fieldResetText, resetButtonName } from "./lib/settings-text.js";
  * @import { Confirmation } from "./lib/settings-text.js"
  */
 
-// The rows of the Settings window that every page and dialog shares (DESIGN.md section 3, and
-// section 10's GNOME column): a setting's row with its help, key, issue line and reset button,
-// number fields with their unit, chips, banners, toasts and confirmations. This file runs in the
+// The rows of the Settings window that every page and dialog shares: a setting's row with its
+// help, key, issue line and reset button, number fields with their unit, chips, banners, toasts and confirmations. This file runs in the
 // preferences process, so it imports GTK and libadwaita only, never the shell's modules.
 
 /**
@@ -56,7 +55,7 @@ export function escaped(text) {
 }
 
 /**
- * A row's subtitle: the help, the key in monospace (DESIGN.md D4), then lines such as an issue
+ * A row's subtitle: the help, the key in monospace, then lines such as an issue
  * or a disabled note.
  *
  * @param {string} help
@@ -118,7 +117,7 @@ export function innerEntry(row) {
   return row.get_delegate() ?? row;
 }
 
-/** One toast at a time: toasts queue, so the previous one is dismissed first (M0.3). */
+/** One toast at a time: toasts queue, so the previous one is dismissed first. */
 export class Toaster {
   #target;
   /** @type {Adw.Toast | null} */
@@ -407,8 +406,7 @@ function offSwitchRow(context, group, model) {
 
 /**
  * A number with its spin button, the unit picker of a duration or memory size, and its reset
- * button. `Adw.SpinRow` is not used: on GNOME 50 it was missing from the accessibility tree
- * (M0.3, DESIGN.md R7).
+ * button. `Adw.SpinRow` is not used: on GNOME 50 it was missing from the accessibility tree.
  *
  * @param {RowContext} context
  * @param {NumberModel} model
@@ -427,7 +425,7 @@ export function numberRow(context, model, note = () => null) {
   }
   row.add_suffix(reset.button);
   row.activatable_widget = editor.widgets[0] ?? null;
-  // Indented under its switch, as DESIGN.md asks for a duration that can be off.
+  // A duration that can be off sits indented under its switch.
   // A boxed list has no indented rows, so a spacer in front stands in for one.
   if (model instanceof DurationModel && model.off !== null) {
     row.add_prefix(new Gtk.Box({ width_request: 24 }));
@@ -534,7 +532,7 @@ export function numberEditor(context, model) {
 }
 
 /**
- * A string list as chips with remove buttons, and an entry that adds one (DESIGN.md section 3).
+ * A string list as chips with remove buttons, and an entry that adds one.
  * Adding or removing saves.
  *
  * @param {RowContext} context
@@ -579,7 +577,7 @@ export function chipsRows(context, group, model, withReset = true) {
   const reset = resetButton(context, model);
   if (withReset) {
     group.header_suffix = reset.button;
-    group.description = `${model.spec.help}  ${model.key}`;
+    group.description = escaped(`${model.spec.help}  ${model.key}`);
   }
   group.add(chipsRow);
   group.add(entry);
@@ -624,7 +622,7 @@ export function chipsRows(context, group, model, withReset = true) {
 }
 
 /**
- * The banners at the top of a page (DESIGN.md section 7). Each is a row with an icon, the
+ * The banners at the top of a page. Each is a row with an icon, the
  * message and its buttons, since `Adw.Banner` holds only one button and several states need two.
  *
  * @param {Adw.PreferencesGroup} group

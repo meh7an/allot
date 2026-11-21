@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { CancelledError, TimeoutError } from "../../gnome/allot@mehran.tech/lib/client.js";
+import { CancelledError, TimeoutError } from "../../gnome/allot@mehran.tech/lib/results.js";
 import { FakeTimers, settle } from "../../gnome/tests/support.mjs";
 import {
   CommandRunner,
@@ -9,6 +9,7 @@ import {
   catCommand,
   copyFile,
   detachedCommand,
+  fileUrl,
   localPath,
   readTextFile,
   serviceSystem,
@@ -198,4 +199,16 @@ test("cancel rejects requests in flight with CancelledError and clears timeouts"
   assert.equal(requests[0]?.aborted, true);
   assert.equal(timers.pending.size, 0);
   await settle();
+});
+
+test("a file URL encodes each segment, so # and % in a path stay part of the name", () => {
+  assert.equal(fileUrl("/home/a#b/.allot/logs"), "file:///home/a%23b/.allot/logs");
+  assert.equal(fileUrl("/home/100%/what?/x y"), "file:///home/100%25/what%3F/x%20y");
+  assert.equal(fileUrl("/plain/path"), "file:///plain/path");
+});
+
+test("a file URL reads back to the path it was made from", () => {
+  const path = "/home/a#b%20c/.allot/logs";
+
+  assert.equal(localPath(fileUrl(path)), path);
 });

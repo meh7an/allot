@@ -1,6 +1,6 @@
-import { CancelledError, TimeoutError } from "../../gnome/allot@mehran.tech/lib/client.js";
+import { CancelledError, TimeoutError } from "../../gnome/allot@mehran.tech/lib/results.js";
 
-/** @import { HttpRequest, HttpResponse } from "../../gnome/allot@mehran.tech/lib/client.js" */
+/** @import { HttpRequest, HttpResponse } from "./http-client.js" */
 /** @import { Timers } from "../../gnome/allot@mehran.tech/lib/poller.js" */
 /** @import { ServiceSystem } from "../../gnome/allot@mehran.tech/lib/service-launcher.js" */
 
@@ -201,6 +201,18 @@ export function shellQuote(word) {
  */
 export function localPath(url) {
   return decodeURIComponent(String(url).replace(/^file:\/\//, ""));
+}
+
+/**
+ * The `file:` URL of a local path, as QML's `Qt.openUrlExternally` takes it. Each segment is
+ * encoded on its own, so `#`, `?` and `%` in a name are not read as a fragment, a query or an
+ * escape.
+ *
+ * @param {string} path An absolute path.
+ * @returns {string}
+ */
+export function fileUrl(path) {
+  return `file://${path.split("/").map(encodeURIComponent).join("/")}`;
 }
 
 /** Sends the client's requests with QML's XMLHttpRequest; `cancel` ends those in flight. */

@@ -1,5 +1,5 @@
 // Generated from apps/gnome/allot@mehran.tech/lib/schedule.js by apps/kde/tools/emit.mjs (pnpm build); do not edit.
-/** @import { ServiceStatus } from "./client.js" */
+/** @import { ServiceStatus } from "./results.js" */
 // Live data ticks at 1 Hz while the popup is open; the closed popup only drives the panel
 // icon. While allotd is unreachable the wait doubles, capped lower while the popup is open, so a
 // service started elsewhere shows up quickly. The same cadence as the Windows and macOS apps.

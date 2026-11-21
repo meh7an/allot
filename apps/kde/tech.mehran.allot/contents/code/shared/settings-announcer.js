@@ -4,9 +4,8 @@ import { issueText } from "./setting-values.js";
  * @import { SettingsBanner } from "./settings-banners.js"
  * @import { SaveStatus, SettingsSession } from "./settings-session.js"
  */
-// What a Settings window says to a screen reader by itself, without a focus change (Mehran at
-// M7.1: errors and outcomes): a field's new error, a banner that appears, and the outcome of a
-// save. Live sentences and What fits are not spoken; they are read with their group when focus
+// What a Settings window says to a screen reader by itself, without a focus change: errors and
+// outcomes, namely a field's new error, a banner that appears, and the outcome of a save. Live sentences and What fits are not spoken; they are read with their group when focus
 // reaches it. Each panel speaks the text through its own toolkit.
 export const SAVED_ANNOUNCEMENT = "All changes saved";
 /**

@@ -13,7 +13,7 @@ import { quantityText } from "./setting-values.js";
  * @import { Confirmation } from "./settings-text.js"
  */
 // The Commands page's sentences: the rule list's status and rows, its confirmations and notices,
-// and the lines of Test a command (DESIGN.md section 4, Commands).
+// and the lines of Test a command.
 export const BUILT_IN_RULES_TEXT = "Built-in rules.";
 export const YOUR_RULES_TEXT = "Your rules. They replace the built-in list.";
 export const NO_RULES_TEXT = "No rules. No command counts as heavy, so the hook never asks for a lease.";

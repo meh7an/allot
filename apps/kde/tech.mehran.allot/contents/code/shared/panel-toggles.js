@@ -3,7 +3,7 @@ import { defaultSettings } from "./settings.js";
 import { onOff } from "./settings-text.js";
 /** @import { TraySettings } from "./settings.js" */
 // The Settings window's Panel page on GNOME and KDE: the Meters and Notifications groups over the
-// toggles in `tray.json` (DESIGN.md section 4, Panel), and its Reset Page. There is no Startup
+// toggles in `tray.json`, and its Reset Page. There is no Startup
 // group: the desktop starts the extension or widget.
 /**
  * One switch on the Panel page.

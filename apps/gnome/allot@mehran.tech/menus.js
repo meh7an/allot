@@ -7,7 +7,7 @@ import { SETTINGS_TITLE, serviceMenuItem } from "./lib/service-menu.js";
 /** @import { PopupModel } from "./lib/popup-model.js" */
 
 /**
- * The header's More options menu (DESIGN.md section 9): Settings, Stop Service or Start Service,
+ * The header's More options menu: Settings, Stop Service or Start Service,
  * and Open Logs. Meters and Notifications moved to the Settings window's Panel page.
  */
 export class MoreOptionsMenu {

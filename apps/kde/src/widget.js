@@ -1,6 +1,5 @@
 import { Announcer } from "../../gnome/allot@mehran.tech/lib/accessible-text.js";
-import { DaemonClient } from "../../gnome/allot@mehran.tech/lib/client.js";
-import { DEFAULT_PORT, dataPaths, portFromToml } from "../../gnome/allot@mehran.tech/lib/config.js";
+import { dataPaths } from "../../gnome/allot@mehran.tech/lib/config.js";
 import { accessibleName, iconFile } from "../../gnome/allot@mehran.tech/lib/indicator-status.js";
 import { NotificationRules } from "../../gnome/allot@mehran.tech/lib/notification-rules.js";
 import { resetPanel, setToggle } from "../../gnome/allot@mehran.tech/lib/panel-toggles.js";
@@ -20,11 +19,14 @@ import {
   WELCOME_TITLE,
 } from "../../gnome/allot@mehran.tech/lib/snapshot.js";
 import { AppIcons } from "./app-icons.js";
+import { DEFAULT_PORT, portFromToml, tokenPath } from "./daemon-config.js";
+import { DaemonClient } from "./http-client.js";
 import {
   CommandRunner,
   XhrTransport,
   copyFile,
   detachedCommand,
+  fileUrl,
   localPath,
   readTextFile,
   serviceSystem,
@@ -42,7 +44,7 @@ import {
 import { Notifier } from "./notifier.js";
 import { RowKeeper, listRows } from "./rows.js";
 
-/** @import { PollResult, ServiceStatus } from "../../gnome/allot@mehran.tech/lib/client.js" */
+/** @import { PollResult, ServiceStatus } from "../../gnome/allot@mehran.tech/lib/results.js" */
 /** @import { PanelToggle } from "../../gnome/allot@mehran.tech/lib/panel-toggles.js" */
 /** @import { WindowHost } from "../../gnome/allot@mehran.tech/lib/settings-window.js" */
 /** @import { DataPaths } from "../../gnome/allot@mehran.tech/lib/config.js" */
@@ -226,7 +228,7 @@ export class AllotWidget {
     const client = new DaemonClient({
       port: toml === null ? DEFAULT_PORT : portFromToml(toml),
       send: this.#transport.send,
-      readToken: () => readTextFile(this.#runner, this.paths.token),
+      readToken: () => readTextFile(this.#runner, tokenPath(this.paths.root)),
     });
     this.model.stopper = client;
     const launcher = new SystemdServiceLauncher(
@@ -266,9 +268,9 @@ export class AllotWidget {
 
   /**
    * The Settings window's model, built on its first open once `start` has made the client, then
-   * kept for the widget's life, since the window only hides (DESIGN.md D14). It shares the
-   * popup's client, so a restart on a new port moves both, and its Start and Stop go through the
-   * popup's poller, so the popup follows at once.
+   * kept for the widget's life, since the window only hides. It shares the popup's client, so a
+   * restart on a new port moves both, and its Start and Stop go through the popup's poller, so the
+   * popup follows at once.
    *
    * @param {WindowHost} host
    * @param {(value: number) => string} number Formats a number for the user's locale.
@@ -282,10 +284,11 @@ export class AllotWidget {
         timers: this.#host.timers,
         launcher: service.launcher,
         paths: this.paths,
-        port: service.client.port,
+        reach: { kind: "port", port: service.client.port },
+        followPort: (port) => service.client.usePort(port),
         number,
         readStopRecord: () => readTextFile(this.#runner, `${this.paths.root}/stopped.json`),
-        host,
+        host: { ...host, log: (text) => this.#host.log(text) },
         stop: () => this.#stopService(),
         start: () => this.startService(),
       });
@@ -498,7 +501,7 @@ export class AllotWidget {
 
   /** Opens the logs folder. */
   openLogs() {
-    this.#host.openUrl(`file://${this.paths.logs}`);
+    this.#host.openUrl(fileUrl(this.paths.logs));
   }
 
   /** @returns {boolean} */

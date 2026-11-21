@@ -8,7 +8,7 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
         step((generator = generator.apply(thisArg, _arguments || [])).next());
     });
 };
-import { CancelledError } from "./client.js";
+import { CancelledError } from "./results.js";
 import { SERVICE_STOPPED_TEXT } from "./live-text.js";
 import { SAVE_DELAY_MS } from "./settings-session.js";
 /**

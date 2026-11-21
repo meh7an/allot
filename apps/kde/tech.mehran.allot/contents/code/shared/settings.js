@@ -1,6 +1,6 @@
 // Generated from apps/gnome/allot@mehran.tech/lib/settings.js by apps/kde/tools/emit.mjs (pnpm build); do not edit.
 /**
- * The More options > Meters check items; all on by default.
+ * The Panel page's Meters switches; all on by default.
  *
  * @typedef {object} MeterToggles
  * @property {boolean} cpu
@@ -12,7 +12,7 @@
  *   Read and write rates on the drive rows; disabled in the menu while Drives is off.
  */
 /**
- * The More options > Notifications check items. The last key keeps its Windows name, since every
+ * The Panel page's Notifications switches. The last key keeps its Windows name, since every
  * app reads the same file.
  *
  * @typedef {object} NotificationToggles
