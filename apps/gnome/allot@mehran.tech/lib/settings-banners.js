@@ -96,7 +96,7 @@ export function settingsBanners(session, pageId, reach, number) {
     banners.push({
       severity: "error",
       message:
-        `config.toml has an error: ${sentence(session.fileError)} The service keeps using ` +
+        `config.toml has an error. ${sentence(session.fileError)} The service keeps using ` +
         "its last good settings. Fix the file to change settings here.",
       actions: ["open_file", "check_again"],
     });
@@ -182,6 +182,14 @@ function unansweredBanner(session, reach) {
         message: "The service refused this panel's key. Restart the service to make a new one.",
         actions: ["restart_service"],
       };
+    case "outdated":
+      return {
+        severity: "error",
+        message:
+          "The service running now is older than this app and has no settings. Restart it to " +
+          "run the version installed with this app, or update it with allot install.",
+        actions: ["restart_service", "open_logs"],
+      };
     case "failed":
       return {
         severity: "error",
@@ -222,12 +230,20 @@ function editText(edit, number) {
 }
 
 /**
- * allotd's reasons come without a full stop; the banner's next sentence needs one.
+ * allotd's reasons come without a capital or a full stop; as a sentence of the banner they
+ * need both. A file name at the start, such as config.toml, keeps its spelling.
  *
  * @param {string | null} text
  * @returns {string}
  */
-function sentence(text) {
+export function sentence(text) {
   const trimmed = (text ?? "").trim();
-  return trimmed === "" || trimmed.endsWith(".") ? trimmed : `${trimmed}.`;
+  if (trimmed === "") {
+    return trimmed;
+  }
+  const first = (trimmed.split(/\s/, 1)[0] ?? "").replace(/[.,:;]+$/, "");
+  const capitalized = first.includes(".")
+    ? trimmed
+    : trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
+  return capitalized.endsWith(".") ? capitalized : `${capitalized}.`;
 }

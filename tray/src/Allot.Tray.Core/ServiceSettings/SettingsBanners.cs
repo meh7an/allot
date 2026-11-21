@@ -78,7 +78,7 @@ public static class SettingsBanners
         {
             banners.Add(new SettingsBanner(
                 BannerSeverity.Error,
-                $"config.toml has an error: {Sentence(fileError)} The service keeps using its last "
+                $"config.toml has an error. {Sentence(fileError)} The service keeps using its last "
                     + "good settings. Fix the file to change settings here.",
                 [BannerAction.OpenFile, BannerAction.CheckAgain]));
         }
@@ -178,6 +178,11 @@ public static class SettingsBanners
                 BannerSeverity.Error,
                 $"The service sent an answer Settings can't use. {Sentence(session.Detail)}",
                 [BannerAction.TryNow, BannerAction.OpenLogs]),
+            SessionStatus.Outdated => new SettingsBanner(
+                BannerSeverity.Error,
+                "The service running now is older than this app and has no settings. Restart it "
+                    + "to run the version installed with this app, or update it with allot install.",
+                [BannerAction.RestartService, BannerAction.OpenLogs]),
             _ => null,
         };
 
@@ -201,11 +206,26 @@ public static class SettingsBanners
         return $"{edit.Setting.Label} ({value})";
     }
 
-    // allotd's reasons come without a full stop; the banner's next sentence needs one.
-    internal static string Sentence(string? text)
+    /// <summary>
+    /// <paramref name="text"/> as a sentence with a capital and a full stop: allotd's reasons come
+    /// without either. A file name at the start, such as config.toml, keeps its spelling.
+    /// </summary>
+    /// <param name="text">The reason, or <c>null</c>.</param>
+    /// <param name="capitalize">Whether to capitalize the first letter. A text that starts with
+    /// a program's name, such as allotd, keeps its spelling.</param>
+    public static string Sentence(string? text, bool capitalize = true)
     {
         var trimmed = (text ?? string.Empty).Trim();
-        return trimmed.Length == 0 || trimmed.EndsWith('.') ? trimmed : trimmed + ".";
+        if (trimmed.Length == 0)
+        {
+            return trimmed;
+        }
+
+        var first = trimmed.Split(' ', 2)[0].TrimEnd('.', ',', ':', ';');
+        var shown = capitalize && !first.Contains('.')
+            ? char.ToUpperInvariant(trimmed[0]) + trimmed[1..]
+            : trimmed;
+        return shown.EndsWith('.') ? shown : shown + ".";
     }
 
     private static string Port(double port) => port.ToString(CultureInfo.InvariantCulture);

@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { FakeTimers, fixtureText, settle } from "../../gnome/tests/support.mjs";
+import { settingsBanners } from "../tech.mehran.allot/contents/code/shared/settings-banners.js";
 import { SettingsSession } from "../tech.mehran.allot/contents/code/shared/settings-session.js";
 import { DaemonClient } from "../tech.mehran.allot/contents/code/http-client.js";
 import { XhrTransport } from "../tech.mehran.allot/contents/code/io.js";
@@ -15,13 +16,14 @@ const STATE = fixtureText("settings-state.json");
 
 /**
  * A session on the widget's transport, with allotd answering the settings-state fixture to
- * every read and write, or not answering at all while `up` is false.
+ * every read and write, or not answering at all while `up` is false. A `status` other than 200
+ * answers every request with it and an empty body.
  */
-async function widgetSession(up = true) {
+async function widgetSession(up = true, status = 200) {
   const timers = new FakeTimers();
   /** @type {FakeXhr[]} */
   const requests = [];
-  const answer = () => (up ? { status: 200, body: STATE } : null);
+  const answer = () => (up ? { status, body: status === 200 ? STATE : "" } : null);
   const transport = new XhrTransport(fakeRequests(answer, requests), timers);
   const client = new DaemonClient({ port: 47823, send: transport.send, readToken: async () => "t" });
   const session = new SettingsSession(client, timers, {
@@ -62,6 +64,18 @@ test("the lowered session loads the fixture and saves a burst as JSON", async ()
     revision: "69fd99abe4f654c7",
     changes: [{ kind: "set_switch", key: "linux.scopes", value: false }],
   });
+});
+
+test("the lowered session reads a 404 from the settings routes as an outdated service", async () => {
+  const { session } = await widgetSession(true, 404);
+
+  assert.equal(session.status, "outdated");
+  assert.equal(session.detail, "the service answered 404");
+  assert.equal(session.readOnly, true);
+  assert.deepEqual(
+    settingsBanners(session, "admission", { kind: "port", port: 47823 }, String)[0]?.actions,
+    ["restart_service", "open_logs"],
+  );
 });
 
 test("the lowered session tells a stop from the record when nothing answers", async () => {

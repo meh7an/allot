@@ -161,6 +161,43 @@ private func counts(_ full: Int, _ shrunk: Int, more: Bool = false) throws -> Fi
         #expect(banner.actions == [.restartService])
     }
 
+    @Test func anOutdatedServiceOffersRestartAndLogsButNoTryNow() async throws {
+        let parts = try await loaded()
+        parts.client.queueRead(failure(.outdated, message: "the service answered 404"))
+        try await parts.session.refresh()
+
+        let banner = try #require(SettingsBanners.banners(
+            parts.session, pageId: "admission", port: 47823, number: english).first)
+
+        #expect(parts.session.status == .outdated)
+        #expect(banner.severity == .error)
+        #expect(
+            banner.message
+                == "The service running now is older than this app and has no settings. Restart "
+                + "it to run the version installed with this app, or update it with allot install.")
+        #expect(banner.actions == [.restartService, .openLogs])
+    }
+
+    @Test func aDetailThatStartsInLowercaseStartsItsSentenceInUppercase() async throws {
+        let parts = try await loaded()
+        parts.client.queueRead(failure(.failed, message: "the service answered 404"))
+        try await parts.session.refresh()
+
+        let banner = try #require(SettingsBanners.banners(
+            parts.session, pageId: "admission", port: 47823, number: english).first)
+
+        #expect(
+            banner.message
+                == "The service sent an answer Settings can't use. The service answered 404.")
+        #expect(SettingsBanners.sentence(" closed it") == "Closed it.")
+        #expect(SettingsBanners.sentence("Already. Fine.") == "Already. Fine.")
+        #expect(SettingsBanners.sentence("config.toml is open") == "config.toml is open.")
+        #expect(
+            SettingsBanners.sentence("allotd was not found", capitalize: false)
+                == "allotd was not found.")
+        #expect(SettingsBanners.sentence(nil) == "")
+    }
+
     @Test func aNewPortWaitsForARestartOnTheServicePageOnly() async throws {
         let session = try await loaded().session
 
@@ -189,7 +226,7 @@ private func counts(_ full: Int, _ shrunk: Int, more: Bool = false) throws -> Fi
         #expect(banner.severity == .error)
         #expect(
             banner.message
-                == "config.toml has an error: expected a number at line 3. The service keeps "
+                == "config.toml has an error. Expected a number at line 3. The service keeps "
                 + "using its last good settings. Fix the file to change settings here.")
         #expect(banner.actions == [.openFile, .checkAgain])
     }

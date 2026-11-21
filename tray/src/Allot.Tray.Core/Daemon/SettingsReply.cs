@@ -39,6 +39,11 @@ public enum SettingsFailureKind
     Unreachable,
 
     /// <summary>
+    /// 404: the running allotd is older than Settings and has no settings routes.
+    /// </summary>
+    Outdated,
+
+    /// <summary>
     /// Anything else, such as a 500 or an answer that does not decode.
     /// </summary>
     Failed,

@@ -36,6 +36,7 @@ import { decodeUiState } from "../contract.g.mjs";
  * - `key`: the caller has no key, or allotd refused it after one fresh read.
  * - `unreachable`: nothing answered in time.
  * - `off_bus`: nothing answered on the bus, but an allotd process is alive.
+ * - `outdated`: the running allotd is older than Settings and has no settings routes.
  * - `failed`: anything else, such as an answer that does not decode.
  *
  * @typedef {(
@@ -46,6 +47,7 @@ import { decodeUiState } from "../contract.g.mjs";
  *   | "key"
  *   | "unreachable"
  *   | "off_bus"
+ *   | "outdated"
  *   | "failed"
  * )} SettingsFailureKind
  */

@@ -163,6 +163,7 @@ private func failure<Value>(_ reply: SettingsReply<Value>) throws -> SettingsFai
         (423, #"{"message": "config.toml is open", "problems": []}"#,
          SettingsFailureKind.held, "config.toml is open"),
         (503, "", .unavailable, "the service answered 503"),
+        (404, "", .outdated, "the service answered 404"),
         (500, "internal error\n", .failed, "internal error"),
         (401, "", .token, "the service refused the token"),
     ] as [(Int, String, SettingsFailureKind, String)])

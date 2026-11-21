@@ -21,6 +21,9 @@ public enum SettingsFailureKind: String, Sendable, Equatable {
     /// Nothing answered in time.
     case unreachable
 
+    /// 404: the running allotd is older than Settings and has no settings routes.
+    case outdated
+
     /// Anything else, such as a 500 or an answer that does not decode.
     case failed
 }

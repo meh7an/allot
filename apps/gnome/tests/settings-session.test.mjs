@@ -498,6 +498,41 @@ test("a failed save other than a held file waits for Try again or the next edit"
   assert.equal(session.writeProblem, null);
 });
 
+test("an outdated service keeps the pages read-only and is asked again by the refresh", async () => {
+  const { session, client } = await loaded();
+  client.reads.push(failure("outdated", { message: "the service answered 404" }));
+
+  await session.refresh();
+
+  assert.equal(session.status, "outdated");
+  assert.equal(session.detail, "the service answered 404");
+  assert.equal(session.readOnly, true);
+
+  await session.refresh();
+
+  assert.equal(session.status, "ready");
+  assert.equal(session.detail, null);
+});
+
+test("a save refused as outdated is not sent again on the timer", async () => {
+  const { session, client, timers } = await loaded();
+  client.writes.push(failure("outdated", { message: "the service answered 404" }));
+
+  as(session.setting("hook.fail_open"), SwitchModel).set(false);
+  await fire(timers);
+
+  assert.equal(session.status, "outdated");
+  assert.equal(session.writeProblem, null);
+  assert.equal(timers.pending.size, 0);
+  assert.equal(client.patches.length, 1);
+  await fire(timers);
+  assert.equal(client.patches.length, 1);
+
+  await session.refresh();
+  await fire(timers);
+  assert.equal(client.patches.length, 2);
+});
+
 test("changes allotd did not answer go out again once a refresh finds it back", async () => {
   const { session, client, timers } = await loaded();
   client.writes.push(failure("unreachable", { message: "Connection refused" }));

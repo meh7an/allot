@@ -41,6 +41,7 @@ import {
   SERVICE_PAGE,
   bannerActionLabel,
   restartNote,
+  sentence,
   settingsBanners,
 } from "../allot@mehran.tech/lib/settings-banners.js";
 import { SAVE_DELAY_MS } from "../allot@mehran.tech/lib/settings-session.js";
@@ -194,6 +195,40 @@ test("a new port waits for a restart on the Service page only", async () => {
   assert.equal(restartNote(session, "hook.fail_open"), null);
 });
 
+test("an outdated service offers Restart Service and Open Logs but no Try Now", async () => {
+  const { session, client } = await loaded();
+  client.reads.push(failure("outdated", { message: "the service answered 404" }));
+  await session.refresh();
+
+  const [banner] = settingsBanners(session, "admission", PORT_REACH, english);
+
+  assert.equal(session.status, "outdated");
+  assert.equal(banner?.severity, "error");
+  assert.equal(
+    banner?.message,
+    "The service running now is older than this app and has no settings. Restart it to run " +
+      "the version installed with this app, or update it with allot install.",
+  );
+  assert.deepEqual(banner?.actions, ["restart_service", "open_logs"]);
+});
+
+test("a detail that starts in lowercase starts its sentence in uppercase", async () => {
+  const { session, client } = await loaded();
+  client.reads.push(failure("failed", { message: "the service answered 404" }));
+  await session.refresh();
+
+  const [banner] = settingsBanners(session, "admission", PORT_REACH, english);
+
+  assert.equal(
+    banner?.message,
+    "The service sent an answer Settings can't use. The service answered 404.",
+  );
+  assert.equal(sentence(" closed it"), "Closed it.");
+  assert.equal(sentence("Already. Fine."), "Already. Fine.");
+  assert.equal(sentence("config.toml is open"), "config.toml is open.");
+  assert.equal(sentence(null), "");
+});
+
 test("a rejected file is an error banner and keeps the pages read-only", async () => {
   const state = fixtureState((json) => {
     json.file_error = "expected a number at line 3";
@@ -206,7 +241,7 @@ test("a rejected file is an error banner and keeps the pages read-only", async (
   assert.equal(banner?.severity, "error");
   assert.equal(
     banner?.message,
-    "config.toml has an error: expected a number at line 3. The service keeps using its last " +
+    "config.toml has an error. Expected a number at line 3. The service keeps using its last " +
       "good settings. Fix the file to change settings here.",
   );
   assert.deepEqual(banner?.actions, ["open_file", "check_again"]);

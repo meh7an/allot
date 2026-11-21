@@ -32,11 +32,21 @@ export const REFRESH_INTERVAL_MS = 5000;
  * - `down`: allotd does not answer.
  * - `off_bus`: allotd does not answer on the bus, yet its process is alive.
  * - `key`: allotd refused this panel's key.
+ * - `outdated`: the running allotd is older than Settings and has no settings routes.
  * - `failed`: allotd answered something unusable; `detail` says what.
  *
  * Every state but `ready` keeps the last values read-only.
  *
- * @typedef {"loading" | "ready" | "stopped" | "down" | "off_bus" | "key" | "failed"} SessionStatus
+ * @typedef {(
+ *   | "loading"
+ *   | "ready"
+ *   | "stopped"
+ *   | "down"
+ *   | "off_bus"
+ *   | "key"
+ *   | "outdated"
+ *   | "failed"
+ * )} SessionStatus
  */
 
 /**
@@ -485,6 +495,9 @@ export class SettingsSession {
       case "key":
         this.status = "key";
         break;
+      case "outdated":
+        this.status = "outdated";
+        break;
       default:
         this.status = "failed";
     }
@@ -520,6 +533,7 @@ export class SettingsSession {
       case "key":
       case "unreachable":
       case "off_bus":
+      case "outdated":
         this.#restore(batch);
         await this.#unanswered(failure);
         return;

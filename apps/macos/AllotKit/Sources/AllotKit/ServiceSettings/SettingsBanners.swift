@@ -79,7 +79,7 @@ public enum SettingsBanners {
             banners.append(
                 SettingsBanner(
                     severity: .error,
-                    message: "config.toml has an error: \(sentence(fileError)) The service keeps "
+                    message: "config.toml has an error. \(sentence(fileError)) The service keeps "
                         + "using its last good settings. Fix the file to change settings here.",
                     actions: [.openFile, .checkAgain]))
         }
@@ -142,6 +142,13 @@ public enum SettingsBanners {
                 message: "The service sent an answer Settings can't use. "
                     + sentence(session.detail),
                 actions: [.tryNow, .openLogs])
+        case .outdated:
+            SettingsBanner(
+                severity: .error,
+                message: "The service running now is older than this app and has no settings. "
+                    + "Restart it to run the version installed with this app, or update it with "
+                    + "allot install.",
+                actions: [.restartService, .openLogs])
         case .loading, .ready:
             nil
         }
@@ -163,10 +170,21 @@ public enum SettingsBanners {
         return "\(edit.setting.label) (\(value))"
     }
 
-    // allotd's reasons come without a full stop; the banner's next sentence needs one.
-    nonisolated static func sentence(_ text: String?) -> String {
+    // allotd's reasons come without a capital or a full stop; as a sentence of the banner they
+    // need both. A file name at the start, such as config.toml, and a text that starts with a
+    // program's name keep their spelling.
+    nonisolated static func sentence(_ text: String?, capitalize: Bool = true) -> String {
         let trimmed = (text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty || trimmed.hasSuffix(".") ? trimmed : "\(trimmed)."
+        guard !trimmed.isEmpty else {
+            return trimmed
+        }
+        let first = trimmed.split(separator: " ", maxSplits: 1).first.map(String.init) ?? trimmed
+        let isFileName = first.trimmingCharacters(in: CharacterSet(charactersIn: ".,:;"))
+            .contains(".")
+        let shown = capitalize && !isFileName
+            ? trimmed.prefix(1).uppercased() + trimmed.dropFirst()
+            : trimmed
+        return shown.hasSuffix(".") ? shown : shown + "."
     }
 
     // A port is never grouped.

@@ -45,7 +45,8 @@ public struct ServiceRow: Sendable, Equatable {
         case .starting:
             return ServiceRow(text: starting, button: .starting, opensLogs: false)
         case .stopped where startProblem != nil:
-            let text = "The service did not start. \(SettingsBanners.sentence(startProblem))"
+            let reason = SettingsBanners.sentence(startProblem, capitalize: false)
+            let text = "The service did not start. \(reason)"
             return ServiceRow(text: text, button: .start, opensLogs: true)
         case .stopped where session == .stopped:
             return ServiceRow(text: stoppedByYou, button: .start, opensLogs: false)

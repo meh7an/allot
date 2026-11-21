@@ -251,6 +251,51 @@ public sealed class SettingsSessionTests
     }
 
     [TestMethod]
+    public async Task AnOutdatedServiceKeepsThePagesReadOnlyAndIsAskedAgainByTheRefresh()
+    {
+        var harness = await LoadAsync();
+        var session = harness.Session;
+        harness.Client.Reads.Enqueue(
+            FakeSettingsClient.Failure<SettingsState>(
+                SettingsFailureKind.Outdated, "the service answered 404"));
+
+        await session.RefreshAsync();
+
+        Assert.AreEqual(SessionStatus.Outdated, session.Status);
+        Assert.AreEqual("the service answered 404", session.Detail);
+        Assert.IsTrue(session.ReadOnly);
+
+        await session.RefreshAsync();
+
+        Assert.AreEqual(SessionStatus.Ready, session.Status);
+        Assert.IsNull(session.Detail);
+    }
+
+    [TestMethod]
+    public async Task ASaveRefusedAsOutdatedIsNotSentAgainOnTheTimer()
+    {
+        var harness = await LoadAsync();
+        var session = harness.Session;
+        harness.Client.Writes.Enqueue(
+            FakeSettingsClient.Failure<SettingsState>(
+                SettingsFailureKind.Outdated, "the service answered 404"));
+
+        As<SwitchModel>(session.Setting("hook.fail_open")).Turn(false);
+        harness.Fire();
+
+        Assert.AreEqual(SessionStatus.Outdated, session.Status);
+        Assert.IsNull(session.WriteProblem);
+        Assert.IsEmpty(harness.Timers.Delays);
+        Assert.HasCount(1, harness.Client.Patches);
+        harness.Fire();
+        Assert.HasCount(1, harness.Client.Patches);
+
+        await session.RefreshAsync();
+        harness.Fire();
+        Assert.HasCount(2, harness.Client.Patches);
+    }
+
+    [TestMethod]
     public async Task ARefreshSentBeforeASaveDoesNotBringBackTheOldRevision()
     {
         var harness = await LoadAsync();

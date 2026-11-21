@@ -37,6 +37,11 @@ public enum SessionStatus
     /// allotd answered something unusable; the session's detail says what.
     /// </summary>
     Failed,
+
+    /// <summary>
+    /// The running allotd is older than Settings and has no settings routes.
+    /// </summary>
+    Outdated,
 }
 
 /// <summary>

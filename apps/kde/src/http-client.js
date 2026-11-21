@@ -414,7 +414,13 @@ function stopRefusal(status, body) {
 }
 
 /** @type {Readonly<Record<number, SettingsFailureKind>>} */
-const REFUSAL_KINDS = { 409: "conflict", 422: "invalid", 423: "held", 503: "unavailable" };
+const REFUSAL_KINDS = {
+  404: "outdated", // An allotd that serves /ui/state but not /settings predates Settings.
+  409: "conflict",
+  422: "invalid",
+  423: "held",
+  503: "unavailable",
+};
 
 /**
  * A refused settings request. Settings routes refuse with a `SettingsRefusal`; a body that is

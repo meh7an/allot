@@ -536,7 +536,8 @@ public sealed class SettingsSession : Observable, IValueHost, IDisposable
             sendSoon = failure.Kind is SettingsFailureKind.Held;
             _retryStopped = failure.Kind is not (SettingsFailureKind.Held
                 or SettingsFailureKind.Unreachable
-                or SettingsFailureKind.Token);
+                or SettingsFailureKind.Token
+                or SettingsFailureKind.Outdated);
         }
 
         if (_pending.Count > 0 && _saveTimer is null && sendSoon)
@@ -625,6 +626,9 @@ public sealed class SettingsSession : Observable, IValueHost, IDisposable
             case SettingsFailureKind.Token:
                 Status = SessionStatus.Token;
                 break;
+            case SettingsFailureKind.Outdated:
+                Status = SessionStatus.Outdated;
+                break;
             default:
                 Status = SessionStatus.Failed;
                 break;
@@ -656,6 +660,7 @@ public sealed class SettingsSession : Observable, IValueHost, IDisposable
                 return;
             case SettingsFailureKind.Token:
             case SettingsFailureKind.Unreachable:
+            case SettingsFailureKind.Outdated:
                 Restore(batch);
                 await UnansweredAsync(failure);
                 return;

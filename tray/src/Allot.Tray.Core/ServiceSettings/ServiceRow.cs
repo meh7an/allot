@@ -54,7 +54,8 @@ public sealed record ServiceRow(string Text, ServiceButton Button, bool OpenLogs
                 new ServiceRow(ServiceBanner.IncompatibleText, ServiceButton.Stop, true),
             ServiceStatus.Starting => new ServiceRow(Starting, ServiceButton.Starting, false),
             _ when startProblem is not null => new ServiceRow(
-                $"The service did not start. {SettingsBanners.Sentence(startProblem)}",
+                "The service did not start. "
+                    + SettingsBanners.Sentence(startProblem, capitalize: false),
                 ServiceButton.Start,
                 true),
             _ when session == SessionStatus.Stopped =>

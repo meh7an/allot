@@ -345,6 +345,9 @@ public sealed class DaemonClient(HttpClient http, string tokenFile)
             HttpStatusCode.UnprocessableEntity => SettingsFailureKind.Invalid,
             HttpStatusCode.Locked => SettingsFailureKind.Held,
             HttpStatusCode.ServiceUnavailable => SettingsFailureKind.Unavailable,
+
+            // An allotd that serves /ui/state but not /settings predates Settings.
+            HttpStatusCode.NotFound => SettingsFailureKind.Outdated,
             _ => SettingsFailureKind.Failed,
         };
         var body = await response.Content.ReadAsStringAsync(cancellationToken)

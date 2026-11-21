@@ -254,6 +254,41 @@ private func model<Model: ValueModel>(
         #expect(client.patches.count == 2)
     }
 
+    @Test func anOutdatedServiceKeepsThePagesReadOnlyAndIsAskedAgainByTheRefresh() async throws {
+        let (session, client, _) = try await loadedParts()
+        client.queueRead(failure(.outdated, message: "the service answered 404"))
+
+        try await session.refresh()
+
+        #expect(session.status == .outdated)
+        #expect(session.detail == "the service answered 404")
+        #expect(session.readOnly)
+
+        try await session.refresh()
+
+        #expect(session.status == .ready)
+        #expect(session.detail == nil)
+    }
+
+    @Test func aSaveRefusedAsOutdatedIsNotSentAgainOnTheTimer() async throws {
+        let (session, client, timers) = try await loadedParts()
+        client.queueWrite(failure(.outdated, message: "the service answered 404"))
+
+        try model(session, "hook.fail_open", SwitchModel.self).set(false)
+        await fire(timers)
+
+        #expect(session.status == .outdated)
+        #expect(session.writeProblem == nil)
+        #expect(timers.delays.isEmpty)
+        #expect(client.patches.count == 1)
+        await fire(timers)
+        #expect(client.patches.count == 1)
+
+        try await session.refresh()
+        await fire(timers)
+        #expect(client.patches.count == 2)
+    }
+
     @Test func aRefreshSentBeforeASaveDoesNotBringBackTheOldRevision() async throws {
         let (session, client, timers) = try await loadedParts()
         client.holdReads = true

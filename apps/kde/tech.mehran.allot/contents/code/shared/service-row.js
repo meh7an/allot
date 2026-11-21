@@ -109,6 +109,7 @@ export function sessionServiceStatus(session, starting) {
         case "down":
             return "stopped";
         case "key":
+        case "outdated":
         case "failed":
             return "incompatible";
     }

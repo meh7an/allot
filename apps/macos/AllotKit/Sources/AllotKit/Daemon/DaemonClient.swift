@@ -259,6 +259,8 @@ public actor DaemonClient: JobStopper, SettingsClient {
         case 422: .invalid
         case 423: .held
         case 503: .unavailable
+        // An allotd that serves /ui/state but not /settings predates Settings.
+        case 404: .outdated
         default: .failed
         }
         if let refusal = try? JSONDecoder().decode(SettingsRefusal.self, from: data) {

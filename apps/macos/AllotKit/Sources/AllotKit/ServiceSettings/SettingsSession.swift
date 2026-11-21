@@ -56,6 +56,7 @@ private final class TaskTimer: ScheduledTimer {
 /// - ``down``: allotd does not answer.
 /// - ``token``: allotd refused this app's key.
 /// - ``failed``: allotd answered something unusable; the session's detail says what.
+/// - ``outdated``: the running allotd is older than Settings and has no settings routes.
 ///
 /// Every state but ``ready`` keeps the last values read-only.
 public enum SessionStatus: Sendable, Equatable {
@@ -65,6 +66,7 @@ public enum SessionStatus: Sendable, Equatable {
     case down
     case token
     case failed
+    case outdated
 }
 
 /// The save status line: "All changes saved", "Saving…" or "{n} changes not saved".
@@ -296,7 +298,7 @@ public final class SettingsSession: ValueHost {
             // allotd did not answer go out again from the refresh that finds it back; any other
             // refusal waits for Try again or the next edit.
             sendSoon = failure.kind == .held
-            retryStopped = ![.held, .unreachable, .token].contains(failure.kind)
+            retryStopped = ![.held, .unreachable, .token, .outdated].contains(failure.kind)
         }
         if !pending.isEmpty && saveTimer == nil && sendSoon {
             schedule(Self.saveDelay)
@@ -470,6 +472,8 @@ public final class SettingsSession: ValueHost {
             status = stopRecord == nil ? .down : .stopped
         case .token:
             status = .token
+        case .outdated:
+            status = .outdated
         default:
             status = .failed
         }
@@ -496,7 +500,7 @@ public final class SettingsSession: ValueHost {
                 entry.model.undo()
             }
             try? await refresh()
-        case .token, .unreachable:
+        case .token, .unreachable, .outdated:
             restore(batch)
             await unanswered(failure)
         default:

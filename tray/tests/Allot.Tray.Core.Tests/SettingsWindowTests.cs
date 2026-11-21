@@ -103,6 +103,49 @@ public sealed class SettingsWindowTests
     }
 
     [TestMethod]
+    public async Task AnOutdatedServiceOffersRestartAndLogsButNoTryNow()
+    {
+        var session = await LoadAsync(
+            FakeSettingsClient.Failure<SettingsState>(
+                SettingsFailureKind.Outdated, "the service answered 404"));
+
+        var banner = SettingsBanners.For(session, "admission", 47823, Number).Single();
+
+        Assert.AreEqual(SessionStatus.Outdated, session.Status);
+        Assert.AreEqual(BannerSeverity.Error, banner.Severity);
+        Assert.AreEqual(
+            "The service running now is older than this app and has no settings. Restart it to "
+                + "run the version installed with this app, or update it with allot install.",
+            banner.Message);
+        CollectionAssert.AreEqual(
+            Actions(BannerAction.RestartService, BannerAction.OpenLogs),
+            banner.Actions.ToList());
+    }
+
+    [TestMethod]
+    public async Task ADetailThatStartsInLowercaseStartsItsSentenceInUppercase()
+    {
+        var session = await LoadAsync(
+            FakeSettingsClient.Failure<SettingsState>(
+                SettingsFailureKind.Failed, "the service answered 404"));
+
+        var banner = SettingsBanners.For(session, "admission", 47823, Number).Single();
+
+        Assert.AreEqual(
+            "The service sent an answer Settings can't use. The service answered 404.",
+            banner.Message);
+        Assert.AreEqual("Closed it.", SettingsBanners.Sentence(" closed it"));
+        Assert.AreEqual("Already. Fine.", SettingsBanners.Sentence("Already. Fine."));
+        Assert.AreEqual(string.Empty, SettingsBanners.Sentence(null));
+        Assert.AreEqual(
+            "config.toml is open.",
+            SettingsBanners.Sentence("config.toml is open"));
+        Assert.AreEqual(
+            "allotd was not found.",
+            SettingsBanners.Sentence("allotd was not found", capitalize: false));
+    }
+
+    [TestMethod]
     public async Task ANewPortWaitsForARestartOnTheServicePageOnly()
     {
         var session = await LoadAsync();
@@ -133,7 +176,7 @@ public sealed class SettingsWindowTests
         Assert.IsTrue(session.ReadOnly);
         Assert.AreEqual(BannerSeverity.Error, banner.Severity);
         Assert.AreEqual(
-            "config.toml has an error: expected a number at line 3. The service keeps using its "
+            "config.toml has an error. Expected a number at line 3. The service keeps using its "
                 + "last good settings. Fix the file to change settings here.",
             banner.Message);
         CollectionAssert.AreEqual(

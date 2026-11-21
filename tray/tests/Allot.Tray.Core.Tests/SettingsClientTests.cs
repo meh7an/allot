@@ -133,6 +133,11 @@ public sealed class SettingsClientTests
                 SettingsFailureKind.Unavailable,
                 "the service answered 503"),
             new(
+                HttpStatusCode.NotFound,
+                string.Empty,
+                SettingsFailureKind.Outdated,
+                "the service answered 404"),
+            new(
                 HttpStatusCode.InternalServerError,
                 "internal error\n",
                 SettingsFailureKind.Failed,

@@ -123,6 +123,11 @@ test("each other answer has its own kind", async () => {
   const cases = [
     { response: { status: 423, body: held }, kind: "held", message: "config.toml is open" },
     { response: { status: 503, body: "" }, kind: "unavailable", message: "the service answered 503" },
+    {
+      response: { status: 404, body: "" },
+      kind: "outdated",
+      message: "the service answered 404",
+    },
     { response: { status: 500, body: "internal error\n" }, kind: "failed", message: "internal error" },
     { response: { status: 401, body: "" }, kind: "key", message: "the service refused the token" },
   ];
