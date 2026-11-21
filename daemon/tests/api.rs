@@ -1016,14 +1016,32 @@ async fn test_short_burst_in_a_long_lease_raises_the_next_estimate_to_the_burst(
     let set_alice_cores = |cores| {
         daemon.machine.lock().unwrap().processes[0].usage.cores = cores;
     };
-    // Like lease 35: idle around a short build, so the whole-lease average stays low.
+    let now_ms = || {
+        let elapsed = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
+        i64::try_from(elapsed.as_millis()).unwrap()
+    };
+    // Like lease 35: idle around a short build, so the whole-lease average stays low. Each
+    // phase waits for samples, not for time: a loaded runner may sample too late for a fixed
+    // sleep. The fake sampler stamps a sample after reading the load, so the second one
+    // stamped after a change is the first sure to carry it.
     set_alice_cores(0.03);
     let first = daemon.acquire_build(alice(), 0).await;
-    tokio::time::sleep(Duration::from_millis(200)).await;
+    let granted_at = first
+        .lease
+        .granted_at_ms
+        .expect("an idle machine grants at once");
+    daemon.wait_for_samples_after(granted_at, 4).await;
     set_alice_cores(12.0);
-    tokio::time::sleep(Duration::from_millis(100)).await;
+    let burst_at = now_ms();
+    daemon.wait_for_samples_after(burst_at, 2).await;
     set_alice_cores(0.03);
-    tokio::time::sleep(Duration::from_millis(200)).await;
+    let idle_at = now_ms();
+    // At most one burst sample per 20 ms interval, plus the queued ones; twice as many idle
+    // samples keep the average below the burst however long the burst wait took.
+    let burst_samples = usize::try_from((idle_at - burst_at) / 20 + 6).unwrap();
+    daemon
+        .wait_for_samples_after(idle_at, 2 * burst_samples)
+        .await;
     daemon.release_response(first.lease.id, "alice").await;
 
     let path = "/history/runs?fingerprint=cargo%20build%7C&limit=5";
