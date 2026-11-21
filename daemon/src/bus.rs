@@ -9,7 +9,7 @@
 
 use std::{
     collections::HashSet,
-    sync::{Mutex, PoisonError},
+    sync::{Arc, Mutex, PoisonError},
 };
 
 use allot_shared::{
@@ -23,7 +23,10 @@ use axum::{
     http::StatusCode,
     response::IntoResponse,
 };
-use tokio::{sync::watch, task::JoinHandle};
+use tokio::{
+    sync::{RwLock, RwLockReadGuard, watch},
+    task::JoinHandle,
+};
 use zbus::{
     Connection, DBusError,
     connection::Builder,
@@ -45,6 +48,13 @@ pub const INTERFACE: &str = "tech.mehran.Allot1";
 
 const DBUS: &str = "org.freedesktop.DBus";
 const DBUS_PATH: &str = "/org/freedesktop/DBus";
+/// How many checked callers allotd remembers. A panel's connection gets a new name each time
+/// it connects and the bus never reuses one, so past this many the list starts over.
+const KNOWN_CALLERS: usize = 64;
+
+/// Open while allotd takes calls: every call holds it shared while it runs, and closing takes
+/// it whole, which waits for the calls in flight. `true` once closed.
+type Gate = Arc<RwLock<bool>>;
 
 /// Which bus allotd offers the interface on.
 #[derive(Debug, Clone)]
@@ -62,24 +72,27 @@ pub enum PanelBus {
 pub(crate) struct Offered {
     connection: Connection,
     announcer: JoinHandle<()>,
+    gate: Gate,
 }
 
 impl Offered {
     /// Gives up the name, so a panel sees allotd stop at once rather than when the process
-    /// ends.
+    /// ends, then refuses new calls and waits for those in flight: a Kill cut off halfway
+    /// would leave the lease ended and its processes running.
     pub(crate) async fn close(self) {
         self.announcer.abort();
         if let Err(error) = self.connection.release_name(NAME).await {
             tracing::warn!("giving up {NAME} on D-Bus: {error}");
         }
+        *self.gate.write().await = true;
     }
 }
 
 /// Serves the interface on `bus`. When the bus is missing (as inside Claude's sandbox) or the
 /// name is taken, allotd logs why and keeps serving HTTP; only the GNOME extension then cannot
 /// reach it.
-pub(crate) async fn offer(state: AppState, bus: &PanelBus) -> Option<Offered> {
-    let builder = match bus {
+pub(crate) async fn offer(state: AppState, bus: PanelBus) -> Option<Offered> {
+    let builder = match &bus {
         PanelBus::Off => return None,
         PanelBus::Session => Builder::session(),
         PanelBus::Address(address) => Builder::address(address.as_str()),
@@ -103,10 +116,12 @@ async fn connect(state: AppState, builder: Builder<'_>) -> zbus::Result<Offered>
         .ok_or_else(|| zbus::Error::Failure("the bus gave allotd no name".to_owned()))?;
     let own_uid = unix_user(&connection, own_name.as_str()).await?;
     let changes = state.changes.subscribe();
+    let gate = Gate::default();
     let panel = Panel {
         state,
         own_uid,
         callers: Mutex::new(HashSet::new()),
+        gate: gate.clone(),
     };
     connection.object_server().at(PATH, panel).await?;
     // Another allotd keeps its name; replacing it would leave its panels talking to the wrong
@@ -122,6 +137,7 @@ async fn connect(state: AppState, builder: Builder<'_>) -> zbus::Result<Offered>
     Ok(Offered {
         connection,
         announcer,
+        gate,
     })
 }
 
@@ -221,6 +237,7 @@ struct Panel {
     /// Connections already found to run as this user. The bus never gives a name to a second
     /// connection, so a name once checked stays checked.
     callers: Mutex<HashSet<String>>,
+    gate: Gate,
 }
 
 #[interface(name = "tech.mehran.Allot1")]
@@ -231,7 +248,7 @@ impl Panel {
         #[zbus(header)] header: Header<'_>,
         #[zbus(connection)] connection: &Connection,
     ) -> Result<String, BusError> {
-        self.check_caller(&header, connection).await?;
+        let _call = self.admit(&header, connection).await?;
         let service = routes::health_of(&self.state);
         answer(ui::ui_state(&self.state, service).await.map(Json)).await
     }
@@ -243,7 +260,7 @@ impl Panel {
         #[zbus(header)] header: Header<'_>,
         #[zbus(connection)] connection: &Connection,
     ) -> Result<String, BusError> {
-        self.check_caller(&header, connection).await?;
+        let _call = self.admit(&header, connection).await?;
         answer(routes::kill(State(self.state.clone()), Path(lease)).await).await
     }
 
@@ -254,7 +271,7 @@ impl Panel {
         #[zbus(header)] header: Header<'_>,
         #[zbus(connection)] connection: &Connection,
     ) -> Result<String, BusError> {
-        self.check_caller(&header, connection).await?;
+        let _call = self.admit(&header, connection).await?;
         answer(routes::remove(State(self.state.clone()), Path(lease)).await).await
     }
 
@@ -266,7 +283,7 @@ impl Panel {
         #[zbus(header)] header: Header<'_>,
         #[zbus(connection)] connection: &Connection,
     ) -> Result<(), BusError> {
-        self.check_caller(&header, connection).await?;
+        let _call = self.admit(&header, connection).await?;
         let request = record.then_some(ShutdownRequest {
             by: StoppedBy::Panel,
         });
@@ -281,7 +298,7 @@ impl Panel {
         #[zbus(header)] header: Header<'_>,
         #[zbus(connection)] connection: &Connection,
     ) -> Result<String, BusError> {
-        self.check_caller(&header, connection).await?;
+        let _call = self.admit(&header, connection).await?;
         answer(settings::read(State(self.state.clone())).await).await
     }
 
@@ -292,7 +309,7 @@ impl Panel {
         #[zbus(header)] header: Header<'_>,
         #[zbus(connection)] connection: &Connection,
     ) -> Result<String, BusError> {
-        self.check_caller(&header, connection).await?;
+        let _call = self.admit(&header, connection).await?;
         let patch = Json::<SettingsPatch>::from_bytes(patch.as_bytes()).map_err(not_json)?;
         answer(settings::change(State(self.state.clone()), patch).await).await
     }
@@ -304,7 +321,7 @@ impl Panel {
         #[zbus(header)] header: Header<'_>,
         #[zbus(connection)] connection: &Connection,
     ) -> Result<String, BusError> {
-        self.check_caller(&header, connection).await?;
+        let _call = self.admit(&header, connection).await?;
         let request = Json::<PreviewRequest>::from_bytes(request.as_bytes()).map_err(not_json)?;
         answer(settings::preview(State(self.state.clone()), request).await).await
     }
@@ -316,7 +333,7 @@ impl Panel {
         #[zbus(header)] header: Header<'_>,
         #[zbus(connection)] connection: &Connection,
     ) -> Result<String, BusError> {
-        self.check_caller(&header, connection).await?;
+        let _call = self.admit(&header, connection).await?;
         let request = Json::<ClassifyRequest>::from_bytes(request.as_bytes()).map_err(not_json)?;
         answer(settings::classify(State(self.state.clone()), request).await).await
     }
@@ -333,6 +350,21 @@ impl Panel {
 }
 
 impl Panel {
+    /// Lets a call run while allotd takes calls and the caller is this user; the call holds
+    /// the returned guard until it answers, so closing waits for it.
+    async fn admit(
+        &self,
+        header: &Header<'_>,
+        connection: &Connection,
+    ) -> Result<RwLockReadGuard<'_, bool>, BusError> {
+        let open = self.gate.read().await;
+        if *open {
+            return Err(BusError::Unavailable("allotd is stopping".to_owned()));
+        }
+        self.check_caller(header, connection).await?;
+        Ok(open)
+    }
+
     async fn check_caller(
         &self,
         header: &Header<'_>,
@@ -352,10 +384,11 @@ impl Panel {
                 self.own_uid
             )));
         }
-        self.callers
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .insert(sender);
+        let mut callers = self.callers.lock().unwrap_or_else(PoisonError::into_inner);
+        if callers.len() >= KNOWN_CALLERS {
+            callers.clear();
+        }
+        callers.insert(sender);
         Ok(())
     }
 

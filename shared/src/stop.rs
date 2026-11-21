@@ -13,7 +13,7 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
-use crate::Result;
+use crate::{Result, atomic_file};
 
 /// Where the stop came from.
 #[cfg_attr(any(feature = "schema", test), derive(schemars::JsonSchema))]
@@ -83,12 +83,7 @@ impl StopRecord {
     pub fn write(&self, path: &Path) -> Result<()> {
         let mut json = serde_json::to_string_pretty(self).map_err(io::Error::other)?;
         json.push('\n');
-        let temp = path.with_extension("json.tmp");
-        fs::write(&temp, json)?;
-        if let Err(error) = fs::rename(&temp, path) {
-            let _ = fs::remove_file(&temp);
-            return Err(error.into());
-        }
+        atomic_file::replace(path, json.as_bytes())?;
         Ok(())
     }
 

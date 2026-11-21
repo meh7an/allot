@@ -15,7 +15,6 @@ use allot_client::{BlockingClient, ClientOptions, SpawnOptions, running_exe};
 #[cfg(unix)]
 use allot_shared::platform::DAEMON_LOG_TEXT;
 use allot_shared::{
-    config::Config,
     paths::Paths,
     platform::{ALLOT_BINARIES, CLI_EXE, DAEMON_EXE, EXE_SUFFIX},
 };
@@ -554,14 +553,10 @@ fn write_file(path: &Path, contents: &str) -> anyhow::Result<()> {
     fs::write(path, contents).with_context(|| format!("writing {}", path.display()))
 }
 
-/// Client options for the install at `paths` that never start allotd. An invalid config falls
-/// back to the default port, so a broken config cannot block an install or uninstall.
+/// Client options for the install at `paths` that never start allotd. A broken config cannot
+/// block an install or uninstall, see [`ClientOptions::installed`].
 fn client_options(paths: &Paths) -> ClientOptions {
-    let config = Config::load(&paths.config_file()).unwrap_or_else(|error| {
-        eprintln!("warning: {error}; using the default port");
-        Config::default()
-    });
-    ClientOptions::local(paths, &config, false)
+    ClientOptions::installed(paths, false)
 }
 
 /// What took the place of a stopped allotd.

@@ -100,16 +100,22 @@ pub async fn serve(
         stopping.shutdown.send_replace(true);
     };
 
+    // Beside the HTTP API rather than before it: a slow session bus must not keep the bound
+    // port from answering.
     #[cfg(target_os = "linux")]
-    let offered = bus::offer(state.clone(), &options.bus).await;
+    let offering = tokio::spawn(bus::offer(state.clone(), options.bus));
 
     tracing::info!("listening on {}", listener.local_addr()?);
     let served = axum::serve(listener, routes::router(state))
         .with_graceful_shutdown(stop)
         .await;
     #[cfg(target_os = "linux")]
-    if let Some(offered) = offered {
-        offered.close().await;
+    {
+        // An offer still connecting is dropped; a finished one closes and waits for its calls.
+        offering.abort();
+        if let Ok(Some(offered)) = offering.await {
+            offered.close().await;
+        }
     }
     sampling.abort();
     upkeep.abort();

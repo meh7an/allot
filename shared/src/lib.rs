@@ -1,6 +1,7 @@
 //! Types shared by every crate in the allot workspace.
 
 pub mod api;
+pub mod atomic_file;
 pub mod autostart;
 pub mod config;
 pub mod config_write;

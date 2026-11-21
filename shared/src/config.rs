@@ -70,6 +70,15 @@ impl Config {
         })
     }
 
+    /// The `daemon.port` the file at `path` sets, when the file parses and the port is valid,
+    /// whatever its other values are; `None` otherwise.
+    pub fn port_in(path: &Path) -> Option<u16> {
+        let text = fs::read_to_string(path).ok()?;
+        let table: toml::Table = toml::from_str(&text).ok()?;
+        let port = table.get("daemon")?.get("port")?.as_integer()?;
+        u16::try_from(port).ok().filter(|port| *port != 0)
+    }
+
     /// Checks every value against its allowed range.
     ///
     /// # Errors
@@ -1051,6 +1060,23 @@ mod tests {
             .join("allot-shared-test-missing")
             .join("config.toml");
         assert_eq!(Config::load(&path).unwrap(), Config::default());
+    }
+
+    #[test]
+    fn test_config_port_in_reads_the_port_of_an_otherwise_invalid_file() {
+        let path = env::temp_dir().join(format!("allot-shared-port-{}.toml", std::process::id()));
+        let port_of = |text: &str| {
+            fs::write(&path, text).unwrap();
+            Config::port_in(&path)
+        };
+        let invalid = "[daemon]\nport = 48000\n[leases]\nheartbeat_ttl_secs = 0\n";
+        assert_eq!(port_of(invalid), Some(48_000));
+        assert_eq!(port_of("[daemon]\nport = 0\n"), None);
+        assert_eq!(port_of("[daemon]\nport = 70000\n"), None);
+        assert_eq!(port_of("[daemon\nport = 48000\n"), None);
+        assert_eq!(port_of("[leases]\nheartbeat_ttl_secs = 30\n"), None);
+        fs::remove_file(&path).unwrap();
+        assert_eq!(Config::port_in(&path), None);
     }
 
     #[test]

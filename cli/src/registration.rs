@@ -22,10 +22,11 @@ use std::{
 };
 
 use allot_shared::{
+    atomic_file,
     paths::Paths,
     platform::{CLI_EXE, DAEMON_EXE, MCP_EXE},
 };
-use anyhow::Context;
+use anyhow::{Context, bail};
 use serde_json::Value;
 
 use self::claude_md::Added;
@@ -788,19 +789,19 @@ fn rewrite(path: &Path, old: Option<&str>, new: &str) -> anyhow::Result<Option<P
         }
         None => None,
     };
-    write_atomic(path, new)?;
-    Ok(backup)
-}
-
-/// Writes `contents` to `path` through a temporary file beside it, which then replaces the file
-/// at once: a reader never sees half of it, and a failed write leaves the old file whole.
-fn write_atomic(path: &Path, contents: &str) -> anyhow::Result<()> {
     if let Some(dir) = path.parent() {
         fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
     }
-    let temporary = sibling(path, "allot-new");
-    fs::write(&temporary, contents).with_context(|| format!("writing {}", temporary.display()))?;
-    fs::rename(&temporary, path).with_context(|| format!("replacing {}", path.display()))
+    let old = old.map(str::as_bytes);
+    let replaced = atomic_file::replace_if(path, new.as_bytes(), |current| current == old)
+        .with_context(|| format!("replacing {}", path.display()))?;
+    if !replaced {
+        bail!(
+            "{} changed while allot was updating it; nothing was written, run the command again",
+            path.display()
+        );
+    }
+    Ok(backup)
 }
 
 /// Writes `contents` to `path` unless it already holds them; returns whether it wrote.
@@ -811,7 +812,8 @@ fn write_if_changed(path: &Path, contents: &str) -> anyhow::Result<bool> {
     if let Some(dir) = path.parent() {
         fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
     }
-    fs::write(path, contents).with_context(|| format!("writing {}", path.display()))?;
+    atomic_file::replace(path, contents.as_bytes())
+        .with_context(|| format!("writing {}", path.display()))?;
     Ok(true)
 }
 

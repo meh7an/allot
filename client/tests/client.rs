@@ -15,6 +15,7 @@ use allot_core::sampler::{RawProcess, RawSample, Sampler};
 use allot_shared::{
     api::{AcquireRequest, BindRequest, CanFitRequest, LeaseQuery, ProfileSpec},
     config::Config,
+    paths::Paths,
     stop::{StopRecord, StoppedBy},
     types::{
         EndCause, Holder, JobClass, LeaseKind, LeaseState, MemStats, ResourceUsage, SessionKey,
@@ -420,6 +421,25 @@ fn session_client(addr: SocketAddr, stop_dir: &TempDir) -> Client {
     });
     options.stop_file = Some(stop_dir.path().join("stopped.json"));
     Client::new(options).unwrap()
+}
+
+#[test]
+fn test_installed_options_survive_an_invalid_config_file() {
+    let home = TempDir::new().unwrap();
+    let paths = Paths::under(home.path());
+    std::fs::create_dir_all(paths.root()).unwrap();
+    let options_for = |text: &str| {
+        std::fs::write(paths.config_file(), text).unwrap();
+        ClientOptions::installed(&paths, false).base_url
+    };
+    // allotd keeps running on its last good config, so the client still finds its port.
+    let typo = "[daemon]\nport = 48100\n[leases]\nheartbeat_ttl_secs = 0\n";
+    assert_eq!(options_for(typo), "http://127.0.0.1:48100");
+    let default_port = Config::default().daemon.port;
+    assert_eq!(
+        options_for("[daemon\nport = 48100\n"),
+        format!("http://127.0.0.1:{default_port}")
+    );
 }
 
 #[tokio::test]

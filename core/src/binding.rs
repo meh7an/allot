@@ -8,7 +8,7 @@
 
 use allot_shared::{
     platform::{ALLOT_BINARIES, CONSOLE_HOSTS},
-    types::{BoundProcess, Holder, LeaseBinding},
+    types::{BoundProcess, Holder, Lease, LeaseBinding, LeaseId, LeaseState},
 };
 
 use crate::{ancestry::ProcessNode, process::ProcessTable};
@@ -16,6 +16,11 @@ use crate::{ancestry::ProcessNode, process::ProcessTable};
 /// How long after the report a new child of the holder may still be the command's root.
 /// Later children are other commands the session ran while it held the lease.
 pub const REBIND_WINDOW_MS: i64 = 10_000;
+
+/// How much later than an exited root another child may start and still replace it. Hooks and
+/// the helpers Claude Code starts beside a command end within moments, and the command starts as
+/// they end; a child that started later follows a command that already ran to its end.
+pub const REPLACE_WINDOW_MS: i64 = 5_000;
 
 /// How much earlier than the report a child may appear to start: start times are whole
 /// seconds, rounded down. Linux adds them to the boot time, which it also rounds down to a
@@ -39,26 +44,38 @@ pub enum BindOutcome {
     Ended,
 }
 
-/// Finds the root of the command `binding` reports, run by `holder`, at `now_ms`.
+/// Finds the root of the command `binding` reports, run by `holder`, at `now_ms`. `taken` holds
+/// the roots of the other active leases, which are never this command's.
 ///
 /// The current root is kept while it runs. Otherwise the root is the earliest running direct
-/// child of the holder that is not an `allot` binary or a console host and started within
-/// [`REBIND_WINDOW_MS`] of the report, allowing [`START_TOLERANCE_MS`] before it.
+/// child of the holder that is not an `allot` binary, a console host or in `taken`, and started
+/// within [`REBIND_WINDOW_MS`] of the report, allowing [`START_TOLERANCE_MS`] before it. A
+/// child replacing an exited root must also have started within [`REPLACE_WINDOW_MS`] of it.
 pub fn resolve(
     binding: &LeaseBinding,
     holder: &Holder,
     table: &ProcessTable,
     now_ms: i64,
+    taken: &[BoundProcess],
 ) -> BindOutcome {
     if let Some(root) = binding.root
         && table.is_running(root.pid, root.start_time)
     {
         return BindOutcome::Bound(root);
     }
+    let replaces_by = binding
+        .root
+        .map(|root| seconds_to_ms(root.start_time).saturating_add(REPLACE_WINDOW_MS));
     let earliest = if table.is_running(holder.pid, holder.pid_start_time) {
         table
             .children(holder.pid)
             .filter(|node| is_candidate(node, binding.bound_at_ms))
+            .filter(|node| replaces_by.is_none_or(|limit| start_ms(node) <= limit))
+            .filter(|node| {
+                !taken
+                    .iter()
+                    .any(|root| root.pid == node.pid && root.start_time == node.start_time)
+            })
             .min_by_key(|node| (node.start_time, node.pid))
     } else {
         None
@@ -73,6 +90,15 @@ pub fn resolve(
         }
         None => BindOutcome::Ended,
     }
+}
+
+/// The bound roots of the active leases in `leases` other than `except`, for [`resolve`].
+pub fn taken_roots(leases: &[Lease], except: LeaseId) -> Vec<BoundProcess> {
+    leases
+        .iter()
+        .filter(|lease| lease.id != except && lease.state == LeaseState::Active)
+        .filter_map(|lease| lease.binding.as_ref()?.root)
+        .collect()
 }
 
 /// The busiest descendant of `holder` by `load`, for showing what a lease with no bound root
@@ -125,7 +151,11 @@ fn is_excluded(name: &str) -> bool {
 }
 
 fn start_ms(node: &ProcessNode) -> i64 {
-    i64::try_from(node.start_time)
+    seconds_to_ms(node.start_time)
+}
+
+fn seconds_to_ms(seconds: u64) -> i64 {
+    i64::try_from(seconds)
         .unwrap_or(i64::MAX)
         .saturating_mul(1_000)
 }
@@ -178,7 +208,7 @@ mod tests {
     }
 
     fn resolve_at(extra: &[RawProcess], root: Option<BoundProcess>, now_ms: i64) -> BindOutcome {
-        resolve(&binding(root), &holder(), &table(extra), now_ms)
+        resolve(&binding(root), &holder(), &table(extra), now_ms, &[])
     }
 
     #[test]
@@ -259,6 +289,30 @@ mod tests {
     }
 
     #[test]
+    fn test_resolve_skips_the_root_of_another_lease() {
+        // Two leases of one session reported a second apart; lease A already holds PID 20.
+        let extra = [
+            raw_process(20, Some(10), "bash.exe", 101),
+            raw_process(30, Some(10), "bash.exe", 102),
+        ];
+        let taken = [BoundProcess {
+            pid: 20,
+            start_time: 101,
+        }];
+        let outcome = resolve(&binding(None), &holder(), &table(&extra), 103_000, &taken);
+        assert_eq!(outcome, bound(30, 102));
+    }
+
+    #[test]
+    fn test_resolve_does_not_replace_a_root_with_a_later_command() {
+        // The command (PID 20) ended; the session started another command six seconds after it.
+        let extra = [raw_process(30, Some(10), "bash.exe", 107)];
+        let ended = root(20, 101);
+        assert_eq!(resolve_at(&extra, ended, 108_000), BindOutcome::Pending);
+        assert_eq!(resolve_at(&extra, ended, 111_000), BindOutcome::Ended);
+    }
+
+    #[test]
     fn test_resolve_ignores_children_after_the_rebind_window() {
         let extra = [raw_process(20, Some(10), "git.exe", 111)];
         let ended = root(30, 101);
@@ -274,7 +328,7 @@ mod tests {
         let mut reused = holder();
         reused.pid_start_time = 49;
         assert_eq!(
-            resolve(&binding(None), &reused, &table(&extra), 103_000),
+            resolve(&binding(None), &reused, &table(&extra), 103_000, &[]),
             BindOutcome::Pending
         );
     }

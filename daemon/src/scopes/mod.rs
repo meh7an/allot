@@ -114,6 +114,9 @@ struct Tracked {
     scopes: HashMap<LeaseId, Scope>,
     /// The newest watch per lease; an older one stops looking.
     watches: HashMap<LeaseId, u64>,
+    /// The shell each lease's watch found, which no other lease's watch may take: two leases
+    /// of one session reported a moment apart both see the first new shell.
+    shells: HashMap<LeaseId, u32>,
     next_watch: u64,
 }
 
@@ -370,6 +373,7 @@ impl Scopes {
         let scope = {
             let mut tracked = backend.lock();
             tracked.watches.remove(&id);
+            tracked.shells.remove(&id);
             tracked.scopes.remove(&id)?
         };
         let host = &*backend.host;
@@ -412,6 +416,7 @@ impl Scopes {
         let ended: Vec<(LeaseId, Scope)> = {
             let mut tracked = backend.lock();
             tracked.watches.retain(|id, _| keep(*id));
+            tracked.shells.retain(|id, _| keep(*id));
             let ids: Vec<LeaseId> = tracked
                 .scopes
                 .keys()
@@ -501,6 +506,16 @@ impl Backend {
                 watch.baseline.insert(pid);
                 continue;
             }
+            let mut tracked = self.lock();
+            if tracked
+                .shells
+                .iter()
+                .any(|(id, shell)| *id != watch.id && *shell == pid)
+            {
+                watch.baseline.insert(pid);
+                continue;
+            }
+            tracked.shells.insert(watch.id, pid);
             return Some(pid);
         }
         None
@@ -816,6 +831,25 @@ mod tests {
         assert_eq!(
             scopes.find_shell(&mut newer, Duration::ZERO).await,
             Some(200)
+        );
+    }
+
+    #[tokio::test]
+    async fn test_find_shell_leaves_another_leases_shell_alone() {
+        let fake = session();
+        let scopes = scopes(&fake);
+        let mut first = scopes.watch(LeaseId(1), HOLDER).unwrap();
+        let mut second = scopes.watch(LeaseId(2), HOLDER).unwrap();
+        fake.add(200, HOLDER, "zsh", 200);
+        assert_eq!(
+            scopes.find_shell(&mut first, Duration::ZERO).await,
+            Some(200)
+        );
+        assert_eq!(scopes.find_shell(&mut second, Duration::ZERO).await, None);
+        fake.add(201, HOLDER, "zsh", 201);
+        assert_eq!(
+            scopes.find_shell(&mut second, Duration::ZERO).await,
+            Some(201)
         );
     }
 

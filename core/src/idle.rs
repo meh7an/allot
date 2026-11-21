@@ -60,7 +60,9 @@ impl IdleWatch {
             .iter()
             .filter(|lease| lease.state == LeaseState::Active)
         {
-            if command_may_run(lease, table, now_ms) || !is_idle(&session_usage(lease, snapshot)) {
+            if command_may_run(lease, leases, table, now_ms)
+                || !is_idle(&session_usage(lease, snapshot))
+            {
                 continue;
             }
             let since = previous
@@ -77,10 +79,11 @@ impl IdleWatch {
     }
 }
 
-/// Whether the command bound to `lease` runs, or may still start, at `now_ms`.
-fn command_may_run(lease: &Lease, table: &ProcessTable, now_ms: i64) -> bool {
+/// Whether the command bound to `lease`, one of `leases`, runs or may still start at `now_ms`.
+fn command_may_run(lease: &Lease, leases: &[Lease], table: &ProcessTable, now_ms: i64) -> bool {
     lease.binding.as_ref().is_some_and(|current| {
-        binding::resolve(current, &lease.holder, table, now_ms) != BindOutcome::Ended
+        let taken = binding::taken_roots(leases, lease.id);
+        binding::resolve(current, &lease.holder, table, now_ms, &taken) != BindOutcome::Ended
     })
 }
 

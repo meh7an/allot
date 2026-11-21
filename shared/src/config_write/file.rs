@@ -1,18 +1,16 @@
 //! Reading `config.toml` with a revision and replacing it atomically.
 
 use std::{
-    fmt,
-    fs::{self, File},
-    io::{self, Write},
+    fmt, fs, io,
     path::{Path, PathBuf},
-    process,
     str::FromStr,
-    sync::atomic::{AtomicU32, Ordering},
     thread,
     time::Duration,
 };
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de};
+
+use crate::atomic_file::{sync_directory, temp_path, write_synced};
 
 /// Identifies one version of the file's bytes, so a write can tell whether someone saved the
 /// file since it was read. A missing file has the revision of an empty one.
@@ -244,40 +242,6 @@ fn rename_unchanged(
             Err(error) => return Err(error.into()),
         }
     }
-}
-
-/// Writes the temporary file and flushes it to disk, so the rename never exposes an empty
-/// file after a crash. On Unix it takes the mode of the file it replaces; created with the
-/// umask, it could otherwise turn a private file readable to others.
-fn write_synced(temp: &Path, bytes: &[u8], replaced: &Path) -> io::Result<()> {
-    let mut file = File::create_new(temp)?;
-    #[cfg(unix)]
-    if let Ok(metadata) = fs::metadata(replaced) {
-        file.set_permissions(metadata.permissions())?;
-    }
-    #[cfg(not(unix))]
-    let _ = replaced;
-    file.write_all(bytes)?;
-    file.sync_all()
-}
-
-/// Makes the rename itself durable on Unix. Best effort: the file is already replaced, and a
-/// failure here only matters after a power loss.
-fn sync_directory(path: &Path) {
-    #[cfg(unix)]
-    if let Some(dir) = path.parent() {
-        let _ = File::open(dir).and_then(|dir| dir.sync_all());
-    }
-    #[cfg(not(unix))]
-    let _ = path;
-}
-
-fn temp_path(path: &Path) -> PathBuf {
-    static COUNTER: AtomicU32 = AtomicU32::new(0);
-    let serial = COUNTER.fetch_add(1, Ordering::Relaxed);
-    let mut name = path.file_name().unwrap_or_default().to_owned();
-    name.push(format!(".{}-{serial}.tmp", process::id()));
-    path.with_file_name(name)
 }
 
 #[cfg(test)]

@@ -3,21 +3,31 @@
 use std::{
     collections::BTreeSet,
     sync::{Mutex, PoisonError},
-    time::Duration,
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use allot_shared::types::{LeaseId, LeaseState, SessionKey};
+use tokio::sync::Notify;
 
 use crate::daemon::DaemonApi;
 
+/// The shortest wait between heartbeats, however little time a lease has left.
+const MIN_BEAT: Duration = Duration::from_secs(1);
+/// The wait when no held lease answered: none is held, or allotd is unreachable.
+const UNKNOWN_BEAT: Duration = Duration::from_secs(5);
+
 /// The lease IDs this process holds.
 #[derive(Debug, Default)]
-pub struct HeldLeases(Mutex<BTreeSet<LeaseId>>);
+pub struct HeldLeases {
+    ids: Mutex<BTreeSet<LeaseId>>,
+    added: Notify,
+}
 
 impl HeldLeases {
     /// Starts heartbeating `id`.
     pub fn insert(&self, id: LeaseId) {
         self.lock().insert(id);
+        self.added.notify_one();
     }
 
     /// Stops heartbeating `id`.
@@ -31,13 +41,18 @@ impl HeldLeases {
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, BTreeSet<LeaseId>> {
-        self.0.lock().unwrap_or_else(PoisonError::into_inner)
+        self.ids.lock().unwrap_or_else(PoisonError::into_inner)
     }
 }
 
-/// Heartbeats every held lease once. Leases that ended, or that the daemon no longer knows,
-/// are dropped from the set.
-pub async fn heartbeat_once<C: DaemonApi>(client: &C, session: &SessionKey, held: &HeldLeases) {
+/// Heartbeats every held lease once and returns how long to wait before the next round.
+/// Leases that ended, or that the daemon no longer knows, are dropped from the set.
+pub async fn heartbeat_once<C: DaemonApi>(
+    client: &C,
+    session: &SessionKey,
+    held: &HeldLeases,
+) -> Duration {
+    let mut expiries = Vec::new();
     for id in held.ids() {
         match client.heartbeat(id, session).await {
             Ok(response) if is_ended(response.state) || response.end_cause.is_some() => {
@@ -50,26 +65,43 @@ pub async fn heartbeat_once<C: DaemonApi>(client: &C, session: &SessionKey, held
                 }
                 held.remove(id);
             }
-            Ok(_) => {}
+            Ok(response) => expiries.push(response.expires_at_ms),
             Err(error) if matches!(error.status(), Some(403 | 404)) => held.remove(id),
             Err(error) => eprintln!("allot-mcp: heartbeat for lease {} failed: {error}", id.0),
         }
     }
+    next_beat(&expiries, now_ms())
 }
 
-/// Heartbeats every held lease each `every`, forever.
-pub async fn heartbeat_loop<C: DaemonApi>(
-    client: &C,
-    session: &SessionKey,
-    held: &HeldLeases,
-    every: Duration,
-) {
-    let mut ticker = tokio::time::interval(every);
-    ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+/// Heartbeats every held lease, again after the wait each round returns and at once when a
+/// lease is added, forever.
+pub async fn heartbeat_loop<C: DaemonApi>(client: &C, session: &SessionKey, held: &HeldLeases) {
     loop {
-        ticker.tick().await;
-        heartbeat_once(client, session, held).await;
+        let wait = heartbeat_once(client, session, held).await;
+        tokio::select! {
+            () = tokio::time::sleep(wait) => {}
+            () = held.added.notified() => {}
+        }
     }
+}
+
+/// A third of the shortest time any lease has left at `now_ms`, so two heartbeats can be lost
+/// before it expires. Taken from each answer rather than the config, because the lease
+/// timeout can change while the session runs.
+fn next_beat(expiries: &[i64], now_ms: i64) -> Duration {
+    let Some(soonest) = expiries.iter().min() else {
+        return UNKNOWN_BEAT;
+    };
+    let left_ms = u64::try_from(soonest.saturating_sub(now_ms)).unwrap_or_default();
+    Duration::from_millis(left_ms / 3).max(MIN_BEAT)
+}
+
+fn now_ms() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |elapsed| {
+            i64::try_from(elapsed.as_millis()).unwrap_or(i64::MAX)
+        })
 }
 
 /// Releases every held lease; used when the session closes this server.
@@ -85,7 +117,6 @@ pub async fn release_all<C: DaemonApi>(client: &C, session: &SessionKey, held: &
 fn is_ended(state: LeaseState) -> bool {
     matches!(state, LeaseState::Released | LeaseState::Expired)
 }
-
 #[cfg(test)]
 mod tests {
     use allot_shared::types::EndCause;
@@ -137,6 +168,27 @@ mod tests {
         held.insert(LeaseId(1));
         heartbeat_once(&MockDaemon::unreachable(), &me(), &held).await;
         assert_eq!(held.ids(), [LeaseId(1)]);
+    }
+
+    #[test]
+    fn test_next_beat_follows_the_soonest_expiry() {
+        // A lease timeout lowered to 15 s shows in the next answer, not in the config read at
+        // startup.
+        assert_eq!(
+            next_beat(&[100_000 + 60_000, 100_000 + 15_000], 100_000),
+            Duration::from_secs(5)
+        );
+        assert_eq!(next_beat(&[100_000 + 1_500], 100_000), MIN_BEAT);
+        assert_eq!(next_beat(&[90_000], 100_000), MIN_BEAT);
+        assert_eq!(next_beat(&[], 100_000), UNKNOWN_BEAT);
+    }
+
+    #[tokio::test]
+    async fn test_heartbeat_once_waits_briefly_when_nothing_answers() {
+        let held = HeldLeases::default();
+        held.insert(LeaseId(1));
+        let wait = heartbeat_once(&MockDaemon::unreachable(), &me(), &held).await;
+        assert_eq!(wait, UNKNOWN_BEAT);
     }
 
     #[tokio::test]

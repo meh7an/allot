@@ -41,7 +41,6 @@ async fn daemon() -> anyhow::Result<()> {
     startup::create_data_dir(paths.root())?;
     let _lock = startup::InstanceLock::acquire(&paths.lock_file())?;
     startup::init_logging(&paths.log_dir())?;
-    startup::clear_stop_record(&paths.stop_file());
 
     // A detached allotd has no console, so the log is the only place a failure shows up.
     let result = run(&paths).await;
@@ -68,6 +67,9 @@ async fn run(paths: &Paths) -> anyhow::Result<()> {
                 config_file.display()
             )
         })?;
+    // Only once the start can no longer fail on the config, token, ledger or port: a start
+    // that fails must leave the user's stop on record, so sessions keep reporting it.
+    startup::clear_stop_record(&paths.stop_file());
 
     let options = DaemonOptions {
         config,

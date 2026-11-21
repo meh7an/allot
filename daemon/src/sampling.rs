@@ -210,26 +210,34 @@ async fn rebind(state: &AppState, ledger: &mut Ledger) -> anyhow::Result<()> {
         return Ok(());
     };
     let now = now_ms();
-    let found: Vec<(LeaseId, SessionKey, BoundProcess, LeaseBinding)> = ledger
-        .leases()
+    let leases = ledger.leases();
+    let mut found: Vec<(LeaseId, SessionKey, BoundProcess, LeaseBinding)> = Vec::new();
+    for lease in leases
         .iter()
         .filter(|lease| lease.state == LeaseState::Active)
-        .filter_map(|lease| {
-            let current = lease.binding.as_ref()?;
-            match binding::resolve(current, &lease.holder, &latest.processes, now) {
-                BindOutcome::Bound(root) if current.root != Some(root) => Some((
-                    lease.id,
-                    lease.holder.session.clone(),
-                    root,
-                    LeaseBinding {
-                        root: Some(root),
-                        ..current.clone()
-                    },
-                )),
-                _ => None,
-            }
-        })
-        .collect();
+    {
+        let Some(current) = lease.binding.as_ref() else {
+            continue;
+        };
+        // Roots found earlier in this pass count as taken, so two leases reported a moment
+        // apart cannot both bind the same new process.
+        let mut taken = binding::taken_roots(leases, lease.id);
+        taken.extend(found.iter().map(|(_, _, root, _)| *root));
+        if let BindOutcome::Bound(root) =
+            binding::resolve(current, &lease.holder, &latest.processes, now, &taken)
+            && current.root != Some(root)
+        {
+            found.push((
+                lease.id,
+                lease.holder.session.clone(),
+                root,
+                LeaseBinding {
+                    root: Some(root),
+                    ..current.clone()
+                },
+            ));
+        }
+    }
     for (id, session, root, found_binding) in found {
         ledger.bind(id, &session, found_binding.clone())?;
         tracing::info!(lease = id.0, pid = root.pid, "command process found");

@@ -76,15 +76,31 @@ pub struct ClientOptions {
 
 impl ClientOptions {
     /// Options for the local install: the port from `config.toml` and the token file under
-    /// `~/.allot/` (`%USERPROFILE%\.allot\` on Windows).
+    /// `~/.allot/` (`%USERPROFILE%\.allot\` on Windows), as [`Self::installed`] finds them.
     ///
     /// # Errors
     ///
-    /// Fails when the home directory variable is unset or the config file is invalid.
+    /// Fails when the home directory variable is unset.
     pub fn discover(auto_spawn: bool) -> Result<Self> {
-        let paths = Paths::from_env()?;
-        let config = Config::load(&paths.config_file())?;
-        Ok(Self::local(&paths, &config, auto_spawn))
+        Ok(Self::installed(&Paths::from_env()?, auto_spawn))
+    }
+
+    /// Options for the install at `paths`, with the port from its `config.toml`.
+    ///
+    /// An invalid file does not lock the client out: allotd keeps running on the config it
+    /// last accepted, so the client dials the file's `daemon.port` while that is still valid,
+    /// else the default port, and says so on stderr.
+    pub fn installed(paths: &Paths, auto_spawn: bool) -> Self {
+        let path = paths.config_file();
+        let config = Config::load(&path).unwrap_or_else(|error| {
+            let mut config = Config::default();
+            if let Some(port) = Config::port_in(&path) {
+                config.daemon.port = port;
+            }
+            eprintln!("warning: {error}; using port {}", config.daemon.port);
+            config
+        });
+        Self::local(paths, &config, auto_spawn)
     }
 
     /// Options for an install at `paths` with an already loaded `config`, with the default

@@ -11,10 +11,9 @@ mod summary;
 #[cfg(test)]
 mod test_support;
 
-use std::{sync::Arc, time::Duration};
+use std::sync::Arc;
 
 use allot_client::Client;
-use allot_shared::{config::Config, paths::Paths};
 use clap::Parser;
 use rmcp::{ServiceExt, transport::stdio};
 
@@ -32,7 +31,6 @@ struct Args {}
 async fn main() -> anyhow::Result<()> {
     Args::parse();
     let holder = identity::current_holder()?;
-    let config = Config::load(&Paths::from_env()?.config_file())?;
     let client = Arc::new(Client::discover(true)?);
     let held = Arc::new(HeldLeases::default());
 
@@ -43,8 +41,7 @@ async fn main() -> anyhow::Result<()> {
     };
     let heartbeat = {
         let (client, session, held) = (client.clone(), holder.session.clone(), held.clone());
-        let every = heartbeat_interval(&config);
-        tokio::spawn(async move { heartbeat_loop(&*client, &session, &held, every).await })
+        tokio::spawn(async move { heartbeat_loop(&*client, &session, &held).await })
     };
 
     // Claude starts the server in the session's project directory.
@@ -65,9 +62,4 @@ async fn main() -> anyhow::Result<()> {
     registering.abort();
     release_all(&*client, &holder.session, &held).await;
     outcome
-}
-
-/// A third of the lease TTL, so two heartbeats can be lost before a lease expires.
-fn heartbeat_interval(config: &Config) -> Duration {
-    Duration::from_secs((config.leases.heartbeat_ttl_secs / 3).max(1))
 }

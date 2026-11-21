@@ -8,7 +8,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use allot_client::BlockingClient;
+use allot_client::{BlockingClient, ClientOptions};
 use allot_shared::{
     api::HealthResponse,
     config::Config,
@@ -249,14 +249,14 @@ fn check_config_and_daemon(paths: &Paths) -> Vec<Check> {
             "fix the file; allotd keeps the previous config until it is valid",
         ),
     };
-    let client = match BlockingClient::discover(false) {
+    let client = match BlockingClient::new(ClientOptions::installed(paths, false)) {
         Ok(client) => client,
         Err(error) => {
             let daemon = Check::problem(
                 "allotd",
                 Outcome::Fail,
                 format!("{error:#}"),
-                "fix the config file, then `allot daemon start`",
+                "run `allot doctor` again; reinstall if it keeps failing",
             );
             return vec![config, daemon];
         }

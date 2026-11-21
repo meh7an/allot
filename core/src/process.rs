@@ -58,9 +58,20 @@ impl ProcessTable {
     /// Direct children of the process `pid` that started at `start_time`, in no particular
     /// order, whether or not that process is still running: a killed parent's children keep
     /// its PID as their parent PID.
+    ///
+    /// When the PID now belongs to a newer process, only children that started before that
+    /// process can be the dead parent's: the dead parent could not start anything after its
+    /// PID was given away, so later ones are the new process's children.
     pub fn children_of(&self, pid: u32, start_time: u64) -> impl Iterator<Item = &ProcessNode> {
+        let reused_at = self
+            .get(pid)
+            .filter(|current| current.start_time != start_time)
+            .map(|current| current.start_time);
         self.nodes.values().filter(move |node| {
-            node.pid != pid && node.parent_pid == Some(pid) && start_time <= node.start_time
+            node.pid != pid
+                && node.parent_pid == Some(pid)
+                && start_time <= node.start_time
+                && reused_at.is_none_or(|reused_at| node.start_time < reused_at)
         })
     }
 
@@ -161,6 +172,19 @@ mod tests {
         let mut pids: Vec<u32> = table.children_of(1, 20).map(|node| node.pid).collect();
         pids.sort_unstable();
         assert_eq!(pids, [2]);
+    }
+
+    #[test]
+    fn test_process_table_children_of_a_dead_parent_skip_the_new_owners_children() {
+        // PID 1 started at 20 and died; an unrelated process got PID 1 at 40 and started 4.
+        let table = ProcessTable::new(&[
+            process(1, None, 40),
+            process(2, Some(1), 30),
+            process(4, Some(1), 45),
+        ]);
+        let pids: Vec<u32> = table.children_of(1, 20).map(|node| node.pid).collect();
+        assert_eq!(pids, [2]);
+        assert_eq!(child_pids(&table, 1), [4]);
     }
 
     #[test]

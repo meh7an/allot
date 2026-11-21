@@ -617,6 +617,22 @@ mod tests {
         assert!(plan.sweep(&with(&[])).is_empty());
     }
 
+    #[test]
+    fn test_sweep_skips_children_of_a_process_that_took_a_killed_parents_pid() {
+        let table = with(&bash_command());
+        let mut plan = plan(&table, &binding(20, 101)).unwrap();
+        plan.sweep(&table);
+
+        // Cargo (23) died; another session's cmd.exe got PID 23 and started a build of its own,
+        // while rustc 25 from the killed cargo survived.
+        let after = with(&[
+            raw_process(23, Some(2), "cmd.exe", 120),
+            raw_process(25, Some(23), "rustc.exe", 103),
+            raw_process(28, Some(23), "rustc.exe", 121),
+        ]);
+        assert_eq!(pids(&plan.sweep(&after)), [25]);
+    }
+
     /// The Unix machine: systemd (1) runs the user's manager (2), which adopts orphans, and a
     /// terminal's fish (4, leading session 4) runs the session's claude (10) and allotd.
     fn unix_base() -> Vec<(RawProcess, u32)> {
