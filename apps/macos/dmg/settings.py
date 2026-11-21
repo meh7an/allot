@@ -11,8 +11,8 @@ format = "ULFO"
 filesystem = "HFS+"
 files = [application]
 symlinks = {"Applications": "/Applications"}
-# Finder labels the app "Allot" whatever its extension setting, as the label pill expects.
-hide_extensions = [appname]
+# No hide_extensions: it writes Finder info onto the bundle, which every copy keeps and which
+# codesign --strict refuses. Finder hides .app by default, so the label reads "Allot".
 
 background = defines["background"]  # noqa: F821
 window_rect = ((200, 240), (640, 400))
