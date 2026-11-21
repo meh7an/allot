@@ -77,7 +77,14 @@ The GNOME extension and the KDE widget are separate packages:
 
 ### macOS
 
-Needs Apple Silicon and macOS 14 or newer. Homebrew works too:
+Needs Apple Silicon and macOS 14 or newer. The menu bar app installs everything by itself:
+download `allot-<version>.dmg` from the
+[latest release](https://github.com/meh7an/allot/releases/latest), drag Allot onto
+Applications, and open it. It carries `allot`, `allotd` and `allot-mcp`, and its first run
+installs or updates them, as [the DMG](docs/install.md#the-dmg) explains. It is signed ad hoc,
+so macOS stops it once: System Settings > Privacy & Security then offers Open Anyway.
+
+The script installs the service without the app. Homebrew works too:
 
 ```bash
 brew tap meh7an/allot
@@ -86,9 +93,6 @@ brew install allot
 allot install
 brew install --cask allot-app    # the menu bar app
 ```
-
-The menu bar app is a separate package either way. It is signed ad hoc, so macOS stops it once:
-System Settings > Privacy & Security then offers Open Anyway.
 
 ### npm
 

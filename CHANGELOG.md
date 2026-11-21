@@ -28,6 +28,12 @@ All notable changes to this project are documented in this file. The format foll
   allotd writes the stop record before it stops (`contract/shutdown-request.schema.json`).
 - Screen readers hear errors, banners, the outcome of a save and the result of Test a command
   without a focus change, and read each class or preset row as one sentence.
+- macOS: `allot-<version>.dmg`, a window to drag Allot onto Applications. Allot.app now carries
+  `allot`, `allotd` and `allot-mcp`. The first run of a new app version installs them with its
+  own `allot install` when `~/.allot/bin` holds older ones or none, which restarts allotd
+  through its LaunchAgent and sets up Claude Code, and a notification says so. A later run that
+  finds an older allotd offers Update Service in the panel and in Settings. The app never
+  replaces a newer allotd.
 
 ### Changed
 
@@ -64,6 +70,8 @@ All notable changes to this project are documented in this file. The format foll
 - The GNOME extension's Settings window no longer names a port; it says when allotd is not on
   the session bus. The extension ships with its license and without the HTTP client, which
   only the KDE widget uses.
+- `allot install` on macOS clears the quarantine flag of the binaries it copies, so Gatekeeper
+  does not stop a copy that came from a downloaded DMG or archive.
 
 ### Fixed
 
@@ -100,6 +108,9 @@ All notable changes to this project are documented in this file. The format foll
 - The GNOME extension and the KDE widget keep polling after an error while showing an update,
   and GNOME's Stop service shows a short reason instead of the D-Bus error.
 - KDE's Open logs works when the home folder's path holds `#` or `%`.
+- Settings in every panel say plainly when the service running is older than the panel and has
+  no settings routes, with Restart Service and Open Logs, instead of reporting an answer
+  Settings can't use. Reasons from allotd start with a capital letter in every banner.
 
 ## [0.5.0] - 2026-11-17
 

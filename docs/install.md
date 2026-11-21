@@ -235,43 +235,56 @@ folder first; `kpackagetool6 -i apps/kde/tech.mehran.allot` takes the folder as 
 ## macOS
 
 Needs Apple Silicon, macOS 14 or newer, and Claude Code. No admin rights. macOS packages are
-published from v0.3.0 on. The [install script](#the-install-script) needs nothing else; Homebrew
-works too:
+published from v0.3.0 on, and the DMG from v0.6.0 on.
+
+### The DMG
+
+Download `allot-<version>.dmg` from the
+[latest release](https://github.com/meh7an/allot/releases/latest), open it, and drag Allot onto
+Applications. Then open Allot from Applications; from any other folder macOS runs a copy it
+moved aside, which cannot launch at login. The app is signed ad hoc, not with an Apple Developer
+ID, so macOS stops it once: it says Apple could not verify Allot, and System Settings > Privacy &
+Security then offers Open Anyway. A new version asks again.
+
+Allot.app carries `allot`, `allotd`, and `allot-mcp`. The first time a version of the app runs,
+it installs them when `~/.allot/bin` holds older ones or none, by running the `allot install`
+inside the app, and a notification says "Service updated to \<version\>". Then start a new
+Claude session. The install:
+
+- copies `allot`, `allotd`, and `allot-mcp` to `~/.allot/bin`, and links `allot` into
+  `~/.local/bin` when that folder exists and has no other `allot`;
+- sets up the LaunchAgent `tech.mehran.allotd`, which starts allotd when you log in, and
+  restarts allotd on the new build;
+- sets up Claude Code the way the Windows setup does (skill, MCP server, hooks, and the rule).
+
+Its output is in `~/.allot/logs/app-update.log`. The app never replaces a newer allotd. When a
+later start finds an older one, such as after an `allot install` from an older release, the
+panel and Settings > Service offer Update Service instead of installing by themselves.
+
+### Homebrew
+
+The [install script](#the-install-script) needs nothing else; Homebrew works too:
 
 ```bash
 brew tap meh7an/allot
 brew trust --tap meh7an/allot
 brew install allot
 allot install
-```
-
-Homebrew only loads a third-party tap you have trusted. Then start a new Claude session. The
-install:
-
-- copies `allot`, `allotd`, and `allot-mcp` to `~/.allot/bin`, and links `allot` into
-  `~/.local/bin` when that folder exists and has no other `allot`;
-- sets up the LaunchAgent `tech.mehran.allotd`, which starts allotd when you log in;
-- sets up Claude Code the way the Windows setup does (skill, MCP server, hooks, and the rule).
-
-`allot install --help` lists its options (`--no-claude`, `--no-autostart`).
-
-### The menu bar app
-
-```bash
-brew install --cask allot-app
+brew install --cask allot-app    # the menu bar app
 open /Applications/Allot.app
 ```
 
-The app is signed ad hoc, not with an Apple Developer ID, so macOS stops it once: it says Apple
-could not verify Allot, and System Settings > Privacy & Security then offers Open Anyway. A new
-version asks again. The app also needs the install above, since it only talks to allotd.
+Homebrew only loads a third-party tap you have trusted. `allot install` does what the app's first
+run does; `allot install --help` lists its options (`--no-claude`, `--no-autostart`). The app
+from the cask carries the binaries too, and updates `~/.allot/bin` the same way.
 
-### Without Homebrew
+### Without Homebrew or the DMG
 
-The release has `allot-<version>-aarch64-apple-darwin.tar.gz` and
-`allot-<version>-macos-app.zip`, with a `.sha256` each. Check them with `shasum -a 256 -c`, run
-`./allot install` from the unpacked tarball, and move `Allot.app` to Applications; from any other
-folder macOS runs a copy it moved aside, which cannot launch at login.
+The release also has `allot-<version>-aarch64-apple-darwin.tar.gz` and
+`allot-<version>-macos-app.zip`, with a `.sha256` each, as does the DMG. Check them with
+`shasum -a 256 -c`, run `./allot install` from the unpacked tarball, and move `Allot.app` to
+Applications. `allot install` clears the quarantine flag macOS sets on a download from the
+binaries it copies, so Gatekeeper does not stop allotd.
 
 ### From source
 
@@ -343,13 +356,16 @@ On Linux, run the newer package's `allot install`, as above, and upgrade the pan
 the same release (see [The panel](#the-panel)): from 0.6.0 the GNOME extension reaches allotd
 over D-Bus, which older allotd builds do not serve.
 
-On macOS, Homebrew updates its own copy only. `allot install` is what puts the new binaries in
-`~/.allot/bin`, where sessions and allotd run them from:
+On macOS, open the new DMG, drag Allot onto Applications, and replace the old app. Its first run
+updates `~/.allot/bin` and restarts allotd (see [The DMG](#the-dmg)). Homebrew updates its own
+copies only; the new app's first run updates `~/.allot/bin` too, and `allot install` does it
+without the app:
 
 ```bash
 brew upgrade allot
 allot install
 brew upgrade --cask allot-app
+open /Applications/Allot.app
 ```
 
 ## Uninstall

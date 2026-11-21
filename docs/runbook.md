@@ -128,7 +128,9 @@ as reserved, so other leases wait more than they need to until it ends.
 | "Apple could not verify Allot" | The app is signed ad hoc. System Settings > Privacy & Security > Open Anyway, once per version. |
 | The app says to move it to Applications | It runs from a copy macOS moved aside, which cannot launch at login. Move it to `/Applications`. |
 | Login Items lists an unidentified `allotd` | That is the LaunchAgent. Turning it off stops allotd starting at login; clients still start it when needed. |
-| The app shows the service down right after installing | The cask does not run the install. Run `allot install`. |
+| The app shows the service down right after installing | The app's first run installs the binaries it carries; see `~/.allot/logs/app-update.log`. An app older than 0.6.0 carries none: run `allot install`. |
+| "Service 0.5.0 is older than this app" in the panel | `~/.allot/bin` holds an older build, such as after an `allot install` from an older release. Update Service installs the app's own; it never replaces a newer one. |
+| "The service wasn't updated" | The app's `allot install` failed or left an older allotd; the notification's Open Logs shows `app-update.log`. Update Service tries again. |
 | A session says no lease ending would make room | Wired memory or the request's own size is in the way; `allot status` shows the memory. Unload the local model, or lower the request. |
 
 To remove everything:
