@@ -6,6 +6,8 @@ All notable changes to this project are documented in this file. The format foll
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-21
+
 ### Added
 
 - A Settings window in every panel (the Windows tray app, the macOS menu bar app, the GNOME
@@ -337,7 +339,8 @@ First public release.
 - A logon task for autostart, and a runbook for health checks, troubleshooting, and
   configuration.
 
-[Unreleased]: https://github.com/meh7an/allot/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/meh7an/allot/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/meh7an/allot/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/meh7an/allot/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/meh7an/allot/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/meh7an/allot/compare/v0.2.0...v0.3.0

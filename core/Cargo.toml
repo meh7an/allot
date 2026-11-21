@@ -12,5 +12,5 @@ keywords.workspace = true
 categories.workspace = true
 
 [dependencies]
-allot-shared = { version = "0.6.0-beta.1", path = "../shared" }
+allot-shared = { version = "0.6.0", path = "../shared" }
 thiserror = "2.0.21"
