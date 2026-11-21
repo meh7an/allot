@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "allot-cli"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "allot-client",
  "allot-core",
@@ -23,7 +23,7 @@ dependencies = [
 
 [[package]]
 name = "allot-client"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "allot-core",
  "allot-shared",
@@ -38,7 +38,7 @@ dependencies = [
 
 [[package]]
 name = "allot-core"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "allot-shared",
  "thiserror 2.0.21",
@@ -46,7 +46,7 @@ dependencies = [
 
 [[package]]
 name = "allot-mcp"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "allot-client",
  "allot-core",
@@ -63,7 +63,7 @@ dependencies = [
 
 [[package]]
 name = "allot-sampler"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "allot-core",
  "allot-shared",
@@ -78,7 +78,7 @@ dependencies = [
 
 [[package]]
 name = "allot-shared"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "schemars",
  "serde",
@@ -91,7 +91,7 @@ dependencies = [
 
 [[package]]
 name = "allotd"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "allot-core",
  "allot-sampler",
@@ -2376,7 +2376,7 @@ checksum = "3ad82d2a33cdc9674dc7465672f271e096168fcdbe0f799d9e6db8c5892679dc"
 
 [[package]]
 name = "xtask"
-version = "0.6.0"
+version = "0.6.1"
 
 [[package]]
 name = "yoke"
