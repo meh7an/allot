@@ -809,12 +809,18 @@ fn write_if_changed(path: &Path, contents: &str) -> anyhow::Result<bool> {
     if read_text(path)?.as_deref() == Some(contents) {
         return Ok(false);
     }
+    write_atomic(path, contents)?;
+    Ok(true)
+}
+
+/// Writes `contents` to `path` at once, creating its folder: a reader never sees half of it,
+/// and a failed write leaves the old file whole.
+fn write_atomic(path: &Path, contents: &str) -> anyhow::Result<()> {
     if let Some(dir) = path.parent() {
         fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
     }
     atomic_file::replace(path, contents.as_bytes())
-        .with_context(|| format!("writing {}", path.display()))?;
-    Ok(true)
+        .with_context(|| format!("writing {}", path.display()))
 }
 
 /// `<name>.<extension>` beside `path`.

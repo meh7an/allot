@@ -87,6 +87,18 @@ fi
 
 if [ -n "$dry_run" ]; then
     arguments+=(--dry-run)
+    # cargo verifies each crate against its packaged siblings, which it unpacks under
+    # CARGO_HOME and reuses when one of that name and version is already there. The CI cache
+    # keeps the registry, so a copy an earlier run unpacked at the same version would be built
+    # instead of these sources; drop those first.
+    cargo_home=${CARGO_HOME:-$HOME/.cargo}
+    while read -r name version; do
+        [ -n "$name" ] || continue
+        for stale in "$version" "$version-ci"; do
+            rm -rf "$cargo_home"/registry/src/*/"$name-$stale" \
+                "$cargo_home"/registry/cache/*/"$name-$stale.crate"
+        done
+    done <<<"$packages"
     if [ -n "$any_published" ]; then
         echo "::notice::crates.io already has $release; packaging these sources as $release-ci"
         stand_in "$release" "$release-ci"
