@@ -13,6 +13,30 @@ public enum NotificationText {
         "job:\(lease)"
     }
 
+    /// The one notification of a service update; the next replaces it.
+    public static let updateTag = "service-update"
+
+    public static func serviceUpdated(to version: ServiceVersion) -> NotificationMessage {
+        NotificationMessage(
+            kind: .serviceUpdate,
+            tag: updateTag,
+            title: "Service updated to \(version)",
+            body: "Allot installed the service that comes with the app.",
+            buttons: [],
+            target: nil)
+    }
+
+    /// - Parameter problem: Why not, starting with a program's name or path.
+    public static func serviceNotUpdated(_ problem: String) -> NotificationMessage {
+        NotificationMessage(
+            kind: .serviceUpdate,
+            tag: updateTag,
+            title: "The service wasn't updated",
+            body: SettingsBanners.sentence(problem, capitalize: false),
+            buttons: [.openLogs],
+            target: nil)
+    }
+
     public static func serviceStopped(sessions: Int) -> NotificationMessage {
         NotificationMessage(
             kind: .serviceStopped,

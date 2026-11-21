@@ -24,6 +24,9 @@ final class PanelController: NSObject, NSWindowDelegate {
     /// The banner's Start Service.
     var onStartService: (() -> Void)?
 
+    /// The banner's Update Service.
+    var onUpdateService: (() -> Void)?
+
     /// The first-run card's Launch at Login.
     var onSetLaunchAtLogin: ((Bool) -> Void)?
 
@@ -397,6 +400,7 @@ final class PanelController: NSObject, NSWindowDelegate {
             openLogs: { [weak self] in self?.openLogs() },
             quit: { NSApp.terminate(nil) },
             startService: { [weak self] in self?.onStartService?() },
+            updateService: { [weak self] in self?.onUpdateService?() },
             setLaunchAtLogin: { [weak self] in self?.onSetLaunchAtLogin?($0) },
             openLoginItems: { [weak self] in self?.onOpenLoginItems?() },
             openNotificationSettings: { Notifier.openSettings() },

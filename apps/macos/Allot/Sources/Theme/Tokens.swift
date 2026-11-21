@@ -78,6 +78,10 @@ enum Tokens {
         light: hex(0xC42B1C).opacity(0.30), dark: hex(0xFF99A4).opacity(0.30))
     static let bannerText = Color(light: hex(0x8A1E14), dark: hex(0xFFB3BB))
 
+    /// The banner while the service runs and the app carries a newer one: the user's accent.
+    static let noticeFill = Color.accentColor.opacity(0.10)
+    static let noticeBorder = Color.accentColor.opacity(0.30)
+
     /// The Resources card's bars: the hatched headroom leases can't take, the reserved tick's
     /// ring in the surface colour, and the drive bars.
     static let hatchBack = Color(light: .black.opacity(0.05), dark: .white.opacity(0.05))

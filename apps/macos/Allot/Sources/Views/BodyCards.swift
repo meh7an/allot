@@ -2,17 +2,20 @@ import AllotKit
 import SwiftUI
 
 /// The red banner while the service is down, with Start Service, and the "Last known" caption
-/// over the dimmed cards.
+/// over the dimmed cards; an accent one while it runs and the app carries a newer service.
 struct ServiceBannerView: View {
     let banner: ServiceBanner
     let startService: () -> Void
+    let updateService: () -> Void
 
     var body: some View {
+        let isNotice = banner.tone == .notice
+        let symbol = isNotice ? "arrow.down.circle.fill" : "exclamationmark.circle.fill"
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .center, spacing: 8) {
-                Image(systemName: "exclamationmark.circle.fill")
+                Image(systemName: symbol)
                     .font(.system(size: 16))
-                    .foregroundStyle(Tokens.danger)
+                    .foregroundStyle(isNotice ? Color.accentColor : Tokens.danger)
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(banner.text)
@@ -23,15 +26,20 @@ struct ServiceBannerView: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
-                .foregroundStyle(Tokens.bannerText)
+                .foregroundStyle(isNotice ? Color.primary : Tokens.bannerText)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 switch banner.button {
                 case .start:
                     Button("Start Service", action: startService)
                         .buttonStyle(.borderedProminent)
                         .controlSize(.regular)
-                case .starting:
-                    Button("Starting…") {}
+                case .update, .install:
+                    Button(banner.button == .install ? "Install Service" : "Update Service",
+                           action: updateService)
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.regular)
+                case .starting, .updating:
+                    Button(banner.button == .updating ? "Updating…" : "Starting…") {}
                         .buttonStyle(.borderedProminent)
                         .controlSize(.regular)
                         .disabled(true)
@@ -40,9 +48,12 @@ struct ServiceBannerView: View {
                 }
             }
             .padding(EdgeInsets(top: 6, leading: 10, bottom: 6, trailing: 6))
-            .background(RoundedRectangle(cornerRadius: 6).fill(Tokens.bannerFill))
+            .background(
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(isNotice ? Tokens.noticeFill : Tokens.bannerFill))
             .overlay(
-                RoundedRectangle(cornerRadius: 6).strokeBorder(Tokens.bannerBorder, lineWidth: 1))
+                RoundedRectangle(cornerRadius: 6).strokeBorder(
+                    isNotice ? Tokens.noticeBorder : Tokens.bannerBorder, lineWidth: 1))
             .accessibilityElement(children: .contain)
             if !banner.caption.isEmpty {
                 Text(banner.caption)

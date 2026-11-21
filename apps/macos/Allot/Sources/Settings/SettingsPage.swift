@@ -20,7 +20,8 @@ struct SettingsPage: View {
 
     var body: some View {
         let banners = SettingsBanners.banners(
-            model.session, pageId: pageId, port: model.port, number: model.number)
+            model.session, pageId: pageId, port: model.port, number: model.number,
+            update: model.panel.serviceUpdate)
         VStack(spacing: 0) {
             if !banners.isEmpty {
                 VStack(spacing: 8) {

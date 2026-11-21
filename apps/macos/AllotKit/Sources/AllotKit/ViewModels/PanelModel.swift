@@ -32,8 +32,12 @@ public final class PanelModel {
     public private(set) var mode = PanelMode.lightDismiss
     public private(set) var resources = ResourcesView.hidden
 
-    /// The banner while the service is down, else `nil`.
+    /// The banner while the service is down or the app carries a newer one, else `nil`.
     public private(set) var banner: ServiceBanner?
+
+    /// The newer service the app carries, which Update Service installs; Settings shows it too.
+    /// Changed through ``setServiceUpdate(_:)``.
+    public private(set) var serviceUpdate: ServiceUpdate?
 
     /// `tray.json`, loaded at launch; changed through ``updateSettings(_:)``.
     public private(set) var settings: TraySettings
@@ -132,6 +136,15 @@ public final class PanelModel {
         refresh()
     }
 
+    /// Shows the newer service the app carries, its install running or failed, or none.
+    public func setServiceUpdate(_ update: ServiceUpdate?) {
+        guard update != serviceUpdate else {
+            return
+        }
+        serviceUpdate = update
+        refresh()
+    }
+
     /// Rebuilds the snapshot for the current moment, so times tick between polls.
     public func refresh() {
         stops.expire()
@@ -160,7 +173,8 @@ public final class PanelModel {
             resources = card
         }
         let banner = ServiceBanner.from(
-            status: status, lastKnown: lastKnown, startProblem: startProblem)
+            status: status, lastKnown: lastKnown, startProblem: startProblem,
+            update: serviceUpdate)
         if banner != self.banner {
             self.banner = banner
         }

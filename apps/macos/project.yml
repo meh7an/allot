@@ -22,6 +22,25 @@ targets:
     dependencies:
       - package: AllotKit
         product: AllotKit
+    # The release build passes ALLOT_HELPERS, the folder of `cargo build --release`: allot,
+    # allotd and allot-mcp go into Contents/Helpers before Xcode signs the app, so its signature
+    # covers them, and the app installs them into ~/.allot/bin. A build without it carries none
+    # and never updates the service.
+    postBuildScripts:
+      - name: Bundle the service binaries
+        basedOnDependencyAnalysis: false
+        script: |
+          set -eu
+          if [ -z "${ALLOT_HELPERS:-}" ]; then
+            exit 0
+          fi
+          helpers="$TARGET_BUILD_DIR/$CONTENTS_FOLDER_PATH/Helpers"
+          mkdir -p "$helpers"
+          for name in allot allotd allot-mcp; do
+            cp "$ALLOT_HELPERS/$name" "$helpers/$name"
+            codesign --force --sign "${EXPANDED_CODE_SIGN_IDENTITY:--}" --options runtime \
+              --timestamp=none "$helpers/$name"
+          done
     scheme: {}
     info:
       path: Generated/Info.plist
@@ -44,4 +63,6 @@ targets:
         CODE_SIGN_STYLE: Manual
         DEVELOPMENT_TEAM: ""
         ENABLE_HARDENED_RUNTIME: YES
+        # The script above reads the cargo build outside the project and runs codesign.
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
         GENERATE_INFOPLIST_FILE: NO

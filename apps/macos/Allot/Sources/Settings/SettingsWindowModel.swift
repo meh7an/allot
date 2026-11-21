@@ -19,6 +19,9 @@ struct SettingsActions {
     /// else why not.
     let restartService: @MainActor () async -> String?
 
+    /// Installs the service binaries the app carries; the panel model shows how it went.
+    let updateService: @MainActor () -> Void
+
     /// The port this panel dials, which differs from `config.toml` until allotd restarts.
     let port: @MainActor () -> UInt16
 
@@ -212,6 +215,8 @@ final class SettingsWindowModel {
             actions.startService()
         case .restartService:
             Task { await restart() }
+        case .updateService, .installService:
+            actions.updateService()
         case .tryNow, .checkAgain:
             Task { try? await session.refresh() }
         case .openLogs:
@@ -243,7 +248,7 @@ final class SettingsWindowModel {
     // nothing that was already there.
     private func announceView() -> AnnouncerView {
         let banners = SettingsBanners.banners(
-            session, pageId: pageId, port: port, number: number)
+            session, pageId: pageId, port: port, number: number, update: panel.serviceUpdate)
         return AnnouncerView.of(session, banners: banners, number: number)
     }
 

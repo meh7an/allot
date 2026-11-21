@@ -6,6 +6,10 @@ public enum NotificationKind: Sendable, Equatable {
     case benchmarkFinished
     case jobFinished
     case killedOutsidePanel
+
+    /// The app installed the service it carries, or failed to; no toggle, since the user
+    /// installed the app or pressed Update Service.
+    case serviceUpdate
 }
 
 public enum NotificationButton: String, Sendable, Equatable {

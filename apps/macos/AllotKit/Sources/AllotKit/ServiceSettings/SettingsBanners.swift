@@ -18,9 +18,17 @@ public enum BannerAction: Sendable, Equatable {
     case keepFileValues
     case saveAgain
 
+    /// Installs the service binaries the app carries.
+    case updateService
+
+    /// Update Service while `~/.allot/bin` has no allotd.
+    case installService
+
     /// The button's title, in title case as macOS buttons are.
     public var label: String {
         switch self {
+        case .updateService: "Update Service"
+        case .installService: "Install Service"
         case .startService: "Start Service"
         case .restartService: "Restart Service"
         case .tryNow: "Try Now"
@@ -59,22 +67,30 @@ public enum SettingsBanners {
     ///   - pageId: The page shown.
     ///   - port: The port this panel reaches allotd on.
     ///   - number: Formats a number for the user's locale.
+    ///   - update: The newer service the app carries, if it carries one; the Service page
+    ///     offers it.
     public static func banners(
         _ session: SettingsSession,
         pageId: String,
         port: UInt16,
-        number: (Double) -> String
+        number: (Double) -> String,
+        update: ServiceUpdate? = nil
     ) -> [SettingsBanner] {
         if pageId == panelPage {
             return []
         }
-        if let unanswered = unanswered(session, port: port) {
-            return [unanswered]
+        let offer = pageId == servicePage ? update.map { updateBanner($0) } : nil
+        if let unanswered = unanswered(session, port: port, update: update) {
+            // The outdated banner offers the update itself.
+            if session.status == .outdated {
+                return [unanswered]
+            }
+            return [offer, unanswered].compactMap { $0 }
         }
+        var banners = [offer].compactMap { $0 }
         guard session.status == .ready else {
-            return []
+            return banners
         }
-        var banners: [SettingsBanner] = []
         if let fileError = session.fileError {
             banners.append(
                 SettingsBanner(
@@ -118,7 +134,30 @@ public enum SettingsBanners {
         return "Restart needed. The service still listens on \(listening)."
     }
 
-    private static func unanswered(_ session: SettingsSession, port: UInt16) -> SettingsBanner? {
+    // While its install runs, the banner keeps its place without a button.
+    nonisolated private static func updateBanner(_ update: ServiceUpdate) -> SettingsBanner {
+        let carried = "This app comes with \(update.bundled)."
+        let message = switch update.installed {
+        case .version(let version): "The installed service is version \(version). \(carried)"
+        case .missing: "The service isn't installed. \(carried)"
+        case .unreadable: "The installed service's version can't be read. \(carried)"
+        }
+        // Its problems start with a program's name or path.
+        let problem = update.problem.map {
+            " The last update failed: \(sentence($0, capitalize: false))"
+        } ?? ""
+        let action: BannerAction = update.installed == .missing ? .installService : .updateService
+        return SettingsBanner(
+            severity: update.problem == nil ? .informational : .error,
+            message: message + problem,
+            actions: update.installing ? [] : [action])
+    }
+
+    private static func unanswered(
+        _ session: SettingsSession,
+        port: UInt16,
+        update: ServiceUpdate?
+    ) -> SettingsBanner? {
         switch session.status {
         case .stopped:
             SettingsBanner(
@@ -142,6 +181,12 @@ public enum SettingsBanners {
                 message: "The service sent an answer Settings can't use. "
                     + sentence(session.detail),
                 actions: [.tryNow, .openLogs])
+        case .outdated where update != nil:
+            SettingsBanner(
+                severity: .error,
+                message: "The service running now is older than this app and has no settings. "
+                    + "Update it to the version that comes with this app.",
+                actions: update?.installing == true ? [.openLogs] : [.updateService, .openLogs])
         case .outdated:
             SettingsBanner(
                 severity: .error,

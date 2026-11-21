@@ -8,6 +8,7 @@ struct CardActions {
     let remove: (Int64) -> Void
     let cancelConfirm: (Int64) -> Void
     let startService: () -> Void
+    let updateService: () -> Void
     let setLaunchAtLogin: (Bool) -> Void
     let openLoginItems: () -> Void
     let openNotificationSettings: () -> Void
@@ -29,7 +30,9 @@ struct JobListView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             if let banner {
-                ServiceBannerView(banner: banner, startService: actions.startService)
+                ServiceBannerView(
+                    banner: banner, startService: actions.startService,
+                    updateService: actions.updateService)
                     .listRow(rowTransition)
             }
             ForEach(snapshot.groups) { group in

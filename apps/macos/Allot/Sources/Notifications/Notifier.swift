@@ -154,13 +154,17 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
     private enum Category: String, CaseIterable {
         case service = "allot.service"
         case show = "allot.show"
+        case logs = "allot.logs"
         case plain = "allot.plain"
 
         static func of(_ buttons: [NotificationButton]) -> Category {
             if buttons.contains(.startService) {
                 return .service
             }
-            return buttons.contains(.show) ? .show : .plain
+            if buttons.contains(.show) {
+                return .show
+            }
+            return buttons.contains(.openLogs) ? .logs : .plain
         }
 
         var category: UNNotificationCategory {
@@ -169,6 +173,7 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
                 action(.startService, "Start Service"), action(.openLogs, "Open Logs"),
             ]
             case .show: [action(.show, "Show")]
+            case .logs: [action(.openLogs, "Open Logs")]
             case .plain: []
             }
             return UNNotificationCategory(

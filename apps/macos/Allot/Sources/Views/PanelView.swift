@@ -10,6 +10,7 @@ struct PanelActions {
     let openLogs: () -> Void
     let quit: () -> Void
     let startService: () -> Void
+    let updateService: () -> Void
     let setLaunchAtLogin: (Bool) -> Void
     let openLoginItems: () -> Void
 
@@ -215,6 +216,7 @@ struct PanelView: View {
             remove: { _ = model.pressRemove($0) },
             cancelConfirm: { model.cancelConfirm($0) },
             startService: actions.startService,
+            updateService: actions.updateService,
             setLaunchAtLogin: actions.setLaunchAtLogin,
             openLoginItems: actions.openLoginItems,
             openNotificationSettings: actions.openNotificationSettings,

@@ -8,8 +8,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Read with `log stream --predicate 'subsystem == "tech.mehran.allot"'`.
     private static let log = Logger(subsystem: "tech.mehran.allot", category: "service")
 
+    /// The app version that last compared its service binaries with `~/.allot/bin`.
+    private static let checkedVersionKey = "serviceCheckedVersion"
+
     private let data = DataDirectory.fromEnvironment()
     private let rules = NotificationRules()
+    private var updater: ServiceUpdater?
     private var model: PanelModel?
     private var poller: DaemonPoller?
     private var panel: PanelController?
@@ -77,6 +81,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
         panel.onStartService = { [weak self] in self?.startService() }
+        panel.onUpdateService = { [weak self] in self?.updateService() }
         panel.onSetLaunchAtLogin = { [weak self] in self?.setLaunchAtLogin($0) }
         panel.onOpenLoginItems = { AppLoginItem.openSettings() }
         notifier.onAction = { [weak self] button, target in
@@ -113,6 +118,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 stopConfirmation: { controls.stopConfirmation() },
                 stopService: { [weak self] in await self?.stopServiceReportingProblem() },
                 restartService: { [weak self] in await self?.restartService() },
+                updateService: { [weak self] in self?.updateService() },
                 port: { [weak poller] in poller?.port ?? DaemonConfig.defaultPort },
                 startProblem: { [weak poller] in poller?.startProblem },
                 openLogs: { [weak panel] in panel?.openLogs() },
@@ -122,6 +128,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         pollTask = Task {
             await poller.run()
         }
+        checkServiceOnLaunch()
         if let cycle = MeasureCycle.requested(
             panel: panel, model: model, logDirectory: data.logDirectory)
         {
@@ -242,6 +249,78 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 Self.log.info("start service: launched")
             }
         }
+    }
+
+    /// Compares the service binaries the app carries with `~/.allot/bin`: the first run of an
+    /// app version installs them at once, a later run offers Update Service. It never
+    /// downgrades, and a build without them (as from Xcode) does nothing.
+    private func checkServiceOnLaunch() {
+        let updater = ServiceUpdater(
+            bundle: Bundle.main.bundleURL, data: data, runner: ProcessRunner())
+        self.updater = updater
+        Task {
+            guard let bundled = await updater.bundledVersion() else {
+                return
+            }
+            let installed = await updater.installedService()
+            let appVersion = Bundle.main.object(
+                forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
+            let defaults = UserDefaults.standard
+            let firstRun = defaults.string(forKey: Self.checkedVersionKey) != appVersion
+            defaults.set(appVersion, forKey: Self.checkedVersionKey)
+            let plan = ServiceUpdatePlan.decide(
+                installed: installed, bundled: bundled, firstRunOfVersion: firstRun)
+            switch plan {
+            case .upToDate:
+                Self.log.info("service \(bundled.description, privacy: .public) or newer installed")
+            case .offer(let update):
+                Self.log.info("service update to \(bundled.description, privacy: .public) offered")
+                model?.setServiceUpdate(update)
+            case .installNow(let update):
+                await installService(update)
+            }
+        }
+    }
+
+    // Update Service in the panel or Settings.
+    private func updateService() {
+        guard let update = model?.serviceUpdate, !update.installing else {
+            return
+        }
+        Task {
+            await installService(update)
+        }
+    }
+
+    private func installService(_ update: ServiceUpdate) async {
+        guard let updater, let model else {
+            return
+        }
+        var running = update
+        running.installing = true
+        running.problem = nil
+        model.setServiceUpdate(running)
+        rules.expectStop()
+        let problem = await updater.install()
+        let installed = await updater.installedService()
+        let left = ServiceUpdatePlan.decide(
+            installed: installed, bundled: update.bundled, firstRunOfVersion: false)
+        let version = update.bundled.description
+        if problem == nil, left == .upToDate {
+            model.setServiceUpdate(nil)
+            notifier?.show([NotificationText.serviceUpdated(to: update.bundled)])
+            Self.log.info("service updated to \(version, privacy: .public)")
+        } else {
+            let reason = problem ?? "~/.allot/bin still holds an older allotd"
+            var failed = ServiceUpdate(installed: installed, bundled: update.bundled)
+            failed.problem = reason
+            // Binaries that are current after all need no button.
+            model.setServiceUpdate(left == .upToDate ? nil : failed)
+            notifier?.show([NotificationText.serviceNotUpdated(reason)])
+            Self.log.error(
+                "service update to \(version, privacy: .public): \(reason, privacy: .public)")
+        }
+        poller?.pollNow()
     }
 
     // Built on the first open; a Debug scenario has no Settings.

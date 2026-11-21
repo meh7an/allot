@@ -178,6 +178,74 @@ private func counts(_ full: Int, _ shrunk: Int, more: Bool = false) throws -> Fi
         #expect(banner.actions == [.restartService, .openLogs])
     }
 
+    @Test func anOutdatedServiceOffersTheUpdateTheAppCarries() async throws {
+        let parts = try await loaded()
+        parts.client.queueRead(failure(.outdated, message: "the service answered 404"))
+        try await parts.session.refresh()
+        let update = try ServiceUpdate(
+            installed: .version(#require(ServiceVersion("0.5.0"))),
+            bundled: #require(ServiceVersion("0.6.0")))
+
+        let banners = SettingsBanners.banners(
+            parts.session, pageId: "service", port: 47823, number: english, update: update)
+
+        #expect(banners.count == 1)
+        #expect(
+            banners.first?.message
+                == "The service running now is older than this app and has no settings. Update "
+                + "it to the version that comes with this app.")
+        #expect(banners.first?.actions == [.updateService, .openLogs])
+    }
+
+    @Test func theServicePageAloneOffersTheUpdate() async throws {
+        let session = try await loaded().session
+        let update = try ServiceUpdate(
+            installed: .version(#require(ServiceVersion("0.5.0"))),
+            bundled: #require(ServiceVersion("0.6.0")))
+
+        let service = SettingsBanners.banners(
+            session, pageId: "service", port: 47823, number: english, update: update)
+        let leases = SettingsBanners.banners(
+            session, pageId: "leases", port: 47823, number: english, update: update)
+
+        #expect(service.count == 1)
+        #expect(service.first?.severity == .informational)
+        #expect(
+            service.first?.message
+                == "The installed service is version 0.5.0. This app comes with 0.6.0.")
+        #expect(service.first?.actions == [.updateService])
+        #expect(leases.isEmpty)
+    }
+
+    @Test func aMissingServiceIsInstalledAndAFailureSaysWhy() async throws {
+        let session = try await loaded().session
+        var update = try ServiceUpdate(
+            installed: .missing, bundled: #require(ServiceVersion("0.6.0")))
+        update.problem = "allot install exited with 1; see app-update.log in the logs"
+
+        let banner = try #require(SettingsBanners.banners(
+            session, pageId: "service", port: 47823, number: english, update: update).first)
+
+        #expect(banner.severity == .error)
+        #expect(
+            banner.message
+                == "The service isn't installed. This app comes with 0.6.0. The last update "
+                + "failed: allot install exited with 1; see app-update.log in the logs.")
+        #expect(banner.actions == [.installService])
+    }
+
+    @Test func anUpdateInProgressHasNoButton() async throws {
+        let session = try await loaded().session
+        var update = try ServiceUpdate(
+            installed: .unreadable, bundled: #require(ServiceVersion("0.6.0")))
+        update.installing = true
+
+        let banner = try #require(SettingsBanners.banners(
+            session, pageId: "service", port: 47823, number: english, update: update).first)
+
+        #expect(banner.actions.isEmpty)
+    }
+
     @Test func aDetailThatStartsInLowercaseStartsItsSentenceInUppercase() async throws {
         let parts = try await loaded()
         parts.client.queueRead(failure(.failed, message: "the service answered 404"))
