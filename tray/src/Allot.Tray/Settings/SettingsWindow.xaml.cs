@@ -158,7 +158,6 @@ public sealed partial class SettingsWindow : Window
         service.Top.Add(ServiceCards.Status(
             _services.Service,
             _context,
-            () => DaemonConfig.ReadPort(_services.Data),
             _services.OpenLogs));
         service.End.Add(ServiceCards.Files(_services.Data));
 
@@ -267,7 +266,7 @@ public sealed partial class SettingsWindow : Window
         var banners = SettingsBanners.For(
             _services.Session,
             _pageId,
-            DaemonConfig.ReadPort(_services.Data),
+            _services.Service.Port,
             _context.Number);
         Banners.Children.Clear();
         foreach (var banner in banners)

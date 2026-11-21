@@ -43,6 +43,7 @@ internal sealed class ChipsEditor
         };
         AutomationProperties.SetName(_entry, entryName);
         _entry.KeyDown += OnEntryKeyDown;
+        _entry.TextChanged += (_, _) => _model.EntryChanged();
         _add = SettingsUi.Button(addLabel, AddEntry);
         var entryLine = new StackPanel
         {

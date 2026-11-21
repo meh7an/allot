@@ -124,7 +124,8 @@ public class NumberModel : ValueModel<double?>
     /// </summary>
     public ValueIssue? Check(double value)
     {
-        if (!double.IsFinite(value))
+        // Sizes go out as 32-bit floats, so a value that overflows one cannot be sent either.
+        if (!double.IsFinite(value) || !float.IsFinite((float)value))
         {
             return ValueIssue.NotANumber;
         }

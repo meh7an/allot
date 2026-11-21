@@ -571,6 +571,11 @@ export function chipsRows(context, group, model, withReset = true) {
   };
   entry.connect("apply", add);
   entry.connect("entry-activated", add);
+  entry.connect("changed", () => {
+    if (model.entryChanged()) {
+      context.changed();
+    }
+  });
   const reset = resetButton(context, model);
   if (withReset) {
     group.header_suffix = reset.button;

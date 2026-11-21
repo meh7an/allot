@@ -13,9 +13,19 @@ private let fixtureDirectory = URL(filePath: #filePath)
     .deletingLastPathComponent()
     .appending(path: "contract/fixtures")
 
+/// `contract/text-fixtures`, the value-to-text cases every port runs; they are not contract
+/// payloads, so they live beside `contract/fixtures`.
+private let textFixtureDirectory = fixtureDirectory
+    .deletingLastPathComponent()
+    .appending(path: "text-fixtures")
+
 enum Fixtures {
     static func data(_ name: String) throws -> Data {
         try Data(contentsOf: fixtureDirectory.appending(path: name))
+    }
+
+    static func textData(_ name: String) throws -> Data {
+        try Data(contentsOf: textFixtureDirectory.appending(path: name))
     }
 
     static func state(_ name: String) throws -> UiState {

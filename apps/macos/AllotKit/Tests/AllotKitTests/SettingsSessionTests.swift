@@ -219,6 +219,99 @@ private func model<Model: ValueModel>(
         #expect(session.writeProblem == nil)
     }
 
+    @Test func aFailedWriteOtherThanHeldWaitsForTryAgainOrTheNextEdit() async throws {
+        let (session, client, timers) = try await loadedParts()
+        client.queueWrite(failure(.failed, message: "config.toml is read-only"))
+
+        try model(session, "hook.fail_open", SwitchModel.self).set(false)
+        await fire(timers)
+        try await session.refresh()
+
+        #expect(session.writeProblem == "config.toml is read-only")
+        #expect(timers.delays.isEmpty)
+        await fire(timers)
+        #expect(client.patches.count == 1)
+        #expect(session.saveStatus == .unsaved(count: 1))
+
+        await session.flush()
+
+        #expect(client.patches.count == 2)
+        #expect(session.writeProblem == nil)
+    }
+
+    @Test func changesAllotdDidNotAnswerGoOutAgainOnceARefreshFindsItBack() async throws {
+        let (session, client, timers) = try await loadedParts()
+        client.queueWrite(failure(.unreachable, message: "Connection refused"))
+
+        try model(session, "hook.fail_open", SwitchModel.self).set(false)
+        await fire(timers)
+        await fire(timers)
+        #expect(client.patches.count == 1)
+        #expect(session.saveStatus == .unsaved(count: 1))
+
+        try await session.refresh()
+        await fire(timers)
+        #expect(client.patches.count == 2)
+    }
+
+    @Test func aRefreshSentBeforeASaveDoesNotBringBackTheOldRevision() async throws {
+        let (session, client, timers) = try await loadedParts()
+        client.holdReads = true
+        let refresh = Task { try await session.refresh() }
+        await settle()
+        client.queueWrite(.value(try fixtureState { $0["revision"] = "after-save" }))
+
+        try model(session, "hook.fail_open", SwitchModel.self).set(false)
+        await fire(timers)
+        client.completeReads()
+        try await refresh.value
+        try model(session, "estimates.lower", SwitchModel.self).set(false)
+        await fire(timers)
+
+        #expect(client.patches[1].revision == "after-save")
+    }
+
+    @Test func aRefusalNoBatchedSettingOwnsIsShownBeforeTheEditsAreUndone() async throws {
+        let (session, client, timers) = try await loadedParts()
+        let headroom = try model(session, "admission.headroom_pct", NumberModel.self)
+        client.queueWrite(
+            failure(
+                .invalid, message: "config.toml is not valid TOML",
+                problems: [try fieldError("classifier.nowhere", "unknown")]))
+
+        headroom.commit(50)
+        await fire(timers)
+
+        #expect(session.writeProblem == "config.toml is not valid TOML")
+        #expect(headroom.number == 15)
+        await session.flush()
+        #expect(session.writeProblem == nil)
+    }
+
+    @Test func aNumberTooLargeForAFloatIsRefusedAsNotANumber() async throws {
+        let (session, _, _) = try await loadedParts()
+        let presets = try model(session, "presets", SizeTableModel.self)
+        let draft = presets.add()
+
+        draft.field("cores")?.commit(Double("9999999999999999999999999999999999999999") ?? 0)
+
+        #expect(draft.field("cores")?.issue == .notANumber)
+    }
+
+    @Test func aBlankChipFlagGoesWhenTheEntryChangesAndNeverCountsAsUnsaved() async throws {
+        let (session, _, _) = try await loadedParts()
+        let flags = try model(session, "classifier.light_flags", StringListModel.self)
+
+        #expect(flags.add(" ") == false)
+        #expect(session.saveStatus == .saved)
+        flags.entryChanged()
+        #expect(flags.issue == nil)
+        #expect(flags.add("--help") == false)
+        #expect(flags.issue == .duplicate)
+        flags.entryChanged()
+        #expect(flags.issue == nil)
+    }
+
     @Test func aRejectedFileMakesThePagesReadOnly() async throws {
         let (session, client, _) = try await loadedParts()
         client.queueRead(.value(try fixtureState { $0["file_error"] = "expected `=`" }))

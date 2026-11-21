@@ -143,3 +143,50 @@ test("a cancelled request ends the loop", async () => {
 
   assert.equal(subject.latest, null);
 });
+
+test("an onUpdate that throws is reported once per message and polling goes on", async () => {
+  const { poller: subject, timers, transport } = poller();
+  /** @type {string[]} */
+  const reported = [];
+  let message = "card failed";
+  subject.onUpdate = () => {
+    throw new Error(message);
+  };
+  subject.onError = (error) => reported.push(String(error));
+  const loop = subject.start();
+  await settle();
+
+  timers.fireAll();
+  await settle();
+  message = "popup failed";
+  timers.fireAll();
+  await settle();
+
+  assert.equal(transport.requests.length, 3);
+  assert.deepEqual(reported, ["Error: card failed", "Error: popup failed"]);
+  assert.equal(subject.latest?.status, "running");
+  subject.stop();
+  await loop;
+});
+
+test("a message reported before is reported again after an update succeeds", async () => {
+  const { poller: subject } = poller();
+  /** @type {string[]} */
+  const reported = [];
+  let broken = true;
+  subject.onUpdate = () => {
+    if (broken) {
+      throw new Error("card failed");
+    }
+  };
+  subject.onError = (error) => reported.push(String(error));
+
+  await subject.pollOnce();
+  await subject.pollOnce();
+  broken = false;
+  await subject.pollOnce();
+  broken = true;
+  await subject.pollOnce();
+
+  assert.equal(reported.length, 2);
+});

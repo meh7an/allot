@@ -204,6 +204,137 @@ public sealed class SettingsSessionTests
     }
 
     [TestMethod]
+    public async Task AFailedWriteOtherThanHeldWaitsForTryAgainOrTheNextEdit()
+    {
+        var harness = await LoadAsync();
+        var session = harness.Session;
+        harness.Client.Writes.Enqueue(
+            FakeSettingsClient.Failure<SettingsState>(
+                SettingsFailureKind.Failed, "config.toml is read-only"));
+
+        As<SwitchModel>(session.Setting("hook.fail_open")).Turn(false);
+        harness.Fire();
+        await session.RefreshAsync();
+
+        Assert.AreEqual("config.toml is read-only", session.WriteProblem);
+        Assert.IsEmpty(harness.Timers.Delays);
+        harness.Fire();
+        Assert.HasCount(1, harness.Client.Patches);
+        Assert.AreEqual(new SaveStatus(SaveKind.Unsaved, 1), session.SaveStatus);
+
+        var again = session.FlushAsync();
+        harness.Client.CompleteAll();
+        await again;
+
+        Assert.HasCount(2, harness.Client.Patches);
+        Assert.IsNull(session.WriteProblem);
+    }
+
+    [TestMethod]
+    public async Task ChangesAllotdDidNotAnswerGoOutAgainOnceARefreshFindsItBack()
+    {
+        var harness = await LoadAsync();
+        var session = harness.Session;
+        harness.Client.Writes.Enqueue(
+            FakeSettingsClient.Failure<SettingsState>(
+                SettingsFailureKind.Unreachable, "Connection refused"));
+
+        As<SwitchModel>(session.Setting("hook.fail_open")).Turn(false);
+        harness.Fire();
+        harness.Fire();
+        Assert.HasCount(1, harness.Client.Patches);
+        Assert.AreEqual(new SaveStatus(SaveKind.Unsaved, 1), session.SaveStatus);
+
+        await session.RefreshAsync();
+        harness.Fire();
+        Assert.HasCount(2, harness.Client.Patches);
+    }
+
+    [TestMethod]
+    public async Task ARefreshSentBeforeASaveDoesNotBringBackTheOldRevision()
+    {
+        var harness = await LoadAsync();
+        var session = harness.Session;
+        harness.Client.HoldReads = true;
+        var refresh = session.RefreshAsync();
+        harness.Client.Writes.Enqueue(
+            new SettingsReply<SettingsState>(
+                harness.Client.State with { Revision = "after-save" }));
+
+        As<SwitchModel>(session.Setting("hook.fail_open")).Turn(false);
+        harness.Fire();
+        harness.Client.CompleteReads();
+        await refresh;
+        As<SwitchModel>(session.Setting("estimates.lower")).Turn(false);
+        harness.Fire();
+
+        Assert.AreEqual("after-save", harness.Client.Patches[1].Revision);
+    }
+
+    [TestMethod]
+    public async Task ARefusalNoBatchedSettingOwnsIsShownBeforeTheEditsAreUndone()
+    {
+        var harness = await LoadAsync();
+        var session = harness.Session;
+        var headroom = As<NumberModel>(session.Setting("admission.headroom_pct"));
+        harness.Client.Writes.Enqueue(
+            FakeSettingsClient.Failure<SettingsState>(
+                SettingsFailureKind.Invalid,
+                "config.toml is not valid TOML",
+                [new FieldError { Key = "classifier.nowhere", Message = "unknown" }]));
+
+        headroom.Commit(50);
+        harness.Fire();
+
+        Assert.AreEqual("config.toml is not valid TOML", session.WriteProblem);
+        Assert.AreEqual(15.0, headroom.Value);
+        await session.FlushAsync();
+        Assert.IsNull(session.WriteProblem);
+    }
+
+    [TestMethod]
+    public async Task AWriteThatThrowsKeepsTheChangesAndSaysSo()
+    {
+        var harness = await LoadAsync();
+        var session = harness.Session;
+        harness.Client.WriteError = new InvalidOperationException("could not encode the change");
+
+        As<SwitchModel>(session.Setting("hook.fail_open")).Turn(false);
+        harness.Fire();
+
+        Assert.AreEqual("could not encode the change", session.WriteProblem);
+        Assert.AreEqual(new SaveStatus(SaveKind.Unsaved, 1), session.SaveStatus);
+        Assert.IsEmpty(harness.Timers.Delays);
+    }
+
+    [TestMethod]
+    public async Task ANumberTooLargeForAFloatIsRefusedAsNotANumber()
+    {
+        var presets = As<SizeTableModel>((await LoadAsync()).Session.Setting("presets"));
+        var cores = Field(presets.Add(), "cores");
+
+        cores.Commit(double.Parse(new string('9', 40), CultureInfo.InvariantCulture));
+
+        Assert.AreEqual(ValueIssue.NotANumber, cores.Issue);
+    }
+
+    [TestMethod]
+    public async Task ABlankChipFlagGoesWhenTheEntryChangesAndNeverCountsAsUnsaved()
+    {
+        var session = (await LoadAsync()).Session;
+        var flags = As<StringListModel>(session.Setting("classifier.light_flags"));
+
+        Assert.IsFalse(flags.Add(" "));
+        Assert.AreEqual(new SaveStatus(SaveKind.Saved), session.SaveStatus);
+        flags.EntryChanged();
+        Assert.IsNull(flags.Issue);
+        Assert.IsFalse(flags.Add("--help"));
+        Assert.AreEqual(ValueIssue.Duplicate, flags.Issue);
+        flags.EntryChanged();
+        Assert.IsNull(flags.Issue);
+    }
+
+    [TestMethod]
     public async Task ARejectedFileMakesThePagesReadOnly()
     {
         var harness = await LoadAsync();

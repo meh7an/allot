@@ -25,6 +25,11 @@ public final class DaemonPoller {
     /// ``startTimeout``. Cleared by the next start and once allotd answers.
     public private(set) var startProblem: String?
 
+    /// The port this panel dials, which differs from `daemon.port` until allotd restarts. The
+    /// client holds the same value; it is kept here too so the main actor reads it without a
+    /// hop.
+    public private(set) var port: UInt16
+
     private let client: DaemonClient
     private let launcher: (any ServiceLauncher)?
     private let now: () -> ContinuousClock.Instant
@@ -36,14 +41,17 @@ public final class DaemonPoller {
 
     /// - Parameters:
     ///   - client: Polls allotd and asks it to stop.
+    ///   - port: The port `client` dials.
     ///   - launcher: Starts allotd for Start Service; without one, Start Service only polls.
     ///   - now: The local clock of the starting window; the tests pass their own.
     public init(
         client: DaemonClient,
+        port: UInt16 = DaemonConfig.defaultPort,
         launcher: (any ServiceLauncher)? = nil,
         now: @escaping () -> ContinuousClock.Instant = { .now }
     ) {
         self.client = client
+        self.port = port
         self.launcher = launcher
         self.now = now
     }
@@ -110,6 +118,7 @@ public final class DaemonPoller {
             }
         }
         await client.usePort(port)
+        self.port = port
         return await startService()
     }
 

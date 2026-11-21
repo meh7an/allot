@@ -23,6 +23,11 @@
     <None Include="..\..\..\contract\fixtures\*.json" LinkBase="Fixtures" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
+  <!-- The value-to-text fixture all four ports run; it is not a contract payload. -->
+  <ItemGroup>
+    <None Include="..\..\..\contract\text-fixtures\*.json" LinkBase="TextFixtures" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
   <!-- The app's design tokens, checked against the handoff values by TokenResourceTests, and the
        subset icon fonts, checked to hold every glyph token. -->
   <ItemGroup>

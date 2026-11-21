@@ -10,7 +10,7 @@ struct ServiceStatusSection: View {
         let session = model.session
         let row = ServiceRow.from(
             model.serviceStatus, session: session.status, version: model.version,
-            port: session.listeningPort ?? UInt32(model.port))
+            port: session.listeningPort ?? UInt32(model.port), startProblem: model.startProblem)
         SettingsSection(title: "Service") {
             HStack(spacing: 8) {
                 Text(row.text)

@@ -62,7 +62,8 @@ public static class LiveText
             return LoweringOff;
         }
 
-        var reserved = Math.Round(ExampleUsed * (1 + (marginPct / 100)), 2);
+        var reserved = Math.Round(
+            ExampleUsed * (1 + (marginPct / 100)), 2, MidpointRounding.AwayFromZero);
         var runs = minRuns == 1 ? "run" : $"{number(minRuns)} runs";
         return $"A command that asks for {number(ExampleAsked)} cores but used about "
             + $"{number(ExampleUsed)} in its last {runs} is reserved {Cores(reserved, number)}. "
@@ -102,9 +103,12 @@ public static class LiveText
     /// <summary>
     /// The caption under What fits.
     /// </summary>
-    public static string FitsCaption(double cpuBusyPct, Func<double, string> number) =>
-        $"Based on this machine now ({number(Math.Round(cpuBusyPct))} % CPU busy) and with every "
-            + "lease ended.";
+    public static string FitsCaption(double cpuBusyPct, Func<double, string> number)
+    {
+        // Half away from zero, as the other panels round: 12.5 reads 13.
+        var busy = Math.Round(cpuBusyPct, MidpointRounding.AwayFromZero);
+        return $"Based on this machine now ({number(busy)} % CPU busy) and with every lease ended.";
+    }
 
     /// <summary>
     /// "A benchmark starts once CPU and GPU stay at or below 10 % for 10 seconds. If that takes
@@ -155,6 +159,7 @@ public static class LiveText
     private static string Cores(double cores, Func<double, string> number) =>
         ValueText.QuantityText(cores, Quantity.Cores, number);
 
+    // Rounds half away from zero: 256 MB reads 0.3 GB, as in the other panels.
     private static string Gigabytes(double megabytes, Func<double, string> number) =>
-        number(Math.Round(megabytes / 1024, 1));
+        number(Math.Round(megabytes / 1024, 1, MidpointRounding.AwayFromZero));
 }

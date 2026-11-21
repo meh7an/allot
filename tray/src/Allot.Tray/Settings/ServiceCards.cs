@@ -21,12 +21,10 @@ internal static class ServiceCards
     /// </summary>
     /// <param name="service">Start and Stop service, and the latest poll.</param>
     /// <param name="context">The session, which knows the stop record, and the dialogs.</param>
-    /// <param name="port">The port this panel dials.</param>
     /// <param name="openLogs">Opens the log folder.</param>
     public static UIElement Status(
         ServiceControl service,
         PageContext context,
-        Func<uint> port,
         Action openLogs)
     {
         var text = SettingsUi.Text(string.Empty, "BodyTextBlockStyle");
@@ -69,12 +67,13 @@ internal static class ServiceCards
 
         void Update()
         {
-            var listening = context.Session.ListeningPort ?? port();
+            var listening = context.Session.ListeningPort ?? service.Port;
             row = ServiceRow.From(
                 service.Status,
                 context.Session.Status,
                 service.Version,
-                listening);
+                listening,
+                service.StartProblem);
             var settled = row.Button != ServiceButton.Starting;
             if (SettingsUi.SetLive(text, row.Text) && pressed && settled)
             {
@@ -177,6 +176,9 @@ internal static class ServiceCards
             }
         }
 
-        await service.StopAsync().ConfigureAwait(true);
+        if (await service.StopAsync().ConfigureAwait(true) is { } problem)
+        {
+            context.Toast($"The service did not stop: {problem}", null);
+        }
     }
 }

@@ -180,6 +180,7 @@ export class AllotWidget {
             }, serviceSystem(this._runner));
             const poller = new DaemonPoller(client, this._host.timers, Object.assign({ launcher }, (this._host.now === undefined ? {} : { now: this._host.now })));
             poller.onUpdate = (result) => this._show(result);
+            poller.onError = (error) => this._host.log(`Allot: updating the widget failed: ${error}`);
             poller.setPopupOpen(this._expanded);
             this._poller = poller;
             this._service = { client, launcher };

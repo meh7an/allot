@@ -36,6 +36,14 @@ export class DaemonPoller {
    */
   onUpdate = null;
 
+  /**
+   * Called when `onUpdate` throws, once per distinct message until an update succeeds again;
+   * polling goes on either way, so one bad render does not freeze the panel.
+   *
+   * @type {((error: unknown) => void) | null}
+   */
+  onError = null;
+
   /** @type {PollResult | null} */
   latest = null;
 
@@ -65,6 +73,8 @@ export class DaemonPoller {
   #looping = false;
   #stopped = false;
   #wakePending = false;
+  /** @type {string | null} */
+  #reported = null;
   /** @type {unknown} */
   #timer = null;
   /** @type {(() => void) | null} */
@@ -182,8 +192,22 @@ export class DaemonPoller {
       this.lastKnown = result.state;
     }
     this.latest = result;
-    this.onUpdate?.(result);
+    this.#publish(result);
     return delay;
+  }
+
+  /** @param {PollResult} result */
+  #publish(result) {
+    try {
+      this.onUpdate?.(result);
+      this.#reported = null;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message !== this.#reported) {
+        this.#reported = message;
+        this.onError?.(error);
+      }
+    }
   }
 
   /**

@@ -145,6 +145,16 @@ export class SettingsSession {
         /** @type {unknown} */
         this._refreshTimer = null;
         this._saving = false;
+        /**
+         * Whether the last save failed in a way waiting does not fix. The burst timer then stays off
+         * until Try again or the next edit, so allotd is not asked every 600 ms.
+         */
+        this._stalled = false;
+        /**
+         * Counts saves that started or finished, so a refresh reply sent before one is dropped: it
+         * would bring back the revision and values from before the write.
+         */
+        this._writes = 0;
         this._visible = false;
         this._disposed = false;
         this._client = client;
@@ -163,7 +173,7 @@ export class SettingsSession {
         }
         let count = this._pending.size;
         for (const model of this._models.values()) {
-            if (model.issue !== null && !this._pending.has(model.key)) {
+            if (model.issue !== null && model.dirty && !this._pending.has(model.key)) {
                 count += 1;
             }
         }
@@ -198,13 +208,14 @@ export class SettingsSession {
      */
     refresh() {
         return __awaiter(this, void 0, void 0, function* () {
+            const writes = this._writes;
             const reply = yield this._client.settings();
-            if (this._disposed) {
+            if (this._disposed || writes !== this._writes) {
                 return;
             }
             if (reply.ok) {
                 this._take(reply.value);
-                if (this._pending.size > 0 && !this.readOnly) {
+                if (this._pending.size > 0 && !this.readOnly && !this._stalled) {
                     this._schedule(0);
                 }
             }
@@ -237,6 +248,10 @@ export class SettingsSession {
     flush() {
         return __awaiter(this, void 0, void 0, function* () {
             this._clearSave();
+            if (this._pending.size === 0 && !this._saving) {
+                // Try again with nothing left to save only dismisses a problem that undid the edits.
+                this.writeProblem = null;
+            }
             if (this._saving || this._pending.size === 0 || this.readOnly || this._revision === null) {
                 this._notify();
                 return;
@@ -244,6 +259,8 @@ export class SettingsSession {
             const batch = [...this._pending.values()];
             this._pending.clear();
             this._saving = true;
+            this._stalled = false;
+            this._writes += 1;
             this._notify();
             /** @type {Change[]} */
             const changes = [];
@@ -262,10 +279,12 @@ export class SettingsSession {
             }
             finally {
                 this._saving = false;
+                this._writes += 1;
             }
             if (this._disposed) {
                 return;
             }
+            let sendSoon = true;
             if (reply.ok) {
                 this.writeProblem = null;
                 for (const entry of batch) {
@@ -275,8 +294,12 @@ export class SettingsSession {
             }
             else {
                 yield this._refused(batch, reply.failure);
+                // Only a held file frees up on its own within moments. Changes refused because allotd
+                // did not answer go out again from the refresh that finds it back; any other refusal
+                // waits for Try again or the next edit.
+                sendSoon = reply.failure.kind === "held";
             }
-            if (this._pending.size > 0 && this._saveTimer === null) {
+            if (this._pending.size > 0 && this._saveTimer === null && sendSoon) {
                 this._schedule(SAVE_DELAY_MS);
             }
             this._notify();
@@ -363,6 +386,7 @@ export class SettingsSession {
      * @param {boolean} now
      */
     edited(model, changes, now) {
+        this._stalled = false;
         if (changes.length === 0) {
             this._pending.delete(model.key);
         }
@@ -467,7 +491,8 @@ export class SettingsSession {
                         this._schedule(0);
                         return;
                     }
-                    // The file itself is broken, so nothing can be saved until it is fixed by hand.
+                    // No edit in the batch owns the problem, so say what allotd said before undoing them.
+                    this.writeProblem = failure.message;
                     for (const entry of batch) {
                         entry.model.undo();
                     }
@@ -480,6 +505,8 @@ export class SettingsSession {
                     return;
                 default:
                     this.writeProblem = failure.message;
+                    // A held file is likely free again soon; any other failure waits for the user.
+                    this._stalled = failure.kind !== "held";
                     this._restore(batch);
             }
         });

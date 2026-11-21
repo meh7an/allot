@@ -11,12 +11,19 @@ struct SettingsActions {
     /// What Stop Service asks first, or `nil` while no job runs or waits.
     let stopConfirmation: @MainActor () -> String?
 
-    /// Stops allotd with the stop record; the window has asked first.
-    let stopService: @MainActor () -> Void
+    /// Stops allotd with the stop record; the window has asked first. `nil` when allotd
+    /// accepted, else why not.
+    let stopService: @MainActor () async -> String?
 
     /// Stops allotd and starts it on the port `config.toml` names now; `nil` when it worked,
     /// else why not.
     let restartService: @MainActor () async -> String?
+
+    /// The port this panel dials, which differs from `config.toml` until allotd restarts.
+    let port: @MainActor () -> UInt16
+
+    /// Why the last Start Service failed, if it did.
+    let startProblem: @MainActor () -> String?
 
     let openLogs: @MainActor () -> Void
     let setLaunchAtLogin: @MainActor (Bool) -> Void
@@ -61,6 +68,9 @@ final class SettingsWindowModel {
     private(set) var serviceStatus = ServiceStatus.starting
     private(set) var version: String?
 
+    /// Why the last Start Service failed, for the Service row.
+    private(set) var startProblem: String?
+
     private(set) var notice: SettingsNotice?
 
     @ObservationIgnored let actions: SettingsActions
@@ -89,9 +99,9 @@ final class SettingsWindowModel {
         }
     }
 
-    /// The port this panel dials, from `config.toml`.
+    /// The port this panel dials; it follows a restart, not `config.toml`.
     var port: UInt16 {
-        DaemonConfig.readPort(data)
+        actions.port()
     }
 
     /// The save status line, or Loading while allotd has not answered yet.
@@ -108,6 +118,10 @@ final class SettingsWindowModel {
         let newVersion = result.state?.service.version ?? result.version ?? version
         if newVersion != version {
             version = newVersion
+        }
+        let problem = actions.startProblem()
+        if problem != startProblem {
+            startProblem = problem
         }
     }
 
@@ -187,7 +201,9 @@ final class SettingsWindowModel {
                 return
             }
         }
-        actions.stopService()
+        if let problem = await actions.stopService() {
+            showNotice("The service did not stop: \(problem)", undo: nil)
+        }
     }
 
     func run(_ action: BannerAction) {

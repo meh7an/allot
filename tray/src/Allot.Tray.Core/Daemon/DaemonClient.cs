@@ -152,6 +152,12 @@ public sealed class DaemonClient(HttpClient http, string tokenFile)
     }
 
     /// <summary>
+    /// The port every request goes to now: the one the client started with, or the one
+    /// <see cref="UsePort"/> moved it to.
+    /// </summary>
+    public ushort Port => (ushort)((_base ?? http.BaseAddress)?.Port ?? 0);
+
+    /// <summary>
     /// Sends every later request to <paramref name="port"/>, after allotd restarted on a new one.
     /// </summary>
     public void UsePort(ushort port) =>

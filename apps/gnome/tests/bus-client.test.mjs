@@ -236,3 +236,60 @@ test("Restart Service over the bus needs no port to follow", async () => {
     [["Shutdown", [false]]],
   );
 });
+
+const GDBUS_TEXT =
+  "GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name tech.mehran.Allot was not " +
+  "provided by any .service files";
+
+test("Stop service names why allotd did not stop, never the GDBus text", async () => {
+  const gone = client(() => {
+    throw new Error(GDBUS_TEXT);
+  });
+  assert.equal(await gone.daemon.shutdown(), "the service is not on the session bus");
+
+  const slow = client(() => {
+    throw new TimeoutError();
+  });
+  assert.equal(await slow.daemon.shutdown(), "the service did not answer within 3 s");
+
+  const busy = client(() => {
+    throw new BusRefusal("Unavailable", "the service has just started; try again");
+  });
+  assert.equal(await busy.daemon.shutdown(), "the service has just started; try again");
+
+  const cancelled = client(() => {
+    throw new CancelledError();
+  });
+  await assert.rejects(cancelled.daemon.shutdown(), CancelledError);
+});
+
+test("a poll that failed inside allotd is retried as starting, not incompatible", async () => {
+  const failed = client(() => {
+    throw new BusRefusal("Failed", "see the log");
+  });
+
+  const polled = await failed.daemon.poll();
+
+  assert.equal(polled.status, "starting");
+  assert.doesNotMatch(polled.detail ?? "", /Failed|GDBus/);
+});
+
+test("the GDBus text does not reach a poll's detail or a settings failure", async () => {
+  const { daemon } = client(() => {
+    throw new Error(GDBUS_TEXT);
+  });
+
+  const polled = await daemon.poll();
+  const reply = await daemon.settings();
+
+  assert.equal(polled.status, "stopped");
+  assert.equal(polled.detail, "the service is not on the session bus");
+  assert.ok(!reply.ok);
+  assert.equal(reply.failure.kind, "unreachable");
+  assert.equal(reply.failure.message, "the service is not on the session bus");
+
+  const slow = client(() => {
+    throw new TimeoutError();
+  });
+  assert.equal((await slow.daemon.poll()).detail, "the service did not answer within 3 s");
+});

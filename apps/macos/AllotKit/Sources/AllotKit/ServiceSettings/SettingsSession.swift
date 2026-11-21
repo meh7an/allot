@@ -140,6 +140,13 @@ public final class SettingsSession: ValueHost {
     @ObservationIgnored private var saveTimer: (any ScheduledTimer)?
     @ObservationIgnored private var refreshTimer: (any ScheduledTimer)?
     @ObservationIgnored private var saving = false
+
+    // Whether the last save failed in a way another try will not fix; only a flush the user asks
+    // for, or an edit, sends the changes again.
+    @ObservationIgnored private var retryStopped = false
+
+    // Counts the saves that started or finished, so a refresh sent before one is dropped.
+    @ObservationIgnored private var saveEpoch = 0
     @ObservationIgnored private var visible = false
     @ObservationIgnored private var disposed = false
 
@@ -182,7 +189,8 @@ public final class SettingsSession: ValueHost {
             return .saving
         }
         var count = pending.count
-        for model in models.values where model.issue != nil && !pending.contains(model.key) {
+        for model in models.values
+        where model.issue != nil && model.dirty && !pending.contains(model.key) {
             count += 1
         }
         return count == 0 ? .saved : .unsaved(count: count)
@@ -210,14 +218,17 @@ public final class SettingsSession: ValueHost {
     ///
     /// - Throws: Only `CancellationError`.
     public func refresh() async throws {
+        let epoch = saveEpoch
         let reply = try await client.settings()
-        if disposed {
+        // A save began or ended while this request was out, so its revision and values may
+        // predate the save's own answer.
+        if disposed || epoch != saveEpoch {
             return
         }
         switch reply {
         case .value(let state):
             take(state)
-            if !pending.isEmpty && !readOnly {
+            if !pending.isEmpty && !readOnly && !retryStopped {
                 schedule(.zero)
             }
         case .failure(let failure):
@@ -240,6 +251,12 @@ public final class SettingsSession: ValueHost {
     /// Sends the pending changes now instead of after the burst.
     public func flush() async {
         clearSave()
+        retryStopped = false
+        if pending.isEmpty && !saving {
+            // Nothing is left to try again, so a problem that undid its changes has run its
+            // course.
+            writeProblem = nil
+        }
         guard !saving, !pending.isEmpty, !readOnly, let revision else {
             notify()
             return
@@ -247,6 +264,7 @@ public final class SettingsSession: ValueHost {
         let batch = pending.values
         pending.removeAll()
         saving = true
+        saveEpoch += 1
         notify()
         let sent = batch.flatMap(\.changes)
         let reply: SettingsReply<SettingsState>
@@ -255,12 +273,15 @@ public final class SettingsSession: ValueHost {
         } catch {
             // Only a cancellation reaches here, when the window is being closed.
             saving = false
+            saveEpoch += 1
             return
         }
         saving = false
+        saveEpoch += 1
         if disposed {
             return
         }
+        var sendSoon = true
         switch reply {
         case .value(let state):
             writeProblem = nil
@@ -270,8 +291,13 @@ public final class SettingsSession: ValueHost {
             take(state)
         case .failure(let failure):
             await refused(batch, failure)
+            // Only a held file frees up on its own within moments. Changes refused because
+            // allotd did not answer go out again from the refresh that finds it back; any other
+            // refusal waits for Try again or the next edit.
+            sendSoon = failure.kind == .held
+            retryStopped = ![.held, .unreachable, .token].contains(failure.kind)
         }
-        if !pending.isEmpty && saveTimer == nil {
+        if !pending.isEmpty && saveTimer == nil && sendSoon {
             schedule(Self.saveDelay)
         }
         notify()
@@ -349,6 +375,7 @@ public final class SettingsSession: ValueHost {
     }
 
     public func edited(_ model: ValueModel, changes: [Change], now: Bool) {
+        retryStopped = false
         if changes.isEmpty {
             pending.remove(model.key)
         } else {
@@ -439,7 +466,9 @@ public final class SettingsSession: ValueHost {
                 schedule(.zero)
                 return
             }
-            // The file itself is broken, so nothing can be saved until it is fixed by hand.
+            // No batched setting owns the problem, such as a file that is broken: say why the
+            // edits are undone instead of dropping them silently.
+            writeProblem = failure.message
             for entry in batch {
                 entry.model.undo()
             }

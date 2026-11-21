@@ -216,9 +216,11 @@ private func stoppedPoller(
         let launcher = FakeLauncher()
         let client = DaemonClient(
             port: 47823, tokenFile: home.data.tokenFile, transport: transport)
-        let poller = DaemonPoller(client: client, launcher: launcher)
+        let poller = DaemonPoller(client: client, port: 47823, launcher: launcher)
 
+        #expect(poller.port == 47823)
         #expect(await poller.restartService(port: 47999) == nil)
+        #expect(poller.port == 47999)
 
         let shutdown = try #require(transport.requests.first)
         #expect(shutdown.url?.absoluteString == "http://127.0.0.1:47823/shutdown")

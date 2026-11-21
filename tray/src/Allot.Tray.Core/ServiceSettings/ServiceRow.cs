@@ -33,11 +33,13 @@ public sealed record ServiceRow(string Text, ServiceButton Button, bool OpenLogs
     /// <param name="session">The settings session's status, which knows the stop record.</param>
     /// <param name="version">allotd's version, when it is known.</param>
     /// <param name="port">The port allotd listens on, or this panel dials.</param>
+    /// <param name="startProblem">Why the last Start service failed, if it did.</param>
     public static ServiceRow From(
         ServiceStatus status,
         SessionStatus session,
         string? version,
-        uint port)
+        uint port,
+        string? startProblem = null)
     {
         var portText = port.ToString(CultureInfo.InvariantCulture);
         return status switch
@@ -51,6 +53,10 @@ public sealed record ServiceRow(string Text, ServiceButton Button, bool OpenLogs
             ServiceStatus.Incompatible =>
                 new ServiceRow(ServiceBanner.IncompatibleText, ServiceButton.Stop, true),
             ServiceStatus.Starting => new ServiceRow(Starting, ServiceButton.Starting, false),
+            _ when startProblem is not null => new ServiceRow(
+                $"The service did not start. {SettingsBanners.Sentence(startProblem)}",
+                ServiceButton.Start,
+                true),
             _ when session == SessionStatus.Stopped =>
                 new ServiceRow(StoppedByYou, ServiceButton.Start, false),
             _ => new ServiceRow($"Not answering on port {portText}.", ServiceButton.Start, true),

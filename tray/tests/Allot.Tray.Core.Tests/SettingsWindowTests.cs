@@ -301,6 +301,17 @@ public sealed class SettingsWindowTests
     }
 
     [TestMethod]
+    public void ServiceRowShowsWhyTheLastStartFailed()
+    {
+        var failed = ServiceRow.From(
+            ServiceStatus.Stopped, SessionStatus.Down, null, 47823, "allotd.exe was not found");
+
+        Assert.AreEqual("The service did not start. allotd.exe was not found.", failed.Text);
+        Assert.AreEqual(ServiceButton.Start, failed.Button);
+        Assert.IsTrue(failed.OpenLogs);
+    }
+
+    [TestMethod]
     public void PanelTogglesWriteTheirOwnSetting()
     {
         var settings = new TraySettings();

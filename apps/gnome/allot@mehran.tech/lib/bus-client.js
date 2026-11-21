@@ -13,7 +13,6 @@ import {
   rethrowCancelled,
   runningState,
   settingsFailure,
-  stoppedOrRethrow,
 } from "./client.js";
 import * as stopResult from "./stop-result.js";
 
@@ -86,6 +85,9 @@ const REFUSAL_KINDS = {
 
 const NOT_ON_BUS = "the service is not on the session bus";
 
+// GDBus error text names bus internals, so it never reaches the user; this stands in for it.
+const RETRY_LATER = "the service could not answer; see logs/allotd.log";
+
 /**
  * The GNOME extension's client of allotd over D-Bus, with the methods of `DaemonClient` that
  * the shell and the Settings window use. The session bus says who calls, so there is no token.
@@ -114,11 +116,21 @@ export class BusClient {
       json = await this.#call("GetState");
     } catch (error) {
       if (error instanceof BusRefusal) {
-        return error.name === "Unavailable"
-          ? pollResult("starting", { detail: "the daemon has no first sample yet" })
-          : pollResult("incompatible", { detail: `GetState: ${error.name}: ${error.message}` });
+        switch (error.name) {
+          case "Unavailable":
+            return pollResult("starting", { detail: "the daemon has no first sample yet" });
+          case "Failed":
+            // allotd answered with an error of its own, which a later poll may not repeat;
+            // reinstalling would not help.
+            return pollResult("starting", { detail: RETRY_LATER });
+          default:
+            return pollResult("incompatible", {
+              detail: `GetState: ${error.name}: ${error.message}`,
+            });
+        }
       }
-      return stoppedOrRethrow(error);
+      rethrowCancelled(error);
+      return pollResult("stopped", { detail: unreachableText(error, REQUEST_TIMEOUT_MS) });
     }
     return runningState(json ?? "");
   }
@@ -156,7 +168,7 @@ export class BusClient {
       return null;
     } catch (error) {
       rethrowCancelled(error);
-      return error instanceof Error ? error.message : String(error);
+      return stopRefusal(error, REQUEST_TIMEOUT_MS, NOT_ON_BUS);
     }
   }
 
@@ -245,7 +257,7 @@ export class BusClient {
       if (error instanceof BusRefusal) {
         return { ok: false, failure: settingsRefusal(error) };
       }
-      return settingsFailure("unreachable", error instanceof Error ? error.message : String(error));
+      return settingsFailure("unreachable", unreachableText(error, REQUEST_TIMEOUT_MS));
     }
     try {
       return { ok: true, value: decodeValue(JSON.parse(json ?? "")) };
@@ -267,17 +279,32 @@ export class BusClient {
 }
 
 /**
- * Why a kill or remove did not end the lease, for a card that already names the job.
+ * Why a call got no answer, without the bus's own error text.
  *
  * @param {unknown} error
+ * @param {number} timeoutMs What the call waited.
  * @returns {string}
  */
-function stopRefusal(error) {
+function unreachableText(error, timeoutMs) {
+  return error instanceof TimeoutError
+    ? `the service did not answer within ${timeoutMs / 1000} s`
+    : NOT_ON_BUS;
+}
+
+/**
+ * Why a kill, remove or shutdown did not take effect, for a card or row that already names it.
+ *
+ * @param {unknown} error
+ * @param {number} [timeoutMs] What the call waited.
+ * @param {string} [gone] The text for an error that is not allotd's answer.
+ * @returns {string}
+ */
+function stopRefusal(error, timeoutMs = STOP_TIMEOUT_MS, gone = "the service is not running") {
   if (error instanceof TimeoutError) {
-    return `the service did not answer within ${STOP_TIMEOUT_MS / 1000} s`;
+    return unreachableText(error, timeoutMs);
   }
   if (!(error instanceof BusRefusal)) {
-    return "the service is not running";
+    return gone;
   }
   switch (error.name) {
     case "Conflict":

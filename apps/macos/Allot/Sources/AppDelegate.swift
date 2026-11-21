@@ -51,6 +51,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let client = DaemonClient.forInstall(data)
         let poller = DaemonPoller(
             client: client,
+            port: DaemonConfig.readPort(data),
             launcher: LaunchdServiceLauncher(data: data, runner: ProcessRunner()))
         self.poller = poller
         #if DEBUG
@@ -110,8 +111,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             actions: SettingsActions(
                 startService: { [weak self] in self?.startService() },
                 stopConfirmation: { controls.stopConfirmation() },
-                stopService: { [weak self] in self?.stopService() },
+                stopService: { [weak self] in await self?.stopServiceReportingProblem() },
                 restartService: { [weak self] in await self?.restartService() },
+                port: { [weak poller] in poller?.port ?? DaemonConfig.defaultPort },
+                startProblem: { [weak poller] in poller?.startProblem },
                 openLogs: { [weak panel] in panel?.openLogs() },
                 setLaunchAtLogin: { [weak self] in self?.setLaunchAtLogin($0) },
                 openLoginItems: { AppLoginItem.openSettings() }))
@@ -294,17 +297,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func stopService() {
+        Task {
+            _ = await stopServiceReportingProblem()
+        }
+    }
+
+    // The panel and menu only log a refused stop; Settings shows it as a notice.
+    private func stopServiceReportingProblem() async -> String? {
         guard let poller else {
-            return
+            return "the app does not poll the service"
         }
         rules.expectStop()
-        Task {
-            if let problem = await poller.stopService() {
-                Self.log.error("stop service: \(problem, privacy: .public)")
-            } else {
-                Self.log.info("stop service: accepted")
-            }
+        let problem = await poller.stopService()
+        if let problem {
+            Self.log.error("stop service: \(problem, privacy: .public)")
+        } else {
+            Self.log.info("stop service: accepted")
         }
+        return problem
     }
 
     private func setLaunchAtLogin(_ on: Bool) {

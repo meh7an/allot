@@ -346,6 +346,16 @@ private func counts(_ full: Int, _ shrunk: Int, more: Bool = false) throws -> Fi
         #expect(starting.buttonText == "Starting…")
     }
 
+    @Test func serviceRowShowsWhyTheLastStartFailed() {
+        let failed = ServiceRow.from(
+            .stopped, session: .down, version: nil, port: 47823,
+            startProblem: "allotd was not found")
+
+        #expect(failed.text == "The service did not start. allotd was not found.")
+        #expect(failed.button == .start)
+        #expect(failed.opensLogs)
+    }
+
     @Test func theStopWarningSaysTheStopLasts() throws {
         let state = try Fixtures.state("busy")
         let text = try #require(ServiceMenu.stopConfirmation(state))

@@ -1,0 +1,65 @@
+{
+  "locale": "en-US",
+  "numbers": [
+    { "value": 0.125, "text": "0.13" },
+    { "value": 0.375, "text": "0.38" },
+    { "value": 2.456, "text": "2.46" },
+    { "value": 2.5, "text": "2.5" },
+    { "value": 5000, "text": "5,000" }
+  ],
+  "headroom": [
+    {
+      "kept": {
+        "cores": 2,
+        "gpu_pct": null,
+        "ram_mb": 256,
+        "total_cores": 16,
+        "total_ram_mb": 32768,
+        "vram_mb": null,
+        "total_vram_mb": null
+      },
+      "text": "Keeps 2 of 16 cores and 0.3 of 32 GB memory free."
+    },
+    {
+      "kept": {
+        "cores": 2,
+        "gpu_pct": null,
+        "ram_mb": 768,
+        "total_cores": 16,
+        "total_ram_mb": 32768,
+        "vram_mb": null,
+        "total_vram_mb": null
+      },
+      "text": "Keeps 2 of 16 cores and 0.8 of 32 GB memory free."
+    },
+    {
+      "kept": {
+        "cores": 2.5,
+        "gpu_pct": 12.5,
+        "ram_mb": 4096,
+        "total_cores": 16,
+        "total_ram_mb": 32768,
+        "vram_mb": 1280,
+        "total_vram_mb": 8192
+      },
+      "text": "Keeps 2.5 of 16 cores, 4 of 32 GB memory, 12.5 % of the GPU and 1.3 of 8 GB video memory free."
+    }
+  ],
+  "estimates": [
+    {
+      "margin_pct": 12.5,
+      "text": "A command that asks for 8 cores but used about 3 in its last 3 runs is reserved 3.38 cores. Requests never go below 0.25 cores, 256 MB, or their minimum cores, and run time never lowers."
+    },
+    {
+      "margin_pct": 25,
+      "text": "A command that asks for 8 cores but used about 3 in its last 3 runs is reserved 3.75 cores. Requests never go below 0.25 cores, 256 MB, or their minimum cores, and run time never lowers."
+    }
+  ],
+  "fits_caption": [
+    { "cpu_busy_pct": 12.5, "text": "Based on this machine now (13 % CPU busy) and with every lease ended." },
+    { "cpu_busy_pct": 0.5, "text": "Based on this machine now (1 % CPU busy) and with every lease ended." },
+    { "cpu_busy_pct": 13.5, "text": "Based on this machine now (14 % CPU busy) and with every lease ended." },
+    { "cpu_busy_pct": 12.4, "text": "Based on this machine now (12 % CPU busy) and with every lease ended." },
+    { "cpu_busy_pct": 99.5, "text": "Based on this machine now (100 % CPU busy) and with every lease ended." }
+  ]
+}

@@ -12,6 +12,7 @@ namespace Allot.Tray.Core.Tests.Support;
 internal sealed class FakeSettingsClient : ISettingsClient
 {
     private readonly Queue<Action> _inFlight = new();
+    private readonly Queue<Action> _heldReads = new();
 
     public Queue<SettingsReply<SettingsState>> Reads { get; } = new();
 
@@ -22,6 +23,17 @@ internal sealed class FakeSettingsClient : ISettingsClient
     public List<IReadOnlyList<Change>> Previews { get; } = [];
 
     public SettingsState State { get; set; } = FixtureState();
+
+    /// <summary>
+    /// When true, a read stays in flight, with the state it was sent under, until
+    /// <see cref="CompleteReads"/>.
+    /// </summary>
+    public bool HoldReads { get; set; }
+
+    /// <summary>
+    /// When set, a patch throws it instead of answering, as a serializer failure would.
+    /// </summary>
+    public Exception? WriteError { get; set; }
 
     /// <summary>
     /// The settings-state fixture, as <c>GET /settings</c> answers it.
@@ -57,7 +69,25 @@ internal sealed class FakeSettingsClient : ISettingsClient
         var reply = Reads.TryDequeue(out var queued)
             ? queued
             : new SettingsReply<SettingsState>(State);
-        return Task.FromResult(reply);
+        if (!HoldReads)
+        {
+            return Task.FromResult(reply);
+        }
+
+        var source = new TaskCompletionSource<SettingsReply<SettingsState>>();
+        _heldReads.Enqueue(() => source.SetResult(reply));
+        return source.Task;
+    }
+
+    /// <summary>
+    /// Answers every read held back.
+    /// </summary>
+    public void CompleteReads()
+    {
+        while (_heldReads.TryDequeue(out var answer))
+        {
+            answer();
+        }
     }
 
     /// <summary>
@@ -69,6 +99,11 @@ internal sealed class FakeSettingsClient : ISettingsClient
         CancellationToken cancellationToken)
     {
         Patches.Add(patch);
+        if (WriteError is { } error)
+        {
+            return Task.FromException<SettingsReply<SettingsState>>(error);
+        }
+
         var reply = Writes.TryDequeue(out var queued)
             ? queued
             : new SettingsReply<SettingsState>(State);

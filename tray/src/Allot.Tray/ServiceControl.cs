@@ -34,6 +34,11 @@ internal sealed class ServiceControl(DaemonPoller poller, DataDirectory data, Ac
     public string? StartProblem => poller.StartProblem;
 
     /// <summary>
+    /// The port this panel dials; it follows a restart, not <c>config.toml</c>.
+    /// </summary>
+    public ushort Port => poller.Port;
+
+    /// <summary>
     /// What the stop asks first, or <c>null</c> when nothing runs or waits.
     /// </summary>
     public string? StopConfirmation => ServiceMenu.StopConfirmation(State);
@@ -65,7 +70,8 @@ internal sealed class ServiceControl(DaemonPoller poller, DataDirectory data, Ac
     /// <summary>
     /// Stops allotd with the stop record, so it stays stopped until started again.
     /// </summary>
-    public async Task StopAsync()
+    /// <returns><c>null</c> when allotd accepted the stop, else why not.</returns>
+    public async Task<string?> StopAsync()
     {
         AppLog.Write("stop service chosen");
         stopping();
@@ -74,6 +80,8 @@ internal sealed class ServiceControl(DaemonPoller poller, DataDirectory data, Ac
         {
             AppLog.Write($"stop service failed: {problem}");
         }
+
+        return problem;
     }
 
     /// <summary>

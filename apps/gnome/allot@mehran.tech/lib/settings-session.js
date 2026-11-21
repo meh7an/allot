@@ -143,6 +143,16 @@ export class SettingsSession {
   /** @type {unknown} */
   #refreshTimer = null;
   #saving = false;
+  /**
+   * Whether the last save failed in a way waiting does not fix. The burst timer then stays off
+   * until Try again or the next edit, so allotd is not asked every 600 ms.
+   */
+  #stalled = false;
+  /**
+   * Counts saves that started or finished, so a refresh reply sent before one is dropped: it
+   * would bring back the revision and values from before the write.
+   */
+  #writes = 0;
   #visible = false;
   #disposed = false;
 
@@ -173,7 +183,7 @@ export class SettingsSession {
     }
     let count = this.#pending.size;
     for (const model of this.#models.values()) {
-      if (model.issue !== null && !this.#pending.has(model.key)) {
+      if (model.issue !== null && model.dirty && !this.#pending.has(model.key)) {
         count += 1;
       }
     }
@@ -211,13 +221,14 @@ export class SettingsSession {
    * @returns {Promise<void>} Rejects only with `CancelledError`.
    */
   async refresh() {
+    const writes = this.#writes;
     const reply = await this.#client.settings();
-    if (this.#disposed) {
+    if (this.#disposed || writes !== this.#writes) {
       return;
     }
     if (reply.ok) {
       this.#take(reply.value);
-      if (this.#pending.size > 0 && !this.readOnly) {
+      if (this.#pending.size > 0 && !this.readOnly && !this.#stalled) {
         this.#schedule(0);
       }
     } else {
@@ -248,6 +259,10 @@ export class SettingsSession {
    */
   async flush() {
     this.#clearSave();
+    if (this.#pending.size === 0 && !this.#saving) {
+      // Try again with nothing left to save only dismisses a problem that undid the edits.
+      this.writeProblem = null;
+    }
     if (this.#saving || this.#pending.size === 0 || this.readOnly || this.#revision === null) {
       this.#notify();
       return;
@@ -255,6 +270,8 @@ export class SettingsSession {
     const batch = [...this.#pending.values()];
     this.#pending.clear();
     this.#saving = true;
+    this.#stalled = false;
+    this.#writes += 1;
     this.#notify();
     /** @type {Change[]} */
     const changes = [];
@@ -271,10 +288,12 @@ export class SettingsSession {
       throw error;
     } finally {
       this.#saving = false;
+      this.#writes += 1;
     }
     if (this.#disposed) {
       return;
     }
+    let sendSoon = true;
     if (reply.ok) {
       this.writeProblem = null;
       for (const entry of batch) {
@@ -283,8 +302,12 @@ export class SettingsSession {
       this.#take(reply.value);
     } else {
       await this.#refused(batch, reply.failure);
+      // Only a held file frees up on its own within moments. Changes refused because allotd
+      // did not answer go out again from the refresh that finds it back; any other refusal
+      // waits for Try again or the next edit.
+      sendSoon = reply.failure.kind === "held";
     }
-    if (this.#pending.size > 0 && this.#saveTimer === null) {
+    if (this.#pending.size > 0 && this.#saveTimer === null && sendSoon) {
       this.#schedule(SAVE_DELAY_MS);
     }
     this.#notify();
@@ -376,6 +399,7 @@ export class SettingsSession {
    * @param {boolean} now
    */
   edited(model, changes, now) {
+    this.#stalled = false;
     if (changes.length === 0) {
       this.#pending.delete(model.key);
     } else {
@@ -480,7 +504,8 @@ export class SettingsSession {
           this.#schedule(0);
           return;
         }
-        // The file itself is broken, so nothing can be saved until it is fixed by hand.
+        // No edit in the batch owns the problem, so say what allotd said before undoing them.
+        this.writeProblem = failure.message;
         for (const entry of batch) {
           entry.model.undo();
         }
@@ -493,6 +518,8 @@ export class SettingsSession {
         return;
       default:
         this.writeProblem = failure.message;
+        // A held file is likely free again soon; any other failure waits for the user.
+        this.#stalled = failure.kind !== "held";
         this.#restore(batch);
     }
   }

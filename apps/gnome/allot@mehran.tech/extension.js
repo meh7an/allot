@@ -178,6 +178,7 @@ export default class AllotExtension extends Extension {
       now: () => GLib.get_monotonic_time() / 1000,
     });
     poller.onUpdate = (result) => this._show(result);
+    poller.onError = (error) => console.error(`Allot: updating the panel failed: ${error}`);
     poller.setPopupOpen(this._popup?.isOpen ?? false);
     this._poller = poller;
     connection.onOwnerChanged = () => poller.pollNow();

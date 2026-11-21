@@ -242,6 +242,7 @@ export class AllotWidget {
       ...(this.#host.now === undefined ? {} : { now: this.#host.now }),
     });
     poller.onUpdate = (result) => this.#show(result);
+    poller.onError = (error) => this.#host.log(`Allot: updating the widget failed: ${error}`);
     poller.setPopupOpen(this.#expanded);
     this.#poller = poller;
     this.#service = { client, launcher };

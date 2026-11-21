@@ -62,9 +62,29 @@ final class FakeSettings: SettingsClient, @unchecked Sendable {
     private var sentPatches: [Patch] = []
     private var sentPreviews: [[Change]] = []
     private var current: SettingsState
+    private var holding = false
+    private var held: [() -> Void] = []
 
     init(state: SettingsState) {
         current = state
+    }
+
+    /// When true, a read stays in flight, with the state it was sent under, until
+    /// ``completeReads()``.
+    var holdReads: Bool {
+        get { lock.withLock { holding } }
+        set { lock.withLock { holding = newValue } }
+    }
+
+    /// Answers every read held back.
+    func completeReads() {
+        let answers = lock.withLock { () -> [() -> Void] in
+            defer { held.removeAll() }
+            return held
+        }
+        for answer in answers {
+            answer()
+        }
     }
 
     var state: SettingsState {
@@ -88,8 +108,16 @@ final class FakeSettings: SettingsClient, @unchecked Sendable {
     }
 
     func settings() async throws -> SettingsReply<SettingsState> {
-        lock.withLock { () -> SettingsReply<SettingsState> in
+        let reply = lock.withLock { () -> SettingsReply<SettingsState> in
             reads.isEmpty ? .value(current) : reads.removeFirst()
+        }
+        guard holdReads else {
+            return reply
+        }
+        return await withCheckedContinuation { continuation in
+            lock.withLock {
+                held.append { continuation.resume(returning: reply) }
+            }
         }
     }
 

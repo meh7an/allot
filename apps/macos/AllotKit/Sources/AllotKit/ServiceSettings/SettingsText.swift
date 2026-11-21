@@ -25,11 +25,16 @@ public enum SettingsText {
 
     public static let loading = "Loading settings…"
 
-    /// A number for `locale`, grouped, with at most two decimals.
+    /// A number for `locale`, grouped, with at most two decimals. A half rounds away from zero,
+    /// as in the other panels: 0.125 reads 0.13, where the formatter's own default rounds to
+    /// even.
     public static func numbers(_ locale: Locale) -> @Sendable (Double) -> String {
         { value in
             value.formatted(
-                .number.locale(locale).precision(.fractionLength(0...2)).grouping(.automatic))
+                .number.locale(locale)
+                    .rounded(rule: .toNearestOrAwayFromZero)
+                    .precision(.fractionLength(0...2))
+                    .grouping(.automatic))
         }
     }
 

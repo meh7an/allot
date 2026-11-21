@@ -244,6 +244,18 @@ public sealed class DaemonClientTests
         CollectionAssert.AreEqual(new List<int> { 47823, 47999 }, ports);
     }
 
+    [TestMethod]
+    public void PortIsTheOneTheClientDialsNotTheConfigFilesOwn()
+    {
+        using var directory = new TempDirectory();
+        var handler = new FakeHttpHandler(_ => FakeHttpHandler.Json(HealthJson));
+        using var client = Client(directory, handler, null);
+
+        Assert.AreEqual(47823, client.Port);
+        client.UsePort(47999);
+        Assert.AreEqual(47999, client.Port);
+    }
+
     internal static DaemonClient Client(
         TempDirectory directory,
         FakeHttpHandler handler,

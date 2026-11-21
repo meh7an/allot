@@ -39,6 +39,17 @@ public sealed class StringListModel(SettingSpec spec, IValueHost host, IReadOnly
     }
 
     /// <summary>
+    /// The entry text changed: a blank or duplicate flag was about the text before, so it goes.
+    /// </summary>
+    public void EntryChanged()
+    {
+        if (Issue?.Kind is IssueKind.Blank or IssueKind.Duplicate)
+        {
+            Flag(null);
+        }
+    }
+
+    /// <summary>
     /// Writes <paramref name="entries"/> as they are, such as the list before a reset for Undo.
     /// </summary>
     public void Replace(IReadOnlyList<string> entries) => Save(entries);

@@ -502,6 +502,19 @@ export class StringListModel extends ValueModel {
         this._save([...this.value, entry]);
         return true;
     }
+    /**
+     * Drops the blank or duplicate notice once the entry's text changes, since it described the
+     * text that was there before.
+     *
+     * @returns {boolean} Whether a notice was cleared.
+     */
+    entryChanged() {
+        if (this.issue === null) {
+            return false;
+        }
+        this.flag(null);
+        return true;
+    }
     /** @param {number} index */
     remove(index) {
         if (index >= 0 && index < this.value.length) {

@@ -48,6 +48,11 @@ public sealed class DaemonPoller(DaemonClient client, IServiceLauncher launcher,
     public string? StartProblem => _startProblem;
 
     /// <summary>
+    /// The port this panel dials, which differs from <c>daemon.port</c> until allotd restarts.
+    /// </summary>
+    public ushort Port => client.Port;
+
+    /// <summary>
     /// Switches between the open and closed cadence; opening also polls at once.
     /// </summary>
     public void SetFlyoutOpen(bool open)

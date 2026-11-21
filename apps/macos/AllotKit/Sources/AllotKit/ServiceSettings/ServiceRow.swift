@@ -27,11 +27,13 @@ public struct ServiceRow: Sendable, Equatable {
     ///   - session: The settings session's status, which knows the stop record.
     ///   - version: allotd's version, when it is known.
     ///   - port: The port allotd listens on, or this panel dials.
+    ///   - startProblem: Why the last Start Service failed, if it did.
     public static func from(
         _ status: ServiceStatus,
         session: SessionStatus,
         version: String?,
-        port: UInt32
+        port: UInt32,
+        startProblem: String? = nil
     ) -> ServiceRow {
         switch status {
         case .running:
@@ -42,6 +44,9 @@ public struct ServiceRow: Sendable, Equatable {
             return ServiceRow(text: ServiceBanner.incompatibleText, button: .stop, opensLogs: true)
         case .starting:
             return ServiceRow(text: starting, button: .starting, opensLogs: false)
+        case .stopped where startProblem != nil:
+            let text = "The service did not start. \(SettingsBanners.sentence(startProblem))"
+            return ServiceRow(text: text, button: .start, opensLogs: true)
         case .stopped where session == .stopped:
             return ServiceRow(text: stoppedByYou, button: .start, opensLogs: false)
         case .stopped:

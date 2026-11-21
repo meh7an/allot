@@ -49,7 +49,9 @@ public enum LiveText {
         guard lower else {
             return loweringOff
         }
-        let reserved = (exampleUsed * (1 + marginPct / 100) * 100).rounded() / 100
+        // Half away from zero, as the other panels round.
+        let reserved =
+            (exampleUsed * (1 + marginPct / 100) * 100).rounded(.toNearestOrAwayFromZero) / 100
         let runs = minRuns == 1 ? "run" : "\(number(minRuns)) runs"
         return "A command that asks for \(number(exampleAsked)) cores but used about "
             + "\(number(exampleUsed)) in its last \(runs) is reserved "
@@ -80,7 +82,8 @@ public enum LiveText {
 
     /// The caption under What fits.
     public static func fitsCaption(_ cpuBusyPct: Double, number: (Double) -> String) -> String {
-        "Based on this machine now (\(number(cpuBusyPct.rounded())) % CPU busy) and with every "
+        let busy = cpuBusyPct.rounded(.toNearestOrAwayFromZero)
+        return "Based on this machine now (\(number(busy)) % CPU busy) and with every "
             + "lease ended."
     }
 
@@ -126,6 +129,6 @@ public enum LiveText {
     }
 
     private static func gigabytes(_ megabytes: Double, _ number: (Double) -> String) -> String {
-        number((megabytes / 1024 * 10).rounded() / 10)
+        number((megabytes / 1024 * 10).rounded(.toNearestOrAwayFromZero) / 10)
     }
 }

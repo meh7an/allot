@@ -45,6 +45,9 @@ struct ChipsEditor: View {
                     .accessibilityHint(hint)
                     .focused($entryFocused)
                     .onSubmit(add)
+                    .onChange(of: entry) {
+                        model.entryChanged()
+                    }
                 Button(addLabel, action: add)
             }
         }

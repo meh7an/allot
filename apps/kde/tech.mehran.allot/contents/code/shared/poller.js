@@ -50,6 +50,13 @@ export class DaemonPoller {
          * @type {((result: PollResult) => void) | null}
          */
         this.onUpdate = null;
+        /**
+         * Called when `onUpdate` throws, once per distinct message until an update succeeds again;
+         * polling goes on either way, so one bad render does not freeze the panel.
+         *
+         * @type {((error: unknown) => void) | null}
+         */
+        this.onError = null;
         /** @type {PollResult | null} */
         this.latest = null;
         /**
@@ -72,6 +79,8 @@ export class DaemonPoller {
         this._looping = false;
         this._stopped = false;
         this._wakePending = false;
+        /** @type {string | null} */
+        this._reported = null;
         /** @type {unknown} */
         this._timer = null;
         /** @type {(() => void) | null} */
@@ -173,7 +182,6 @@ export class DaemonPoller {
      */
     pollOnce() {
         return __awaiter(this, void 0, void 0, function* () {
-            var _a;
             const polled = yield this._client.poll();
             if (this._stopped) {
                 throw new CancelledError();
@@ -184,9 +192,24 @@ export class DaemonPoller {
                 this.lastKnown = result.state;
             }
             this.latest = result;
-            (_a = this.onUpdate) === null || _a === void 0 ? void 0 : _a.call(this, result);
+            this._publish(result);
             return delay;
         });
+    }
+    /** @param {PollResult} result */
+    _publish(result) {
+        var _a, _b;
+        try {
+            (_a = this.onUpdate) === null || _a === void 0 ? void 0 : _a.call(this, result);
+            this._reported = null;
+        }
+        catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            if (message !== this._reported) {
+                this._reported = message;
+                (_b = this.onError) === null || _b === void 0 ? void 0 : _b.call(this, error);
+            }
+        }
     }
     /**
      * A launched allotd takes a moment to bind its port; until then it looks stopped.

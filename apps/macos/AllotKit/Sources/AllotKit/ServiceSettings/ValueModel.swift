@@ -307,7 +307,8 @@ public class NumberModel: ValueModel {
 
     /// What is wrong with `value` for this setting, or `nil`.
     public func check(_ value: Double) -> ValueIssue? {
-        guard value.isFinite else {
+        // Sizes go out as 32-bit floats, so a value that overflows one cannot be sent either.
+        guard value.isFinite, Float(value).isFinite else {
             return .notANumber
         }
         if control.integer && !isWhole(value) {
@@ -441,6 +442,13 @@ public final class StringListModel: ValueModel {
         }
         save(entries + [entry])
         return true
+    }
+
+    /// The entry text changed: a blank or duplicate flag was about the text before, so it goes.
+    public func entryChanged() {
+        if issue == .blank || issue == .duplicate {
+            flag(nil)
+        }
     }
 
     /// Writes `entries` as they are, such as the list before a reset for Undo.

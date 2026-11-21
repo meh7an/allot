@@ -40,6 +40,13 @@ public sealed class SettingsSession : Observable, IValueHost, IDisposable
     private IDisposable? _saveTimer;
     private IDisposable? _refreshTimer;
     private bool _saving;
+
+    // Whether the last save failed in a way another try will not fix; only a flush the user asks
+    // for, or an edit, sends the changes again.
+    private bool _retryStopped;
+
+    // Counts the saves that started or finished, so a refresh sent before one is dropped.
+    private int _saveEpoch;
     private bool _visible;
     private bool _disposed;
 
@@ -120,7 +127,7 @@ public sealed class SettingsSession : Observable, IValueHost, IDisposable
             var count = _pending.Count;
             foreach (var model in _models.Values)
             {
-                if (model.Issue is not null && !_pending.ContainsKey(model.Key))
+                if (model.Issue is not null && model.Dirty && !_pending.ContainsKey(model.Key))
                 {
                     count++;
                 }
@@ -197,8 +204,16 @@ public sealed class SettingsSession : Observable, IValueHost, IDisposable
 
         try
         {
+            var epoch = _saveEpoch;
             var reply = await _client.SettingsAsync(_lifetime.Token);
             if (_disposed)
+            {
+                return;
+            }
+
+            // A save began or ended while this request was out, so its revision and values may
+            // predate the save's own answer.
+            if (epoch != _saveEpoch)
             {
                 return;
             }
@@ -206,7 +221,7 @@ public sealed class SettingsSession : Observable, IValueHost, IDisposable
             if (reply.Value is { } state)
             {
                 Take(state);
-                if (_pending.Count > 0 && !ReadOnly)
+                if (_pending.Count > 0 && !ReadOnly && !_retryStopped)
                 {
                     Schedule(TimeSpan.Zero);
                 }
@@ -366,6 +381,7 @@ public sealed class SettingsSession : Observable, IValueHost, IDisposable
 
     void IValueHost.Edited(ValueModel model, IReadOnlyList<Change> changes, bool now)
     {
+        _retryStopped = false;
         if (changes.Count == 0)
         {
             _ = _pending.Remove(model.Key);
@@ -412,6 +428,13 @@ public sealed class SettingsSession : Observable, IValueHost, IDisposable
     private async Task FlushCoreAsync()
     {
         ClearSave();
+        _retryStopped = false;
+        if (_pending.Count == 0 && !_saving)
+        {
+            // Nothing is left to try again, so a problem that undid its changes has run its course.
+            WriteProblem = null;
+        }
+
         if (_disposed
             || _saving
             || _pending.Count == 0
@@ -425,6 +448,7 @@ public sealed class SettingsSession : Observable, IValueHost, IDisposable
         var batch = _pending.Values.ToList();
         _pending.Clear();
         _saving = true;
+        _saveEpoch++;
         Notify();
         var patch = new SettingsPatch
         {
@@ -436,16 +460,34 @@ public sealed class SettingsSession : Observable, IValueHost, IDisposable
         {
             reply = await _client.ChangeSettingsAsync(patch, _lifetime.Token);
         }
+        catch (Exception error) when (error is not OperationCanceledException)
+        {
+            // Nothing reached allotd, such as a value the serializer refused: keep the changes
+            // and say so instead of showing "All changes saved".
+            _saving = false;
+            _saveEpoch++;
+            if (!_disposed)
+            {
+                Restore(batch);
+                WriteProblem = error.Message;
+                _retryStopped = true;
+                Notify();
+            }
+
+            return;
+        }
         finally
         {
             _saving = false;
         }
 
+        _saveEpoch++;
         if (_disposed)
         {
             return;
         }
 
+        var sendSoon = true;
         if (reply.Value is { } state)
         {
             WriteProblem = null;
@@ -459,9 +501,17 @@ public sealed class SettingsSession : Observable, IValueHost, IDisposable
         else if (reply.Failure is { } failure)
         {
             await RefusedAsync(batch, failure);
+
+            // Only a held file frees up on its own within moments. Changes refused because
+            // allotd did not answer go out again from the refresh that finds it back; any other
+            // refusal waits for Try again or the next edit.
+            sendSoon = failure.Kind is SettingsFailureKind.Held;
+            _retryStopped = failure.Kind is not (SettingsFailureKind.Held
+                or SettingsFailureKind.Unreachable
+                or SettingsFailureKind.Token);
         }
 
-        if (_pending.Count > 0 && _saveTimer is null)
+        if (_pending.Count > 0 && _saveTimer is null && sendSoon)
         {
             Schedule(SaveDelay);
         }
@@ -570,7 +620,9 @@ public sealed class SettingsSession : Observable, IValueHost, IDisposable
                     return;
                 }
 
-                // The file itself is broken, so nothing can be saved until it is fixed by hand.
+                // No batched setting owns the problem, such as a file that is broken: say why the
+                // edits are undone instead of dropping them silently.
+                WriteProblem = failure.Message;
                 UndoAll(batch);
                 await RefreshAsync();
                 return;

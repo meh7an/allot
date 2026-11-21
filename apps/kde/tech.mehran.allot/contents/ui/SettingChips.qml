@@ -128,6 +128,11 @@ ColumnLayout {
             Accessible.name: row.view.addLabel
             Accessible.description: row.view.description
             onAccepted: row.add()
+            onTextChanged: {
+                if (row.setting.entryChanged()) {
+                    row.host.changed();
+                }
+            }
         }
 
         QQC2.Button {

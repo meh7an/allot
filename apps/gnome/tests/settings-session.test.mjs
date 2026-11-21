@@ -27,7 +27,11 @@ import {
 } from "./settings-support.mjs";
 import { fixtureText } from "./support.mjs";
 
-/** @import { SettingsSession } from "../allot@mehran.tech/lib/settings-session.js" */
+/**
+ * @import { SettingsState } from "../allot@mehran.tech/contract.g.mjs"
+ * @import { SettingsReply } from "../allot@mehran.tech/lib/client.js"
+ * @import { SettingsSession } from "../allot@mehran.tech/lib/settings-session.js"
+ */
 
 /** The fixture's state with a preset of the user's own, `render`. */
 const stateWithRender = () => fixtureState(withRender);
@@ -454,4 +458,115 @@ test("values read with their unit", () => {
     issueText({ kind: "range", min: { value: 0, exclusive: true }, max: null }, plain),
     "Enter a number above 0.",
   );
+});
+
+test("a failed save other than a held file waits for Try again or the next edit", async () => {
+  const { session, client, timers } = await loaded();
+  client.writes.push(failure("failed", { message: "config.toml is read-only" }));
+
+  as(session.setting("hook.fail_open"), SwitchModel).set(false);
+  await fire(timers);
+  await fire(timers);
+
+  assert.equal(session.writeProblem, "config.toml is read-only");
+  assert.equal(client.patches.length, 1);
+  assert.equal(timers.pending.size, 0);
+  assert.deepEqual(session.saveStatus, { kind: "unsaved", count: 1 });
+
+  client.writes.push(failure("unavailable", { message: "the service is starting" }));
+  await session.flush();
+  await fire(timers);
+  assert.equal(client.patches.length, 2);
+  assert.equal(timers.pending.size, 0);
+
+  as(session.setting("estimates.lower"), SwitchModel).set(false);
+  await fire(timers);
+  assert.equal(client.patches.length, 3);
+  assert.equal(client.patches[2]?.changes.length, 2);
+  assert.equal(session.writeProblem, null);
+});
+
+test("changes allotd did not answer go out again once a refresh finds it back", async () => {
+  const { session, client, timers } = await loaded();
+  client.writes.push(failure("unreachable", { message: "Connection refused" }));
+
+  as(session.setting("hook.fail_open"), SwitchModel).set(false);
+  await fire(timers);
+  await fire(timers);
+  assert.equal(client.patches.length, 1);
+  assert.deepEqual(session.saveStatus, { kind: "unsaved", count: 1 });
+
+  await session.refresh();
+  await fire(timers);
+  assert.equal(client.patches.length, 2);
+  assert.deepEqual(session.saveStatus, { kind: "saved" });
+});
+
+test("a refresh answered before a save finished does not bring back the old revision", async () => {
+  const { session, client } = await loaded();
+  const old = client.state;
+  /** @type {(reply: SettingsReply<SettingsState>) => void} */
+  let answer = () => {};
+  client.settings = () => new Promise((resolve) => (answer = resolve));
+  const slow = session.refresh();
+  client.writes.push({ ok: true, value: { ...old, revision: "0123456789abcdef" } });
+
+  as(session.setting("hook.fail_open"), SwitchModel).set(false);
+  await session.flush();
+  answer({ ok: true, value: old });
+  await slow;
+  as(session.setting("estimates.lower"), SwitchModel).set(false);
+  await session.flush();
+
+  assert.equal(client.patches[1]?.revision, "0123456789abcdef");
+});
+
+test("a 422 no edit owns shows allotd's message and undoes the edits", async () => {
+  const { session, client, timers } = await loaded();
+  client.writes.push(
+    failure("invalid", {
+      message: "the limits do not fit together",
+      problems: [{ key: "somewhere.else", message: "must be larger" }],
+    }),
+  );
+  const fail = as(session.setting("hook.fail_open"), SwitchModel);
+  const before = fail.value;
+
+  fail.set(!before);
+  await fire(timers);
+
+  assert.equal(session.writeProblem, "the limits do not fit together");
+  assert.equal(fail.value, before);
+  assert.deepEqual(session.saveStatus, { kind: "saved" });
+  await session.flush();
+  assert.equal(session.writeProblem, null);
+});
+
+test("a blank or duplicate chip is not an unsaved change and clears with the text", async () => {
+  const { session } = await loaded();
+  const flags = as(session.setting("classifier.light_flags"), StringListModel);
+
+  assert.equal(flags.add(" "), false);
+  assert.deepEqual(session.saveStatus, { kind: "saved" });
+  assert.equal(flags.entryChanged(), true);
+  assert.equal(flags.issue, null);
+  assert.equal(flags.entryChanged(), false);
+
+  assert.equal(flags.add("--help"), false);
+  assert.equal(flags.entryChanged(), true);
+  assert.equal(flags.issue, null);
+});
+
+test("a number that is not finite gets the number error", async () => {
+  const { session } = await loaded();
+  const headroom = as(session.setting("admission.headroom_pct"), NumberModel);
+  const wait = as(session.setting("benchmark.max_quiet_wait_secs"), DurationModel);
+
+  headroom.commit(Number("9".repeat(400)));
+  assert.deepEqual(headroom.issue, { kind: "not_a_number" });
+  headroom.commit(Number.NaN);
+  assert.deepEqual(headroom.issue, { kind: "not_a_number" });
+  wait.setUnit("hours");
+  wait.commit(1e306);
+  assert.deepEqual(wait.issue, { kind: "not_a_number" });
 });

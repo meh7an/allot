@@ -178,7 +178,7 @@ public static class SettingsBanners
     }
 
     // allotd's reasons come without a full stop; the banner's next sentence needs one.
-    private static string Sentence(string? text)
+    internal static string Sentence(string? text)
     {
         var trimmed = (text ?? string.Empty).Trim();
         return trimmed.Length == 0 || trimmed.EndsWith('.') ? trimmed : trimmed + ".";
