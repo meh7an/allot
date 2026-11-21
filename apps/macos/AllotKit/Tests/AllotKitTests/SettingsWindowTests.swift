@@ -205,10 +205,13 @@ private func counts(_ full: Int, _ shrunk: Int, more: Bool = false) throws -> Fi
 
         let service = SettingsBanners.banners(
             session, pageId: "service", port: 47823, number: english, update: update)
+        let serviceWithout = SettingsBanners.banners(
+            session, pageId: "service", port: 47823, number: english)
         let leases = SettingsBanners.banners(
             session, pageId: "leases", port: 47823, number: english, update: update)
 
-        #expect(service.count == 1)
+        // The fixture's own Service banners follow the offer.
+        #expect(Array(service.dropFirst()) == serviceWithout)
         #expect(service.first?.severity == .informational)
         #expect(
             service.first?.message
