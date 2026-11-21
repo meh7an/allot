@@ -207,6 +207,36 @@ async fn test_patch_settings_invalid_value_names_the_key_and_leaves_the_file() {
 }
 
 #[tokio::test]
+async fn test_settings_body_that_is_not_the_routes_json_is_a_settings_refusal() {
+    let daemon = Daemon::start().await;
+    daemon.write_settings("");
+    // A newer panel's change kind this allotd does not know.
+    let unknown_kind = r#"{"revision":"0000000000000000","changes":[{"kind":"rename"}]}"#;
+    for (path, body) in [
+        ("/settings", unknown_kind),
+        ("/settings/preview", "not json"),
+        ("/classify", "{}"),
+    ] {
+        let request = if path == "/settings" {
+            daemon.patch(path)
+        } else {
+            daemon.post(path)
+        };
+        let response = request
+            .header("Content-Type", "application/json")
+            .body(body)
+            .send()
+            .await
+            .unwrap();
+        assert!(response.status().is_client_error(), "{path}");
+        let refusal: SettingsRefusal = response.json().await.unwrap();
+        assert!(refusal.problems.is_empty(), "{path}");
+        assert!(!refusal.message.is_empty(), "{path}");
+    }
+    daemon.stop().await;
+}
+
+#[tokio::test]
 async fn test_patch_settings_after_a_hand_edit_is_a_conflict() {
     let daemon = Daemon::start().await;
     let read = daemon.write_settings("[admission]\nheadroom_pct = 25\n");

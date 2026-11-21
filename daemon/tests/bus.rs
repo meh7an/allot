@@ -247,8 +247,12 @@ async fn test_bus_settings_argument_that_is_not_json_is_invalid() {
     let daemon = Daemon::start_on_bus(&bus.address).await;
     let client = bus.connect().await;
 
-    let (name, _) = refusal(ask_json(&client, "ChangeSettings", "not json").await);
+    let (name, message) = refusal(ask_json(&client, "ChangeSettings", "not json").await);
     assert_eq!(name, "Invalid");
+    // The same SettingsRefusal JSON as every other settings refusal, so a panel can read it.
+    let refusal: SettingsRefusal = serde_json::from_str(&message).unwrap();
+    assert!(refusal.problems.is_empty());
+    assert!(!refusal.message.is_empty());
     daemon.stop().await;
 }
 

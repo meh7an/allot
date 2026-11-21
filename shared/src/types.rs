@@ -492,6 +492,18 @@ impl EndCause {
     pub fn is_notice(self) -> bool {
         matches!(self, Self::Killed | Self::Removed)
     }
+
+    /// What the user did, in the words allotd's verdicts and allot-mcp's results share, without
+    /// a capital or a final stop; `None` for an end the user did not cause.
+    pub fn user_action(self) -> Option<&'static str> {
+        match self {
+            Self::Killed => Some("the user stopped this job in Allot"),
+            Self::Removed => {
+                Some("the user removed this request from the queue in Allot; it did not run")
+            }
+            Self::Released | Self::Expired => None,
+        }
+    }
 }
 
 /// A reservation of machine resources for one job.

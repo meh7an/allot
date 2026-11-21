@@ -11,9 +11,10 @@ use crate::{
 };
 
 /// Starts the scope of lease `id`, granted at `granted_at_ms`, if it has none and moves the
-/// command `holder` is about to start into it, in the background. Called before the bind request answers, so the holder's
-/// children are noted before the hook exits and Claude Code starts the command's shell. Does
-/// nothing when scopes are off in the config or unavailable on this machine.
+/// command `holder` is about to start into it, in the background. Called before the bind
+/// request answers, so the holder's children are noted before the hook exits and Claude Code
+/// starts the command's shell. Does nothing when scopes are off in the config or unavailable
+/// on this machine.
 pub(crate) fn follow_command(
     state: &AppState,
     id: LeaseId,

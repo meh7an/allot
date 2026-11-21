@@ -35,7 +35,7 @@ pub(super) fn set_server(config: &str, exe: &Path) -> anyhow::Result<String> {
             .context("\"mcpServers\" is not an object")?
             .push((MCP_NAME.to_owned(), server)),
     }
-    Ok(text(&tree, config))
+    text(&tree, config)
 }
 
 /// `config` without the MCP server called `name`, or `None` when it has none at user scope.
@@ -48,7 +48,7 @@ pub(super) fn remove_server(config: &str, name: &str) -> anyhow::Result<Option<S
     let removed = tree
         .field_mut("mcpServers")
         .is_some_and(|servers| servers.remove(name));
-    Ok(removed.then(|| text(&tree, config)))
+    removed.then(|| text(&tree, config)).transpose()
 }
 
 #[cfg(test)]

@@ -20,7 +20,7 @@ use allot_shared::{
 use anyhow::anyhow;
 use axum::{
     Json,
-    extract::State,
+    extract::{State, rejection::JsonRejection},
     http::StatusCode,
     response::{IntoResponse, Response},
 };
@@ -48,6 +48,10 @@ pub enum SettingsError {
     /// No machine sample has arrived yet.
     #[error(transparent)]
     App(#[from] AppError),
+    /// The body is not the JSON the route takes, such as a change kind this allotd does not
+    /// know yet.
+    #[error("{}", .0.body_text())]
+    Malformed(#[from] JsonRejection),
 }
 
 impl IntoResponse for SettingsError {
@@ -72,6 +76,7 @@ impl IntoResponse for SettingsError {
                 refusal(StatusCode::CONFLICT, Vec::new(), Some(current))
             }
             Self::Write(WriteError::Held(_)) => refusal(StatusCode::LOCKED, Vec::new(), None),
+            Self::Malformed(rejection) => refusal(rejection.status(), Vec::new(), None),
             Self::NoFile => refusal(StatusCode::SERVICE_UNAVAILABLE, Vec::new(), None),
             Self::App(AppError::Unavailable) => {
                 refusal(StatusCode::SERVICE_UNAVAILABLE, Vec::new(), None)
@@ -124,8 +129,9 @@ pub async fn read(State(state): State<AppState>) -> Result<Json<SettingsState>, 
 /// puts the result into effect.
 pub async fn change(
     State(state): State<AppState>,
-    Json(patch): Json<SettingsPatch>,
+    patch: Result<Json<SettingsPatch>, JsonRejection>,
 ) -> Result<Json<SettingsState>, SettingsError> {
+    let Json(patch) = patch?;
     let path = config_path(&state)?;
     let writing = state.config_writes.lock().await;
     let applied = blocking({
@@ -151,8 +157,9 @@ pub async fn change(
 /// `POST /settings/preview`: what fits on this machine if the changes were saved.
 pub async fn preview(
     State(state): State<AppState>,
-    Json(request): Json<PreviewRequest>,
+    request: Result<Json<PreviewRequest>, JsonRejection>,
 ) -> Result<Json<FitPreview>, SettingsError> {
+    let Json(request) = request?;
     let proposed = proposal(&state, request.changes).await?;
     let latest = state.latest().ok_or(AppError::Unavailable)?;
     let ledger = state.ledger.lock().await;
@@ -166,8 +173,9 @@ pub async fn preview(
 /// `POST /classify`: how the hook treats a command line if the changes were saved.
 pub async fn classify(
     State(state): State<AppState>,
-    Json(request): Json<ClassifyRequest>,
+    request: Result<Json<ClassifyRequest>, JsonRejection>,
 ) -> Result<Json<CommandTest>, SettingsError> {
+    let Json(request) = request?;
     let proposed = proposal(&state, request.changes).await?;
     Ok(Json(explain::test_command(
         &proposed,

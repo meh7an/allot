@@ -29,7 +29,10 @@ use axum::{
     Json, Router,
     body::Bytes,
     extract::{Path, Query, Request, State},
-    http::{StatusCode, header::AUTHORIZATION},
+    http::{
+        StatusCode,
+        header::{AUTHORIZATION, HOST},
+    },
     middleware::{self, Next},
     response::Response,
     routing::{delete, get, post},
@@ -57,6 +60,23 @@ const SUMMARY_SCAN: u32 = 5_000;
 const DEFAULT_HISTORY_RUNS: u32 = 20;
 const MAX_HISTORY_RUNS: u32 = 500;
 
+/// The longest lease label and logged command line kept. A label goes back to every panel on
+/// every poll, so a command pasted whole, such as a long heredoc, is cut here.
+const MAX_LABEL_CHARS: usize = 512;
+/// The longest working directory kept; longer than any real path.
+const MAX_CWD_CHARS: usize = 4_096;
+
+/// `text` cut to `max_chars` characters, the last one an ellipsis, when it is longer.
+fn clipped(mut text: String, max_chars: usize) -> String {
+    if let Some((cut, _)) = text.char_indices().nth(max_chars.saturating_sub(1))
+        && text.chars().count() > max_chars
+    {
+        text.truncate(cut);
+        text.push('\u{2026}');
+    }
+    text
+}
+
 /// Every route, with the token check on all but `/health`.
 pub fn router(state: AppState) -> Router {
     Router::new()
@@ -81,6 +101,10 @@ pub fn router(state: AppState) -> Router {
         .route("/classify", post(settings::classify))
         .route_layer(middleware::from_fn_with_state(state.clone(), require_token))
         .route("/health", get(health))
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            require_local_host,
+        ))
         .with_state(state)
 }
 
@@ -94,10 +118,47 @@ async fn require_token(
         .get(AUTHORIZATION)
         .and_then(|value| value.to_str().ok())
         .and_then(|value| value.strip_prefix("Bearer "));
-    if presented != Some(state.token.as_str()) {
+    if !presented.is_some_and(|presented| same_secret(presented, &state.token)) {
         return Err(AppError::Unauthorized);
     }
     Ok(next.run(request).await)
+}
+
+/// Refuses a request whose `Host` names anything but this allotd on the loopback address: a web
+/// page that rebinds its own name to 127.0.0.1 sends its name, and every client of allotd dials
+/// `127.0.0.1:<port>`. A request without a `Host` comes from no browser and passes.
+async fn require_local_host(
+    State(state): State<AppState>,
+    request: Request,
+    next: Next,
+) -> Result<Response, AppError> {
+    let host = request.headers().get(HOST).map(|value| value.to_str());
+    if let Some(host) = host
+        && !host.is_ok_and(|host| is_local_host(host, state.listening_port))
+    {
+        return Err(AppError::Forbidden(
+            "allotd answers only requests addressed to 127.0.0.1 or localhost".to_owned(),
+        ));
+    }
+    Ok(next.run(request).await)
+}
+
+fn is_local_host(host: &str, port: u16) -> bool {
+    host.rsplit_once(':').is_some_and(|(name, given)| {
+        (name == "127.0.0.1" || name.eq_ignore_ascii_case("localhost")) && given.parse() == Ok(port)
+    })
+}
+
+/// Compares in time that depends only on the lengths, so a local process timing the answers
+/// learns nothing about the token's bytes.
+fn same_secret(presented: &str, token: &str) -> bool {
+    let (presented, token) = (presented.as_bytes(), token.as_bytes());
+    presented.len() == token.len()
+        && presented
+            .iter()
+            .zip(token)
+            .fold(0_u8, |differs, (a, b)| differs | (a ^ b))
+            == 0
 }
 
 async fn health(State(state): State<AppState>) -> Json<HealthResponse> {
@@ -312,14 +373,16 @@ async fn list_leases(
 
 async fn acquire(
     State(state): State<AppState>,
-    Json(request): Json<AcquireRequest>,
+    Json(mut request): Json<AcquireRequest>,
 ) -> Result<Json<AcquireResponse>, AppError> {
     let resolved = resolve_profile(
         &state.settings().config,
         &request.profile,
         request.min_cores,
     )?;
-    let cwd = request.cwd.unwrap_or_default();
+    // Cut before the history lookup, so past runs are matched by the label that is stored.
+    request.label = clipped(request.label, MAX_LABEL_CHARS);
+    let cwd = clipped(request.cwd.unwrap_or_default(), MAX_CWD_CHARS);
     let lowering = Lowering::for_request(
         &state.settings().config.estimates,
         request.kind,
@@ -609,12 +672,8 @@ async fn bind(
         .await?;
     drop(ledger);
     scopes::follow_command(&state, id, granted_at_ms, &holder, profile);
-    tracing::info!(
-        lease = id.0,
-        tool_use_id,
-        command = request.command.as_deref().unwrap_or_default(),
-        "command reported"
-    );
+    let command = clipped(request.command.unwrap_or_default(), MAX_LABEL_CHARS);
+    tracing::info!(lease = id.0, tool_use_id, command, "command reported");
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -968,12 +1027,10 @@ async fn lease_verdict(state: &AppState, lease: &Lease) -> Verdict {
             .and_then(|latest| ledger.verdict_for(lease.id, &latest.snapshot, now_ms()))
     };
     explained.unwrap_or_else(|| {
-        let reason = match (lease.state, lease.end_cause) {
+        let action = lease.end_cause.and_then(EndCause::user_action);
+        let reason = match (lease.state, action) {
             (LeaseState::Queued, _) => "waiting for the first machine sample".to_owned(),
-            (_, Some(EndCause::Removed)) => {
-                "the user removed this request from the queue in Allot; it did not run".to_owned()
-            }
-            (_, Some(EndCause::Killed)) => "the user stopped this job in Allot".to_owned(),
+            (_, Some(action)) => action.to_owned(),
             // Granted while the session was not waiting, then ended unused: the command still
             // has to run, so it needs a new lease.
             (LeaseState::Expired, _) if lease.granted_at_ms.is_some() => {
@@ -1006,4 +1063,37 @@ async fn stored_lease(
         return Err(LedgerError::NotOwner(id).into());
     }
     Ok(lease)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_clipped_keeps_short_text_and_cuts_long_text_to_the_limit() {
+        assert_eq!(clipped("cargo build".to_owned(), 512), "cargo build");
+        assert_eq!(clipped("abcdef".to_owned(), 6), "abcdef");
+        assert_eq!(clipped("abcdefg".to_owned(), 6), "abcde\u{2026}");
+        let heredoc = "\u{e9}".repeat(40_000);
+        let cut = clipped(heredoc, MAX_LABEL_CHARS);
+        assert_eq!(cut.chars().count(), MAX_LABEL_CHARS);
+        assert!(cut.ends_with('\u{2026}'));
+    }
+
+    #[test]
+    fn test_same_secret_needs_every_byte_and_the_length() {
+        assert!(same_secret("token-abc", "token-abc"));
+        assert!(!same_secret("token-abd", "token-abc"));
+        assert!(!same_secret("token-ab", "token-abc"));
+        assert!(!same_secret("", "token-abc"));
+    }
+
+    #[test]
+    fn test_is_local_host_takes_loopback_names_on_this_port_only() {
+        assert!(is_local_host("127.0.0.1:47823", 47_823));
+        assert!(is_local_host("LocalHost:47823", 47_823));
+        assert!(!is_local_host("127.0.0.1:47824", 47_823));
+        assert!(!is_local_host("127.0.0.1", 47_823));
+        assert!(!is_local_host("rebound.example:47823", 47_823));
+    }
 }

@@ -177,15 +177,19 @@ pub(super) fn parse(text: &str) -> anyhow::Result<Json> {
 
 /// Pretty JSON with two-space indents, as Claude Code writes it, keeping the original's line
 /// endings and final newline.
-pub(super) fn text(tree: &Json, original: &str) -> String {
-    let mut text = serde_json::to_string_pretty(tree).unwrap_or_default();
+///
+/// # Errors
+///
+/// Fails when the tree cannot be written as JSON, so a failure never empties Claude Code's file.
+pub(super) fn text(tree: &Json, original: &str) -> anyhow::Result<String> {
+    let mut text = serde_json::to_string_pretty(tree).context("writing the file as JSON")?;
     if original.is_empty() || original.ends_with('\n') {
         text.push('\n');
     }
     if original.contains("\r\n") {
         text = text.replace('\n', "\r\n");
     }
-    text
+    Ok(text)
 }
 
 #[cfg(test)]

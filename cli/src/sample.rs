@@ -12,6 +12,8 @@ use allot_shared::{
     types::{Holder, ResourceUsage, SessionKey, Snapshot},
 };
 
+use crate::status::gb;
+
 /// Processes listed per sample with their GPU use.
 const GPU_PROCESSES_SHOWN: usize = 5;
 
@@ -64,7 +66,8 @@ pub fn run(secs: u64) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// The nearest `claude` ancestor (`claude.exe` on Windows), keyed by this session's ID when Claude set one.
+/// The nearest `claude` ancestor (`claude.exe` on Windows), keyed by this session's ID when
+/// Claude set one.
 fn current_session() -> anyhow::Result<Option<Holder>> {
     let root = current_ancestry()?.into_iter().find(|node| {
         SESSION_ROOTS
@@ -152,8 +155,4 @@ fn format_usage(usage: &ResourceUsage) -> String {
         usage.gpu_pct,
         gb(usage.vram_mb)
     )
-}
-
-fn gb(mb: u64) -> String {
-    format!("{:.1} GB", mb as f64 / 1024.0)
 }

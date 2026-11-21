@@ -54,7 +54,7 @@ struct AcquireOutcome {
     #[serde(skip_serializing_if = "Option::is_none")]
     end_cause: Option<EndCause>,
     verdict: Verdict,
-    next_step: &'static str,
+    next_step: String,
 }
 
 /// What a session should do about its queued lease.
@@ -88,7 +88,7 @@ struct ReleaseOutcome {
     next: Option<NextReservation>,
     /// What the user did to the lease, when they stopped it.
     #[serde(skip_serializing_if = "Option::is_none")]
-    note: Option<&'static str>,
+    note: Option<String>,
 }
 
 /// What `list_leases` reports.
@@ -100,13 +100,13 @@ struct LeaseList {
     stopped_by_user: Vec<StoppedLease>,
 }
 
-/// One lease the user stopped or removed from Allot.
+/// One lease the user stopped or removed in Allot.
 #[derive(Debug, Serialize)]
 struct StoppedLease {
     lease_id: i64,
     label: String,
     end_cause: EndCause,
-    note: &'static str,
+    note: String,
 }
 
 #[tool_router]
@@ -231,30 +231,33 @@ impl<C: DaemonApi> AllotServer<C> {
         let next_step = match lease.state {
             LeaseState::Active => {
                 self.held.insert(lease.id);
-                "Run the command now, then call release_lease with this lease_id."
+                "Run the command now, then call release_lease with this lease_id.".to_owned()
             }
             LeaseState::Queued => {
                 self.held.insert(lease.id);
-                queued_next_step(&response.verdict)
+                queued_next_step(&response.verdict).to_owned()
             }
             _ => {
                 self.held.remove(lease.id);
-                match lease.end_cause {
-                    Some(EndCause::Removed) => {
-                        "The user removed this request from the queue in Allot; it \
-                         did not run. Do not run the command or acquire it again; tell the user \
-                         in one line that it was cancelled."
-                    }
-                    Some(EndCause::Killed) => {
-                        "The user stopped this job from Allot. Do not run the \
-                         command again on your own; ask the user whether to retry or skip."
-                    }
+                let action = lease.end_cause.and_then(EndCause::user_action);
+                match (lease.end_cause, action) {
+                    (Some(EndCause::Removed), Some(action)) => format!(
+                        "{} Do not run the command or acquire it again; tell the user in one \
+                         line that it was cancelled.",
+                        sentence(action)
+                    ),
+                    (_, Some(action)) => format!(
+                        "{} Do not run the command again on your own; ask the user whether to \
+                         retry or skip.",
+                        sentence(action)
+                    ),
                     _ if lease.state == LeaseState::Expired && lease.granted_at_ms.is_some() => {
                         "allotd ended this lease after it started, because nothing ran under it \
                          while the session was idle. The command still needs to run: acquire a \
                          new lease for it (without lease_id), then run it."
+                            .to_owned()
                     }
-                    _ => "The lease ended before it started; do not run the command.",
+                    _ => "The lease ended before it started; do not run the command.".to_owned(),
                 }
             }
         };
@@ -305,7 +308,7 @@ impl<C: DaemonApi> AllotServer<C> {
     #[tool(
         description = "Active and queued leases: this session's by default, or every \
                        session's with all_sessions. stopped_by_user lists this session's \
-                       leases the user stopped or removed from Allot since it was \
+                       leases the user stopped or removed in Allot since it was \
                        last told.",
         annotations(read_only_hint = true)
     )]
@@ -395,18 +398,21 @@ impl<C: DaemonApi> ServerHandler for AllotServer<C> {
 }
 
 /// What the user did to a lease, in words, or `None` for an ordinary end.
-fn stopped_note(cause: Option<EndCause>) -> Option<&'static str> {
-    match cause? {
-        EndCause::Killed => Some(
-            "The user stopped this job from Allot. They have not said whether to \
-             retry or skip.",
-        ),
-        EndCause::Removed => Some(
-            "The user removed this request from the queue in Allot before it \
-             started; it did not run.",
-        ),
-        _ => None,
-    }
+fn stopped_note(cause: Option<EndCause>) -> Option<String> {
+    let cause = cause?;
+    let action = sentence(cause.user_action()?);
+    Some(match cause {
+        EndCause::Killed => format!("{action} They have not said whether to retry or skip."),
+        _ => action,
+    })
+}
+
+/// `fragment` as a sentence: a capital first letter and a full stop.
+fn sentence(fragment: &str) -> String {
+    let mut chars = fragment.chars();
+    chars.next().map_or_else(String::new, |first| {
+        format!("{}{}.", first.to_uppercase(), chars.as_str())
+    })
 }
 
 fn to_json<T: Serialize>(value: &T) -> Result<String, String> {
@@ -459,6 +465,23 @@ mod tests {
         };
         assert!(queued_next_step(&verdict(REASON_BEYOND_LEASES)).contains("Tell the user"));
         assert!(!queued_next_step(&verdict("1 lease(s) queued ahead")).contains("Tell the user"));
+    }
+
+    #[test]
+    fn test_stopped_note_words_the_users_action_as_allotd_does() {
+        assert_eq!(
+            stopped_note(Some(EndCause::Removed)).as_deref(),
+            Some("The user removed this request from the queue in Allot; it did not run.")
+        );
+        assert_eq!(
+            stopped_note(Some(EndCause::Killed)).as_deref(),
+            Some(
+                "The user stopped this job in Allot. They have not said whether to retry or \
+                 skip."
+            )
+        );
+        assert_eq!(stopped_note(Some(EndCause::Expired)), None);
+        assert_eq!(stopped_note(None), None);
     }
 
     #[tokio::test]

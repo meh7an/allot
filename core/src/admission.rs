@@ -545,8 +545,8 @@ pub fn est_ms(profile: &JobProfile, asked_cores: f32) -> i64 {
 
 /// The earliest time `profile` fits, with its cores shrunk down to `min_cores` if need be, as
 /// the `running` reservations end in order of their expected end, each giving back what it
-/// counts at, with the background unchanged, and the room at that time before `profile` is taken out. `None` when it does
-/// not fit even with every reservation ended.
+/// counts at, with the background unchanged, and the room at that time before `profile` is
+/// taken out. `None` when it does not fit even with every reservation ended.
 pub fn first_fit(
     mut room: Room,
     running: &[Running],

@@ -171,6 +171,46 @@ async fn test_health_is_open_and_every_other_route_needs_the_token() {
 }
 
 #[tokio::test]
+async fn test_requests_for_another_host_are_refused_even_on_health() {
+    let daemon = Daemon::start().await;
+    let port = daemon.port();
+    let status_for = |host: String| {
+        let request = daemon
+            .client
+            .get(daemon.url("/health"))
+            .header("Host", host);
+        async move { request.send().await.unwrap().status() }
+    };
+    // A page that rebound its own name to 127.0.0.1 still sends that name.
+    assert_eq!(
+        status_for(format!("evil.example:{port}")).await,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        status_for("127.0.0.1:1".to_owned()).await,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        status_for(format!("localhost:{port}")).await,
+        StatusCode::OK
+    );
+    assert_eq!(
+        status_for(format!("127.0.0.1:{port}")).await,
+        StatusCode::OK
+    );
+    let snapshot = daemon
+        .client
+        .get(daemon.url("/snapshot"))
+        .bearer_auth("nope")
+        .header("Host", format!("evil.example:{port}"));
+    assert_eq!(
+        snapshot.send().await.unwrap().status(),
+        StatusCode::FORBIDDEN
+    );
+    daemon.stop().await;
+}
+
+#[tokio::test]
 async fn test_snapshot_lists_registered_live_sessions_only() {
     let daemon = Daemon::start().await;
     let snapshot: Snapshot = daemon.get("/snapshot").await.json().await.unwrap();

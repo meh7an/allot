@@ -39,15 +39,15 @@ pub fn describe(notice: &Notice, current: Option<&str>, failed: bool) -> String 
     let (command, id) = (&notice.command, notice.lease_id.0);
     if notice.cause == EndCause::Removed {
         return format!(
-            "The user removed the queued request for `{command}` (lease {id}) from Allot \
-             before it started; it did not run."
+            "The user removed the queued request for `{command}` (lease {id}) in Allot; it \
+             did not run."
         );
     }
     let this_call = current.is_some() && notice.tool_use_id.as_deref() == current;
     let mut text = if this_call {
-        format!("The user stopped this command (`{command}`, lease {id}) from Allot")
+        format!("The user stopped this command (`{command}`, lease {id}) in Allot")
     } else {
-        format!("The user stopped `{command}` (lease {id}) from Allot")
+        format!("The user stopped `{command}` (lease {id}) in Allot")
     };
     if this_call && failed {
         text.push_str("; the exit code comes from that, not from the command itself");
@@ -68,7 +68,7 @@ mod tests {
         let text = describe(&notice(42, EndCause::Killed, Some("toolu_a")), None, false);
         assert_eq!(
             text,
-            "The user stopped `cargo build` (lease 42) from Allot. They have not \
+            "The user stopped `cargo build` (lease 42) in Allot. They have not \
              said whether to retry or skip."
         );
         let other = describe(
@@ -88,7 +88,7 @@ mod tests {
         );
         assert_eq!(
             text,
-            "The user stopped this command (`cargo build`, lease 42) from Allot; \
+            "The user stopped this command (`cargo build`, lease 42) in Allot; \
              the exit code comes from that, not from the command itself. They have not said \
              whether to retry or skip."
         );
@@ -116,8 +116,8 @@ mod tests {
         let text = describe(&notice(43, EndCause::Removed, None), None, false);
         assert_eq!(
             text,
-            "The user removed the queued request for `cargo build` (lease 43) from Allot \
-             before it started; it did not run."
+            "The user removed the queued request for `cargo build` (lease 43) in Allot; it \
+             did not run."
         );
     }
 

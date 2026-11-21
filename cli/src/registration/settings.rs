@@ -57,7 +57,7 @@ pub(super) fn add_hooks(
             .with_context(|| format!("\"hooks\" or \"hooks.{event}\" has an unexpected type"))?
             .push(hook_entry(command, args));
     }
-    Ok(text(&tree, settings))
+    text(&tree, settings)
 }
 
 /// `settings` without the hooks that run `exe` with allot's arguments, dropping entries and
@@ -97,7 +97,7 @@ pub(super) fn remove_hooks(settings: &str, exe: &Path) -> anyhow::Result<Option<
             hooks.remove(index);
         }
     }
-    Ok(changed.then(|| text(&tree, settings)))
+    changed.then(|| text(&tree, settings)).transpose()
 }
 
 fn runs_allot(hook: &Json, exe: &Path, args: [&str; 2]) -> bool {

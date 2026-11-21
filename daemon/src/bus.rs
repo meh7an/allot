@@ -19,7 +19,7 @@ use allot_shared::{
 use axum::{
     Json,
     body::to_bytes,
-    extract::{Path, State, rejection::JsonRejection},
+    extract::{Path, State},
     http::StatusCode,
     response::IntoResponse,
 };
@@ -212,10 +212,6 @@ impl BusError {
     }
 }
 
-fn not_json(rejection: JsonRejection) -> BusError {
-    BusError::Invalid(rejection.body_text())
-}
-
 /// A handler's answer as the method's reply: its JSON body, or the error its status names.
 async fn answer(response: impl IntoResponse) -> Result<String, BusError> {
     let response = response.into_response();
@@ -310,7 +306,8 @@ impl Panel {
         #[zbus(connection)] connection: &Connection,
     ) -> Result<String, BusError> {
         let _call = self.admit(&header, connection).await?;
-        let patch = Json::<SettingsPatch>::from_bytes(patch.as_bytes()).map_err(not_json)?;
+        // A malformed argument is refused with a SettingsRefusal, as over HTTP.
+        let patch = Json::<SettingsPatch>::from_bytes(patch.as_bytes());
         answer(settings::change(State(self.state.clone()), patch).await).await
     }
 
@@ -322,7 +319,7 @@ impl Panel {
         #[zbus(connection)] connection: &Connection,
     ) -> Result<String, BusError> {
         let _call = self.admit(&header, connection).await?;
-        let request = Json::<PreviewRequest>::from_bytes(request.as_bytes()).map_err(not_json)?;
+        let request = Json::<PreviewRequest>::from_bytes(request.as_bytes());
         answer(settings::preview(State(self.state.clone()), request).await).await
     }
 
@@ -334,7 +331,7 @@ impl Panel {
         #[zbus(connection)] connection: &Connection,
     ) -> Result<String, BusError> {
         let _call = self.admit(&header, connection).await?;
-        let request = Json::<ClassifyRequest>::from_bytes(request.as_bytes()).map_err(not_json)?;
+        let request = Json::<ClassifyRequest>::from_bytes(request.as_bytes());
         answer(settings::classify(State(self.state.clone()), request).await).await
     }
 
