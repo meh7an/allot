@@ -1,0 +1,76 @@
+# Decision log for the Allot DMG window, design-wizard format, light path.
+# Stages the light path skips (framing, scope, flow, navigation, screens, disclosure) are not
+# recorded; the window has one job.
+
+project: Allot DMG window
+date: 2026-11-21
+host: claude-code
+mode: wizard (light path)
+brief: >
+  The Finder window of Allot-<version>.dmg: Allot.app beside an Applications shortcut over a
+  designed background. The app bundles allot, allotd and allot-mcp so the DMG updates the
+  service too. Apple Silicon, macOS 14 and newer; developers who use Claude Code.
+inputs:
+  - apps/macos/Allot/Assets.xcassets/AppIcon.appiconset/icon_512x512.png
+  - design/settings/DESIGN.md (D9: the app's windows stay native; the DMG is the brand moment)
+  - .github/workflows/package-macos.yml (today: a zip of the app only)
+
+decisions:
+  - id: S0
+    stage: Intake
+    choice: brief
+    decided_by: user
+    values:
+      platform: macOS Finder icon view, Apple Silicon, macOS 14+
+      build: dmgbuild
+      brand: the app icon
+  - id: S2
+    stage: Platform and surface strategy
+    choice: build.dmgbuild
+    options: [build.dmgbuild, build.create-dmg, build.hdiutil-by-hand]
+    decided_by: user
+    door: one-way
+    reason: Lays out the window without scripting Finder, so it runs headless in CI.
+  - id: S9
+    stage: Style direction
+    choice: style.live-floor
+    options:
+      - A quiet dark
+      - B bars as the motif
+      - C light and airy
+      - D quiet dark with a bar arrow
+      - E watermark A
+      - F floor of leases (F1 even, F2 rising, F3 live, F4 tray)
+    recommended: F2 rising floor
+    decided_by: user
+    door: two-way
+    reason: >
+      Mehran picked F3 and asked for it redrawn in detail; the redraw makes the floor a plane
+      under a horizon, five rows in the icon's order, one lit lease under Allot and a reserved
+      slot under Applications.
+  - id: S9.wordmark
+    stage: Style direction
+    choice: wordmark.off
+    options: [wordmark.off, wordmark.on]
+    decided_by: user
+    door: two-way
+  - id: S10
+    stage: Color
+    choice: tone.graphite
+    options: [tone.graphite, tone.ink]
+    decided_by: user
+    door: two-way
+    values:
+      field: "#17181C"
+      floor: "#1B1C21"
+      horizon: "#2A2C33"
+      label_pill: "#74757B"
+      rows: ["#9294F6", "#8DA2FA", "#87AEFD", "#80BCFF", "#7DC6FF"]
+  - id: S16.labels
+    stage: Components and states
+    choice: labels.grey-pill
+    decided_by: auto
+    door: two-way
+    reason: >
+      Hard floor. Finder draws labels black in Light Mode and white in Dark Mode over the same
+      picture; #74757B gives 4.57:1 and 4.59:1 (computed by hand).

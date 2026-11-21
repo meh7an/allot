@@ -1,0 +1,111 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="400" viewBox="0 0 640 400">
+  <title>Allot DMG window background: the live floor</title>
+  <!-- Source of background.png (1x) and background@2x.png; see design/dmg/DESIGN.md. Finder draws
+       the two icons and their labels on top: icon centers (190, 144) and (450, 144), 128 pt. -->
+  <rect width="640" height="400" fill="#17181C"/>
+
+  <!-- The floor plane and its horizon. -->
+  <rect y="290" width="640" height="110" fill="#1B1C21"/>
+  <rect y="290" width="640" height="1" fill="#2A2C33"/>
+
+  <!-- Back row: free leases, violet, the dimmest. -->
+  <g fill="#9294F6" opacity="0.10">
+    <rect x="-20" y="298" width="33" height="6" rx="3"/>
+    <rect x="19" y="298" width="24" height="6" rx="3"/>
+    <rect x="49" y="298" width="45" height="6" rx="3"/>
+    <rect x="100" y="298" width="19" height="6" rx="3"/>
+    <rect x="125" y="298" width="37" height="6" rx="3"/>
+    <rect x="168" y="298" width="27" height="6" rx="3"/>
+    <rect x="201" y="298" width="52" height="6" rx="3"/>
+    <rect x="259" y="298" width="22" height="6" rx="3"/>
+    <rect x="287" y="298" width="31" height="6" rx="3"/>
+    <rect x="324" y="298" width="41" height="6" rx="3"/>
+    <rect x="371" y="298" width="33" height="6" rx="3"/>
+    <rect x="410" y="298" width="24" height="6" rx="3"/>
+    <rect x="440" y="298" width="45" height="6" rx="3"/>
+    <rect x="491" y="298" width="19" height="6" rx="3"/>
+    <rect x="516" y="298" width="37" height="6" rx="3"/>
+    <rect x="559" y="298" width="27" height="6" rx="3"/>
+    <rect x="592" y="298" width="52" height="6" rx="3"/>
+    <rect x="650" y="298" width="22" height="6" rx="3"/>
+  </g>
+
+  <!-- Second row. -->
+  <g fill="#8DA2FA" opacity="0.13">
+    <rect x="-7" y="309" width="22" height="7" rx="3.5"/>
+    <rect x="72" y="309" width="32" height="7" rx="3.5"/>
+    <rect x="111" y="309" width="60" height="7" rx="3.5"/>
+    <rect x="178" y="309" width="26" height="7" rx="3.5"/>
+    <rect x="211" y="309" width="36" height="7" rx="3.5"/>
+    <rect x="254" y="309" width="48" height="7" rx="3.5"/>
+    <rect x="309" y="309" width="39" height="7" rx="3.5"/>
+    <rect x="355" y="309" width="27" height="7" rx="3.5"/>
+    <rect x="389" y="309" width="52" height="7" rx="3.5"/>
+    <rect x="448" y="309" width="22" height="7" rx="3.5"/>
+    <rect x="477" y="309" width="43" height="7" rx="3.5"/>
+    <rect x="527" y="309" width="32" height="7" rx="3.5"/>
+    <rect x="566" y="309" width="60" height="7" rx="3.5"/>
+    <rect x="633" y="309" width="26" height="7" rx="3.5"/>
+  </g>
+  <!-- A live lease in the second row. -->
+  <rect x="22" y="309" width="43" height="7" rx="3.5" fill="#8DA2FA" opacity="0.92"/>
+  <rect x="25.5" y="310" width="36" height="1.2" rx="0.6" fill="#FFFFFF" opacity="0.45"/>
+
+  <!-- Third row. -->
+  <g fill="#87AEFD" opacity="0.16">
+    <rect x="6" y="322" width="69" height="8" rx="4"/>
+    <rect x="83" y="322" width="30" height="8" rx="4"/>
+    <rect x="121" y="322" width="41" height="8" rx="4"/>
+    <rect x="170" y="322" width="54" height="8" rx="4"/>
+    <rect x="232" y="322" width="44" height="8" rx="4"/>
+    <rect x="284" y="322" width="31" height="8" rx="4"/>
+    <rect x="323" y="322" width="59" height="8" rx="4"/>
+    <rect x="390" y="322" width="25" height="8" rx="4"/>
+    <rect x="423" y="322" width="49" height="8" rx="4"/>
+    <rect x="480" y="322" width="36" height="8" rx="4"/>
+    <rect x="524" y="322" width="69" height="8" rx="4"/>
+    <rect x="601" y="322" width="30" height="8" rx="4"/>
+    <rect x="639" y="322" width="41" height="8" rx="4"/>
+  </g>
+
+  <!-- Fourth row. -->
+  <g fill="#80BCFF" opacity="0.19">
+    <rect x="19" y="337" width="60" height="9" rx="4.5"/>
+    <rect x="88" y="337" width="49" height="9" rx="4.5"/>
+    <rect x="146" y="337" width="35" height="9" rx="4.5"/>
+    <rect x="190" y="337" width="66" height="9" rx="4.5"/>
+    <rect x="265" y="337" width="27" height="9" rx="4.5"/>
+    <rect x="301" y="337" width="55" height="9" rx="4.5"/>
+    <rect x="365" y="337" width="40" height="9" rx="4.5"/>
+    <rect x="414" y="337" width="76" height="9" rx="4.5"/>
+    <rect x="499" y="337" width="33" height="9" rx="4.5"/>
+    <rect x="541" y="337" width="46" height="9" rx="4.5"/>
+    <rect x="596" y="337" width="60" height="9" rx="4.5"/>
+  </g>
+
+  <!-- Front row: sky, the brightest; it leaves room for Allot's lease and the reserved slot. -->
+  <g fill="#7DC6FF" opacity="0.22">
+    <rect x="32" y="355" width="72" height="11" rx="5.5"/>
+    <rect x="278" y="355" width="84" height="11" rx="5.5"/>
+    <rect x="554" y="355" width="54" height="11" rx="5.5"/>
+    <rect x="618" y="355" width="38" height="11" rx="5.5"/>
+  </g>
+  <!-- Allot's own lease, lit, under the app. -->
+  <rect x="150" y="355" width="80" height="11" rx="5.5" fill="#7DC6FF" opacity="0.95"/>
+  <rect x="155.5" y="356" width="69" height="1.2" rx="0.6" fill="#FFFFFF" opacity="0.45"/>
+  <!-- The slot reserved for it, under Applications: far below the label, so it reads as floor. -->
+  <rect x="412" y="355" width="76" height="11" rx="5.5" fill="#7DC6FF" opacity="0.08"/>
+  <rect x="412.75" y="355.75" width="74.5" height="9.5" rx="4.75" fill="none" stroke="#7DC6FF"
+        stroke-width="1.5" stroke-dasharray="5 4" opacity="0.85"/>
+
+  <!-- The arrow: four leases growing toward Applications, centered on the icons. -->
+  <rect x="276" y="140" width="10" height="8" rx="4" fill="#8DA2FA"/>
+  <rect x="296" y="140" width="13" height="8" rx="4" fill="#87AEFD"/>
+  <rect x="316" y="140" width="16" height="8" rx="4" fill="#80BCFF"/>
+  <rect x="336" y="140" width="19" height="8" rx="4" fill="#7DC6FF"/>
+
+  <!-- Label pills: Finder draws labels black in Light Mode and white in Dark Mode; this grey keeps
+       both at 4.5:1 or more. -->
+  <rect x="160" y="223" width="61" height="22" rx="11" fill="#74757B"/>
+  <rect x="394" y="223" width="113" height="22" rx="11" fill="#74757B"/>
+</svg>
