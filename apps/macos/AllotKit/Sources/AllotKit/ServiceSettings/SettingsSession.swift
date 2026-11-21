@@ -307,21 +307,23 @@ public final class SettingsSession: ValueHost {
     /// For Quit: waits for a save in flight, sends what is pending, and gives up after
     /// `timeout`.
     public func settle(timeout: Duration) async {
-        await withTaskGroup(of: Void.self) { group in
-            group.addTask { @MainActor [self] in
-                while saving && !Task.isCancelled {
-                    try? await Task.sleep(for: .milliseconds(25))
-                }
-                if !Task.isCancelled {
-                    await flush()
-                }
-            }
-            group.addTask {
-                try? await Task.sleep(for: timeout)
-            }
-            _ = await group.next()
-            group.cancelAll()
+        let clock = ContinuousClock()
+        let deadline = clock.now + timeout
+        while saving && clock.now < deadline {
+            try? await Task.sleep(for: .milliseconds(25))
         }
+        guard clock.now < deadline else {
+            return
+        }
+        // The flush runs on the main actor like this session; the timer only cancels it, so
+        // nothing that is not Sendable crosses a task.
+        let flushing = Task { await self.flush() }
+        let timer = Task {
+            try? await clock.sleep(until: deadline)
+            flushing.cancel()
+        }
+        await flushing.value
+        timer.cancel()
     }
 
     /// Sends the changes a hand edit got in the way of again, over the file's values.
