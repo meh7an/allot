@@ -167,10 +167,10 @@ public protocol ProgramRunner: Sendable {
 /// LaunchAgent `tech.mehran.allotd` and sets up Claude Code.
 @MainActor
 public final class ServiceUpdater {
-    public static let helpersPath = "Contents/Helpers"
+    public nonisolated static let helpersPath = "Contents/Helpers"
 
     /// The output of the last update, in the logs folder.
-    public static let logName = "app-update.log"
+    public nonisolated static let logName = "app-update.log"
 
     private static let daemonName = "allotd"
 
