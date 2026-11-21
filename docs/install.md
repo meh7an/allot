@@ -235,7 +235,7 @@ folder first; `kpackagetool6 -i apps/kde/tech.mehran.allot` takes the folder as 
 ## macOS
 
 Needs Apple Silicon, macOS 14 or newer, and Claude Code. No admin rights. macOS packages are
-published from v0.3.0 on, and the DMG from v0.6.0 on.
+published from v0.3.0 on, and the DMG from v0.6.1 on.
 
 ### The DMG
 
