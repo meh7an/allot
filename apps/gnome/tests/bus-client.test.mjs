@@ -274,6 +274,51 @@ test("a poll that failed inside allotd is retried as starting, not incompatible"
   assert.doesNotMatch(polled.detail ?? "", /Failed|GDBus/);
 });
 
+/** @param {boolean} alive */
+function clientWithOffBus(alive) {
+  const fake = new FakeBus(() => {
+    throw new Error(GDBUS_TEXT);
+  });
+  return { daemon: new BusClient(fake.bus(), async () => alive), fake };
+}
+
+test("no owner and a live allotd polls as off the bus, with no call", async () => {
+  const { daemon, fake } = clientWithOffBus(true);
+  fake.owner = false;
+
+  const polled = await daemon.poll();
+
+  assert.equal(polled.status, "off_bus");
+  assert.equal(polled.detail, "the service runs without the session bus");
+  assert.deepEqual(fake.calls, []);
+});
+
+test("a call that finds no allotd on the bus asks the probe, settings included", async () => {
+  const alive = clientWithOffBus(true);
+  assert.equal((await alive.daemon.poll()).status, "off_bus");
+  const reply = await alive.daemon.settings();
+  assert.ok(!reply.ok);
+  assert.equal(reply.failure.kind, "off_bus");
+
+  const dead = clientWithOffBus(false);
+  assert.equal((await dead.daemon.poll()).status, "stopped");
+  const refused = await dead.daemon.settings();
+  assert.ok(!refused.ok);
+  assert.equal(refused.failure.kind, "unreachable");
+});
+
+test("a timeout is a busy allotd, never one off the bus", async () => {
+  const fake = new FakeBus(() => {
+    throw new TimeoutError();
+  });
+  const daemon = new BusClient(fake.bus(), async () => true);
+
+  assert.equal((await daemon.poll()).status, "stopped");
+  const reply = await daemon.settings();
+  assert.ok(!reply.ok);
+  assert.equal(reply.failure.kind, "unreachable");
+});
+
 test("the GDBus text does not reach a poll's detail or a settings failure", async () => {
   const { daemon } = client(() => {
     throw new Error(GDBUS_TEXT);

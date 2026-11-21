@@ -32,6 +32,8 @@ import { PollSchedule } from "./schedule.js";
  * @typedef {object} ServiceLauncher
  * @property {() => Promise<string | null>} start
  *   Starts allotd without waiting for it to answer; resolves with why not, or `null`.
+ * @property {() => Promise<string | null>} [restartUnit]
+ *   Restarts allotd through its unit, for one the panel cannot reach to stop it.
  */
 /** How long Start Service reports `starting` before giving up. */
 export const START_TIMEOUT_MS = 10000;
@@ -108,6 +110,25 @@ export class DaemonPoller {
             var _b;
             const problem = (_b = (yield (_a = this._launcher) === null || _a === void 0 ? void 0 : _a.start())) !== null && _b !== void 0 ? _b : null;
             // A failed launch polls too, so whoever shows the poll shows the problem at once.
+            this.startProblem = problem;
+            if (problem === null) {
+                this._startingUntil = this._now() + START_TIMEOUT_MS;
+            }
+            this.pollNow();
+            return problem;
+        });
+    }
+    /**
+     * Restarts an allotd that runs off the bus, then polls quickly until it answers, as a start
+     * does.
+     *
+     * @returns {Promise<string | null>} `null` when the restart went through, else why not.
+     */
+    restartService() {
+        return __awaiter(this, void 0, void 0, function* () {
+            var _a, _b;
+            var _c;
+            const problem = (_c = (yield (_b = (_a = this._launcher) === null || _a === void 0 ? void 0 : _a.restartUnit) === null || _b === void 0 ? void 0 : _b.call(_a))) !== null && _c !== void 0 ? _c : null;
             this.startProblem = problem;
             if (problem === null) {
                 this._startingUntil = this._now() + START_TIMEOUT_MS;

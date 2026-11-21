@@ -30,12 +30,13 @@ export const REFRESH_INTERVAL_MS = 5000;
  * - `ready`: allotd answered; the values can be changed unless `fileError` is set.
  * - `stopped`: allotd does not answer and the stop record says the user stopped it.
  * - `down`: allotd does not answer.
+ * - `off_bus`: allotd does not answer on the bus, yet its process is alive.
  * - `key`: allotd refused this panel's key.
  * - `failed`: allotd answered something unusable; `detail` says what.
  *
  * Every state but `ready` keeps the last values read-only.
  *
- * @typedef {"loading" | "ready" | "stopped" | "down" | "key" | "failed"} SessionStatus
+ * @typedef {"loading" | "ready" | "stopped" | "down" | "off_bus" | "key" | "failed"} SessionStatus
  */
 
 /**
@@ -476,6 +477,11 @@ export class SettingsSession {
         this.stopRecord = parseStopRecord(await this.#readStopRecord());
         this.status = this.stopRecord === null ? "down" : "stopped";
         break;
+      case "off_bus":
+        // A live allotd outranks the stop record: the record is about one that was stopped.
+        this.stopRecord = null;
+        this.status = "off_bus";
+        break;
       case "key":
         this.status = "key";
         break;
@@ -513,6 +519,7 @@ export class SettingsSession {
         return;
       case "key":
       case "unreachable":
+      case "off_bus":
         this.#restore(batch);
         await this.#unanswered(failure);
         return;

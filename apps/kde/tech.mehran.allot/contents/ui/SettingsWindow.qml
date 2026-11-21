@@ -83,6 +83,10 @@ Kirigami.ApplicationWindow {
         Qt.openUrlExternally(View.fileUrl(path));
     }
 
+    function showInFolder(path) {
+        window.widget.showInFolder(path);
+    }
+
     // The dialogs return focus to `opener`'s row once they close: `opener.focusRow(row)`.
     function openSizeDialog(table, draft, opener) {
         sizeDialog.edit(table, draft, opener);

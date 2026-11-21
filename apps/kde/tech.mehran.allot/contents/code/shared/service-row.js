@@ -14,9 +14,10 @@ import { INCOMPATIBLE_TEXT } from "./service-banner.js";
 /**
  * - `stop`: Stop Service…, which asks first while leases are active.
  * - `start`: Start Service.
+ * - `restart`: Restart Service, for an allotd the panel cannot reach.
  * - `starting`: the disabled, busy Start that follows a press.
  *
- * @typedef {"stop" | "start" | "starting"} ServiceButton
+ * @typedef {"stop" | "start" | "restart" | "starting"} ServiceButton
  */
 /**
  * @typedef {object} ServiceRow
@@ -25,6 +26,7 @@ import { INCOMPATIBLE_TEXT } from "./service-banner.js";
  * @property {boolean} opensLogs Whether Open Logs shows too.
  */
 export const STOPPED_BY_YOU_TEXT = "Stopped. Heavy commands run without leases until you start it.";
+export const OFF_BUS_ROW_TEXT = "Runs without the session bus, so this panel cannot reach it. Restart it outside the sandbox.";
 export const STARTING_TEXT = "Starting…";
 /**
  * @param {ServiceStatus} status The latest poll.
@@ -49,6 +51,8 @@ export function serviceRow(status, session, version, reach) {
             return { text: INCOMPATIBLE_TEXT, button: "stop", opensLogs: true };
         case "starting":
             return { text: STARTING_TEXT, button: "starting", opensLogs: false };
+        case "off_bus":
+            return { text: OFF_BUS_ROW_TEXT, button: "restart", opensLogs: true };
         case "stopped":
             return session === "stopped"
                 ? { text: STOPPED_BY_YOU_TEXT, button: "start", opensLogs: false }
@@ -76,6 +80,8 @@ export function serviceButtonText(button) {
             return "Stop Service…";
         case "start":
             return "Start Service";
+        case "restart":
+            return "Restart Service";
         case "starting":
             return STARTING_TEXT;
     }
@@ -97,6 +103,8 @@ export function sessionServiceStatus(session, starting) {
             return null;
         case "ready":
             return "running";
+        case "off_bus":
+            return "off_bus";
         case "stopped":
         case "down":
             return "stopped";

@@ -4,6 +4,7 @@ import Gio from "gi://Gio";
 import Gtk from "gi://Gtk";
 
 import { NOT_YET_TEXT } from "./lib/fit-previews.js";
+import { rowDescription } from "./lib/row-text.js";
 import {
   NO_RULES_TEXT,
   ruleDialogTitle,
@@ -38,7 +39,6 @@ import {
   dimLabel,
   escaped,
   helpMarkup,
-  helpText,
   iconButton,
   innerEntry,
   numberRow,
@@ -214,7 +214,7 @@ function openSizeDialog(context, table, draft, restoreFocus) {
     syncs.push(() => {
       const issue = draft.nameIssue === null ? null : issueText(draft.nameIssue, context.number);
       help.show(nameSpec.help, issue);
-      describe(innerEntry(entry), helpText(nameSpec.help, null, [issue]), issue !== null);
+      describe(innerEntry(entry), rowDescription(nameSpec.help, null, [], issue), issue !== null);
     });
   }
 
@@ -314,7 +314,7 @@ function minimumRows(rows, group, draft, field) {
     const rule = field.control.automatic ?? "";
     const sentence = `${rows.number(automaticMinCores(cores()))} cores: ${rule}`;
     automatic.subtitle = helpMarkup(sentence, null);
-    describe(automatic, helpText(sentence, null));
+    describe(automatic, rowDescription(sentence, null));
     number.row.visible = !field.automatic;
     number.sync();
   };
@@ -581,7 +581,7 @@ function openRuleDialog(context, rules, draft, restoreFocus) {
     const issue = draft.programIssue === null ? null : issueText(draft.programIssue, rows.number);
     const help = draft.programSpec.help;
     programHelp.show(help, issue);
-    describe(innerEntry(program), helpText(help, null, [issue]), issue !== null);
+    describe(innerEntry(program), rowDescription(help, null, [], issue), issue !== null);
   });
 
   const argsGroup = new Adw.PreferencesGroup({

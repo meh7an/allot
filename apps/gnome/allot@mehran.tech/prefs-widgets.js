@@ -1,9 +1,9 @@
 import Adw from "gi://Adw";
 import Gdk from "gi://Gdk";
-import GLib from "gi://GLib";
 import Gtk from "gi://Gtk";
 
 import { resetField } from "./lib/field-reset.js";
+import { markupEscaped, rowDescription } from "./lib/row-text.js";
 import { bannerActionLabel } from "./lib/settings-banners.js";
 import {
   DurationModel,
@@ -51,7 +51,7 @@ const NOTICE_TOAST_SECS = 5;
  * @returns {string}
  */
 export function escaped(text) {
-  return GLib.markup_escape_text(text, -1);
+  return markupEscaped(text);
 }
 
 /**
@@ -67,19 +67,6 @@ export function helpMarkup(help, key, notes = []) {
   const keyText = key === null ? "" : `  <small><tt>${escaped(key)}</tt></small>`;
   const extra = notes.filter((note) => note !== null && note !== "").map((note) => escaped(note));
   return [`${escaped(help)}${keyText}`, ...extra].join("\n");
-}
-
-/**
- * The same help, key and notes as plain text, for a control's accessible description.
- *
- * @param {string} help
- * @param {string | null} key
- * @param {Array<string | null>} [notes]
- * @returns {string}
- */
-export function helpText(help, key, notes = []) {
-  const first = key === null ? help : `${help} Key: ${key}.`;
-  return [first, ...notes.filter((note) => note !== null && note !== "")].join(" ");
 }
 
 /** What each control was last given, so unchanged text is never set again. */
@@ -367,7 +354,7 @@ function switchRow(context, group, model) {
     row.sensitive = model.enabled && !context.readOnly();
     const issue = issueLine(model.issue, context.number);
     row.subtitle = helpMarkup(model.spec.help, model.key, [model.disabledNote, issue]);
-    const help = helpText(model.spec.help, model.key, [model.disabledNote, issue]);
+    const help = rowDescription(model.spec.help, model.key, [model.disabledNote], issue);
     describe(row, help, issue !== null);
     icon.visible = model.issue !== null;
     reset.sync();
@@ -394,7 +381,7 @@ function offSwitchRow(context, group, model) {
       model.setOn(row.active);
     }
   });
-  describe(row, helpText(off.help, model.key));
+  describe(row, rowDescription(off.help, model.key));
   group.add(row);
   return () => {
     syncing = true;
@@ -434,9 +421,10 @@ export function numberRow(context, model, note = () => null) {
     editor.sync();
     const on = !(model instanceof DurationModel) || model.isOn;
     row.sensitive = model.enabled && on && !context.readOnly();
-    const notes = [model.disabledNote, note(model.key), issueLine(model.issue, context.number)];
-    row.subtitle = helpMarkup(model.spec.help, model.key, notes);
-    editor.describe(helpText(model.spec.help, model.key, notes), model.issue !== null);
+    const notes = [model.disabledNote, note(model.key)];
+    const issue = issueLine(model.issue, context.number);
+    row.subtitle = helpMarkup(model.spec.help, model.key, [...notes, issue]);
+    editor.describe(rowDescription(model.spec.help, model.key, notes, issue), model.issue !== null);
     icon.visible = model.issue !== null;
     reset.sync();
   };
@@ -612,7 +600,7 @@ export function chipsRows(context, group, model, withReset = true) {
     issue.show("", line);
     describe(
       innerEntry(entry),
-      helpText(model.spec.help, withReset ? model.key : null, [line]),
+      rowDescription(model.spec.help, withReset ? model.key : null, [], line),
       line !== null,
     );
     if (withReset) {

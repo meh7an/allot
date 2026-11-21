@@ -23,7 +23,7 @@ import { DO_NOT_DISTURB_TEXT, WELCOME_BODY, WELCOME_TITLE, } from "./shared/snap
 import { AppIcons } from "./app-icons.js";
 import { DEFAULT_PORT, portFromToml, tokenPath } from "./daemon-config.js";
 import { DaemonClient } from "./http-client.js";
-import { CommandRunner, XhrTransport, copyFile, detachedCommand, fileUrl, localPath, readTextFile, serviceSystem, writeTextFile, } from "./io.js";
+import { CommandRunner, XhrTransport, copyFile, detachedCommand, fileExists, fileUrl, localPath, readTextFile, serviceSystem, showItemsCommand, writeTextFile, } from "./io.js";
 import { INHIBITED_COMMAND, NOTIFY_COMPONENT, NOTIFY_EVENT, NOTIFY_RC_FILE, SETTINGS_ARGV, isOffInSettings, parseInhibited, } from "./notification-state.js";
 import { Notifier } from "./notifier.js";
 import { RowKeeper, listRows } from "./rows.js";
@@ -228,12 +228,27 @@ export class AllotWidget {
                     followPort: (port) => service.client.usePort(port),
                     number,
                     readStopRecord: () => readTextFile(this._runner, `${this.paths.root}/stopped.json`),
-                    host: Object.assign(Object.assign({}, host), { log: (text) => this._host.log(text) }),
+                    host: Object.assign(Object.assign({}, host), { exists: (path) => fileExists(this._runner, path), log: (text) => this._host.log(text) }),
                     stop: () => this._stopService(),
                     start: () => this.startService(),
                 });
             }
             return this._settingsWindow;
+        });
+    }
+    /**
+     * Show in Folder: the file selected in the file manager, or its folder opened when no file
+     * manager answers.
+     *
+     * @param {string} path
+     * @returns {Promise<void>}
+     */
+    showInFolder(path) {
+        return __awaiter(this, void 0, void 0, function* () {
+            const output = yield this._runner.run(showItemsCommand(path));
+            if (output.exitCode !== 0) {
+                this._host.openUrl(fileUrl(path.slice(0, path.lastIndexOf("/"))));
+            }
         });
     }
     /**
@@ -388,6 +403,7 @@ export class AllotWidget {
                 }
                 break;
             }
+            case "restart":
             case "none":
                 break;
         }

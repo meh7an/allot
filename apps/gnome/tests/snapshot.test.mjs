@@ -29,6 +29,7 @@ test("service down shows the error glyph and the last known jobs", () => {
   const cases = [
     ["stopped", "Service stopped"],
     ["starting", "Starting service…"],
+    ["off_bus", "Service off the session bus"],
     ["incompatible", "Service needs an update"],
   ];
   for (const [status, summary] of /** @type {const} */ (cases)) {

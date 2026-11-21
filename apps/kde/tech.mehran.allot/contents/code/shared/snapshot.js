@@ -264,6 +264,8 @@ function header(status, running, waiting, phase) {
             return { glyph: "error", summary: "Starting service…" };
         case "stopped":
             return { glyph: "error", summary: "Service stopped" };
+        case "off_bus":
+            return { glyph: "error", summary: "Service off the session bus" };
         case "incompatible":
             return { glyph: "error", summary: "Service needs an update" };
         case "running":

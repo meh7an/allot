@@ -26,6 +26,8 @@ import { PollSchedule } from "./schedule.js";
  * @typedef {object} ServiceLauncher
  * @property {() => Promise<string | null>} start
  *   Starts allotd without waiting for it to answer; resolves with why not, or `null`.
+ * @property {() => Promise<string | null>} [restartUnit]
+ *   Restarts allotd through its unit, for one the panel cannot reach to stop it.
  */
 
 /** How long Start Service reports `starting` before giving up. */
@@ -111,6 +113,22 @@ export class DaemonPoller {
   async startService() {
     const problem = (await this.#launcher?.start()) ?? null;
     // A failed launch polls too, so whoever shows the poll shows the problem at once.
+    this.startProblem = problem;
+    if (problem === null) {
+      this.#startingUntil = this.#now() + START_TIMEOUT_MS;
+    }
+    this.pollNow();
+    return problem;
+  }
+
+  /**
+   * Restarts an allotd that runs off the bus, then polls quickly until it answers, as a start
+   * does.
+   *
+   * @returns {Promise<string | null>} `null` when the restart went through, else why not.
+   */
+  async restartService() {
+    const problem = (await this.#launcher?.restartUnit?.()) ?? null;
     this.startProblem = problem;
     if (problem === null) {
       this.#startingUntil = this.#now() + START_TIMEOUT_MS;

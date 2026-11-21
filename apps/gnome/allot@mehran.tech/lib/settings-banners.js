@@ -168,6 +168,14 @@ function unansweredBanner(session, reach) {
             : "The service isn't on the session bus. Trying again every 5 s.",
         actions: ["try_now", "open_logs"],
       };
+    case "off_bus":
+      return {
+        severity: "warning",
+        message:
+          "The service runs without the session bus, so Settings can't reach it. Restart it " +
+          "outside the sandbox.",
+        actions: ["restart_service", "open_logs"],
+      };
     case "key":
       return {
         severity: "error",

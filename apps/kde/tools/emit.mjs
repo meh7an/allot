@@ -41,6 +41,7 @@ export const SHARED_MODULES = [
   "popup-model",
   "resources-view",
   "results",
+  "row-text",
   "rules-text",
   "schedule",
   "service-banner",

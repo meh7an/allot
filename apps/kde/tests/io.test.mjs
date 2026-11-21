@@ -9,11 +9,13 @@ import {
   catCommand,
   copyFile,
   detachedCommand,
+  fileExists,
   fileUrl,
   localPath,
   readTextFile,
   serviceSystem,
   shellQuote,
+  showItemsCommand,
   writeTextFile,
 } from "../src/io.js";
 import { catAnswer, fakeRequests } from "./support.mjs";
@@ -82,19 +84,44 @@ test("a copy skips an identical target and makes the folder", async () => {
   ]);
 });
 
-test("the service system answers from exit codes, and a spawn does not wait", async () => {
-  const { subject, commands } = exitsWith((command) =>
-    command.startsWith("test -x '/ok'") || command.includes("'true'") ? 0 : 1,
-  );
+test("the service system answers from exit codes and keeps what systemctl printed", async () => {
+  const subject = new CommandRunner((command) => {
+    const failed = command.includes("'false'");
+    queueMicrotask(() =>
+      subject.deliver(command, {
+        "exit code": failed ? 5 : 0,
+        stdout: failed ? "Unit allotd.service not found.\n" : "",
+      }),
+    );
+  });
   const system = serviceSystem(subject);
 
-  assert.equal(await system.isExecutable("/ok"), true);
-  assert.equal(await system.isExecutable("/no"), false);
-  assert.equal(await system.run(["true"]), true);
-  assert.equal(await system.run(["false"]), false);
-  system.spawn("/bin/allot d");
-  assert.equal(commands.at(-1), detachedCommand(["/bin/allot d"]));
-  assert.equal(commands.at(-1), "cd / && setsid -f '/bin/allot d' < /dev/null > /dev/null 2>&1");
+  assert.deepEqual(await system.run(["true"]), { ok: true, output: "" });
+  assert.deepEqual(await system.run(["false"]), {
+    ok: false,
+    output: "Unit allotd.service not found.\n",
+  });
+});
+
+test("a detached program runs in its own session from the root", () => {
+  assert.equal(
+    detachedCommand(["/bin/allot d"]),
+    "cd / && setsid -f '/bin/allot d' < /dev/null > /dev/null 2>&1",
+  );
+});
+
+test("Show in Folder asks the file manager to select the file", async () => {
+  assert.equal(
+    showItemsCommand("/home/u one/.allot/config.toml"),
+    "cd / && 'dbus-send' '--session' '--print-reply' '--reply-timeout=3000' " +
+      "'--dest=org.freedesktop.FileManager1' '/org/freedesktop/FileManager1' " +
+      "'org.freedesktop.FileManager1.ShowItems' " +
+      "'array:string:file:///home/u%20one/.allot/config.toml' 'string:' " +
+      "< /dev/null > /dev/null 2>&1",
+  );
+  const { subject } = exitsWith((command) => (command === "test -e '/there'" ? 0 : 1));
+  assert.equal(await fileExists(subject, "/there"), true);
+  assert.equal(await fileExists(subject, "/gone"), false);
 });
 
 const REQUEST = { method: /** @type {const} */ ("GET"), url: "http://127.0.0.1:1/ui/state" };

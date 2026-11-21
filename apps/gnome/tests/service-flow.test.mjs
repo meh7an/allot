@@ -12,7 +12,7 @@ import { FakeBus, FakeTimers, fixtureText, settle } from "./support.mjs";
  * @param {{ up: boolean }} state
  * @param {string | null} [problem]
  */
-function starter(state, problem = null) {
+function starter(state, problem = null, offBus = false) {
   const body = fixtureText("ui-state-idle.json");
   const transport = new FakeBus(() => {
     if (!state.up) {
@@ -20,12 +20,16 @@ function starter(state, problem = null) {
     }
     return body;
   });
-  const daemon = new BusClient(transport.bus());
-  const clock = { nowMs: 0, starts: 0 };
+  const daemon = new BusClient(transport.bus(), async () => offBus);
+  const clock = { nowMs: 0, starts: 0, restarts: 0 };
   const poller = new DaemonPoller(daemon, new FakeTimers(), {
     launcher: {
       start: async () => {
         clock.starts += 1;
+        return problem;
+      },
+      restartUnit: async () => {
+        clock.restarts += 1;
         return problem;
       },
     },
@@ -47,6 +51,46 @@ test("Start Service reports starting until allotd answers", async () => {
   state.up = true;
   await poller.pollOnce();
   assert.equal(poller.latest?.status, "running");
+});
+
+test("a start whose allotd stays off the bus shows that, not Starting until the timeout", async () => {
+  const { poller, clock } = starter({ up: false }, null, true);
+
+  assert.equal(await poller.startService(), null);
+  await poller.pollOnce();
+
+  assert.equal(poller.latest?.status, "off_bus");
+  assert.equal(poller.startProblem, null);
+  clock.nowMs = START_TIMEOUT_MS + 1;
+  await poller.pollOnce();
+  assert.equal(poller.latest?.status, "off_bus");
+});
+
+test("Restart Service restarts the unit and reports starting until allotd answers", async () => {
+  const state = { up: false };
+  const { poller, clock } = starter(state);
+
+  assert.equal(await poller.restartService(), null);
+  assert.equal(clock.restarts, 1);
+  assert.equal(clock.starts, 0);
+  await poller.pollOnce();
+  assert.equal(poller.latest?.status, "starting");
+
+  state.up = true;
+  await poller.pollOnce();
+  assert.equal(poller.latest?.status, "running");
+});
+
+test("a restart that fails keeps its problem for the banner", async () => {
+  const { poller } = starter({ up: false }, "allotd.service is not installed; run allot install", true);
+
+  assert.equal(
+    await poller.restartService(),
+    "allotd.service is not installed; run allot install",
+  );
+  assert.equal(poller.startProblem, "allotd.service is not installed; run allot install");
+  await poller.pollOnce();
+  assert.equal(poller.latest?.status, "off_bus");
 });
 
 test("Start Service gives up after its window and says why", async () => {

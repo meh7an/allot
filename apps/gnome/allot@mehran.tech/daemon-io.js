@@ -2,6 +2,7 @@ import Gio from "gi://Gio";
 import GLib from "gi://GLib";
 
 import { BusClient, BusRefusal } from "./lib/bus-client.js";
+import { allotdAliveOffBus } from "./lib/off-bus.js";
 import { CancelledError, TimeoutError } from "./lib/results.js";
 
 /** @import { BusCall } from "./lib/bus-client.js" */
@@ -10,8 +11,7 @@ import { CancelledError, TimeoutError } from "./lib/results.js";
 Gio._promisify(Gio.DBusConnection.prototype, "call");
 Gio._promisify(Gio.File.prototype, "load_contents_async");
 Gio._promisify(Gio.File.prototype, "replace_contents_bytes_async", "replace_contents_finish");
-Gio._promisify(Gio.File.prototype, "query_info_async");
-Gio._promisify(Gio.Subprocess.prototype, "wait_check_async");
+Gio._promisify(Gio.Subprocess.prototype, "communicate_utf8_async", "communicate_utf8_finish");
 
 // allotd's D-Bus interface (`daemon/src/bus.rs`).
 const NAME = "tech.mehran.Allot";
@@ -70,14 +70,18 @@ export class DaemonConnection {
   /**
    * A client over this connection; every client of one connection shares its `cancel`.
    *
+   * @param {() => Promise<boolean>} [offBus] Whether allotd runs though it is not on the bus.
    * @returns {BusClient}
    */
-  client() {
-    return new BusClient({
-      call: (call) => this.#call(call),
-      version: () => this.#version(),
-      hasOwner: () => this.#hasOwner,
-    });
+  client(offBus) {
+    return new BusClient(
+      {
+        call: (call) => this.#call(call),
+        version: () => this.#version(),
+        hasOwner: () => this.#hasOwner,
+      },
+      offBus ?? null,
+    );
   }
 
   /** Ends every call in flight, and stops watching allotd. */
@@ -211,8 +215,9 @@ export async function writeTextFile(path, text) {
 }
 
 /**
- * Starts programs for Start Service, from `/` with no standard streams, as `allot-client` does.
- * Cancelling ends the waits only: `systemctl` exits by itself, and GLib reaps it.
+ * Runs `systemctl` for Start Service, from `/`, keeping what it prints so a missing unit can be
+ * told from a failure. Cancelling ends the wait only: `systemctl` exits by itself, and GLib
+ * reaps it.
  *
  * @param {Gio.Cancellable} cancellable
  * @returns {import("./lib/service-launcher.js").ServiceSystem}
@@ -220,40 +225,32 @@ export async function writeTextFile(path, text) {
 export function createServiceSystem(cancellable) {
   return {
     readText: (path) => readTextFile(path, cancellable),
-    isExecutable: async (path) => {
-      try {
-        const info = await Gio.File.new_for_path(path).query_info_async(
-          "access::can-execute",
-          Gio.FileQueryInfoFlags.NONE,
-          GLib.PRIORITY_DEFAULT,
-          cancellable,
-        );
-        return info.get_attribute_boolean("access::can-execute");
-      } catch {
-        return false;
-      }
-    },
     run: async (argv) => {
       try {
-        return await silentLauncher().spawnv(argv).wait_check_async(cancellable);
-      } catch {
-        return false;
+        const launcher = new Gio.SubprocessLauncher({
+          flags: Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_MERGE,
+        });
+        launcher.set_cwd("/");
+        const process = launcher.spawnv(argv);
+        const [output] = await process.communicate_utf8_async(null, cancellable);
+        return { ok: process.get_successful(), output: output ?? "" };
+      } catch (error) {
+        return { ok: false, output: error instanceof Error ? error.message : String(error) };
       }
-    },
-    spawn: (path) => {
-      // Its own session, so the shell's process group never signals allotd.
-      silentLauncher().spawnv(["setsid", path]);
     },
   };
 }
 
-/** @returns {Gio.SubprocessLauncher} */
-function silentLauncher() {
-  const launcher = new Gio.SubprocessLauncher({
-    flags: Gio.SubprocessFlags.STDOUT_SILENCE | Gio.SubprocessFlags.STDERR_SILENCE,
-  });
-  launcher.set_cwd("/");
-  return launcher;
+/**
+ * Whether an allotd process is alive though it is not on the session bus, from the lock file it
+ * writes its process id into.
+ *
+ * @param {string} root `~/.allot`.
+ * @param {Gio.Cancellable} cancellable
+ * @returns {() => Promise<boolean>}
+ */
+export function createOffBusProbe(root, cancellable) {
+  return () => allotdAliveOffBus(root, (path) => readTextFile(path, cancellable));
 }
 
 /**

@@ -7,6 +7,7 @@ import { ExtensionPreferences } from "resource:///org/gnome/Shell/Extensions/js/
 
 import {
   DaemonConnection,
+  createOffBusProbe,
   createServiceSystem,
   glibTimers,
   readTextFile,
@@ -118,7 +119,7 @@ class SettingsWindow {
     window.set_default_size(DEFAULT_WIDTH, DEFAULT_HEIGHT);
 
     this.#model = new SettingsWindowModel({
-      client: this.#connection.client(),
+      client: this.#connection.client(createOffBusProbe(this.#paths.root, this.#cancellable)),
       timers: glibTimers,
       launcher: new SystemdServiceLauncher(
         {
@@ -127,6 +128,7 @@ class SettingsWindow {
           root: this.#paths.root,
         },
         createServiceSystem(this.#cancellable),
+        createOffBusProbe(this.#paths.root, this.#cancellable),
       ),
       paths: this.#paths,
       reach: { kind: "bus" },
@@ -137,6 +139,7 @@ class SettingsWindow {
         notify: (text) => this.#toaster.show(text),
         log: (text) => console.warn(text),
         openPath,
+        exists: (path) => GLib.file_test(path, GLib.FileTest.EXISTS),
         now: () => GLib.get_monotonic_time() / 1000,
       },
     });
@@ -350,7 +353,7 @@ class SettingsWindow {
       subtitle: escaped(this.#paths.config),
       subtitle_selectable: true,
     });
-    row.add_suffix(textButton("Open File", () => this.#model.openFile()));
+    row.add_suffix(textButton("Open File", () => void this.#model.openFile()));
     row.add_suffix(textButton("Show in Folder", () => showInFolder(this.#paths.config)));
     group.add(row);
     page.add(group);

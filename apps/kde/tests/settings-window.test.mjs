@@ -3,6 +3,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import { rowDescription } from "../../gnome/allot@mehran.tech/lib/row-text.js";
 import { defaultSettings } from "../../gnome/allot@mehran.tech/lib/settings.js";
 import {
   DurationModel,
@@ -28,6 +29,7 @@ import {
   switchView,
   testAgainst,
 } from "../src/settings-view.js";
+import { fileUrl, showItemsCommand } from "../src/io.js";
 import { fakeHost } from "./support.mjs";
 
 /** @import { WindowHost } from "../../gnome/allot@mehran.tech/lib/settings-window.js" */
@@ -126,6 +128,17 @@ test("help reads as rich text with its key in monospace, and markup is escaped",
   assert.equal(helpText("a < b & c", "x.y"), "a &lt; b &amp; c&nbsp;&nbsp;<tt>x.y</tt>");
   assert.equal(helpText("Only help.", null), "Only help.");
   assert.equal(escaped('"<b>"'), "&quot;&lt;b&gt;&quot;");
+  assert.equal(escaped("it's"), "it&#39;s");
+});
+
+test("a row's description is the one GNOME builds", async () => {
+  const { session } = await loaded();
+  const port = as(session.setting("daemon.port"), NumberModel);
+
+  const view = numberView(port, english, false, null);
+
+  assert.equal(view.description, rowDescription(port.spec.help, port.key, view.notes, view.issue));
+  assert.ok(view.description.includes(` Key: ${port.key}.`));
 });
 
 test("banners carry their buttons' titles", () => {
@@ -168,6 +181,68 @@ test("Test a command has nothing to test before a rule dialog first opens", asyn
   assert.equal(testAgainst(null, null), null);
   assert.deepEqual(testAgainst(rules, null), { changes: [], rules: rules.value });
   assert.equal(testAgainst(rules, rules.add()), null);
+});
+
+const CONFIG = `${HOME}/config.toml`;
+
+/**
+ * A started widget whose commands answer as `answers` say; the rest fail.
+ *
+ * @param {Record<string, { "exit code": number, stdout: string }>} answers
+ */
+function widgetAnswering(answers) {
+  const subject = fakeHost({
+    timers: new FakeTimers(),
+    files: { [`${HOME}/token`]: "t" },
+    answers,
+    daemon: () => ({ status: 200, body: fixtureText("settings-state.json") }),
+  });
+  return subject;
+}
+
+test("Show in Folder selects the file, and opens the folder when no file manager answers", async () => {
+  const works = widgetAnswering({ [showItemsCommand(CONFIG)]: { "exit code": 0, stdout: "" } });
+  await works.widget.showInFolder(CONFIG);
+  assert.deepEqual(works.opened, []);
+
+  const fails = widgetAnswering({});
+  await fails.widget.showInFolder(CONFIG);
+  assert.deepEqual(fails.opened, [fileUrl(HOME)]);
+});
+
+test("Open File opens config.toml when it exists, and says when it appears when it does not", async () => {
+  const host = (/** @type {string[]} */ opened, /** @type {string[]} */ notices) => ({
+    ...windowHost(),
+    notify: (/** @type {string} */ text) => notices.push(text),
+    openPath: (/** @type {string} */ path) => opened.push(path),
+  });
+  /** @type {string[]} */
+  const openedThere = [];
+  /** @type {string[]} */
+  const noticesThere = [];
+  const there = widgetAnswering({ [`test -e '${CONFIG}'`]: { "exit code": 0, stdout: "" } });
+  there.widget.start();
+  await settle();
+  const present = await there.widget.settingsWindow(host(openedThere, noticesThere), english);
+  await present.openFile();
+  assert.deepEqual(openedThere, [CONFIG]);
+  assert.deepEqual(noticesThere, []);
+
+  /** @type {string[]} */
+  const openedGone = [];
+  /** @type {string[]} */
+  const noticesGone = [];
+  const gone = widgetAnswering({});
+  gone.widget.start();
+  await settle();
+  const absent = await gone.widget.settingsWindow(host(openedGone, noticesGone), english);
+  await absent.openFile();
+  assert.deepEqual(openedGone, []);
+  assert.deepEqual(noticesGone, [
+    "config.toml does not exist yet. It appears once a setting is saved.",
+  ]);
+  there.widget.stop();
+  gone.widget.stop();
 });
 
 /** A started widget against allotd answering the busy state and the settings-state fixture. */

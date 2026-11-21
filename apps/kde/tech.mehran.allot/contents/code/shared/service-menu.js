@@ -4,9 +4,10 @@
 /**
  * - `stop`: allotd answers, so it can be stopped.
  * - `start`: allotd is down.
+ * - `restart`: allotd runs without the session bus, so only a restart through systemd helps.
  * - `none`: allotd is starting; the item is shown disabled.
  *
- * @typedef {"stop" | "start" | "none"} ServiceAction
+ * @typedef {"stop" | "start" | "restart" | "none"} ServiceAction
  */
 /**
  * The panel button's service entry.
@@ -31,6 +32,8 @@ export function serviceMenuItem(status) {
             return { title: "Starting Service…", action: "none" };
         case "stopped":
             return { title: "Start Service", action: "start" };
+        case "off_bus":
+            return { title: "Restart Service", action: "restart" };
     }
 }
 /**

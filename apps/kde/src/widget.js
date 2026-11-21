@@ -26,10 +26,12 @@ import {
   XhrTransport,
   copyFile,
   detachedCommand,
+  fileExists,
   fileUrl,
   localPath,
   readTextFile,
   serviceSystem,
+  showItemsCommand,
   writeTextFile,
 } from "./io.js";
 import {
@@ -288,12 +290,30 @@ export class AllotWidget {
         followPort: (port) => service.client.usePort(port),
         number,
         readStopRecord: () => readTextFile(this.#runner, `${this.paths.root}/stopped.json`),
-        host: { ...host, log: (text) => this.#host.log(text) },
+        host: {
+          ...host,
+          exists: (path) => fileExists(this.#runner, path),
+          log: (text) => this.#host.log(text),
+        },
         stop: () => this.#stopService(),
         start: () => this.startService(),
       });
     }
     return this.#settingsWindow;
+  }
+
+  /**
+   * Show in Folder: the file selected in the file manager, or its folder opened when no file
+   * manager answers.
+   *
+   * @param {string} path
+   * @returns {Promise<void>}
+   */
+  async showInFolder(path) {
+    const output = await this.#runner.run(showItemsCommand(path));
+    if (output.exitCode !== 0) {
+      this.#host.openUrl(fileUrl(path.slice(0, path.lastIndexOf("/"))));
+    }
   }
 
   /**
@@ -455,6 +475,7 @@ export class AllotWidget {
         }
         break;
       }
+      case "restart":
       case "none":
         break;
     }

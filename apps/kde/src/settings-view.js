@@ -11,6 +11,11 @@ import {
   toggleValue,
 } from "../../gnome/allot@mehran.tech/lib/panel-toggles.js";
 import {
+  formatRowNumber,
+  markupEscaped,
+  rowDescription,
+} from "../../gnome/allot@mehran.tech/lib/row-text.js";
+import {
   NO_RULES_TEXT,
   matchedRules,
   ruleDialogTitle,
@@ -79,6 +84,9 @@ import { DO_NOT_DISTURB_TEXT } from "../../gnome/allot@mehran.tech/lib/snapshot.
 
 export { fileUrl } from "./io.js";
 
+// QML reads these under the names its views use; the code is the GNOME window's.
+export { formatRowNumber as localeNumber, markupEscaped as escaped };
+
 export {
   ALLOTD_PAGES,
   DO_NOT_DISTURB_TEXT,
@@ -116,21 +124,6 @@ export {
 
 /** The Panel page's entry in the window's page list, before allotd's pages. */
 export const PANEL_PAGE_ENTRY = { id: "panel", label: "Panel", kdeIcon: "speedometer" };
-
-/**
- * A number for the user's locale with at most two decimals, from QML's locale formatting, as
- * QML has no `Intl`.
- *
- * @param {number} value
- * @param {(value: number, decimals: number) => string} format QML's
- *   `Number(value).toLocaleString(Qt.locale(), "f", decimals)`.
- * @returns {string}
- */
-export function localeNumber(value, format) {
-  const rounded = Math.round(value * 100) / 100;
-  const decimals = Number.isInteger(rounded) ? 0 : Number.isInteger(rounded * 10) ? 1 : 2;
-  return format(rounded, decimals);
-}
 
 /**
  * What Test a command tests against: the rules on the page, or a rule dialog's draft.
@@ -201,29 +194,13 @@ function rowView(model, number, enabled, withReset, readOnly, note) {
     label: model.label,
     help: helpText(model.spec.help, model.key),
     key: model.key,
-    description: describe(model.spec.help, model.key, notes, issue),
+    description: rowDescription(model.spec.help, model.key, notes, issue),
     notes,
     issue,
     enabled,
     resetVisible: withReset && model.canReset && !readOnly,
     resetName: resetButtonName(model, number),
   };
-}
-
-/**
- * A control's accessible description (DESIGN.md section 11): help plus key, then the notes, then
- * the error while one shows, so a screen reader reads it when focus arrives and when it appears.
- *
- * @param {string} help
- * @param {string | null} key
- * @param {string[]} notes
- * @param {string | null} issue
- * @returns {string}
- */
-export function describe(help, key, notes, issue) {
-  return [help, key ?? "", ...notes, issue === null ? "" : `Error: ${issue}`]
-    .filter((part) => part !== "")
-    .join(" ");
 }
 
 /**
@@ -244,22 +221,9 @@ export function sizeRowReading(item) {
  * @returns {string}
  */
 export function helpText(help, key) {
-  const keyText = key === null || key === "" ? "" : `&nbsp;&nbsp;<tt>${escaped(key)}</tt>`;
-  return `${escaped(help)}${keyText}`;
-}
-
-/**
- * Text that a rich-text label must not read as markup.
- *
- * @param {string} text
- * @returns {string}
- */
-export function escaped(text) {
-  return text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
+  const keyText =
+    key === null || key === "" ? "" : `&nbsp;&nbsp;<tt>${markupEscaped(key)}</tt>`;
+  return `${markupEscaped(help)}${keyText}`;
 }
 
 /**
@@ -293,7 +257,7 @@ export function offSwitchView(model, readOnly) {
     label: off?.label ?? model.label,
     help: helpText(off?.help ?? "", model.key),
     key: model.key,
-    description: describe(off?.help ?? "", model.key, [], null),
+    description: rowDescription(off?.help ?? "", model.key),
     checked: model.isOn,
     enabled: model.enabled && !readOnly,
   };
@@ -396,7 +360,7 @@ export function nameView(draft, number) {
   return {
     label: spec.label,
     help: spec.help,
-    description: describe(spec.help, "", [], issue),
+    description: rowDescription(spec.help, null, [], issue),
     issue,
   };
 }
@@ -414,7 +378,7 @@ export function programView(draft, number) {
   return {
     label: draft.programSpec.label,
     help,
-    description: describe(help, "", [], issue),
+    description: rowDescription(help, null, [], issue),
     issue,
   };
 }

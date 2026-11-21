@@ -190,11 +190,11 @@ test("while the service is down the banner offers Start Service and no card show
   assert.deepEqual(subject.widget.serviceItem, { title: "Start Service", action: "start" });
 });
 
-test("Start Service through this install's unit runs systemctl and shows Starting", async () => {
+test("Start Service runs systemctl start and shows Starting", async () => {
   const subject = await service({
     files: { [UNIT_FILE]: `[Service]\nExecStart="${DAEMON_EXE}"\n` },
     answers: {
-      "cd / && 'systemctl' '--user' 'start' 'allotd.service' < /dev/null > /dev/null 2>&1": {
+      "cd / && 'systemctl' '--user' 'start' 'allotd.service' < /dev/null 2>&1": {
         "exit code": 0,
         stdout: "",
       },
@@ -213,9 +213,14 @@ test("Start Service through this install's unit runs systemctl and shows Startin
   assert.equal(subject.widget.model.banner?.button, "starting");
 });
 
-test("without a unit Start Service runs allotd in its own session", async () => {
+test("without a unit Start Service ends at once, naming allot install, and runs no allotd", async () => {
   const subject = await service({
-    answers: { [`test -x '${DAEMON_EXE}'`]: { "exit code": 0, stdout: "" } },
+    answers: {
+      "cd / && 'systemctl' '--user' 'start' 'allotd.service' < /dev/null 2>&1": {
+        "exit code": 5,
+        stdout: "Failed to start allotd.service: Unit allotd.service not found.\n",
+      },
+    },
   });
   subject.daemon.up = false;
   await subject.poll();
@@ -223,20 +228,9 @@ test("without a unit Start Service runs allotd in its own session", async () => 
   await subject.widget.startService();
   await settle();
 
-  assert.ok(
-    subject.commands.includes(`cd / && setsid -f '${DAEMON_EXE}' < /dev/null > /dev/null 2>&1`),
-  );
-});
-
-test("a missing allotd shows why in the banner", async () => {
-  const subject = await service();
-  subject.daemon.up = false;
-  await subject.poll();
-
-  await subject.widget.startService();
-  await settle();
-
-  const problem = `${DAEMON_EXE} is missing; run allot install`;
+  assert.ok(!subject.commands.some((command) => command.includes("setsid")));
+  assert.ok(!subject.commands.some((command) => command.includes(DAEMON_EXE)));
+  const problem = "allotd.service is not installed; run allot install";
   assert.equal(subject.widget.model.banner?.button, "start");
   assert.equal(subject.widget.model.banner?.problem, problem);
   assert.ok(subject.lines.includes(`Allot: cannot start the service: ${problem}`));
@@ -292,9 +286,7 @@ test("Stop Service with no jobs stops without asking", async () => {
 });
 
 test("a stop from outside notifies after two polls and its buttons work", async () => {
-  const subject = await service({
-    answers: { [`test -x '${DAEMON_EXE}'`]: { "exit code": 0, stdout: "" } },
-  });
+  const subject = await service();
   subject.daemon.up = false;
   await subject.poll();
   assert.deepEqual(subject.notifications, [], "one stopped poll may be a restart");
@@ -313,7 +305,7 @@ test("a stop from outside notifies after two polls and its buttons work", async 
 
   sent?.press("Start Service");
   await settle();
-  assert.ok(subject.commands.some((command) => command.includes("setsid -f")));
+  assert.ok(subject.commands.some((command) => command.includes("'systemctl' '--user' 'start'")));
 
   subject.daemon.up = true;
   await subject.poll();

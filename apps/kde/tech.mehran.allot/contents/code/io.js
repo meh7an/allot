@@ -147,7 +147,7 @@ export function copyFile(runner, source, target) {
 }
 /**
  * A program that outlives the widget's call: its own session, so plasmashell's process group never
- * signals it, and from `/` with silent streams, as `allot-client` starts allotd.
+ * signals it, and from `/` with silent streams.
  *
  * @param {string[]} argv
  * @returns {string}
@@ -156,7 +156,43 @@ export function detachedCommand(argv) {
     return `cd / && setsid -f ${argv.map(shellQuote).join(" ")} < /dev/null > /dev/null 2>&1`;
 }
 /**
- * Start Service through the executable engine.
+ * Whether a file or folder exists.
+ *
+ * @param {CommandRunner} runner
+ * @param {string} path
+ * @returns {Promise<boolean>}
+ */
+export function fileExists(runner, path) {
+    return __awaiter(this, void 0, void 0, function* () {
+        const output = yield runner.run(`test -e ${shellQuote(path)}`);
+        return output.exitCode === 0;
+    });
+}
+/**
+ * The freedesktop file manager call that opens a folder with a file selected, as GNOME's
+ * Show in Folder makes it. `dbus-send` waits 3 s for the reply at most, so a session with no file
+ * manager fails soon.
+ *
+ * @param {string} path An absolute path.
+ * @returns {string}
+ */
+export function showItemsCommand(path) {
+    const words = [
+        "dbus-send",
+        "--session",
+        "--print-reply",
+        "--reply-timeout=3000",
+        "--dest=org.freedesktop.FileManager1",
+        "/org/freedesktop/FileManager1",
+        "org.freedesktop.FileManager1.ShowItems",
+        `array:string:${fileUrl(path)}`,
+        "string:",
+    ];
+    return `cd / && ${words.map(shellQuote).join(" ")} < /dev/null > /dev/null 2>&1`;
+}
+/**
+ * Start Service through the executable engine: `systemctl` runs from `/`, and what it prints
+ * comes back so a missing unit can be told from a failure.
  *
  * @param {CommandRunner} runner
  * @returns {ServiceSystem}
@@ -164,18 +200,11 @@ export function detachedCommand(argv) {
 export function serviceSystem(runner) {
     return {
         readText: (path) => readTextFile(runner, path),
-        isExecutable: (path) => __awaiter(this, void 0, void 0, function* () {
-            const output = yield runner.run(`test -x ${shellQuote(path)}`);
-            return output.exitCode === 0;
-        }),
         run: (argv) => __awaiter(this, void 0, void 0, function* () {
             const command = argv.map(shellQuote).join(" ");
-            const output = yield runner.run(`cd / && ${command} < /dev/null > /dev/null 2>&1`);
-            return output.exitCode === 0;
+            const output = yield runner.run(`cd / && ${command} < /dev/null 2>&1`);
+            return { ok: output.exitCode === 0, output: output.stdout };
         }),
-        spawn: (path) => {
-            runner.run(detachedCommand([path]));
-        },
     };
 }
 /**

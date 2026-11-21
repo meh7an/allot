@@ -2,6 +2,7 @@
 import { resetField } from "./shared/field-reset.js";
 import { NOT_YET_TEXT } from "./shared/fit-previews.js";
 import { METERS_HELP, METERS_TITLE, NOTIFICATIONS_TITLE, changedPanelLines, meterToggles, notificationToggles, toggleEnabled, toggleValue, } from "./shared/panel-toggles.js";
+import { formatRowNumber, markupEscaped, rowDescription, } from "./shared/row-text.js";
 import { NO_RULES_TEXT, matchedRules, ruleDialogTitle, rulesStatus, useBuiltInConfirmation, } from "./shared/rules-text.js";
 import { DurationModel, NumberModel, StringListModel, SwitchModel, issueText, } from "./shared/setting-values.js";
 import { bannerActionLabel } from "./shared/settings-banners.js";
@@ -23,23 +24,11 @@ import { DO_NOT_DISTURB_TEXT } from "./shared/snapshot.js";
 // (DESIGN.md section 10, KDE): one plain object per row, read again whenever the window's
 // revision moves on, and the shared texts and editors the views call.
 export { fileUrl } from "./io.js";
+// QML reads these under the names its views use; the code is the GNOME window's.
+export { formatRowNumber as localeNumber, markupEscaped as escaped };
 export { ALLOTD_PAGES, DO_NOT_DISTURB_TEXT, LOADING_TEXT, METERS_HELP, METERS_TITLE, NOTHING_TO_RESET, NOTIFICATIONS_TITLE, NOT_YET_TEXT, NO_RULES_TEXT, TEST_COMMAND_HELP, TEST_COMMAND_TITLE, TEST_RULE_HELP, WHAT_FITS_TITLE, debounced, deletePresetConfirmation, deleteRule, draftRules, matchedRules, moveRule, pageSections, removeSizeRow, renameWarning, resettableRow, ruleDialogTitle, ruleRowItems, rulesStatus, savedRules, sizeDialogFit, sizeDialogTitle, sizeRowItems, testCommand, useBuiltInConfirmation, };
 /** The Panel page's entry in the window's page list, before allotd's pages. */
 export const PANEL_PAGE_ENTRY = { id: "panel", label: "Panel", kdeIcon: "speedometer" };
-/**
- * A number for the user's locale with at most two decimals, from QML's locale formatting, as
- * QML has no `Intl`.
- *
- * @param {number} value
- * @param {(value: number, decimals: number) => string} format QML's
- *   `Number(value).toLocaleString(Qt.locale(), "f", decimals)`.
- * @returns {string}
- */
-export function localeNumber(value, format) {
-    const rounded = Math.round(value * 100) / 100;
-    const decimals = Number.isInteger(rounded) ? 0 : Number.isInteger(rounded * 10) ? 1 : 2;
-    return format(rounded, decimals);
-}
 /**
  * What Test a command tests against: the rules on the page, or a rule dialog's draft.
  *
@@ -106,28 +95,13 @@ function rowView(model, number, enabled, withReset, readOnly, note) {
         label: model.label,
         help: helpText(model.spec.help, model.key),
         key: model.key,
-        description: describe(model.spec.help, model.key, notes, issue),
+        description: rowDescription(model.spec.help, model.key, notes, issue),
         notes,
         issue,
         enabled,
         resetVisible: withReset && model.canReset && !readOnly,
         resetName: resetButtonName(model, number),
     };
-}
-/**
- * A control's accessible description (DESIGN.md section 11): help plus key, then the notes, then
- * the error while one shows, so a screen reader reads it when focus arrives and when it appears.
- *
- * @param {string} help
- * @param {string | null} key
- * @param {string[]} notes
- * @param {string | null} issue
- * @returns {string}
- */
-export function describe(help, key, notes, issue) {
-    return [help, key !== null && key !== void 0 ? key : "", ...notes, issue === null ? "" : `Error: ${issue}`]
-        .filter((part) => part !== "")
-        .join(" ");
 }
 /**
  * What a size row reads as to a screen reader: one summary, as the row shows it.
@@ -146,21 +120,8 @@ export function sizeRowReading(item) {
  * @returns {string}
  */
 export function helpText(help, key) {
-    const keyText = key === null || key === "" ? "" : `&nbsp;&nbsp;<tt>${escaped(key)}</tt>`;
-    return `${escaped(help)}${keyText}`;
-}
-/**
- * Text that a rich-text label must not read as markup.
- *
- * @param {string} text
- * @returns {string}
- */
-export function escaped(text) {
-    return text
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/"/g, "&quot;");
+    const keyText = key === null || key === "" ? "" : `&nbsp;&nbsp;<tt>${markupEscaped(key)}</tt>`;
+    return `${markupEscaped(help)}${keyText}`;
 }
 /**
  * @param {SwitchModel} model
@@ -193,7 +154,7 @@ export function offSwitchView(model, readOnly) {
         label: (_a = off === null || off === void 0 ? void 0 : off.label) !== null && _a !== void 0 ? _a : model.label,
         help: helpText((_b = off === null || off === void 0 ? void 0 : off.help) !== null && _b !== void 0 ? _b : "", model.key),
         key: model.key,
-        description: describe((_c = off === null || off === void 0 ? void 0 : off.help) !== null && _c !== void 0 ? _c : "", model.key, [], null),
+        description: rowDescription((_c = off === null || off === void 0 ? void 0 : off.help) !== null && _c !== void 0 ? _c : "", model.key),
         checked: model.isOn,
         enabled: model.enabled && !readOnly,
     };
@@ -282,7 +243,7 @@ export function nameView(draft, number) {
     return {
         label: spec.label,
         help: spec.help,
-        description: describe(spec.help, "", [], issue),
+        description: rowDescription(spec.help, null, [], issue),
         issue,
     };
 }
@@ -299,7 +260,7 @@ export function programView(draft, number) {
     return {
         label: draft.programSpec.label,
         help,
-        description: describe(help, "", [], issue),
+        description: rowDescription(help, null, [], issue),
         issue,
     };
 }

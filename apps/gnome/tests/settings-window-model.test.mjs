@@ -88,6 +88,8 @@ async function windowModel(options = { load: true, reach: PORT_REACH }) {
   const logged = [];
   /** @type {string[]} */
   const calls = [];
+  /** @type {string[]} */
+  const missing = [];
   let clock = 0;
   const model = new SettingsWindowModel({
     client,
@@ -98,6 +100,10 @@ async function windowModel(options = { load: true, reach: PORT_REACH }) {
         return null;
       },
       restartThroughUnit: async () => false,
+      restartUnit: async () => {
+        calls.push("launcher.restartUnit");
+        return null;
+      },
     },
     paths: dataPaths("/home/u"),
     reach: options.reach ?? PORT_REACH,
@@ -109,6 +115,7 @@ async function windowModel(options = { load: true, reach: PORT_REACH }) {
       notify: (text) => notices.push(text),
       log: (text) => logged.push(text),
       openPath: (path) => opened.push(path),
+      exists: async (path) => !missing.includes(path),
       now: () => clock,
     },
     stop: async () => {
@@ -132,6 +139,7 @@ async function windowModel(options = { load: true, reach: PORT_REACH }) {
     notices,
     logged,
     opened,
+    missing,
     calls,
     changes: () => changes,
     advance: (/** @type {number} */ ms) => {
@@ -337,6 +345,40 @@ test("the bus panel's Service row has no port, and its window says it is off the
   );
 });
 
+test("an allotd off the bus shows its own row and banner, and Restart goes through the unit", async () => {
+  const { model, client, calls, timers } = await windowModel({ load: true, reach: BUS_REACH });
+
+  client.reads.push(failure("off_bus"));
+  await model.refresh();
+  await settleAll();
+  model.showPage("service");
+
+  assert.equal(
+    model.serviceRow?.text,
+    "Runs without the session bus, so this panel cannot reach it. Restart it outside the " +
+      "sandbox.",
+  );
+  assert.equal(model.serviceRow?.button, "Restart Service");
+  assert.equal(model.serviceRow?.canPress, true);
+  assert.deepEqual(model.pageState("service").banners, [
+    {
+      severity: "warning",
+      message:
+        "The service runs without the session bus, so Settings can't reach it. Restart it " +
+        "outside the sandbox.",
+      actions: ["restart_service", "open_logs"],
+    },
+  ]);
+
+  model.pressService();
+  await settleAll();
+  timers.fireAll();
+  await settleAll();
+
+  assert.deepEqual(calls, ["launcher.restartUnit"]);
+  assert.deepEqual(client.shutdowns, []);
+});
+
 test("a window that closes while Start Service waits sets no timer and shows no notice", async () => {
   const { model, timers, notices } = await windowModel();
 
@@ -370,9 +412,20 @@ test("Open File and Open Logs open the panel's paths", async () => {
   const { model, opened } = await windowModel();
 
   model.act("open_file");
+  await settleAll();
   model.openLogs();
 
   assert.deepEqual(opened, ["/home/u/.allot/config.toml", "/home/u/.allot/logs"]);
+});
+
+test("Open File on a config.toml that is not there yet says when it appears", async () => {
+  const { model, opened, missing, notices } = await windowModel();
+  missing.push("/home/u/.allot/config.toml");
+
+  await model.openFile();
+
+  assert.deepEqual(opened, []);
+  assert.deepEqual(notices, ["config.toml does not exist yet. It appears once a setting is saved."]);
 });
 
 test("disposing stops the changes", async () => {

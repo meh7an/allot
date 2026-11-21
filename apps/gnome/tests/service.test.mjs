@@ -1,13 +1,18 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { serviceBanner } from "../allot@mehran.tech/lib/service-banner.js";
+import { bannerButtonText, serviceBanner } from "../allot@mehran.tech/lib/service-banner.js";
 import {
   SystemdServiceLauncher,
   systemdUnitExec,
   systemdUnitFile,
 } from "../allot@mehran.tech/lib/service-launcher.js";
 import { serviceMenuItem, stopConfirmation } from "../allot@mehran.tech/lib/service-menu.js";
+import {
+  serviceButtonText,
+  serviceRow,
+  sessionServiceStatus,
+} from "../allot@mehran.tech/lib/service-row.js";
 import { scenario } from "./handoff.mjs";
 
 /** @import { ServiceSystem } from "../allot@mehran.tech/lib/service-launcher.js" */
@@ -18,46 +23,37 @@ const UNIT_FILE = "/home/user/.config/systemd/user/allotd.service";
 const EXE = "/home/user/.allot/bin/allotd";
 
 /**
- * A fake system that records what it ran and started.
+ * A fake system that records what it ran.
  *
  * @param {object} [options]
  * @param {string | null} [options.unit] The unit file's text.
- * @param {boolean} [options.executable]
  * @param {boolean} [options.systemctlOk]
- * @param {string} [options.spawnError]
- * @returns {ServiceSystem & { ran: string[][], spawned: string[] }}
+ * @param {string} [options.output] What systemctl prints.
+ * @returns {ServiceSystem & { ran: string[][] }}
  */
 function fakeSystem(options = {}) {
   /** @type {string[][]} */
   const ran = [];
-  /** @type {string[]} */
-  const spawned = [];
   return {
     ran,
-    spawned,
     readText: async (path) => (path === UNIT_FILE ? (options.unit ?? null) : null),
-    isExecutable: async () => options.executable ?? true,
     run: async (argv) => {
       ran.push(argv);
-      return options.systemctlOk ?? true;
-    },
-    spawn: (path) => {
-      if (options.spawnError !== undefined) {
-        throw new Error(options.spawnError);
-      }
-      spawned.push(path);
+      return { ok: options.systemctlOk ?? true, output: options.output ?? "" };
     },
   };
 }
 
 /**
  * @param {ServiceSystem} system
+ * @param {(() => Promise<boolean>) | null} [aliveOffBus]
  * @returns {SystemdServiceLauncher}
  */
-function launcher(system) {
+function launcher(system, aliveOffBus = null) {
   return new SystemdServiceLauncher(
     { home: HOME, configHome: null, root: `${HOME}/.allot` },
     system,
+    aliveOffBus,
   );
 }
 
@@ -118,40 +114,97 @@ test("ExecStart reads plain and quoted, as allot install writes it", () => {
   assert.equal(systemdUnitExec("[Service]\n"), null);
 });
 
-test("Start uses the unit when it starts this install's allotd", async () => {
-  const system = fakeSystem({ unit: `ExecStart="${EXE}"\n` });
+const START = ["systemctl", "--user", "start", "allotd.service"];
+const RESTART = ["systemctl", "--user", "restart", "allotd.service"];
+const NO_UNIT = "allotd.service is not installed; run allot install";
 
-  assert.equal(await launcher(system).start(), null);
+test("Start runs only systemctl start, whatever the unit file says", async () => {
+  for (const unit of [`ExecStart="${EXE}"\n`, "ExecStart=/opt/dev/allotd\n", null]) {
+    const system = fakeSystem({ unit });
 
-  assert.deepEqual(system.ran, [["systemctl", "--user", "start", "allotd.service"]]);
-  assert.deepEqual(system.spawned, []);
+    assert.equal(await launcher(system).start(), null);
+
+    assert.deepEqual(system.ran, [START]);
+  }
 });
 
-test("Start never starts the unit of another install", async () => {
-  const system = fakeSystem({ unit: "ExecStart=/opt/dev/allotd\n" });
+test("Start ends at once, naming allot install, when the unit does not exist", async () => {
+  for (const output of [
+    "Failed to start allotd.service: Unit allotd.service not found.\n",
+    "Failed to start allotd.service: Unit allotd.service not loaded.\n",
+    "Failed to start allotd.service: Unit allotd.service is masked.\n",
+  ]) {
+    const system = fakeSystem({ systemctlOk: false, output });
 
-  assert.equal(await launcher(system).start(), null);
+    assert.equal(await launcher(system).start(), NO_UNIT);
+    assert.deepEqual(system.ran, [START]);
+  }
+});
 
+test("Start reports another systemctl failure by its last line", async () => {
+  const output = "Job failed.\nFailed to connect to user scope bus\n\n";
+  assert.equal(
+    await launcher(fakeSystem({ systemctlOk: false, output })).start(),
+    "Failed to connect to user scope bus",
+  );
+  assert.equal(
+    await launcher(fakeSystem({ systemctlOk: false })).start(),
+    "systemctl --user start allotd.service failed",
+  );
+});
+
+test("Start leaves an allotd that runs off the bus alone", async () => {
+  const system = fakeSystem();
+
+  assert.equal(
+    await launcher(system, async () => true).start(),
+    "allotd already runs without the session bus; restart it outside the sandbox",
+  );
   assert.deepEqual(system.ran, []);
-  assert.deepEqual(system.spawned, [EXE]);
+
+  assert.equal(await launcher(system, async () => false).start(), null);
+  assert.deepEqual(system.ran, [START]);
 });
 
-test("Start spawns allotd without a unit, and when systemctl fails", async () => {
-  const noUnit = fakeSystem();
-  assert.equal(await launcher(noUnit).start(), null);
-  assert.deepEqual(noUnit.ran, []);
-  assert.deepEqual(noUnit.spawned, [EXE]);
+test("restartUnit runs systemctl restart and says when the unit is missing", async () => {
+  const system = fakeSystem();
+  assert.equal(await launcher(system).restartUnit(), null);
+  assert.deepEqual(system.ran, [RESTART]);
+
+  const missing = fakeSystem({ systemctlOk: false, output: "Unit allotd.service not found." });
+  assert.equal(await launcher(missing).restartUnit(), NO_UNIT);
+});
+
+test("restartThroughUnit restarts only the unit of this install", async () => {
+  const mine = fakeSystem({ unit: `ExecStart="${EXE}"\n` });
+  assert.equal(await launcher(mine).restartThroughUnit(), true);
+  assert.deepEqual(mine.ran, [RESTART]);
+
+  const other = fakeSystem({ unit: "ExecStart=/opt/dev/allotd\n" });
+  assert.equal(await launcher(other).restartThroughUnit(), false);
+  assert.deepEqual(other.ran, []);
 
   const failing = fakeSystem({ unit: `ExecStart=${EXE}\n`, systemctlOk: false });
-  assert.equal(await launcher(failing).start(), null);
-  assert.equal(failing.ran.length, 1);
-  assert.deepEqual(failing.spawned, [EXE]);
+  assert.equal(await launcher(failing).restartThroughUnit(), false);
 });
 
-test("Start says when allotd is missing or cannot run", async () => {
-  assert.equal(
-    await launcher(fakeSystem({ executable: false })).start(),
-    `${EXE} is missing; run allot install`,
-  );
-  assert.equal(await launcher(fakeSystem({ spawnError: "denied" })).start(), `${EXE}: denied`);
+test("the off-bus state has its own banner, menu item and row", () => {
+  assert.deepEqual(serviceBanner("off_bus", null, null, time), {
+    text: "Service runs without the session bus · restart it outside the sandbox",
+    problem: "",
+    button: "restart",
+    caption: "",
+  });
+  assert.equal(serviceBanner("off_bus", null, "unit missing", time)?.problem, "unit missing");
+  assert.equal(bannerButtonText("restart"), "Restart Service");
+  assert.equal(bannerButtonText("starting"), "Starting…");
+  assert.equal(bannerButtonText("start"), "Start Service");
+  assert.deepEqual(serviceMenuItem("off_bus"), { title: "Restart Service", action: "restart" });
+
+  const row = serviceRow("off_bus", "off_bus", null, { kind: "bus" });
+  assert.equal(row.button, "restart");
+  assert.equal(serviceButtonText(row.button), "Restart Service");
+  assert.match(row.text, /without the session bus.*outside the sandbox/);
+  assert.equal(sessionServiceStatus("off_bus", false), "off_bus");
+  assert.equal(sessionServiceStatus("off_bus", true), "starting");
 });

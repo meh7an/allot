@@ -6,6 +6,7 @@ import St from "gi://St";
 import { BarShare } from "./bar-share.js";
 import { cardDescription, detailText } from "./lib/accessible-text.js";
 import { QUIET_TICKS } from "./lib/benchmark-status.js";
+import { bannerButtonText } from "./lib/service-banner.js";
 import { DO_NOT_DISTURB_TEXT, WELCOME_BODY, WELCOME_TITLE } from "./lib/snapshot.js";
 
 /** @import { JobCard } from "./lib/job-card.js" */
@@ -633,9 +634,10 @@ export class ServiceBannerView {
       this.#problem.text = banner.problem;
       this.#problem.visible = banner.problem !== "";
       this.#button.visible = banner.button !== "none";
-      this.#button.reactive = banner.button === "start";
-      this.#button.can_focus = banner.button === "start";
-      this.#button.label = banner.button === "starting" ? "Starting…" : "Start Service";
+      const pressable = banner.button === "start" || banner.button === "restart";
+      this.#button.reactive = pressable;
+      this.#button.can_focus = pressable;
+      this.#button.label = bannerButtonText(banner.button);
       setClass(this.#button, "allot-banner-button-muted", banner.button === "starting");
       this.#caption.text = banner.caption;
       this.#caption.visible = banner.caption !== "";

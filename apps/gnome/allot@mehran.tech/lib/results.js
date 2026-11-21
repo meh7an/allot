@@ -6,11 +6,13 @@ import { decodeUiState } from "../contract.g.mjs";
  * - `running`: allotd answered with UI state.
  * - `starting`: allotd answers but has no first sample yet.
  * - `stopped`: nothing answers, or the panel has no way to ask yet.
+ * - `off_bus`: nothing answers on the session bus, yet an allotd process is alive, so the
+ *   panel cannot reach it. Starting another one would not help; restarting it would.
  * - `incompatible`: allotd answers but cannot serve this panel: an older build, a state shape
  *   the generated types reject, or a caller it refuses. Starting it again does not help;
  *   reinstalling does.
  *
- * @typedef {"running" | "starting" | "stopped" | "incompatible"} ServiceStatus
+ * @typedef {"running" | "starting" | "stopped" | "off_bus" | "incompatible"} ServiceStatus
  */
 
 /**
@@ -36,10 +38,19 @@ import { decodeUiState } from "../contract.g.mjs";
  * - `unavailable`: allotd has no machine sample or no config file yet.
  * - `key`: the caller has no key, or allotd refused it after one fresh read.
  * - `unreachable`: nothing answered in time.
+ * - `off_bus`: nothing answered on the bus, but an allotd process is alive.
  * - `failed`: anything else, such as an answer that does not decode.
  *
- * @typedef {"conflict" | "invalid" | "held" | "unavailable" | "key" | "unreachable" | "failed"}
- *   SettingsFailureKind
+ * @typedef {(
+ *   | "conflict"
+ *   | "invalid"
+ *   | "held"
+ *   | "unavailable"
+ *   | "key"
+ *   | "unreachable"
+ *   | "off_bus"
+ *   | "failed"
+ * )} SettingsFailureKind
  */
 
 /**

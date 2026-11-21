@@ -1,3 +1,4 @@
+import { formatRowNumber } from "./row-text.js";
 import { DurationModel, NumberModel, quantityText } from "./setting-values.js";
 
 /**
@@ -23,16 +24,26 @@ export const NOTHING_TO_RESET = "Nothing to reset";
 
 export const LOADING_TEXT = "Loading settings…";
 
+export const CONFIG_MISSING_TEXT =
+  "config.toml does not exist yet. It appears once a setting is saved.";
+
 /**
  * A number for the user's locale, grouped, with at most two decimals. GJS has `Intl`; QML does
- * not, so the KDE widget passes its own formatter instead.
+ * not, so the KDE widget formats with its own locale code through the same `formatRowNumber`.
  *
  * @param {string | undefined} [locale] A BCP 47 tag; the system's locale when left out.
  * @returns {(value: number) => string}
  */
 export function localeNumbers(locale) {
-  const format = new Intl.NumberFormat(locale, { maximumFractionDigits: 2 });
-  return (value) => format.format(value);
+  const formats = [0, 1, 2].map(
+    (decimals) =>
+      new Intl.NumberFormat(locale, {
+        minimumFractionDigits: decimals,
+        maximumFractionDigits: decimals,
+      }),
+  );
+  return (value) =>
+    formatRowNumber(value, (rounded, decimals) => formats[decimals]?.format(rounded) ?? "");
 }
 
 /**

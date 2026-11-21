@@ -31,6 +31,7 @@ export class PollSchedule {
         this.#failures = 0;
         return STARTING_INTERVAL_MS;
       case "stopped":
+      case "off_bus":
       case "incompatible": {
         const cap = popupOpen ? OPEN_RETRY_CAP_MS : CLOSED_RETRY_CAP_MS;
         const retry = FIRST_RETRY_MS * 2 ** Math.min(this.#failures, MAX_DOUBLINGS);

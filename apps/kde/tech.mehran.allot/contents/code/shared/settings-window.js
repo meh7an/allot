@@ -20,7 +20,7 @@ import { NumberModel, RuleListModel, SizeTableModel, SwitchModel, } from "./sett
 import { SERVICE_PAGE, restartNote, settingsBanners } from "./settings-banners.js";
 import { SettingsAnnouncer, announcerView } from "./settings-announcer.js";
 import { SettingsSession } from "./settings-session.js";
-import { LOADING_TEXT, resetAllConfirmation, resetPageConfirmation, saveStatusText, } from "./settings-text.js";
+import { CONFIG_MISSING_TEXT, LOADING_TEXT, resetAllConfirmation, resetPageConfirmation, saveStatusText, } from "./settings-text.js";
 /**
  * @import { PollResult } from "./results.js"
  * @import { DataPaths } from "./config.js"
@@ -171,6 +171,8 @@ function settingsSection(title, settings, live) {
  * @property {(text: string) => void} [log] A line for the panel's log, for what the user need not
  *   see.
  * @property {(path: string) => void} openPath Opens a file or folder in its default app.
+ * @property {(path: string) => boolean | Promise<boolean>} [exists] Whether a file exists; a
+ *   host without it treats every file as there.
  * @property {() => number} now A monotonic clock in milliseconds.
  */
 /**
@@ -477,7 +479,7 @@ export class SettingsWindowModel {
                 this.openLogs();
                 break;
             case "open_file":
-                this.openFile();
+                void this.openFile();
                 break;
             case "apply_mine":
                 this.session.applyMine();
@@ -499,12 +501,26 @@ export class SettingsWindowModel {
         else if (status === "stopped") {
             void this._startService();
         }
+        else if (status === "off_bus") {
+            void this._restartService();
+        }
     }
     openLogs() {
         this._host.openPath(this.paths.logs);
     }
+    /** Opens `config.toml`, or says it is not there yet: allotd writes it with the first save. */
     openFile() {
-        this._host.openPath(this.paths.config);
+        return __awaiter(this, void 0, void 0, function* () {
+            var _a, _b;
+            var _c;
+            const exists = (_c = (yield (_b = (_a = this._host).exists) === null || _b === void 0 ? void 0 : _b.call(_a, this.paths.config))) !== null && _c !== void 0 ? _c : true;
+            if (exists) {
+                this._host.openPath(this.paths.config);
+            }
+            else {
+                this._notify(CONFIG_MISSING_TEXT);
+            }
+        });
     }
     _changed() {
         var _a;
@@ -591,7 +607,10 @@ export class SettingsWindowModel {
             var _a, _b;
             this._beginStarting();
             const saved = (_a = this.session.setting(PORT_KEY)) === null || _a === void 0 ? void 0 : _a.saved;
-            const problem = yield restartService(this._client, this._launcher, this._timers);
+            // An allotd off the bus cannot be asked to stop, so only its unit can restart it.
+            const problem = this.session.status === "off_bus"
+                ? yield this._launcher.restartUnit()
+                : yield restartService(this._client, this._launcher, this._timers);
             if (problem === null && this._reach.kind === "port" && typeof saved === "number") {
                 // The restarted allotd listens on the port now in config.toml.
                 this._reach = { kind: "port", port: saved };

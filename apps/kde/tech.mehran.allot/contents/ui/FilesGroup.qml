@@ -36,9 +36,9 @@ SettingsSection {
         }
 
         QQC2.Button {
-            text: "Open Folder"
+            text: "Show in Folder"
             icon.name: "folder-open"
-            onClicked: files.host.openPath(files.host.model.paths.root)
+            onClicked: files.host.showInFolder(files.path)
         }
     }
 }

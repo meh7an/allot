@@ -6,6 +6,7 @@ import {
   decodeSettingsRefusal,
   decodeSettingsState,
 } from "../contract.g.mjs";
+import { OFF_BUS_DETAIL } from "./off-bus.js";
 import {
   TimeoutError,
   conflictReason,
@@ -95,10 +96,16 @@ const RETRY_LATER = "the service could not answer; see logs/allotd.log";
  */
 export class BusClient {
   #bus;
+  #offBus;
 
-  /** @param {Bus} bus */
-  constructor(bus) {
+  /**
+   * @param {Bus} bus
+   * @param {(() => Promise<boolean>) | null} [offBus] Whether an allotd process is alive though
+   *   it is not on the bus; without one, an allotd off the bus reads as stopped.
+   */
+  constructor(bus, offBus = null) {
     this.#bus = bus;
+    this.#offBus = offBus;
   }
 
   /**
@@ -109,7 +116,7 @@ export class BusClient {
    */
   async poll() {
     if (this.#bus.hasOwner() === false) {
-      return pollResult("stopped", { detail: NOT_ON_BUS });
+      return this.#goneFromBus(NOT_ON_BUS);
     }
     let json;
     try {
@@ -130,9 +137,25 @@ export class BusClient {
         }
       }
       rethrowCancelled(error);
-      return pollResult("stopped", { detail: unreachableText(error, REQUEST_TIMEOUT_MS) });
+      const detail = unreachableText(error, REQUEST_TIMEOUT_MS);
+      // A timeout means allotd owns its name and is busy, which is not an allotd off the bus.
+      return error instanceof TimeoutError
+        ? pollResult("stopped", { detail })
+        : this.#goneFromBus(detail);
     }
     return runningState(json ?? "");
+  }
+
+  /**
+   * The poll of a bus with no allotd on it: off the bus when its process is alive, else stopped.
+   *
+   * @param {string} detail
+   * @returns {Promise<PollResult>}
+   */
+  async #goneFromBus(detail) {
+    return (await this.#offBus?.()) === true
+      ? pollResult("off_bus", { detail: OFF_BUS_DETAIL })
+      : pollResult("stopped", { detail });
   }
 
   /**
@@ -256,6 +279,9 @@ export class BusClient {
       rethrowCancelled(error);
       if (error instanceof BusRefusal) {
         return { ok: false, failure: settingsRefusal(error) };
+      }
+      if (!(error instanceof TimeoutError) && (await this.#offBus?.()) === true) {
+        return settingsFailure("off_bus", OFF_BUS_DETAIL);
       }
       return settingsFailure("unreachable", unreachableText(error, REQUEST_TIMEOUT_MS));
     }

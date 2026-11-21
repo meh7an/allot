@@ -224,6 +224,18 @@ test("no answer reads the stop record to tell a stop from a failure", async () =
   assert.equal(down.session.setting("daemon.port")?.value, 47999);
 });
 
+test("a live allotd off the bus outranks the stop record", async () => {
+  const { session, client } = await loaded({ stopRecord: fixtureText("stop-record.json") });
+  client.reads.push(failure("off_bus", { message: "the service runs without the session bus" }));
+
+  await session.refresh();
+
+  assert.equal(session.status, "off_bus");
+  assert.equal(session.stopRecord, null);
+  assert.equal(session.readOnly, true);
+  assert.equal(session.detail, "the service runs without the session bus");
+});
+
 test("a stop record that is not one still counts as a stop", () => {
   assert.deepEqual(parseStopRecord("not json"), { by: "cli", stopped_at_ms: 0 });
   assert.equal(parseStopRecord(null), null);

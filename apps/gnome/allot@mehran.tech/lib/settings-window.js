@@ -23,6 +23,7 @@ import { SERVICE_PAGE, restartNote, settingsBanners } from "./settings-banners.j
 import { SettingsAnnouncer, announcerView } from "./settings-announcer.js";
 import { SettingsSession } from "./settings-session.js";
 import {
+  CONFIG_MISSING_TEXT,
   LOADING_TEXT,
   resetAllConfirmation,
   resetPageConfirmation,
@@ -195,6 +196,8 @@ function settingsSection(title, settings, live) {
  * @property {(text: string) => void} [log] A line for the panel's log, for what the user need not
  *   see.
  * @property {(path: string) => void} openPath Opens a file or folder in its default app.
+ * @property {(path: string) => boolean | Promise<boolean>} [exists] Whether a file exists; a
+ *   host without it treats every file as there.
  * @property {() => number} now A monotonic clock in milliseconds.
  */
 
@@ -537,7 +540,7 @@ export class SettingsWindowModel {
         this.openLogs();
         break;
       case "open_file":
-        this.openFile();
+        void this.openFile();
         break;
       case "apply_mine":
         this.session.applyMine();
@@ -558,6 +561,8 @@ export class SettingsWindowModel {
       void this.#stopService();
     } else if (status === "stopped") {
       void this.#startService();
+    } else if (status === "off_bus") {
+      void this.#restartService();
     }
   }
 
@@ -565,8 +570,14 @@ export class SettingsWindowModel {
     this.#host.openPath(this.paths.logs);
   }
 
-  openFile() {
-    this.#host.openPath(this.paths.config);
+  /** Opens `config.toml`, or says it is not there yet: allotd writes it with the first save. */
+  async openFile() {
+    const exists = (await this.#host.exists?.(this.paths.config)) ?? true;
+    if (exists) {
+      this.#host.openPath(this.paths.config);
+    } else {
+      this.#notify(CONFIG_MISSING_TEXT);
+    }
   }
 
   #changed() {
@@ -653,7 +664,11 @@ export class SettingsWindowModel {
   async #restartService() {
     this.#beginStarting();
     const saved = this.session.setting(PORT_KEY)?.saved;
-    const problem = await restartService(this.#client, this.#launcher, this.#timers);
+    // An allotd off the bus cannot be asked to stop, so only its unit can restart it.
+    const problem =
+      this.session.status === "off_bus"
+        ? await this.#launcher.restartUnit()
+        : await restartService(this.#client, this.#launcher, this.#timers);
     if (problem === null && this.#reach.kind === "port" && typeof saved === "number") {
       // The restarted allotd listens on the port now in config.toml.
       this.#reach = { kind: "port", port: saved };

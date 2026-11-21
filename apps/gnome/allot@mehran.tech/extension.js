@@ -8,6 +8,7 @@ import * as PopupMenu from "resource:///org/gnome/shell/ui/popupMenu.js";
 
 import {
   DaemonConnection,
+  createOffBusProbe,
   createServiceSystem,
   glibTimers,
   readTextFile,
@@ -35,10 +36,6 @@ import { confirmStop } from "./stop-dialog.js";
 const TICK_MS = 1000;
 const NOTIFICATION_SCHEMA = "org.gnome.desktop.notifications";
 const SHOW_BANNERS = "show-banners";
-// The gnome-shell service that runs every extension's prefs.js.
-const PREFS_APP_ID = "org.gnome.Shell.Extensions";
-const OTHER_PREFS_TEXT =
-  "Another extension's settings are open. Close them first, then open Settings again.";
 // How long after enable the shell's startup animation is assumed over, when its signal has not
 // come. The animation lasts about a second.
 const STARTUP_GRACE_MS = 5000;
@@ -168,7 +165,8 @@ export default class AllotExtension extends Extension {
     }
     this._showChange(this._model.loadSettings(decodeSettings(settings)));
     this._popup.syncMenu();
-    const client = connection.client();
+    const offBus = createOffBusProbe(paths.root, files);
+    const client = connection.client(offBus);
     this._model.stopper = client;
     const launcher = new SystemdServiceLauncher(
       {
@@ -177,6 +175,7 @@ export default class AllotExtension extends Extension {
         root: paths.root,
       },
       createServiceSystem(files),
+      offBus,
     );
     const poller = new DaemonPoller(client, glibTimers, {
       launcher,
@@ -326,26 +325,9 @@ export default class AllotExtension extends Extension {
     this._showChange(this._model.setDoNotDisturb(!shows));
   }
 
-  /**
-   * Raises the open Settings window, since `openPreferences()` refuses to while one is open and
-   * does not raise it; opens one otherwise.
-   */
+  /** Opens the Settings window; the shell raises one that is already open. */
   _openSettings() {
     this._popup?.close();
-    const prefsWindows = global
-      .get_window_actors()
-      .map((actor) => actor.meta_window)
-      .filter((window) => isPrefsService(window));
-    const ours = prefsWindows.find((window) => window.get_title() === this.metadata.name);
-    if (ours !== undefined) {
-      Main.activateWindow(ours);
-      return;
-    }
-    if (prefsWindows.length > 0) {
-      // The shell keeps one preferences window for all extensions, so another one may be open.
-      Main.notify(this.metadata.name, OTHER_PREFS_TEXT);
-      return;
-    }
     // GNOME 48 and 49 return a promise that rejects when the shell refuses to open the window;
     // GNOME 50 and later return nothing and report a refusal as an unhandled rejection.
     const opened = /** @type {unknown} */ (this.openPreferences());
@@ -407,6 +389,7 @@ export default class AllotExtension extends Extension {
   _pressServiceItem() {
     switch (serviceMenuItem(this._model.status).action) {
       case "start":
+      case "restart":
         this._startService();
         break;
       case "stop": {
@@ -431,8 +414,10 @@ export default class AllotExtension extends Extension {
     if (poller === undefined || poller === null) {
       return;
     }
+    // Starting would only fight the allotd that runs; the one fix is a restart through systemd.
+    const restart = this._model.status === "off_bus";
     this._showChange(this._model.noteStarting());
-    const problem = await poller.startService();
+    const problem = await (restart ? poller.restartService() : poller.startService());
     // A disable cancels the checks, which then read as a missing allotd.
     if (problem !== null && this._poller === poller) {
       console.warn(`Allot: cannot start the service: ${problem}`);
@@ -528,17 +513,4 @@ export default class AllotExtension extends Extension {
       this._tickId = 0;
     }
   }
-}
-
-/**
- * Whether a window is the preferences service's. On Wayland the app id arrives as the window
- * class; the GTK application id may stay unset.
- *
- * @param {import("gi://Meta").default.Window} window
- * @returns {boolean}
- */
-function isPrefsService(window) {
-  return (
-    window.get_wm_class() === PREFS_APP_ID || window.get_gtk_application_id() === PREFS_APP_ID
-  );
 }

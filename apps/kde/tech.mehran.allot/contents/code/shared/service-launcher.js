@@ -1,15 +1,11 @@
 // Generated from apps/gnome/allot@mehran.tech/lib/service-launcher.js by apps/kde/tools/emit.mjs (pnpm build); do not edit.
 /**
- * The system calls Start Service needs: Gio in the shell, fakes in the tests.
+ * What a finished program left: whether it exited with 0, and what it printed (standard output
+ * and error together).
  *
- * @typedef {object} ServiceSystem
- * @property {(path: string) => Promise<string | null>} readText
- *   A file's text, or `null` when it cannot be read.
- * @property {(path: string) => Promise<boolean>} isExecutable
- * @property {(argv: string[]) => Promise<boolean>} run
- *   Runs a program to its end; true when it exited with 0.
- * @property {(path: string) => void} spawn
- *   Starts a program that outlives the shell's call; throws why it could not start.
+ * @typedef {object} RunResult
+ * @property {boolean} ok
+ * @property {string} output
  */
 var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
     function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
@@ -21,6 +17,15 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
     });
 };
 /**
+ * The system calls Start Service needs: Gio in the shell, fakes in the tests.
+ *
+ * @typedef {object} ServiceSystem
+ * @property {(path: string) => Promise<string | null>} readText
+ *   A file's text, or `null` when it cannot be read.
+ * @property {(argv: string[]) => Promise<RunResult>} run
+ *   Runs a program to its end.
+ */
+/**
  * @typedef {object} LauncherPaths
  * @property {string} home
  * @property {string | null} configHome
@@ -29,52 +34,55 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
  *   `~/.allot`.
  */
 export const SYSTEMD_UNIT = "allotd.service";
+export const NO_UNIT_TEXT = `${SYSTEMD_UNIT} is not installed; run allot install`;
+export const RUNS_OFF_BUS_TEXT = "allotd already runs without the session bus; restart it outside the sandbox";
 const EXEC_START = "ExecStart=";
+// What systemctl prints when the unit is unknown, missing or masked, in the wording of the
+// systemd versions that ship with the supported distributions.
+const NO_UNIT_OUTPUT = /not found|not-found|not loaded|could not be found|does not exist|masked/i;
 /**
- * Starts the installed allotd the way `allot install` set it up, as `allot-client` does: through
- * the systemd user unit when that unit starts this install's allotd, else by running
- * `~/.allot/bin/allotd` directly. The unit gives allotd its own cgroup; started directly, it stays
- * in the shell's and ends with the session.
+ * Starts the installed allotd the way `allot install` set it up: through the systemd user unit,
+ * which gives allotd its own cgroup. It never runs allotd itself, so a second allotd cannot
+ * appear beside one the unit already manages.
  */
 export class SystemdServiceLauncher {
     /**
      * @param {LauncherPaths} paths
      * @param {ServiceSystem} system
+     * @param {(() => Promise<boolean>) | null} [aliveOffBus] Whether an allotd process runs
+     *   without the panel's channel to it; Start then leaves it alone.
      */
-    constructor(paths, system) {
+    constructor(paths, system, aliveOffBus = null) {
         this._paths = paths;
         this._system = system;
+        this._aliveOffBus = aliveOffBus;
     }
     /** @returns {string} */
     get daemonExe() {
         return `${this._paths.root}/bin/allotd`;
     }
     /**
-     * Starts allotd without waiting for it to answer.
+     * Starts allotd through the unit without waiting for it to answer.
      *
      * @returns {Promise<string | null>} `null` when it was started, else why not.
      */
     start() {
         return __awaiter(this, void 0, void 0, function* () {
-            if (yield this._unitRunsThisDaemon()) {
-                const argv = ["systemctl", "--user", "start", SYSTEMD_UNIT];
-                if (yield this._system.run(argv)) {
-                    return null;
-                }
-                // systemctl's refusals are not worth a banner line while allotd can still run directly.
+            var _a;
+            if ((yield (_a = this._aliveOffBus) === null || _a === void 0 ? void 0 : _a.call(this)) === true) {
+                return RUNS_OFF_BUS_TEXT;
             }
-            const exe = this.daemonExe;
-            if (!(yield this._system.isExecutable(exe))) {
-                return `${exe} is missing; run allot install`;
-            }
-            try {
-                this._system.spawn(exe);
-                return null;
-            }
-            catch (error) {
-                return `${exe}: ${error instanceof Error ? error.message : String(error)}`;
-            }
+            return this._systemctl("start");
         });
+    }
+    /**
+     * Restarts allotd through the unit, whatever it runs, for an allotd the panel cannot ask to
+     * stop.
+     *
+     * @returns {Promise<string | null>} `null` when systemd restarted it, else why not.
+     */
+    restartUnit() {
+        return this._systemctl("restart");
     }
     /**
      * Restarts allotd through the systemd user unit, when that unit runs this install's allotd.
@@ -87,10 +95,27 @@ export class SystemdServiceLauncher {
             if (!(yield this._unitRunsThisDaemon())) {
                 return false;
             }
-            return this._system.run(["systemctl", "--user", "restart", SYSTEMD_UNIT]);
+            return (yield this.restartUnit()) === null;
         });
     }
-    // The unit of another install (a dev build, another home) must not be started for this one.
+    /**
+     * @param {"start" | "restart"} verb
+     * @returns {Promise<string | null>}
+     */
+    _systemctl(verb) {
+        return __awaiter(this, void 0, void 0, function* () {
+            const result = yield this._system.run(["systemctl", "--user", verb, SYSTEMD_UNIT]);
+            if (result.ok) {
+                return null;
+            }
+            if (NO_UNIT_OUTPUT.test(result.output)) {
+                return NO_UNIT_TEXT;
+            }
+            const reason = lastLine(result.output);
+            return reason === "" ? `systemctl --user ${verb} ${SYSTEMD_UNIT} failed` : reason;
+        });
+    }
+    // The unit of another install (a dev build, another home) must not be restarted for this one.
     _unitRunsThisDaemon() {
         return __awaiter(this, void 0, void 0, function* () {
             const file = systemdUnitFile(this._paths.home, this._paths.configHome);
@@ -98,6 +123,18 @@ export class SystemdServiceLauncher {
             return unit !== null && systemdUnitExec(unit) === this.daemonExe;
         });
     }
+}
+/**
+ * @param {string} text
+ * @returns {string} The last line with text in it, trimmed.
+ */
+function lastLine(text) {
+    var _a;
+    const lines = text
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter((line) => line !== "");
+    return (_a = lines[lines.length - 1]) !== null && _a !== void 0 ? _a : "";
 }
 /** How long a restart waits for the old allotd to stop answering. */
 export const RESTART_WAIT_MS = 10000;
@@ -115,6 +152,7 @@ const RESTART_POLL_MS = 250;
  *
  * @typedef {object} RestartLauncher
  * @property {() => Promise<boolean>} restartThroughUnit
+ * @property {() => Promise<string | null>} restartUnit
  * @property {() => Promise<string | null>} start
  */
 /**
