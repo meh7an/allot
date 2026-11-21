@@ -74,6 +74,84 @@ enum Outcome {
     Warn(String),
     /// The call is blocked; the reason goes to Claude.
     Deny(String),
+    /// The user is asked to allow the call; the reason goes to the user.
+    Ask(String),
+}
+
+/// An `allot` command an agent may run only with the user's yes: it can end a job of another
+/// Claude session, or stop allotd for every session.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum UserControl {
+    Kill,
+    Remove,
+    DaemonStop,
+}
+
+/// `allot`'s subcommands, so the value of a flag before one is not read as the subcommand.
+const SUBCOMMANDS: &[&str] = &[
+    "status",
+    "leases",
+    "kill",
+    "remove",
+    "classes",
+    "history",
+    "daemon",
+    "doctor",
+    "completions",
+    "man",
+    "install",
+    "uninstall",
+    "hook",
+];
+
+/// Words that run the command after them, as in `sudo allot kill 3`.
+const WRAPPERS: &[&str] = &["sudo", "env", "nohup", "time", "nice", "&"];
+
+impl UserControl {
+    /// The control that `command`, one simple command's words joined by spaces, runs.
+    fn of(command: &str) -> Option<Self> {
+        let mut words = command
+            .split_whitespace()
+            .skip_while(|word| WRAPPERS.contains(word) || word.contains('='));
+        if !is_allot(words.next()?) {
+            return None;
+        }
+        let mut positional = words
+            .filter(|word| !word.starts_with('-'))
+            .map(str::to_lowercase)
+            .skip_while(|word| !SUBCOMMANDS.contains(&word.as_str()));
+        let subcommand = positional.next()?;
+        let action = positional.next();
+        match (subcommand.as_str(), action.as_deref()) {
+            ("kill", _) => Some(Self::Kill),
+            ("remove", _) => Some(Self::Remove),
+            ("daemon", Some("stop")) => Some(Self::DaemonStop),
+            _ => None,
+        }
+    }
+
+    /// Why the user is asked, in the permission prompt.
+    fn reason(self) -> String {
+        let what = match self {
+            Self::Kill => "`allot kill` ends a job, which may be another Claude session's",
+            Self::Remove => {
+                "`allot remove` takes a request out of the queue, which may be another Claude \
+                 session's"
+            }
+            Self::DaemonStop => {
+                "`allot daemon stop` stops allotd for every Claude session until you start it \
+                 again"
+            }
+        };
+        format!("{MCP_SERVER}: {what}. Allow it only if you asked for it.")
+    }
+}
+
+/// Whether `word` names the `allot` CLI, by path or bare, with or without `.exe`.
+fn is_allot(word: &str) -> bool {
+    let name = word.rsplit(['/', '\\']).next().unwrap_or(word);
+    let lowered = name.to_lowercase();
+    lowered.strip_suffix(".exe").unwrap_or(&lowered) == "allot"
 }
 
 #[derive(Debug, Serialize)]
@@ -220,7 +298,16 @@ fn evaluate<D: HookDaemon>(
     let Some(line) = input.tool_input.command else {
         return Outcome::Pass;
     };
-    let (class, rule, command) = match Classifier::new(&config.classifier).classify(&line, shell) {
+    let classifier = Classifier::new(&config.classifier);
+    // Before the lease check: the user decides these, whatever the session holds.
+    if let Some(control) = classifier
+        .explain(&line, shell)
+        .iter()
+        .find_map(|simple| UserControl::of(&simple.command))
+    {
+        return Outcome::Ask(control.reason());
+    }
+    let (class, rule, command) = match classifier.classify(&line, shell) {
         Classification::Heavy {
             class,
             matched_rule,
@@ -362,6 +449,15 @@ fn render(outcome: &Outcome) -> Option<String> {
             hook_specific_output: Some(SpecificOutput {
                 hook_event_name: "PreToolUse",
                 permission_decision: Some("deny"),
+                permission_decision_reason: Some(reason),
+                additional_context: None,
+            }),
+            system_message: None,
+        },
+        Outcome::Ask(reason) => HookOutput {
+            hook_specific_output: Some(SpecificOutput {
+                hook_event_name: "PreToolUse",
+                permission_decision: Some("ask"),
                 permission_decision_reason: Some(reason),
                 additional_context: None,
             }),
@@ -698,6 +794,61 @@ mod tests {
                 },
             })
         );
+    }
+
+    #[test]
+    fn test_render_ask_asks_the_user_with_the_reason() {
+        let json: Value =
+            serde_json::from_str(&render(&Outcome::Ask("why".into())).unwrap()).unwrap();
+        let decision = &json["hookSpecificOutput"];
+        assert_eq!(decision["permissionDecision"], "ask");
+        assert_eq!(decision["permissionDecisionReason"], "why");
+    }
+
+    /// A payload of `tool` running `command`, from the light fixture.
+    fn calling(tool: &str, command: &str) -> String {
+        let mut input: Value = serde_json::from_str(BASH_LIGHT).unwrap();
+        input["tool_name"] = tool.into();
+        input["tool_input"]["command"] = command.into();
+        input.to_string()
+    }
+
+    #[test]
+    fn test_evaluate_asks_the_user_before_allot_controls_jobs_or_allotd() {
+        for (tool, command, named) in [
+            ("Bash", "allot kill 12", "`allot kill`"),
+            (
+                "Bash",
+                "cargo fmt && ~/.allot/bin/allot remove 3",
+                "`allot remove`",
+            ),
+            (
+                "Bash",
+                "sudo allot --color never daemon stop",
+                "`allot daemon stop`",
+            ),
+            ("PowerShell", "allot.exe daemon stop", "`allot daemon stop`"),
+        ] {
+            let outcome = evaluate(&calling(tool, command), &Config::default(), never);
+            let Outcome::Ask(reason) = outcome else {
+                panic!("expected an ask for {command}, got {outcome:?}");
+            };
+            assert!(reason.contains(named), "{reason}");
+        }
+    }
+
+    #[test]
+    fn test_evaluate_lets_other_allot_commands_and_mentions_through() {
+        for command in [
+            "allot daemon status",
+            "allot status --json",
+            "allot leases",
+            "echo allot kill 12",
+            "allot daemon start",
+        ] {
+            let outcome = evaluate(&calling("Bash", command), &Config::default(), never);
+            assert_eq!(outcome, Outcome::Pass, "{command}");
+        }
     }
 
     #[test]

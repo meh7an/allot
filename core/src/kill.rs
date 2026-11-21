@@ -9,7 +9,7 @@
 use std::collections::{HashMap, HashSet};
 
 use allot_shared::{
-    platform::ALLOT_BINARIES,
+    platform::{ALLOT_BINARIES, SESSION_ROOTS},
     types::{Holder, LeaseBinding},
 };
 
@@ -115,9 +115,20 @@ pub struct KillFailure {
     pub error: String,
 }
 
+/// Whether a process named `name` is never killed, wherever it runs: an `allot` binary, or a
+/// Claude Code session, such as a nested `claude -p` a command started without the allot MCP
+/// server. The tree kill and the Linux scope kill both ask this, so they spare the same
+/// processes.
+pub fn is_protected_name(name: &str) -> bool {
+    ALLOT_BINARIES
+        .iter()
+        .chain(SESSION_ROOTS)
+        .any(|protected| name.eq_ignore_ascii_case(protected))
+}
+
 /// Processes no kill may terminate: the lease's holder and its ancestors (the terminal or
 /// editor it runs in), every other running lease holder, the daemon and its ancestors, and
-/// anything named like an `allot` binary.
+/// anything named like an `allot` binary or a Claude Code session ([`is_protected_name`]).
 ///
 /// Other holders' ancestors are not protected: a command that starts a nested Claude session
 /// is that session's ancestor, and only the nested session itself must survive the kill.
@@ -148,10 +159,7 @@ impl Protected {
 
     /// Whether `node` must never be terminated.
     pub fn covers(&self, node: &ProcessNode) -> bool {
-        self.processes.contains(&key(node))
-            || ALLOT_BINARIES
-                .iter()
-                .any(|binary| node.name.eq_ignore_ascii_case(binary))
+        self.processes.contains(&key(node)) || is_protected_name(&node.name)
     }
 }
 
@@ -539,6 +547,23 @@ mod tests {
                 name: "node.exe".into()
             }
         );
+    }
+
+    #[test]
+    fn test_plan_spares_a_nested_claude_that_holds_no_lease() {
+        // The command runs `claude -p` without the allot MCP server, so no lease names it.
+        let mut extra = bash_command();
+        extra.push(raw_process(40, Some(22), SESSION_ROOTS[0], 104));
+        extra.push(raw_process(41, Some(40), "node.exe", 105));
+        let table = with(&extra);
+        let plan = plan(&table, &binding(20, 101)).unwrap();
+        assert_eq!(pids(plan.planned()), [20, 21, 22, 23, 24, 25]);
+        let spared: Vec<(u32, SpareReason)> = plan
+            .spared()
+            .iter()
+            .map(|spared| (spared.pid, spared.reason))
+            .collect();
+        assert_eq!(spared, [(40, SpareReason::Protected)]);
     }
 
     #[test]

@@ -532,10 +532,9 @@ impl Scope {
     }
 }
 
-/// Whether a process named `comm` must never be moved into a scope or killed with one.
-pub(crate) fn is_protected_name(comm: &str) -> bool {
-    is_allot_binary(comm) || is_session_root(comm)
-}
+/// Whether a process named `comm` must never be moved into a scope or killed with one; the
+/// tree kill spares the same names.
+pub(crate) use allot_core::kill::is_protected_name;
 
 fn is_allot_binary(comm: &str) -> bool {
     ALLOT_BINARIES.contains(&comm)
