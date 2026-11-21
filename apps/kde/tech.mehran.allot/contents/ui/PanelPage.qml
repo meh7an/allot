@@ -43,6 +43,8 @@ QQC2.ScrollView {
                     text: row.label
                     checked: row.checked
                     enabled: row.enabled
+                    Accessible.name: row.label
+                    Accessible.description: row.help ?? ""
                     onToggled: page.host.widget.setPanelToggle(row.toggle, checked)
                 }
             }
@@ -88,6 +90,7 @@ QQC2.ScrollView {
                         text: parent.row.label
                         checked: parent.row.checked
                         enabled: parent.row.enabled
+                        Accessible.name: parent.row.label
                         Accessible.description: parent.row.help
                         onToggled: page.host.widget.setPanelToggle(parent.row.toggle, checked)
                     }
@@ -105,6 +108,7 @@ QQC2.ScrollView {
             Layout.margins: Kirigami.Units.largeSpacing
             text: "Reset Page…"
             enabled: page.view.canReset
+            Accessible.description: page.view.canReset ? "" : View.NOTHING_TO_RESET
             QQC2.ToolTip.text: View.NOTHING_TO_RESET
             QQC2.ToolTip.visible: hovered && !enabled
             onClicked: {

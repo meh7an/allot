@@ -195,6 +195,13 @@ once more. Kill ends only the process tree that the lease's command started, nev
 itself. The session is told you stopped the job, and asks you whether to retry or skip. It never
 retries on its own.
 
+**Settings** in the panel's More options menu edits every setting: headroom and learned estimates,
+sizes for each class and preset with how many jobs fit on this machine, the heavy-command
+rules with a box that tests a command against them, and the panel's own meters and
+notifications. **Stop service** stops allotd until you start it again, so sessions run their
+commands without leases meanwhile instead of starting it back up. On Windows the flyout opens next
+to the tray icon on whichever edge the taskbar is: bottom, top, left or right.
+
 ## Everyday commands
 
 | Command | Shows or does |
@@ -204,7 +211,7 @@ retries on its own.
 | `allot history [FINGERPRINT]` | Median, p90, and max of what past jobs used, or the runs of one job. |
 | `allot classes` | The heavy-command rules, class profiles, and presets in effect. |
 | `allot kill ID` / `allot remove ID` | Stop a running job, or take a queued one out of the queue. |
-| `allot daemon start\|stop\|status` | Control allotd. `status` never starts it. |
+| `allot daemon start\|stop\|status` | Control allotd. `stop` keeps it stopped until a start; `status` never starts it. |
 | `allot doctor` | Check the install and say what to fix. Changes nothing. |
 
 `status`, `leases`, `history`, `kill`, `remove`, `daemon status` and `doctor` take `--json`; the
@@ -227,7 +234,8 @@ fail_open = true           # let commands run when allotd is down
 max_quiet_wait_secs = 60   # grant a benchmark without quiet after this long
 ```
 
-Every key, the class profiles, and the classifier rules are in the
+The panel's Settings window changes the same keys for you and keeps your comments in the file.
+Every key, the class profiles, the classifier rules, and the Settings window are in the
 [runbook](docs/runbook.md#configuration).
 
 ## Learn more

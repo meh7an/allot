@@ -21,6 +21,16 @@ internal static class SettingsUi
 
     public static Visibility Shows(bool shown) => shown ? Visibility.Visible : Visibility.Collapsed;
 
+    /// <summary>
+    /// Hides an icon from screen readers, where text next to it already says what it means.
+    /// </summary>
+    public static T Decorative<T>(T element)
+        where T : UIElement
+    {
+        AutomationProperties.SetAccessibilityView(element, AccessibilityView.Raw);
+        return element;
+    }
+
     public static TextBlock Text(string text, string style) =>
         new() { Text = text, Style = Style(style), TextWrapping = TextWrapping.WrapWholeWords };
 
@@ -56,38 +66,43 @@ internal static class SettingsUi
     }
 
     /// <summary>
-    /// The live sentence at the end of a group, a polite live region.
+    /// The live sentence at the end of a group. Screen readers read it where it stands; it is not
+    /// announced when it changes (Mehran at M7.1: only errors and outcomes are).
     /// </summary>
-    public static TextBlock LiveSentence()
-    {
-        var text = Text(string.Empty, "SettingsLiveTextStyle");
-        AutomationProperties.SetLiveSetting(
-            text,
-            AutomationLiveSetting.Polite);
-        return text;
-    }
+    public static TextBlock LiveSentence() => Text(string.Empty, "SettingsLiveTextStyle");
 
     /// <summary>
-    /// Sets a live sentence's text, announcing it once when it changed.
+    /// Sets a live sentence's text; it hides while empty.
     /// </summary>
-    public static void SetLive(TextBlock text, string value)
+    /// <returns>Whether the text changed.</returns>
+    public static bool SetLive(TextBlock text, string value)
     {
         if (text.Text == value)
         {
-            return;
+            return false;
         }
 
         text.Text = value;
         text.Visibility = Shows(value.Length > 0);
-        Announce(text);
+        return true;
     }
 
     /// <summary>
-    /// Tells screen readers that a live region's text changed.
+    /// Speaks <paramref name="text"/> to screen readers without moving focus. A newer text from
+    /// the same window replaces one not yet spoken.
     /// </summary>
-    public static void Announce(FrameworkElement element) =>
-        FrameworkElementAutomationPeer.FromElement(element)
-            ?.RaiseAutomationEvent(AutomationEvents.LiveRegionChanged);
+    /// <param name="element">Any element of the window, which raises the notification.</param>
+    /// <param name="text">What to say.</param>
+    public static void Announce(FrameworkElement element, string text)
+    {
+        var peer = FrameworkElementAutomationPeer.FromElement(element)
+            ?? FrameworkElementAutomationPeer.CreatePeerForElement(element);
+        peer?.RaiseNotificationEvent(
+            AutomationNotificationKind.ActionCompleted,
+            AutomationNotificationProcessing.ImportantMostRecent,
+            text,
+            "AllotSettings");
+    }
 
     /// <summary>
     /// Code text, such as a TOML key, a program or a flag.
@@ -115,6 +130,7 @@ internal static class SettingsUi
             {
                 Glyph = glyph,
                 FontSize = size > 24 ? 14 : 10,
+                IsTextScaleFactorEnabled = false,
                 FontFamily = SymbolFont,
             },
         };

@@ -33,6 +33,7 @@ struct PanelPage: View {
                         set: { model.actions.setLaunchAtLogin($0) }))
                         .toggleStyle(.switch)
                         .labelsHidden()
+                        .rowHint()
                 }
                 .disabled(!panel.login.canToggle)
                 if panel.login == .needsApproval {
@@ -41,7 +42,9 @@ struct PanelPage: View {
                 }
             }
             SettingsSection(title: PanelToggles.textSizeLabel) {
-                SettingRow(label: PanelToggles.textSizeLabel, help: "Text in the panel.") {
+                SettingRow(
+                    label: PanelToggles.textSizeLabel, help: "Text in the panel and in this window."
+                ) {
                     Picker(PanelToggles.textSizeLabel, selection: Binding(
                         get: { settings.textSize },
                         set: { size in panel.updateSettings { $0.textSize = size } })
@@ -53,6 +56,7 @@ struct PanelPage: View {
                     .pickerStyle(.segmented)
                     .labelsHidden()
                     .fixedSize()
+                    .rowHint()
                 }
             }
             let changed = PanelToggles.changedLines(
@@ -84,6 +88,7 @@ struct PanelPage: View {
                     set: { on in panel.updateSettings { $0[keyPath: toggle.key] = on } }))
                     .toggleStyle(.switch)
                     .labelsHidden()
+                    .rowHint()
             }
             .padding(.leading, toggle.parent == nil ? 0 : 20)
             .disabled(!toggle.isEnabled(in: panel.settings))

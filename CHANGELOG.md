@@ -6,6 +6,39 @@ All notable changes to this project are documented in this file. The format foll
 
 ## [Unreleased]
 
+### Added
+
+- A Settings window in every panel (the Windows tray app, the macOS menu bar app, the GNOME
+  extension and the KDE widget) that edits every key of `config.toml` and the panel's own
+  settings. Pages: Panel, Admission, Sizes, Commands, Benchmarks, Leases and Service. Single
+  values save as you change them; classes, presets and rules are edited in a dialog and saved
+  whole. allotd writes the file: it validates the change first, keeps your comments and layout,
+  writes atomically and reloads. A hand edit made meanwhile is caught and shown, and an invalid
+  file or a stopped service makes the pages read-only.
+- What fits on this machine: Admission and Sizes show how many jobs of each class fit now and
+  with every lease ended, at full size and shrunk, for the values on screen before they are
+  saved.
+- Test a command: Commands shows which rule and class each command of a line gets, with the
+  rules being edited, and marks the matching rule.
+- `GET` and `PATCH /settings`, `POST /settings/preview` and `POST /classify` on allotd, with
+  their schemas in `contract/`.
+- Screen readers hear errors, banners, the outcome of a save and the result of Test a command
+  without a focus change, and read each class or preset row as one sentence.
+
+### Changed
+
+- Stopping the service keeps it stopped. `allot daemon stop` and Stop service in a panel write
+  `~/.allot/stopped.json`; until `allot daemon start`, Start service in a panel, or the next
+  sign-in, sessions do not start allotd, and the hook lets heavy commands through without a
+  lease. `allot status` and `allot doctor` show the stopped state.
+- The panels' More options menus shrink to Settings, Stop or Start service and Open logs (and
+  Quit on macOS); meters and notifications moved into Settings.
+- The GNOME extension talks to allotd over the session bus (`tech.mehran.Allot`) instead of
+  loopback HTTP, as extensions.gnome.org review asked. It follows leases at once through a
+  `JobsChanged` signal and needs the allotd of the same release.
+- On Windows the flyout opens next to the tray icon and slides from whichever edge the taskbar
+  is on: bottom, top, left or right. The tray icon's menu opens away from the taskbar.
+
 ## [0.5.0] - 2026-11-17
 
 ### Added

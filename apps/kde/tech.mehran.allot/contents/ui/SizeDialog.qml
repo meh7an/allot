@@ -15,6 +15,9 @@ Kirigami.Dialog {
     property var draft: null
     property string fitText: ""
     property var preview: null
+    // The table whose row opened the dialog, and the row's name, for the focus on closing.
+    property var opener: null
+    property string openerName: ""
     readonly property var rename: {
         dialog.host.revision;
         return dialog.draft === null ? null : View.nameView(dialog.draft, dialog.host.number);
@@ -27,9 +30,11 @@ Kirigami.Dialog {
         return View.renameWarning(dialog.draft) ?? dialog.fitText;
     }
 
-    function edit(table, draft) {
+    function edit(table, draft, opener) {
         dialog.table = table;
         dialog.draft = draft;
+        dialog.opener = opener;
+        dialog.openerName = draft.name;
         dialog.fitText = View.NOT_YET_TEXT;
         dialog.title = View.sizeDialogTitle(table, draft);
         dialog.preview = View.debounced(dialog.host.timers, () =>
@@ -56,7 +61,8 @@ Kirigami.Dialog {
         }
     }
 
-    preferredWidth: Kirigami.Units.gridUnit * 28
+    // Text scaling: the width follows the font's height, which `gridUnit` does not.
+    preferredWidth: metrics.height * 26
     standardButtons: Kirigami.Dialog.NoButton
     customFooterActions: [
         Kirigami.Action {
@@ -76,12 +82,22 @@ Kirigami.Dialog {
         first?.forceActiveFocus();
     }
     onClosed: {
+        const names = dialog.draft === null ? [dialog.openerName]
+            : [dialog.draft.name, dialog.openerName];
         if (dialog.draft !== null) {
             dialog.draft.onChange = null;
         }
         dialog.preview?.cancel();
         dialog.draft = null;
         dialog.host.changed();
+        // DESIGN.md section 11: the focus goes back to the row's Edit button.
+        dialog.opener?.focusRow(names);
+    }
+
+    FontMetrics {
+        id: metrics
+
+        font: Kirigami.Theme.defaultFont
     }
 
     ColumnLayout {
@@ -93,14 +109,18 @@ Kirigami.Dialog {
             spacing: 0
 
             QQC2.Label {
+                Layout.fillWidth: true
                 text: dialog.rename === null ? "" : dialog.rename.label
+                wrapMode: Text.Wrap
+                Accessible.ignored: true
             }
 
             QQC2.TextField {
                 id: nameField
 
                 Layout.fillWidth: true
-                Accessible.name: dialog.rename === null ? "" : dialog.rename.label
+                Accessible.name: dialog.rename === null ? "Name" : dialog.rename.label
+                Accessible.description: dialog.rename === null ? "" : dialog.rename.description
                 onTextEdited: dialog.draft.setName(nameField.text)
             }
 
@@ -144,6 +164,8 @@ Kirigami.Dialog {
 
                         visible: field.minimum
                         text: "Automatic minimum"
+                        Accessible.name: text
+                        Accessible.description: field.automatic === null ? "" : field.automatic.help
                         checked: field.automatic !== null && field.automatic.automatic
                         onToggled: field.fieldModel.setAutomatic(checked,
                             field.automatic.automaticValue)
@@ -170,8 +192,6 @@ Kirigami.Dialog {
             text: dialog.live
             visible: text !== ""
             wrapMode: Text.Wrap
-            Accessible.role: Accessible.StaticText
-            Accessible.name: text
         }
 
         QQC2.Button {

@@ -207,6 +207,11 @@ public sealed partial class App : Application
             _stopper = new DebugScenario.Stopper(() => _scenario, _clock, EndScenarioJob);
             shell.AddScenarios(Core.Samples.Handoff.ScenarioNames, ShowScenario);
             ShowScenario(scenario);
+            if (DebugScenario.SettingsPage is { } page)
+            {
+                OpenSettings(page);
+            }
+
             return;
         }
 #endif

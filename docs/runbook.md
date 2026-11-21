@@ -30,8 +30,9 @@ same files are in `~/.allot`; the Linux and macOS sections cover what differs.
 - `allot daemon start` starts it by hand; `allot daemon stop` stops it gracefully and keeps it
   stopped: it writes `stopped.json` in the data folder, and while that file exists `allot-mcp`
   and `allot status` do not start allotd, and the hook lets heavy commands run without leases.
-  Any start of allotd removes the file: `allot daemon start`, Start service in the tray app, or
-  the logon task at your next logon. The tray app's Stop service does not keep it stopped yet.
+  Stop service in a panel (the tray app, the menu bar app, the GNOME extension, the KDE widget)
+  does the same and records `"by": "panel"`. Any start of allotd removes the file:
+  `allot daemon start`, Start service in a panel, or the logon task at your next logon.
 
 The tray app itself starts at logon from the Run key value `Allot` (Launch at logon in its
 tray menu, or Startup apps in Task Manager). `allot install` turns it on the first time it
@@ -58,8 +59,20 @@ journalctl --user -u allotd
 - allotd stops at your last logout. `loginctl enable-linger` keeps it running after that.
 - `allotd.log` is in `~/.allot/logs/`, the same as on Windows.
 
+The GNOME extension, panel and Settings window alike, talks to allotd over the session bus
+instead of HTTP, as extensions.gnome.org asks: allotd owns the name `tech.mehran.Allot` and serves
+the interface `tech.mehran.Allot1` at `/tech/mehran/Allot`. The bus needs no token; allotd answers
+only callers of its own user. The extension watches the name, so it shows the service down the
+moment allotd stops, and allotd signals `JobsChanged` when a lease starts, queues or ends, so the
+panel follows at once. The KDE widget and every other client keep HTTP on 127.0.0.1.
+
+```bash
+busctl --user introspect tech.mehran.Allot /tech/mehran/Allot
+```
+
 | Symptom | Cause and fix |
 |---------|---------------|
+| The GNOME extension shows the service down while `allot status` shows it running | allotd has no session bus, for example when it was started inside a sandbox, or it is older than the extension (before 0.6.0). `logs/allotd.log` has a warning about the bus at startup; HTTP clients keep working. Restart it outside the sandbox: `systemctl --user restart allotd`, or `allot install` from the same release. |
 | `[todo] allotd at login` | No systemd user session, such as WSL without systemd. The line prints the commands. On WSL, set `systemd=true` under `[boot]` in `/etc/wsl.conf` and restart WSL. Clients still start allotd without the unit. |
 | `systemctl --user list-units 'allot-*.scope'` lists nothing while a job runs | `linux.scopes` needs cgroup v2 and a systemd user session; without them leases follow the process tree. See Configuration. |
 | `allot: command not found` | `~/.local/bin` is not on `PATH`, or it did not exist during the install. Add `~/.allot/bin` to `PATH`, or create the folder and install again. |
@@ -150,8 +163,8 @@ a notice through its next hook call or MCP tool result, and Claude tells you and
 to retry or skip. The notice is delivered once.
 
 Only one allotd runs per user: a second one finds `allotd.lock` taken and exits. When allotd
-stops without `allot daemon stop`, such as a crash or the tray app's Stop service, it is down only
-for a while: a session holding a lease starts it again on its next heartbeat (within about 20 s),
+stops without `allot daemon stop` or a panel's Stop service, such as a crash or ending it in Task
+Manager, it is down only for a while: a session holding a lease starts it again on its next heartbeat (within about 20 s),
 and any session does on its next tool call. After `allot daemon stop` no session starts it.
 
 ## Fail-open behavior
@@ -329,6 +342,48 @@ are rejected. `allot classes` prints the classifier rules and class profiles in 
 | `[presets.<name>]` | built in | `cpu_small`, `cpu_medium`, `gpu_small`, `quick`, `low_impact`, with the same keys as a class. A new name adds a preset, which needs at least `cores` and `ram_mb` (GPU and VRAM default to 0, the run time to 300 s). |
 | `[[classifier.rules]]` | built in | Heavy-command rules. A list here replaces the default list. |
 | `classifier.light_flags` | `--help`, `-h`, `--version`, `-V`, `/?` | A command with any of these arguments only prints and exits, so it is light even when a rule matches it. A list here replaces the default list. |
+
+### The Settings window
+
+Each panel has a Settings window that edits every key above, plus the panel's own settings
+(meters, notifications, and starting at login or Text size where the panel has them):
+
+| Panel | Opens from |
+|-------|------------|
+| Tray app (Windows) | More options > Settings, the tray icon's menu, or Ctrl+, in the flyout |
+| Menu bar app (macOS) | ⋯ > Settings…, the right-click menu, or ⌘, |
+| GNOME extension | ⋯ > Settings, the right-click menu, or `gnome-extensions prefs allot@mehran.tech` |
+| KDE widget | ⋯ > Configure Allot…, the right-click menu, or Ctrl+, in the popup |
+
+Its pages are Panel, Admission, Sizes, Commands, Benchmarks, Leases and Service; each setting's
+help line ends with its key.
+
+- **Saving.** A single value is saved about 0.6 s after your last change, with no Apply button; a
+  class, a preset or a rule is saved whole when you save its Edit dialog. A value out of range is
+  shown under its field and never written; Escape in the field brings the saved value back.
+- **allotd writes the file.** The panel sends the change; allotd checks it as it checks the file,
+  writes `config.toml` atomically, keeps your comments and layout, and puts it into effect at once.
+  Resetting a key removes it from the file, so later default changes reach it.
+- **Lists are written whole.** The rules editor always writes the full `[[classifier.rules]]`
+  list, so a list never replaces the defaults by accident; Use built-in rules removes the key,
+  and deleting every rule writes `rules = []`. Built-in presets can be edited and reset, but not
+  renamed or deleted.
+- **What fits.** Admission and Sizes show how many jobs of each class fit on this machine now and
+  with every lease ended, at full size and shrunk to their minimum cores, for the values on
+  screen, before they are saved.
+- **Test a command.** On Commands, a command line shows the rule and class each of its commands
+  gets, with the rules being edited (Bash; on Windows also PowerShell). The matching rule shows
+  Matches.
+- **Hand edits.** When `config.toml` changed by hand while a change waited, a banner shows the
+  file's values and offers Apply my change or Keep file's values. While the file is invalid, or the
+  service is stopped or not answering, allotd's pages are read-only; the Panel page keeps working.
+- **Port.** A new `daemon.port` is saved at once and shows Restart needed until Restart service.
+- **A held file.** "config.toml is open in another program that blocks changes" (Windows): close
+  it there and try again.
+- **Screen readers** hear, without moving focus, an error as it appears, a banner as it appears,
+  All changes saved after a save, the result of Test a command, and notices such as a reset with
+  Undo. Live sentences, such as the headroom sentence, are read where they stand. Rules move with
+  Alt+Up and Alt+Down (Option on macOS) as well as their menu.
 
 ## Resetting the database
 

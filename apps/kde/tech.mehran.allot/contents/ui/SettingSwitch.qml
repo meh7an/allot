@@ -29,7 +29,8 @@ ColumnLayout {
             text: row.view.label
             checked: row.view.checked
             enabled: row.view.enabled
-            Accessible.description: row.setting.spec.help + " " + row.view.key
+            Accessible.name: row.view.label
+            Accessible.description: row.view.description
             onToggled: {
                 row.setting.set(checked);
                 row.host.changed();

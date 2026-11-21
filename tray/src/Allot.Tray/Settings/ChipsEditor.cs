@@ -56,6 +56,11 @@ internal sealed class ChipsEditor
     public FrameworkElement Root { get; }
 
     /// <summary>
+    /// The entry box, which keeps its own name and takes the row's help as its description.
+    /// </summary>
+    public FrameworkElement Field => _entry;
+
+    /// <summary>
     /// Shows the model's entries; rebuilds the chips only when they changed, so focus stays.
     /// </summary>
     public void Sync(bool enabled)

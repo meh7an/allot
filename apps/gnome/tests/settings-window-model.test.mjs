@@ -424,3 +424,20 @@ test("print-only flags stay a string list on their own section", async () => {
 
   assert.ok(flags?.kind === "settings" && flags.settings[0] instanceof StringListModel);
 });
+
+test("the window speaks a banner that appears on the page shown, and not on another page", async () => {
+  const { model, client } = await windowModel();
+  /** @type {string[]} */
+  const spoken = [];
+  model.onAnnounce = (text) => spoken.push(text);
+  model.showPage("admission");
+
+  client.reads.push(failure("unreachable"));
+  await model.refresh();
+  await settleAll();
+  model.showPage("service");
+
+  assert.deepEqual(spoken, [
+    "The service isn't answering on port 47823. Trying again every 5 s.",
+  ]);
+});

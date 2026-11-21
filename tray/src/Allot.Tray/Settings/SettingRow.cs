@@ -46,12 +46,14 @@ internal sealed partial class SettingRow : UserControl
     private const string ErrorGlyph = "";
     private const string ResetGlyph = "";
 
+    private readonly FrameworkElement _control;
+    private readonly string _description;
     private readonly Button _reset;
     private readonly StackPanel _noteLine;
-    private readonly FontIcon _noteIcon = new()
+    private readonly FontIcon _noteIcon = SettingsUi.Decorative(new FontIcon
     {
         Style = SettingsUi.Style("SettingsErrorIconStyle"),
-    };
+    });
     private readonly TextBlock _note = new();
     private readonly HyperlinkButton _undo = new()
     {
@@ -64,14 +66,28 @@ internal sealed partial class SettingRow : UserControl
     /// <param name="label">The setting's label.</param>
     /// <param name="help">One or two plain sentences.</param>
     /// <param name="key">The TOML key, or <c>null</c> for a panel setting.</param>
-    /// <param name="control">The control, named after the label for screen readers.</param>
-    public SettingRow(string label, string help, string? key, FrameworkElement control)
+    /// <param name="control">The control, or the panel that holds it with its companions.</param>
+    /// <param name="field">The element screen readers reach for the setting, when
+    /// <paramref name="control"/> is a panel (which they do not see): named after the label
+    /// unless it has a name of its own, and described by the help and key.</param>
+    public SettingRow(
+        string label,
+        string help,
+        string? key,
+        FrameworkElement control,
+        FrameworkElement? field = null)
     {
-        AutomationProperties.SetName(control, label);
+        _control = field ?? control;
+        if (string.IsNullOrEmpty(AutomationProperties.GetName(_control)))
+        {
+            AutomationProperties.SetName(_control, label);
+        }
+
         var description = key is null ? help : $"{help} {key}";
+        _description = description;
         if (description.Length > 0)
         {
-            AutomationProperties.SetHelpText(control, description);
+            AutomationProperties.SetHelpText(_control, description);
         }
 
         var grid = new Grid { ColumnSpacing = 12, RowSpacing = 2 };
@@ -130,6 +146,7 @@ internal sealed partial class SettingRow : UserControl
             {
                 Glyph = ResetGlyph,
                 FontSize = 14,
+                IsTextScaleFactorEnabled = false,
                 FontFamily = SettingsUi.SymbolFont,
             },
         };
@@ -148,7 +165,6 @@ internal sealed partial class SettingRow : UserControl
             Children = { _noteIcon, _note, _undo },
         };
         _note.TextWrapping = TextWrapping.WrapWholeWords;
-        AutomationProperties.SetLiveSetting(_note, AutomationLiveSetting.Assertive);
         Grid.SetRow(_noteLine, 2);
         Grid.SetColumnSpan(_noteLine, 2);
         grid.Children.Add(_noteLine);
@@ -177,10 +193,15 @@ internal sealed partial class SettingRow : UserControl
     }
 
     /// <summary>
-    /// Shows the line under the row, or hides it for <c>null</c>.
+    /// Shows the line under the row, or hides it for <c>null</c>. An error also leads the
+    /// control's description while it shows; the window announces it (SettingsAnnouncer).
     /// </summary>
     public void SetNote(RowNote? note)
     {
+        var error = note is { Kind: RowNoteKind.Error } ? note.Text : null;
+        AutomationProperties.SetHelpText(
+            _control,
+            error is null ? _description : $"{error} {_description}".TrimEnd());
         if (note is null)
         {
             _noteLine.Visibility = Visibility.Collapsed;
@@ -189,7 +210,6 @@ internal sealed partial class SettingRow : UserControl
             return;
         }
 
-        var changed = _note.Text != note.Text;
         _note.Text = note.Text;
         _note.Style = SettingsUi.Style(note.Kind switch
         {
@@ -201,9 +221,5 @@ internal sealed partial class SettingRow : UserControl
         _onUndo = note.Undo;
         _undo.Visibility = SettingsUi.Shows(note.Undo is not null);
         _noteLine.Visibility = Visibility.Visible;
-        if (changed && note.Kind == RowNoteKind.Error)
-        {
-            SettingsUi.Announce(_note);
-        }
     }
 }

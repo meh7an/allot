@@ -29,10 +29,12 @@ ColumnLayout {
     RowLayout {
         Layout.fillWidth: true
 
+        // The spin box carries this label as its name, so a screen reader skips this one.
         QQC2.Label {
             Layout.fillWidth: true
             text: row.view.label
             wrapMode: Text.Wrap
+            Accessible.ignored: true
         }
 
         NumberEditor {

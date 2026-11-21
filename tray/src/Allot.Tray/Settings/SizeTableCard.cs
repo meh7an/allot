@@ -2,6 +2,7 @@ using Allot.Tray.Core.ServiceSettings;
 
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
+using Microsoft.UI.Xaml.Automation.Peers;
 using Microsoft.UI.Xaml.Controls;
 
 namespace Allot.Tray.Settings;
@@ -116,10 +117,12 @@ internal sealed class SizeTableCard
         }
     }
 
+    // Screen readers read each row's spoken name instead of the headers and cells.
     private static TextBlock Header(string text)
     {
         var header = SettingsUi.Text(text, "SettingsHelpTextStyle");
         header.TextWrapping = TextWrapping.NoWrap;
+        AutomationProperties.SetAccessibilityView(header, AccessibilityView.Raw);
         return header;
     }
 
@@ -171,6 +174,7 @@ internal sealed class SizeTableCard
     private sealed class RowCells
     {
         private readonly SizeTableCard _card;
+        private readonly TextBlock _name;
         private readonly TextBlock[] _values = new TextBlock[Headers.Length];
         private readonly Button _edit;
         private readonly Button? _reset;
@@ -180,10 +184,13 @@ internal sealed class SizeTableCard
         {
             _card = card;
             var name = view.Row.Name;
-            card.Place(NameCell(view, card._model.CanAdd), row, 0);
+            var (cell, spoken) = NameCell(view, card._model.CanAdd);
+            _name = spoken;
+            card.Place(cell, row, 0);
             for (var i = 0; i < _values.Length; i++)
             {
                 _values[i] = new TextBlock { TextWrapping = TextWrapping.NoWrap };
+                AutomationProperties.SetAccessibilityView(_values[i], AccessibilityView.Raw);
                 card.Place(_values[i], row, i + 1);
             }
 
@@ -222,7 +229,10 @@ internal sealed class SizeTableCard
         {
             var number = _card._context.Number;
             var cells = SizesText.Cells(view.Row, number);
-            var fits = SizesText.FitsNow(_card._fits.Of(_card._model.Key, view.Row.Name), number);
+            var fit = _card._fits.Of(_card._model.Key, view.Row.Name);
+            var fits = SizesText.FitsNow(fit, number);
+            var label = _card._model.CanAdd ? view.Row.Name : view.Label;
+            AutomationProperties.SetName(_name, SizesText.Spoken(label, view.Row, fit, number));
             string[] texts =
             [
                 cells.Cores, cells.MinCores, cells.Memory, cells.Gpu, cells.VideoMemory,
@@ -246,8 +256,9 @@ internal sealed class SizeTableCard
             }
         }
 
-        // A class shows its label over its key; a preset its name over "built in" or "yours".
-        private static StackPanel NameCell(SizeRowView view, bool preset)
+        // A class shows its label over its key; a preset its name over "built in" or "yours". The
+        // top line is the one screen readers read, named with the whole row.
+        private static (StackPanel Cell, TextBlock Spoken) NameCell(SizeRowView view, bool preset)
         {
             var main = new TextBlock { Text = preset ? view.Row.Name : view.Label };
             var sub = SettingsUi.Text(
@@ -262,7 +273,8 @@ internal sealed class SizeTableCard
                 sub.FontFamily = SettingsUi.Mono;
             }
 
-            return new StackPanel { Children = { main, sub } };
+            AutomationProperties.SetAccessibilityView(sub, AccessibilityView.Raw);
+            return (new StackPanel { Children = { main, sub } }, main);
         }
     }
 }

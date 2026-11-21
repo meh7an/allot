@@ -42,6 +42,13 @@ ColumnLayout {
         row.host.changed();
     }
 
+    // The chip is gone after this, so the focus goes to the field that adds one.
+    function removeChip(index) {
+        row.setting.remove(index);
+        entry.forceActiveFocus(Qt.OtherFocusReason);
+        row.host.changed();
+    }
+
     Layout.fillWidth: true
     spacing: Kirigami.Units.smallSpacing
 
@@ -83,18 +90,27 @@ ColumnLayout {
         Repeater {
             model: row.chips
 
-            Kirigami.Chip {
+            // One button per entry that removes it, not a Kirigami.Chip: a chip's own close
+            // button is a second, unnamed Tab stop ("Remove"), which the M7.1 AT-SPI dump found.
+            QQC2.Button {
                 required property var modelData
                 required property int index
 
                 text: modelData.text
-                closable: true
-                checkable: false
+                icon.name: "edit-delete-remove"
+                font.family: "monospace"
                 enabled: row.view.enabled
                 Accessible.name: modelData.name
-                onRemoved: {
-                    row.setting.remove(index);
-                    row.host.changed();
+                QQC2.ToolTip.text: modelData.name
+                QQC2.ToolTip.visible: hovered || visualFocus
+                QQC2.ToolTip.delay: 500
+                onClicked: row.removeChip(index)
+                Keys.onDeletePressed: row.removeChip(index)
+                Keys.onPressed: (event) => {
+                    if (event.key === Qt.Key_Backspace) {
+                        row.removeChip(index);
+                        event.accepted = true;
+                    }
                 }
             }
         }
@@ -110,6 +126,7 @@ ColumnLayout {
             placeholderText: row.view.addLabel
             enabled: row.view.enabled
             Accessible.name: row.view.addLabel
+            Accessible.description: row.view.description
             onAccepted: row.add()
         }
 

@@ -47,7 +47,12 @@ internal static class RuleDialog
         var argList = new ChipsEditor(draft.Args, "New argument pattern", "build", "Add argument");
         argList.Root.MaxWidth = 300;
         var argsSpec = draft.Args.Spec;
-        var argsRow = new SettingRow(argsSpec.Label, argsSpec.Help, null, argList.Root);
+        var argsRow = new SettingRow(
+            argsSpec.Label,
+            argsSpec.Help,
+            null,
+            argList.Root,
+            argList.Field);
         syncs.Add(() =>
         {
             argList.Sync(true);

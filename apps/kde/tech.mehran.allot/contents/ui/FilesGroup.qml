@@ -15,13 +15,17 @@ SettingsSection {
 
     QQC2.Label {
         text: "Config file"
+        Accessible.ignored: true
     }
 
+    // Selectable, so it takes focus: named, or screen readers find an unnamed text (M7.1).
     Kirigami.SelectableLabel {
         Layout.fillWidth: true
         text: files.path
         font.family: "monospace"
         wrapMode: Text.WrapAnywhere
+        Accessible.name: "Config file"
+        Accessible.description: files.path
     }
 
     RowLayout {

@@ -66,6 +66,49 @@ public enum SizesText {
             runTime: quantityText(Double(profile.estSecs), .seconds, number: number))
     }
 
+    /// A row as one sentence for a screen reader, which reads the row as a single element:
+    /// "8 cores, at least 4, 4 GB, GPU 0 %, 5 minutes, fits 1, 2 more shrunk". The video memory
+    /// is left out while the row uses none.
+    ///
+    /// - Parameter fit: The row's fit preview; the fits part is left out without one.
+    public static func summary(
+        _ row: SizeRow,
+        fit: SizeFit?,
+        number: (Double) -> String
+    ) -> String {
+        let cells = cells(row, number: number)
+        let cores = double(row.profile.cores)
+        let minimum = row.minCores.map { "at least \(number(double($0)))" }
+            ?? "at least \(number(automaticMinCores(cores))) (automatic)"
+        var parts = [
+            "\(quantityText(cores, .cores, number: number)), \(minimum)",
+            cells.memory,
+            "GPU \(cells.gpu)",
+        ]
+        if row.profile.vramMb > 0 {
+            parts.append("\(cells.videoMemory) video memory")
+        }
+        parts.append(cells.runTime)
+        if fit != nil {
+            parts.append("fits \(fitsNow(fit, number: number).lowercased())")
+        }
+        return parts.joined(separator: ", ")
+    }
+
+    /// A row's whole spoken label: "CPU heavy: 8 cores, at least 4, ..." for a class and
+    /// "render (yours): 6 cores, ..." for a preset.
+    @MainActor
+    public static func rowSummary(
+        _ table: SizeTableModel,
+        _ row: SizeRowView,
+        fit: SizeFit?,
+        number: (Double) -> String
+    ) -> String {
+        let name = table.canAdd
+            ? "\(row.row.name) (\(row.builtIn ? "built in" : "yours"))" : row.label
+        return "\(name): \(summary(row.row, fit: fit, number: number))"
+    }
+
     /// The Fits now cell: "1, 2 more shrunk", "2 shrunk", "3", "at least 99" or "None".
     ///
     /// - Parameter fit: The row's fit preview, or `nil` while none is known.

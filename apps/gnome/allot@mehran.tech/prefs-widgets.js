@@ -70,6 +70,54 @@ export function helpMarkup(help, key, notes = []) {
   return [`${escaped(help)}${keyText}`, ...extra].join("\n");
 }
 
+/**
+ * The same help, key and notes as plain text, for a control's accessible description.
+ *
+ * @param {string} help
+ * @param {string | null} key
+ * @param {Array<string | null>} [notes]
+ * @returns {string}
+ */
+export function helpText(help, key, notes = []) {
+  const first = key === null ? help : `${help} Key: ${key}.`;
+  return [first, ...notes.filter((note) => note !== null && note !== "")].join(" ");
+}
+
+/** What each control was last given, so unchanged text is never set again. */
+const described = new WeakMap();
+
+/**
+ * Gives a control its description (the help, the key and any error) and its invalid state. Orca
+ * reads out every change of the focused control's description, so this sets only what changed and
+ * never takes text that ticks.
+ *
+ * @param {Gtk.Widget} widget
+ * @param {string} text
+ * @param {boolean} [invalid] Whether the control has an error now.
+ */
+export function describe(widget, text, invalid = false) {
+  const signature = `${invalid ? "1" : "0"}${text}`;
+  if (described.get(widget) === signature) {
+    return;
+  }
+  described.set(widget, signature);
+  widget.update_property([Gtk.AccessibleProperty.DESCRIPTION], [text]);
+  widget.update_state(
+    [Gtk.AccessibleState.INVALID],
+    [invalid ? Gtk.AccessibleInvalidState.TRUE : Gtk.AccessibleInvalidState.FALSE],
+  );
+}
+
+/**
+ * The widget of an entry row that takes focus and reads as the text field.
+ *
+ * @param {Adw.EntryRow} row
+ * @returns {Gtk.Widget}
+ */
+export function innerEntry(row) {
+  return row.get_delegate() ?? row;
+}
+
 /** One toast at a time: toasts queue, so the previous one is dismissed first (M0.3). */
 export class Toaster {
   #target;
@@ -175,6 +223,45 @@ export function dimLabel() {
 }
 
 /**
+ * A line of help under an entry that shows an error with an icon as well as text, so an error is
+ * never told by colour alone.
+ */
+export class HelpLine {
+  /** @type {Gtk.Box} */
+  widget;
+  #icon;
+  #label;
+  #issueOnly;
+
+  /** @param {boolean} [issueOnly] Whether the line is hidden until it has an error. */
+  constructor(issueOnly = false) {
+    this.#issueOnly = issueOnly;
+    this.widget = new Gtk.Box({ spacing: 8, margin_top: 6 });
+    this.#icon = new Gtk.Image({
+      icon_name: "dialog-error-symbolic",
+      visible: false,
+      valign: Gtk.Align.START,
+    });
+    this.#icon.update_property([Gtk.AccessibleProperty.LABEL], ["Error"]);
+    this.#label = new Gtk.Label({ wrap: true, xalign: 0, hexpand: true, selectable: true });
+    this.#label.add_css_class("dim-label");
+    this.widget.append(this.#icon);
+    this.widget.append(this.#label);
+  }
+
+  /**
+   * @param {string} help The line that always shows, empty for none.
+   * @param {string | null} issue The error, if any.
+   */
+  show(help, issue) {
+    this.#label.label = issue === null || help === "" ? (issue ?? help) : `${help}
+${issue}`;
+    this.#icon.visible = issue !== null;
+    this.widget.visible = !this.#issueOnly || issue !== null;
+  }
+}
+
+/**
  * The field's reset button: shown only while the saved value differs from the default. The
  * notice's Undo writes the old value back.
  *
@@ -183,7 +270,7 @@ export function dimLabel() {
  * @returns {{ button: Gtk.Button, sync: Sync }}
  */
 function resetButton(context, model) {
-  const button = iconButton("edit-undo-symbolic", model.label, () => {
+  const button = iconButton("edit-undo-symbolic", resetButtonName(model, context.number), () => {
     const text = fieldResetText(model, context.number);
     const undo = resetField(model);
     context.toaster.show(text, undo);
@@ -279,10 +366,10 @@ function switchRow(context, group, model) {
     row.active = model.value;
     syncing = false;
     row.sensitive = model.enabled && !context.readOnly();
-    row.subtitle = helpMarkup(model.spec.help, model.key, [
-      model.disabledNote,
-      issueLine(model.issue, context.number),
-    ]);
+    const issue = issueLine(model.issue, context.number);
+    row.subtitle = helpMarkup(model.spec.help, model.key, [model.disabledNote, issue]);
+    const help = helpText(model.spec.help, model.key, [model.disabledNote, issue]);
+    describe(row, help, issue !== null);
     icon.visible = model.issue !== null;
     reset.sync();
   };
@@ -308,6 +395,7 @@ function offSwitchRow(context, group, model) {
       model.setOn(row.active);
     }
   });
+  describe(row, helpText(off.help, model.key));
   group.add(row);
   return () => {
     syncing = true;
@@ -325,7 +413,8 @@ function offSwitchRow(context, group, model) {
  * @param {RowContext} context
  * @param {NumberModel} model
  * @param {(key: string) => string | null} [note]
- * @returns {{ row: Adw.ActionRow, sync: Sync }}
+ * @returns {{ row: Adw.ActionRow, sync: Sync, input: Gtk.Widget }} The input is the spin button,
+ *   which a dialog focuses first.
  */
 export function numberRow(context, model, note = () => null) {
   const row = new Adw.ActionRow({ title: escaped(model.label) });
@@ -347,15 +436,13 @@ export function numberRow(context, model, note = () => null) {
     editor.sync();
     const on = !(model instanceof DurationModel) || model.isOn;
     row.sensitive = model.enabled && on && !context.readOnly();
-    row.subtitle = helpMarkup(model.spec.help, model.key, [
-      model.disabledNote,
-      note(model.key),
-      issueLine(model.issue, context.number),
-    ]);
+    const notes = [model.disabledNote, note(model.key), issueLine(model.issue, context.number)];
+    row.subtitle = helpMarkup(model.spec.help, model.key, notes);
+    editor.describe(helpText(model.spec.help, model.key, notes), model.issue !== null);
     icon.visible = model.issue !== null;
     reset.sync();
   };
-  return { row, sync };
+  return { row, sync, input: editor.widgets[0] ?? row };
 }
 
 /**
@@ -364,7 +451,11 @@ export function numberRow(context, model, note = () => null) {
  *
  * @param {RowContext} context
  * @param {NumberModel} model
- * @returns {{ widgets: Gtk.Widget[], sync: Sync }}
+ * @returns {{
+ *   widgets: Gtk.Widget[],
+ *   sync: Sync,
+ *   describe: (text: string, invalid: boolean) => void,
+ * }}
  */
 export function numberEditor(context, model) {
   const control = model.control;
@@ -419,6 +510,11 @@ export function numberEditor(context, model) {
 
   return {
     widgets,
+    describe: (text, invalid) => {
+      for (const widget of widgets) {
+        describe(widget, text, invalid);
+      }
+    },
     sync: () => {
       syncing = true;
       const shown = model.shown ?? 0;
@@ -462,8 +558,7 @@ export function chipsRows(context, group, model, withReset = true) {
     title: `Add to ${model.label}`,
     show_apply_button: true,
   });
-  const issue = dimLabel();
-  issue.margin_top = 6;
+  const issue = new HelpLine(true);
   const add = () => {
     // Enter can both apply and activate the entry; the second call finds it empty.
     if (entry.text.trim() === "") {
@@ -483,7 +578,7 @@ export function chipsRows(context, group, model, withReset = true) {
   }
   group.add(chipsRow);
   group.add(entry);
-  group.add(issue);
+  group.add(issue.widget);
 
   /** @type {Gtk.Widget[]} */
   let shown = [];
@@ -511,8 +606,12 @@ export function chipsRows(context, group, model, withReset = true) {
     }
     entry.sensitive = !readOnly;
     const line = issueLine(model.issue, context.number);
-    issue.label = line ?? "";
-    issue.visible = line !== null;
+    issue.show("", line);
+    describe(
+      innerEntry(entry),
+      helpText(model.spec.help, withReset ? model.key : null, [line]),
+      line !== null,
+    );
     if (withReset) {
       reset.sync();
     }
@@ -542,7 +641,9 @@ export function bannerRows(group, onAction) {
     }
     rows = banners.map((banner) => {
       const row = new Adw.ActionRow({ title: escaped(banner.message), title_lines: 0 });
-      row.add_prefix(new Gtk.Image({ icon_name: SEVERITY_ICONS[banner.severity] }));
+      const icon = new Gtk.Image({ icon_name: SEVERITY_ICONS[banner.severity] });
+      icon.update_property([Gtk.AccessibleProperty.LABEL], [SEVERITY_NAMES[banner.severity]]);
+      row.add_prefix(icon);
       banner.actions.forEach((action, index) => {
         const button = textButton(bannerActionLabel(action), () => onAction(action));
         if (index === 0) {
@@ -555,6 +656,9 @@ export function bannerRows(group, onAction) {
     });
   };
 }
+
+/** @type {Record<SettingsBanner["severity"], string>} */
+const SEVERITY_NAMES = { info: "Information", warning: "Warning", error: "Error" };
 
 /** @type {Record<SettingsBanner["severity"], string>} */
 const SEVERITY_ICONS = {

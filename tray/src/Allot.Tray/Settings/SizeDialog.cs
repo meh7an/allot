@@ -2,7 +2,6 @@ using Allot.Tray.Core.ServiceSettings;
 
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
-using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 
 namespace Allot.Tray.Settings;
@@ -120,7 +119,7 @@ internal sealed class SizeDialog
     private SettingRow NumberRow(NumberModel field)
     {
         var editor = new NumberEditor(field);
-        var row = new SettingRow(field.Label, field.Spec.Help, null, editor.Root);
+        var row = new SettingRow(field.Label, field.Spec.Help, null, editor.Root, editor.Field);
         _syncs.Add(() =>
         {
             editor.Sync(true);
@@ -136,7 +135,6 @@ internal sealed class SizeDialog
         var automatic = new RadioButton { GroupName = group };
         var custom = new RadioButton { GroupName = group, Content = "Custom" };
         var editor = new NumberEditor(field);
-        AutomationProperties.SetName(editor.Root, field.Label);
         var customLine = new StackPanel
         {
             Orientation = Orientation.Horizontal,
@@ -159,7 +157,7 @@ internal sealed class SizeDialog
                 field.SetAutomatic(false, AutomaticCores());
             }
         };
-        var row = new SettingRow(field.Label, field.Spec.Help, null, choice);
+        var row = new SettingRow(field.Label, field.Spec.Help, null, choice, editor.Field);
         _syncs.Add(() =>
         {
             syncing = true;

@@ -43,8 +43,17 @@ ColumnLayout {
     function edit(index) {
         const draft = list.rules.edit(index);
         if (draft !== null) {
-            list.host.openRuleDialog(list.rules, draft);
+            list.host.openRuleDialog(list.rules, draft, list, index);
         }
+    }
+
+    // Where a rule dialog returns the focus (DESIGN.md section 11): the rule's row, or Add Rule
+    // after adding one. A saved rule is rebuilt, so the row is found by index afterwards.
+    function focusRow(index) {
+        Qt.callLater(() => {
+            const row = index >= 0 ? rows.itemAt(index) : null;
+            (row ?? addRule).forceActiveFocus(Qt.OtherFocusReason);
+        });
     }
 
     function move(from, to) {
@@ -111,7 +120,12 @@ ColumnLayout {
                 required property int index
 
                 Layout.fillWidth: true
-                Accessible.name: modelData.name
+                // An ItemDelegate takes no focus by default; a rule row is a Tab stop, so its
+                // keys work (M7.1, found by the AT-SPI dump).
+                focusPolicy: Qt.StrongFocus
+                Accessible.name: modelData.matches ? `${modelData.name}, matches` : modelData.name
+                Accessible.description: "Enter edits it. Alt+Up and Alt+Down move it. "
+                    + "Delete removes it."
                 onClicked: list.edit(index)
                 Keys.onPressed: (event) => {
                     const alt = (event.modifiers & Qt.AltModifier) !== 0;
@@ -135,7 +149,7 @@ ColumnLayout {
                         QQC2.Label {
                             Layout.fillWidth: true
                             text: rule.modelData.title
-                            elide: Text.ElideRight
+                            wrapMode: Text.Wrap
                         }
 
                         QQC2.Label {
@@ -146,18 +160,17 @@ ColumnLayout {
                         }
                     }
 
+                    // Text, not colour (DESIGN.md section 11); the theme's own text colour keeps
+                    // it readable on a highlighted row and in high contrast.
                     QQC2.Label {
                         text: "Matches"
                         visible: rule.modelData.matches
-                        color: Kirigami.Theme.highlightColor
                         font.bold: true
                     }
 
-                    QQC2.ToolButton {
-                        icon.name: "overflow-menu"
-                        display: QQC2.AbstractButton.IconOnly
-                        text: rule.modelData.menuName
-                        Accessible.name: text
+                    IconButton {
+                        iconName: "overflow-menu"
+                        name: rule.modelData.menuName
                         onClicked: menu.popup()
 
                         QQC2.Menu {
@@ -199,9 +212,14 @@ ColumnLayout {
 
         RowLayout {
             QQC2.Button {
+                id: addRule
+
                 text: "Add Rule…"
                 icon.name: "list-add"
-                onClicked: list.host.openRuleDialog(list.rules, list.rules.add())
+                onClicked: {
+                    const draft = list.rules.add();
+                    list.host.openRuleDialog(list.rules, draft, list, -1);
+                }
             }
 
             QQC2.Button {

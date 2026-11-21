@@ -47,7 +47,12 @@ internal static class ValueEditors
     {
         var editor = new ChipsEditor(model, "New print-only flag", "--dry-run", "Add flag");
         editor.Root.MaxWidth = 420;
-        var row = new SettingRow(model.Label, model.Spec.Help, model.Key, editor.Root);
+        var row = new SettingRow(
+            model.Label,
+            model.Spec.Help,
+            model.Key,
+            editor.Root,
+            editor.Field);
         Follow(model, context, () =>
         {
             editor.Sync(Editable(model, context));
@@ -89,7 +94,12 @@ internal static class ValueEditors
         var toggle = new ToggleSwitch();
         var switchRow = new SettingRow(off.Label, off.Help, model.Key, toggle);
         var editor = new NumberEditor(model);
-        var durationRow = new SettingRow(model.Label, model.Spec.Help, null, editor.Root)
+        var durationRow = new SettingRow(
+            model.Label,
+            model.Spec.Help,
+            null,
+            editor.Root,
+            editor.Field)
         {
             Indented = true,
         };
@@ -119,7 +129,7 @@ internal static class ValueEditors
     private static SettingRow NumberRow(NumberModel model, PageContext context, string key)
     {
         var editor = new NumberEditor(model);
-        var row = new SettingRow(model.Label, model.Spec.Help, key, editor.Root);
+        var row = new SettingRow(model.Label, model.Spec.Help, key, editor.Root, editor.Field);
         Follow(model, context, () =>
         {
             editor.Sync(Editable(model, context));

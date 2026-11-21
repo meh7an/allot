@@ -45,6 +45,7 @@ RowLayout {
         stepSize: editor.scale
         editable: true
         Accessible.name: editor.view === null ? "" : editor.view.label
+        Accessible.description: editor.view === null ? "" : editor.view.description
         textFromValue: (value, locale) => {
             if (editor.view === null) {
                 return "";

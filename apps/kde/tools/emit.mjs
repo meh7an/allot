@@ -49,6 +49,7 @@ export const SHARED_MODULES = [
   "service-row",
   "setting-values",
   "settings",
+  "settings-announcer",
   "settings-banners",
   "settings-editors",
   "settings-session",

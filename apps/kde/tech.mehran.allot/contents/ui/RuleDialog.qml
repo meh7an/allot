@@ -13,15 +13,20 @@ Kirigami.Dialog {
     property var host: null
     property var rules: null
     property var draft: null
+    // The list whose rule opened the dialog, and the rule's row (-1 for a new one).
+    property var opener: null
+    property int openerRow: -1
     readonly property var program: {
         dialog.host.revision;
         return dialog.draft === null ? null : View.programView(dialog.draft, dialog.host.number);
     }
     readonly property var options: dialog.draft === null ? [] : dialog.draft.classOptions
 
-    function edit(rules, draft) {
+    function edit(rules, draft, opener, row) {
         dialog.rules = rules;
         dialog.draft = draft;
+        dialog.opener = opener;
+        dialog.openerRow = row;
         dialog.title = View.ruleDialogTitle(draft);
         programField.text = draft.program;
         classBox.currentIndex = dialog.options.findIndex((option) =>
@@ -42,7 +47,8 @@ Kirigami.Dialog {
         }
     }
 
-    preferredWidth: Kirigami.Units.gridUnit * 30
+    // Text scaling: the width follows the font's height, which `gridUnit` does not.
+    preferredWidth: metrics.height * 28
     standardButtons: Kirigami.Dialog.NoButton
     customFooterActions: [
         Kirigami.Action {
@@ -63,6 +69,13 @@ Kirigami.Dialog {
         }
         dialog.draft = null;
         dialog.host.changed();
+        dialog.opener?.focusRow(dialog.openerRow);
+    }
+
+    FontMetrics {
+        id: metrics
+
+        font: Kirigami.Theme.defaultFont
     }
 
     ColumnLayout {
@@ -73,7 +86,10 @@ Kirigami.Dialog {
             spacing: 0
 
             QQC2.Label {
+                Layout.fillWidth: true
                 text: dialog.program === null ? "" : dialog.program.label
+                wrapMode: Text.Wrap
+                Accessible.ignored: true
             }
 
             QQC2.TextField {
@@ -82,6 +98,7 @@ Kirigami.Dialog {
                 Layout.fillWidth: true
                 font.family: "monospace"
                 Accessible.name: dialog.program === null ? "" : dialog.program.label
+                Accessible.description: dialog.program === null ? "" : dialog.program.description
                 onTextEdited: dialog.draft.setProgram(programField.text)
             }
 
@@ -110,7 +127,10 @@ Kirigami.Dialog {
             spacing: 0
 
             QQC2.Label {
+                Layout.fillWidth: true
                 text: dialog.draft === null ? "" : dialog.draft.classSpec.label
+                wrapMode: Text.Wrap
+                Accessible.ignored: true
             }
 
             QQC2.ComboBox {
@@ -119,6 +139,7 @@ Kirigami.Dialog {
                 Layout.fillWidth: true
                 model: dialog.options.map((option) => option.label)
                 Accessible.name: dialog.draft === null ? "" : dialog.draft.classSpec.label
+                Accessible.description: dialog.draft === null ? "" : dialog.draft.classSpec.help
                 onActivated: (index) => {
                     const option = dialog.options[index];
                     if (option !== undefined && option.value !== dialog.draft.ruleClass) {

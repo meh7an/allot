@@ -29,7 +29,8 @@ internal sealed class NumberEditor
         _model = model;
         _box = new NumberBox
         {
-            Width = 132,
+            // A minimum, not a width, so a long number at 200 % text widens the box (M7.1).
+            MinWidth = 132,
             SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Inline,
             ValidationMode = NumberBoxValidationMode.Disabled,
             SmallChange = 1,
@@ -80,9 +81,14 @@ internal sealed class NumberEditor
     }
 
     /// <summary>
-    /// The box and its companions; the row names the box after the setting.
+    /// The box and its companions.
     /// </summary>
     public FrameworkElement Root { get; }
+
+    /// <summary>
+    /// The number box, which the row names after the setting.
+    /// </summary>
+    public FrameworkElement Field => _box;
 
     /// <summary>
     /// Shows the model's value, unit and enabled state without reporting them back.

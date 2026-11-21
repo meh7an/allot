@@ -40,6 +40,7 @@ public sealed partial class SettingsWindow : Window
     private readonly FitPreviews _fits;
     private readonly AdmissionPreview _preview;
     private readonly DispatcherQueueTimer _noticeTimer;
+    private readonly SettingsAnnouncer _announcer = new();
     private ContentDialog? _dialog;
     private Action? _noticeUndo;
     private string _pageId = SettingsBanners.PanelPage;
@@ -222,7 +223,8 @@ public sealed partial class SettingsWindow : Window
             ?? SettingsBanners.PanelPage;
         PageHost.Content = _pages.TryGetValue(_pageId, out var page) ? page.Root : _panel.Root;
         _fits.SetActive(_visible && ShowsFits(_pageId));
-        ShowBanners();
+        _announcer.PageShown();
+        Speak(ShowBanners());
     }
 
     private void OnActivated(object sender, WindowActivatedEventArgs args)
@@ -244,13 +246,23 @@ public sealed partial class SettingsWindow : Window
         {
             _saveStatus = status;
             SaveStatusText.Text = status;
-            SettingsUi.Announce(SaveStatusText);
         }
 
-        ShowBanners();
+        Speak(ShowBanners());
     }
 
-    private void ShowBanners()
+    // Errors and outcomes only (M7.1); the announcer follows the state while hidden too, so
+    // showing the window again speaks nothing that was already there.
+    private void Speak(IReadOnlyList<SettingsBanner> banners)
+    {
+        var text = _announcer.Update(AnnouncerView.Of(_services.Session, banners, _context.Number));
+        if (_visible && text.Length > 0)
+        {
+            SettingsUi.Announce(SaveStatusText, text);
+        }
+    }
+
+    private IReadOnlyList<SettingsBanner> ShowBanners()
     {
         var banners = SettingsBanners.For(
             _services.Session,
@@ -264,6 +276,7 @@ public sealed partial class SettingsWindow : Window
         }
 
         Banners.Visibility = SettingsUi.Shows(banners.Count > 0);
+        return banners;
     }
 
     private InfoBar BannerBar(SettingsBanner banner)
@@ -341,6 +354,13 @@ public sealed partial class SettingsWindow : Window
         _noticeUndo = undo;
         Notice.Message = message;
         Notice.ActionButton.Visibility = SettingsUi.Shows(undo is not null);
+        // An InfoBar speaks itself when it opens; a notice that replaces an open one is spoken
+        // here, since it is the outcome of what the user just did (M7.1).
+        if (Notice.IsOpen)
+        {
+            SettingsUi.Announce(Notice, message);
+        }
+
         Notice.IsOpen = true;
         _noticeTimer.Stop();
         _noticeTimer.Start();

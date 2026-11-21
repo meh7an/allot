@@ -18,6 +18,7 @@ import { STOP_CONFIRM_TITLE, stopConfirmation } from "./service-menu.js";
 import { serviceButtonText, serviceRow, sessionServiceStatus } from "./service-row.js";
 import { NumberModel, RuleListModel, SizeTableModel, SwitchModel, } from "./setting-values.js";
 import { SERVICE_PAGE, restartNote, settingsBanners } from "./settings-banners.js";
+import { SettingsAnnouncer, announcerView } from "./settings-announcer.js";
 import { SettingsSession } from "./settings-session.js";
 import { LOADING_TEXT, resetAllConfirmation, resetPageConfirmation, saveStatusText, } from "./settings-text.js";
 /**
@@ -199,6 +200,15 @@ export class SettingsWindowModel {
         this.sharesMemory = false;
         /** @type {(() => void) | null} */
         this.onChange = null;
+        /**
+         * Speaks a text to screen readers without moving focus: errors and outcomes (M7.1).
+         *
+         * @type {((text: string) => void) | null}
+         */
+        this.onAnnounce = null;
+        this._announcer = new SettingsAnnouncer();
+        /** @type {string | null} */
+        this._shownPage = null;
         /** @type {string | null} */
         this._version = null;
         this._starting = false;
@@ -256,6 +266,11 @@ export class SettingsWindowModel {
      */
     showPage(pageId) {
         this.fits.setActive(PAGES_WITH_FITS.includes(pageId));
+        if (pageId !== this._shownPage) {
+            this._shownPage = pageId;
+            this._announcer.pageShown();
+            this._announce();
+        }
     }
     /** Fetches the settings again, such as when the window takes focus. */
     refresh() {
@@ -482,6 +497,19 @@ export class SettingsWindowModel {
         var _a;
         if (!this._disposed) {
             (_a = this.onChange) === null || _a === void 0 ? void 0 : _a.call(this);
+            this._announce();
+        }
+    }
+    /** Speaks what changed since the last call, for the page shown. */
+    _announce() {
+        var _a;
+        if (this._shownPage === null) {
+            return;
+        }
+        const banners = settingsBanners(this.session, this._shownPage, this._port, this.number);
+        const text = this._announcer.update(announcerView(this.session, banners, this.number));
+        if (text !== "") {
+            (_a = this.onAnnounce) === null || _a === void 0 ? void 0 : _a.call(this, text);
         }
     }
     /** The session started or stopped answering: a start under way ends, the version is read. */

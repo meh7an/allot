@@ -38,6 +38,12 @@ ColumnLayout {
                 View.testAgainst(box.rules, box.draft), box.host.number)
                 .then((outcome) => {
                     if (outcome !== null) {
+                        // The result is the outcome of the user's typing, so it is spoken
+                        // (M7.1), once per new result.
+                        const spoken = outcome.lines.join(" ");
+                        if (spoken !== "" && spoken !== box.lines.join(" ")) {
+                            box.host.announce(spoken);
+                        }
                         box.lines = outcome.lines;
                         box.tested(outcome.test);
                     }
@@ -52,6 +58,7 @@ ColumnLayout {
         placeholderText: "Command line"
         font.family: "monospace"
         Accessible.name: "Command line"
+        Accessible.description: box.draft === null ? View.TEST_COMMAND_HELP : View.TEST_RULE_HELP
         onTextChanged: box.run()
     }
 
@@ -61,7 +68,5 @@ ColumnLayout {
         visible: box.lines.length > 0
         wrapMode: Text.Wrap
         textFormat: Text.PlainText
-        Accessible.role: Accessible.StaticText
-        Accessible.name: text
     }
 }

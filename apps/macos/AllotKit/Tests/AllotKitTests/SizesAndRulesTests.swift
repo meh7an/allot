@@ -161,6 +161,31 @@ private func labels(_ jobClass: JobClass) -> String {
         #expect(SizesText.automaticMinCores(0) == 0)
     }
 
+    @Test func aRowReadsAsOneSentenceForAScreenReader() throws {
+        let row = Contract.sizeRow(
+            name: "big",
+            profile: Contract.profile(
+                cores: 8, ramMb: 4096, gpuPct: 0, vramMb: 0, estSecs: 300),
+            minCores: 4)
+
+        #expect(
+            SizesText.summary(row, fit: try fit(1, 2), number: english)
+                == "8 cores, at least 4, 4 GB, GPU 0 %, 5 minutes, fits 1, 2 more shrunk")
+        #expect(
+            SizesText.summary(row, fit: nil, number: english)
+                == "8 cores, at least 4, 4 GB, GPU 0 %, 5 minutes")
+        #expect(SizesText.summary(row, fit: try fit(0, 0), number: english).hasSuffix("fits none"))
+
+        let automatic = Contract.sizeRow(
+            name: "big",
+            profile: Contract.profile(
+                cores: 8, ramMb: 4096, gpuPct: 50, vramMb: 2048, estSecs: 300),
+            minCores: nil)
+        #expect(
+            SizesText.summary(automatic, fit: nil, number: english)
+                == "8 cores, at least 4 (automatic), 4 GB, GPU 50 %, 2 GB video memory, 5 minutes")
+    }
+
     @Test func fitsNowReadsShortInTheTable() throws {
         #expect(SizesText.fitsNow(nil, number: english) == SizesText.fitsUnknown)
         #expect(SizesText.fitsNow(try fit(0, 0), number: english) == "None")

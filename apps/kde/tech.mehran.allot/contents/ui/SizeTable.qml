@@ -13,6 +13,9 @@ SettingsSection {
     property var host: null
     property var section: null
     property var items: []
+    // The rows' summaries hold the fit counts, which change with the machine; they update in
+    // place, so a fit change never rebuilds the rows and drops the focus on Edit (M7.1).
+    property var summaries: []
     property string shownSignature: ""
 
     function sync() {
@@ -21,12 +24,30 @@ SettingsSection {
         }
         const items = View.sizeRowItems(table.section.table, table.host.model.fits,
             table.host.number);
-        const signature = View.signature([table.section.table.value,
-            items.map((item) => item.summary), table.host.readOnly]);
+        const summaries = items.map((item) => item.summary);
+        if (View.signature(summaries) !== View.signature(table.summaries)) {
+            table.summaries = summaries;
+        }
+        const signature = View.signature([table.section.table.value, table.host.readOnly]);
         if (signature !== table.shownSignature) {
             table.shownSignature = signature;
             table.items = items;
         }
+    }
+
+    // Where the size dialog returns the focus: the row's Edit button, by name, because a saved row
+    // is rebuilt; a row that is gone (a new preset) leaves it on Add Preset.
+    function focusRow(names) {
+        Qt.callLater(() => {
+            for (const name of names) {
+                const index = table.items.findIndex((item) => item.name === name);
+                if (index >= 0) {
+                    rows.itemAt(index)?.editButton.forceActiveFocus(Qt.OtherFocusReason);
+                    return;
+                }
+            }
+            addButton.forceActiveFocus(Qt.OtherFocusReason);
+        });
     }
 
     function remove(view) {
@@ -48,28 +69,46 @@ SettingsSection {
     Component.onCompleted: table.sync()
 
     Repeater {
+        id: rows
+
         model: table.items
 
         RowLayout {
+            id: sizeRow
+
             required property var modelData
+            required property int index
+            readonly property string summary: table.summaries[index] ?? modelData.summary
+
+            readonly property Item editButton: edit
 
             Layout.fillWidth: true
             enabled: !table.host.readOnly
 
+            // One summary for a screen reader, such as "CPU heavy, 8 cores, ...": the two lines
+            // are not read apart. The buttons beside it say which row they act on.
             ColumnLayout {
                 Layout.fillWidth: true
                 spacing: 0
+                Accessible.role: Accessible.StaticText
+                Accessible.name: View.sizeRowReading({
+                    label: sizeRow.modelData.label,
+                    summary: sizeRow.summary,
+                })
+                Accessible.description: modelData.keyText
 
                 QQC2.Label {
                     Layout.fillWidth: true
                     text: modelData.label
                     wrapMode: Text.Wrap
+                    Accessible.ignored: true
                 }
 
                 HelpLabel {
                     text: (modelData.keyText === "" ? ""
                         : `<tt>${View.escaped(modelData.keyText)}</tt>&nbsp;&nbsp;`)
-                        + View.escaped(modelData.summary)
+                        + View.escaped(sizeRow.summary)
+                    Accessible.ignored: true
                 }
             }
 
@@ -79,29 +118,23 @@ SettingsSection {
                 onClicked: table.remove(modelData.view)
             }
 
-            QQC2.ToolButton {
-                icon.name: "edit-delete"
-                display: QQC2.AbstractButton.IconOnly
-                text: modelData.deleteName ?? ""
+            IconButton {
+                iconName: "edit-delete"
+                name: modelData.deleteName ?? ""
                 visible: modelData.deleteName !== null
-                Accessible.name: text
-                QQC2.ToolTip.text: text
-                QQC2.ToolTip.visible: hovered
                 onClicked: table.host.confirm(View.deletePresetConfirmation(modelData.name),
                     () => table.remove(modelData.view))
             }
 
-            QQC2.ToolButton {
-                icon.name: "document-edit"
-                display: QQC2.AbstractButton.IconOnly
-                text: modelData.editName
-                Accessible.name: text
-                QQC2.ToolTip.text: text
-                QQC2.ToolTip.visible: hovered
+            IconButton {
+                id: edit
+
+                iconName: "document-edit"
+                name: modelData.editName
                 onClicked: {
                     const draft = table.section.table.edit(modelData.name);
                     if (draft !== null) {
-                        table.host.openSizeDialog(table.section.table, draft);
+                        table.host.openSizeDialog(table.section.table, draft, table);
                     }
                 }
             }
@@ -109,10 +142,12 @@ SettingsSection {
     }
 
     QQC2.Button {
+        id: addButton
+
         text: "Add Preset…"
         icon.name: "list-add"
         visible: table.section.table.canAdd
         enabled: !table.host.readOnly
-        onClicked: table.host.openSizeDialog(table.section.table, table.section.table.add())
+        onClicked: table.host.openSizeDialog(table.section.table, table.section.table.add(), table)
     }
 }

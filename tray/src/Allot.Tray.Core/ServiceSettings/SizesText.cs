@@ -54,6 +54,46 @@ public static class SizesText
     }
 
     /// <summary>
+    /// A row as screen readers read it, in place of its cells (Mehran at M7.1): "CPU heavy: 8
+    /// cores, at least 4, 4 GB, GPU 0 %, 5 minutes, fits 1, 2 more shrunk". The same parts as the
+    /// one-line rows of GNOME and KDE (<c>sizeSummary</c>).
+    /// </summary>
+    /// <param name="label">The class's label or the preset's name.</param>
+    /// <param name="row">The row.</param>
+    /// <param name="fit">The row's fit preview; the fits part is left out without one.</param>
+    /// <param name="number">Formats a number for the user's locale.</param>
+    public static string Spoken(
+        string label,
+        SizeRow row,
+        SizeFit? fit,
+        Func<double, string> number)
+    {
+        var cells = Cells(row, number);
+        var profile = row.Profile;
+        var minimum = row.MinCores is null
+            ? $"at least {number(AutomaticMinCores(profile.Cores))} (automatic)"
+            : $"at least {cells.MinCores}";
+        var parts = new List<string>
+        {
+            $"{ValueText.QuantityText(profile.Cores, Quantity.Cores, number)}, {minimum}",
+            cells.Memory,
+            $"GPU {cells.Gpu}",
+        };
+        if (profile.VramMb > 0)
+        {
+            parts.Add($"{cells.VideoMemory} video memory");
+        }
+
+        parts.Add(cells.RunTime);
+        if (fit is not null)
+        {
+            parts.Add($"fits {FitsNow(fit, number).ToLowerInvariant()}");
+        }
+
+        return $"{label}: {string.Join(", ", parts)}";
+    }
+
+    /// <summary>
     /// The Fits now cell: "1, 2 more shrunk", "2 shrunk", "3", "at least 99" or "None".
     /// </summary>
     /// <param name="fit">The row's fit preview, or <c>null</c> while none is known.</param>

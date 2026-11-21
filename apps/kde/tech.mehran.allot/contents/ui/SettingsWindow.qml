@@ -61,6 +61,14 @@ Kirigami.ApplicationWindow {
         });
     }
 
+    // Speaks an error or an outcome without a focus change, nothing else. Qt 6.8; Plasma 6.0's
+    // Qt 6.6 stays silent.
+    function announce(text) {
+        if (typeof window.contentItem.Accessible.announce === "function") {
+            window.contentItem.Accessible.announce(text);
+        }
+    }
+
     function confirm(confirmation, run) {
         confirmDialog.ask(confirmation, run);
     }
@@ -75,12 +83,13 @@ Kirigami.ApplicationWindow {
         Qt.openUrlExternally("file://" + encodeURI(path));
     }
 
-    function openSizeDialog(table, draft) {
-        sizeDialog.edit(table, draft);
+    // The dialogs return focus to `opener`'s row once they close: `opener.focusRow(row)`.
+    function openSizeDialog(table, draft, opener) {
+        sizeDialog.edit(table, draft, opener);
     }
 
-    function openRuleDialog(rules, draft) {
-        ruleDialog.edit(rules, draft);
+    function openRuleDialog(rules, draft, opener, row) {
+        ruleDialog.edit(rules, draft, opener, row);
     }
 
     title: "Allot Settings"
@@ -88,6 +97,16 @@ Kirigami.ApplicationWindow {
     height: Kirigami.Units.gridUnit * 36
     minimumWidth: Kirigami.Units.gridUnit * 32
     minimumHeight: Kirigami.Units.gridUnit * 24
+
+    // The page list is as wide as its longest label, which `gridUnit` does not follow at 200 %
+    // text.
+    TextMetrics {
+        id: longestPage
+
+        font: Kirigami.Theme.defaultFont
+        text: window.pages.reduce((longest, entry) =>
+            entry.label.length > longest.length ? entry.label : longest, "")
+    }
 
     pageStack.globalToolBar.style: Kirigami.ApplicationHeaderStyle.None
 
@@ -120,6 +139,7 @@ Kirigami.ApplicationWindow {
         };
         window.widget.settingsWindow(host, window.number).then((model) => {
             model.onChange = () => window.changed();
+            model.onAnnounce = (text) => window.announce(text);
             window.model = model;
             model.showPage(window.pages[window.pageIndex].id);
             model.setVisible(window.visible);
@@ -136,7 +156,9 @@ Kirigami.ApplicationWindow {
 
             ColumnLayout {
                 Layout.fillHeight: true
-                Layout.preferredWidth: Kirigami.Units.gridUnit * 11
+                Layout.preferredWidth: longestPage.advanceWidth
+                    + Kirigami.Units.iconSizes.smallMedium
+                    + Kirigami.Units.largeSpacing * 6
                 spacing: 0
 
                 QQC2.ScrollView {
@@ -146,10 +168,20 @@ Kirigami.ApplicationWindow {
                     ListView {
                         id: pageList
 
+                        // Up and Down move the focus with the page; only the current page is a Tab
+                        // stop.
+                        function moveTo(index) {
+                            if (index < 0 || index >= pageList.count) {
+                                return;
+                            }
+                            pageList.currentIndex = index;
+                            pageList.itemAtIndex(index)?.forceActiveFocus(Qt.TabFocusReason);
+                        }
+
                         model: window.pages
                         currentIndex: window.pageIndex
-                        keyNavigationEnabled: true
-                        activeFocusOnTab: true
+                        keyNavigationEnabled: false
+                        activeFocusOnTab: false
                         Accessible.role: Accessible.List
                         Accessible.name: "Pages"
                         onCurrentIndexChanged: window.pageIndex = pageList.currentIndex
@@ -162,7 +194,14 @@ Kirigami.ApplicationWindow {
                             text: modelData.label
                             icon.name: modelData.kdeIcon
                             highlighted: ListView.isCurrentItem
+                            focusPolicy: ListView.isCurrentItem ? Qt.StrongFocus : Qt.ClickFocus
+                            Accessible.role: Accessible.ListItem
+                            Accessible.name: modelData.label
+                            Accessible.selectable: true
+                            Accessible.selected: ListView.isCurrentItem
                             onClicked: window.pageIndex = index
+                            Keys.onUpPressed: pageList.moveTo(index - 1)
+                            Keys.onDownPressed: pageList.moveTo(index + 1)
                         }
                     }
                 }
@@ -174,8 +213,6 @@ Kirigami.ApplicationWindow {
                     visible: text !== ""
                     wrapMode: Text.Wrap
                     font: Kirigami.Theme.smallFont
-                    Accessible.role: Accessible.StaticText
-                    Accessible.name: text
                 }
             }
 

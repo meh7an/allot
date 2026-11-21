@@ -214,6 +214,11 @@ To upgrade the widget, use `-u` in place of `-i` and restart Plasma with
 `systemctl --user restart plasma-plasmashell`. Other desktops have no panel yet; `allot status`
 shows the same jobs and `allot kill ID` stops one.
 
+The GNOME extension reaches allotd over the session bus, so it needs the allotd of the same
+release (0.6.0 or newer); upgrade both together. The KDE widget reaches it over HTTP on
+127.0.0.1. Both have a Settings window (⋯ > Settings on GNOME, ⋯ > Configure Allot… on KDE);
+`gnome-extensions prefs allot@mehran.tech` opens GNOME's too.
+
 ### From source
 
 You need Rust (stable, 1.99 or newer) and a C compiler for the bundled SQLite. Inside a Claude
@@ -334,7 +339,9 @@ the CLAUDE.md import (now `@allot.md`), and removes the old binaries. allotd kee
 and token, so sessions that were open keep their old MCP server working until they restart.
 The old folder is deleted by a later install once nothing runs from it.
 
-On Linux, run the newer package's `allot install`, as above.
+On Linux, run the newer package's `allot install`, as above, and upgrade the panel package from
+the same release (see [The panel](#the-panel)): from 0.6.0 the GNOME extension reaches allotd
+over D-Bus, which older allotd builds do not serve.
 
 On macOS, Homebrew updates its own copy only. `allot install` is what puts the new binaries in
 `~/.allot/bin`, where sessions and allotd run them from:

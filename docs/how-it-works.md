@@ -18,7 +18,7 @@ flowchart LR
     skill -- "acquire_lease / release_lease" --> mcp
     mcp -- "HTTP + heartbeat" --> allotd
     hook -- "covering lease? stopped jobs?" --> allotd
-    panel -- "state, kill, remove" --> allotd
+    panel -- "state, kill, remove, settings<br/>(GNOME over D-Bus)" --> allotd
     allotd --- db
     os -- "samples every second" --> allotd
 ```
@@ -27,7 +27,7 @@ flowchart LR
 
 | Part | What it does |
 |------|--------------|
-| `allotd` | The daemon: samples the machine every second, keeps the lease ledger in SQLite, and serves an HTTP API on `127.0.0.1` with a bearer token. No window; it logs to a file. |
+| `allotd` | The daemon: samples the machine every second, keeps the lease ledger in SQLite, and serves an HTTP API on `127.0.0.1` with a bearer token; on Linux also a D-Bus interface on the session bus (`tech.mehran.Allot`), which the GNOME extension uses. No window; it logs to a file. |
 | `allot-mcp` | The MCP server each session starts (`allot`): `system_snapshot`, `can_fit`, `acquire_lease`, `release_lease`, `list_leases`. It heartbeats its leases and releases them when the session ends. |
 | `allot hook pre-tool` | A PreToolUse hook for the Bash and PowerShell tools. It denies a heavy command when the session holds no covering lease, and lets it through with a warning when allotd is down. |
 | `allot hook post-tool` | A PostToolUse and PostToolUseFailure hook that tells the session when you stopped its job. |
@@ -79,16 +79,20 @@ open the panel:
   told that you stopped the job, so Claude says so and asks you whether to retry or skip; it
   never retries on its own.
 - **Benchmarks** show their phase: draining the machine, waiting for quiet, running alone.
-- **Resources** (More options, Meters) shows CPU, RAM, GPU, VRAM, and drives, with what is
-  used, reserved by leases, and free.
+- **Resources** shows CPU, RAM, GPU, VRAM, and drives, with what is used, reserved by leases,
+  and free; Settings picks the meters.
 - **Notifications** for a stopped service, a job running well past its estimate, finished jobs,
-  and jobs stopped from outside the panel; each can be turned off under More options.
+  and jobs stopped from outside the panel; each can be turned off in Settings.
 - **Pin** keeps the panel up.
+- **Settings** (More options) edits every setting of allotd and of the panel; see the runbook's
+  [Settings window](runbook.md#the-settings-window).
+- **Stop service** stops allotd until you start it again, from a panel, `allot daemon start`,
+  or your next sign-in. Sessions do not start it meanwhile, and run heavy commands without leases.
 
-On Windows, **Stay open** keeps the flyout up too and a pinned flyout can be dragged. The tray menu
-starts and stops allotd and turns Launch at logon on or off (it is also listed in Task Manager's
-Startup apps as Allot). Stop service only lasts until a session's `allot-mcp` needs allotd again
-and starts it.
+On Windows, **Stay open** keeps the flyout up too and a pinned flyout can be dragged. The flyout
+opens next to the tray icon on whichever edge the taskbar is. The tray menu opens Settings, starts
+or stops allotd, and turns Launch at logon on or off, as the Panel page of Settings does (it is
+also listed in Task Manager's Startup apps as Allot).
 
 ## Files
 

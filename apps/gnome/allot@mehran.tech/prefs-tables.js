@@ -33,10 +33,14 @@ import {
 import {
   chipsRows,
   confirm,
+  HelpLine,
+  describe,
   dimLabel,
   escaped,
   helpMarkup,
+  helpText,
   iconButton,
+  innerEntry,
   numberRow,
 } from "./prefs-widgets.js";
 
@@ -79,6 +83,15 @@ export function sizeTableRows(context, group, table) {
   /** @type {Gtk.Widget[]} */
   let shown = [];
   let signature = "";
+  /** @type {Map<string, Gtk.Widget>} */
+  let edits = new Map();
+  /** @type {Gtk.Widget | null} */
+  let addButton = null;
+  // A closed dialog hands focus back to the row's Edit button, which a save has rebuilt.
+  const restoreFocus = (/** @type {string | null} */ name) => {
+    const target = name === null ? undefined : edits.get(name);
+    (target ?? addButton)?.grab_focus();
+  };
   return () => {
     const readOnly = context.readOnly();
     const items = sizeRowItems(table, context.fits, context.number);
@@ -91,14 +104,22 @@ export function sizeTableRows(context, group, table) {
     for (const widget of shown) {
       group.remove(widget);
     }
-    shown = items.map((item) => sizeRow(context, table, item, readOnly));
+    edits = new Map();
+    addButton = null;
+    shown = items.map((item) => {
+      const built = sizeRow(context, table, item, readOnly, restoreFocus);
+      edits.set(item.name, built.edit);
+      return built.row;
+    });
     if (table.canAdd) {
       const add = new Adw.ButtonRow({
         title: "Add Preset…",
         start_icon_name: "list-add-symbolic",
         sensitive: !readOnly,
       });
-      add.connect("activated", () => openSizeDialog(context, table, table.add()));
+      add.connect("activated", () =>
+        openSizeDialog(context, table, table.add(), restoreFocus));
+      addButton = add;
       shown.push(add);
     }
     for (const widget of shown) {
@@ -112,9 +133,10 @@ export function sizeTableRows(context, group, table) {
  * @param {SizeTableModel} table
  * @param {SizeRowItem} item
  * @param {boolean} readOnly
- * @returns {Adw.ActionRow}
+ * @param {(name: string | null) => void} restoreFocus
+ * @returns {{ row: Adw.ActionRow, edit: Gtk.Button }}
  */
-function sizeRow(context, table, item, readOnly) {
+function sizeRow(context, table, item, readOnly, restoreFocus) {
   const name = item.name;
   const key = item.keyText === "" ? "" : `<small><tt>${escaped(item.keyText)}</tt></small>  `;
   const row = new Adw.ActionRow({
@@ -138,13 +160,13 @@ function sizeRow(context, table, item, readOnly) {
   const edit = iconButton("document-edit-symbolic", item.editName, () => {
     const draft = table.edit(name);
     if (draft !== null) {
-      openSizeDialog(context, table, draft);
+      openSizeDialog(context, table, draft, restoreFocus);
     }
   });
   row.add_suffix(edit);
   row.activatable_widget = edit;
   row.sensitive = !readOnly;
-  return row;
+  return { row, edit };
 }
 
 /**
@@ -153,8 +175,10 @@ function sizeRow(context, table, item, readOnly) {
  * @param {TableContext} context
  * @param {SizeTableModel} table
  * @param {RowDraft} draft
+ * @param {(name: string | null) => void} restoreFocus Focuses the named row's Edit button once
+ *   the dialog has closed.
  */
-function openSizeDialog(context, table, draft) {
+function openSizeDialog(context, table, draft, restoreFocus) {
   const shell = dialogShell(sizeDialogTitle(table, draft));
   const { dialog, page, save } = shell;
   /** @type {Sync[]} */
@@ -182,15 +206,15 @@ function openSizeDialog(context, table, draft) {
     const names = new Adw.PreferencesGroup();
     const entry = new Adw.EntryRow({ title: escaped(nameSpec.label), text: draft.name });
     entry.connect("changed", () => draft.setName(entry.text));
-    const help = dimLabel();
-    help.margin_top = 6;
+    const help = new HelpLine();
     names.add(entry);
-    names.add(help);
+    names.add(help.widget);
     page.add(names);
-    first = entry;
+    first = innerEntry(entry);
     syncs.push(() => {
       const issue = draft.nameIssue === null ? null : issueText(draft.nameIssue, context.number);
-      help.label = issue === null ? nameSpec.help : `${nameSpec.help}\n${issue}`;
+      help.show(nameSpec.help, issue);
+      describe(innerEntry(entry), helpText(nameSpec.help, null, [issue]), issue !== null);
     });
   }
 
@@ -204,7 +228,7 @@ function openSizeDialog(context, table, draft) {
     const number = numberRow(rows, field);
     sizes.add(number.row);
     syncs.push(number.sync);
-    first ??= number.row;
+    first ??= number.input;
   }
 
   const live = dimLabel();
@@ -254,6 +278,7 @@ function openSizeDialog(context, table, draft) {
   dialog.connect("closed", () => {
     draft.onChange = null;
     preview.cancel();
+    restoreFocus(draft.name);
   });
   dialog.focus_widget = first;
   sync();
@@ -287,10 +312,9 @@ function minimumRows(rows, group, draft, field) {
     automatic.active = field.automatic;
     syncing = false;
     const rule = field.control.automatic ?? "";
-    automatic.subtitle = helpMarkup(
-      `${rows.number(automaticMinCores(cores()))} cores: ${rule}`,
-      null,
-    );
+    const sentence = `${rows.number(automaticMinCores(cores()))} cores: ${rule}`;
+    automatic.subtitle = helpMarkup(sentence, null);
+    describe(automatic, helpText(sentence, null));
     number.row.visible = !field.automatic;
     number.sync();
   };
@@ -309,6 +333,7 @@ function minimumRows(rows, group, draft, field) {
  */
 export function commandTestRows(context, group, proposal, onResult) {
   const entry = new Adw.EntryRow({ title: "Command line" });
+  describe(innerEntry(entry), group.description);
   const result = dimLabel();
   result.visible = false;
   group.add(entry);
@@ -318,7 +343,13 @@ export function commandTestRows(context, group, proposal, onResult) {
    * @param {CommandTest | null} test
    */
   const show = (lines, test) => {
-    result.label = lines.join("\n");
+    const text = lines.join("\n");
+    // The result is the outcome of the user's typing, so it is spoken (M7.1), once per new
+    // result. `announce` needs GTK 4.14; older versions skip it.
+    if (text !== "" && text !== result.label && typeof result.announce === "function") {
+      result.announce(lines.join(" "), Gtk.AccessibleAnnouncementPriority.MEDIUM);
+    }
+    result.label = text;
     result.visible = lines.length > 0;
     onResult(test);
   };
@@ -363,10 +394,15 @@ export function ruleListRows(context, group, rules) {
   const move = (/** @type {number} */ from, /** @type {number} */ to) => {
     focus = moveRule(rules, from, to) ?? focus;
   };
+  // A closed dialog hands focus back to the rule it edited, or to Add Rule… for a new one.
+  const restoreFocus = (/** @type {number | null} */ index) => {
+    const target = index === null ? shown[shown.length - 2] : shown[index];
+    target?.grab_focus();
+  };
   const edit = (/** @type {number} */ index) => {
     const draft = rules.edit(index);
     if (draft !== null) {
-      openRuleDialog(context, rules, draft);
+      openRuleDialog(context, rules, draft, () => restoreFocus(index));
     }
   };
 
@@ -402,7 +438,8 @@ export function ruleListRows(context, group, rules) {
       start_icon_name: "list-add-symbolic",
       sensitive: !readOnly,
     });
-    add.connect("activated", () => openRuleDialog(context, rules, rules.add()));
+    add.connect("activated", () =>
+      openRuleDialog(context, rules, rules.add(), () => restoreFocus(null)));
     const builtIn = new Adw.ButtonRow({
       title: "Use Built-in Rules…",
       sensitive: !readOnly && rules.canReset,
@@ -444,6 +481,7 @@ function ruleRow(item, actions) {
     activatable: true,
   });
   row.update_property([Gtk.AccessibleProperty.LABEL], [item.name]);
+  describe(row, item.matches ? `${item.subtitle}. Matches` : item.subtitle);
   row.connect("activated", actions.edit);
   if (item.matches) {
     const mark = new Gtk.Label({ label: "Matches", valign: Gtk.Align.CENTER });
@@ -509,8 +547,9 @@ function ruleRow(item, actions) {
  * @param {TableContext} context
  * @param {RuleListModel} rules
  * @param {RuleDraft} draft
+ * @param {() => void} restoreFocus Focuses the row that opened the dialog once it has closed.
  */
-function openRuleDialog(context, rules, draft) {
+function openRuleDialog(context, rules, draft, restoreFocus) {
   const { dialog, page, save } = dialogShell(ruleDialogTitle(draft));
   /** @type {Sync[]} */
   const syncs = [];
@@ -534,15 +573,15 @@ function openRuleDialog(context, rules, draft) {
     text: draft.program,
   });
   program.connect("changed", () => draft.setProgram(program.text));
-  const programHelp = dimLabel();
-  programHelp.margin_top = 6;
+  const programHelp = new HelpLine();
   programGroup.add(program);
-  programGroup.add(programHelp);
+  programGroup.add(programHelp.widget);
   page.add(programGroup);
   syncs.push(() => {
     const issue = draft.programIssue === null ? null : issueText(draft.programIssue, rows.number);
     const help = draft.programSpec.help;
-    programHelp.label = issue === null ? help : `${help}\n${issue}`;
+    programHelp.show(help, issue);
+    describe(innerEntry(program), helpText(help, null, [issue]), issue !== null);
   });
 
   const argsGroup = new Adw.PreferencesGroup({
@@ -567,6 +606,7 @@ function openRuleDialog(context, rules, draft) {
       draft.setClass(option.value);
     }
   });
+  describe(classRow, draft.classSpec.help);
   classGroup.add(classRow);
   page.add(classGroup);
 
@@ -591,8 +631,9 @@ function openRuleDialog(context, rules, draft) {
   dialog.connect("closed", () => {
     draft.onChange = null;
     tester.cancel();
+    restoreFocus();
   });
-  dialog.focus_widget = program;
+  dialog.focus_widget = innerEntry(program);
   sync();
   dialog.present(context.parent());
 }

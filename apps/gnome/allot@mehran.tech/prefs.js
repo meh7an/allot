@@ -49,6 +49,7 @@ import {
   Toaster,
   bannerRows,
   confirm,
+  describe,
   dimLabel,
   escaped,
   settingRows,
@@ -145,6 +146,7 @@ class SettingsWindow {
     }
 
     this.#model.onChange = () => this.sync();
+    this.#model.onAnnounce = (text) => this.#announce(text);
     this.#connection.onOwnerChanged = () => void this.#model.refresh();
     window.connect("notify::visible-page", () => this.#followPage());
     window.connect("notify::is-active", () => {
@@ -167,8 +169,26 @@ class SettingsWindow {
     this.#connection.onOwnerChanged = null;
     this.#connection.stopWatching();
     this.#model.onChange = null;
+    this.#model.onAnnounce = null;
     this.#model.setVisible(false);
     this.#model.dispose();
+  }
+
+  /**
+   * Speaks an error or an outcome without moving focus. Gtk.Accessible.announce needs GTK 4.14,
+   * so an older GTK just skips it.
+   *
+   * @param {string} text
+   */
+  #announce(text) {
+    if (this.#closed || typeof this.#window.announce !== "function") {
+      return;
+    }
+    try {
+      this.#window.announce(text, Gtk.AccessibleAnnouncementPriority.MEDIUM);
+    } catch (error) {
+      console.warn(`Allot: cannot announce: ${error}`);
+    }
   }
 
   /** Shows the session's state everywhere. */
@@ -389,6 +409,7 @@ class SettingsWindow {
         this.#updatePanel((settings) => setToggle(settings, toggle, row.active));
       }
     });
+    describe(row, toggle.help);
     group.add(row);
     this.#panelSyncs.push(() => {
       syncing = true;

@@ -54,7 +54,7 @@ struct FilesSection: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Config file")
                 Text((file.path as NSString).abbreviatingWithTildeInPath)
-                    .font(.callout.monospaced())
+                    .font(SettingsFont.calloutMono)
                     .foregroundStyle(.secondary)
                     .textSelection(.enabled)
                 HStack(spacing: 8) {

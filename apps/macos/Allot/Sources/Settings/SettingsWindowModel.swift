@@ -71,7 +71,7 @@ final class SettingsWindowModel {
     @ObservationIgnored private var pageId = SettingsBanners.panelPage
     @ObservationIgnored private var visible = false
     @ObservationIgnored private var noticeTask: Task<Void, Never>?
-    @ObservationIgnored private var announcedStatus = ""
+    @ObservationIgnored private let announcer = SettingsAnnouncer()
 
     init(
         session: SettingsSession,
@@ -127,6 +127,9 @@ final class SettingsWindowModel {
     func selectPage(_ id: String) {
         pageId = id
         fits.setActive(visible && Self.fitPages.contains(id))
+        // The new page's banners are read with the page; this takes them as already shown.
+        announcer.pageShown()
+        _ = announcer.update(announceView())
     }
 
     /// Values are fetched on focus too, so a hand edit shows without waiting for the next tick.
@@ -217,11 +220,30 @@ final class SettingsWindowModel {
 
     private func sessionChanged() {
         fits.sessionChanged()
-        // The save status is read politely once per change, never per keystroke.
-        let status = saveStatus
-        if visible, status != announcedStatus {
-            announcedStatus = status
-            AccessibilityNotification.Announcement(status).post()
+        announce()
+    }
+
+    // What the announcer holds is kept current while the window is hidden, so showing it speaks
+    // nothing that was already there.
+    private func announceView() -> AnnouncerView {
+        let banners = SettingsBanners.banners(
+            session, pageId: pageId, port: port, number: number)
+        return AnnouncerView.of(session, banners: banners, number: number)
+    }
+
+    // Only errors and outcomes are spoken without a focus change (M7.1): a field's new error, a
+    // banner as it appears, and "All changes saved". The save status and the live sentences are
+    // read when focus reaches them.
+    private func announce() {
+        let text = announcer.update(announceView())
+        guard visible, !text.isEmpty, let window else {
+            return
         }
+        NSAccessibility.post(
+            element: window, notification: .announcementRequested,
+            userInfo: [
+                .announcement: text,
+                .priority: NSAccessibilityPriorityLevel.high.rawValue,
+            ])
     }
 }

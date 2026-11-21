@@ -174,6 +174,8 @@ export function rowKind(model) {
  * @property {string} label
  * @property {string} help Rich text: the help, then the key in monospace (DESIGN.md D4).
  * @property {string} key
+ * @property {string} description What a screen reader says after the name: the help, the key, the
+ *   notes, and the issue while one shows. Never a value that ticks (Orca reads each change).
  * @property {string[]} notes Plain lines under the help, such as a disabled or restart note.
  * @property {string | null} issue The issue line, shown with an error icon.
  * @property {boolean} enabled
@@ -192,16 +194,44 @@ export function rowKind(model) {
  */
 function rowView(model, number, enabled, withReset, readOnly, note) {
   const issue = model.issue === null ? null : issueText(model.issue, number);
+  const notes = settingNotes(model, number, note).filter((line) => line !== issue);
   return {
     label: model.label,
     help: helpText(model.spec.help, model.key),
     key: model.key,
-    notes: settingNotes(model, number, note).filter((line) => line !== issue),
+    description: describe(model.spec.help, model.key, notes, issue),
+    notes,
     issue,
     enabled,
     resetVisible: withReset && model.canReset && !readOnly,
     resetName: resetButtonName(model, number),
   };
+}
+
+/**
+ * A control's accessible description (DESIGN.md section 11): help plus key, then the notes, then
+ * the error while one shows, so a screen reader reads it when focus arrives and when it appears.
+ *
+ * @param {string} help
+ * @param {string | null} key
+ * @param {string[]} notes
+ * @param {string | null} issue
+ * @returns {string}
+ */
+export function describe(help, key, notes, issue) {
+  return [help, key ?? "", ...notes, issue === null ? "" : `Error: ${issue}`]
+    .filter((part) => part !== "")
+    .join(" ");
+}
+
+/**
+ * What a size row reads as to a screen reader: one summary, as the row shows it.
+ *
+ * @param {{ label: string, summary: string }} item
+ * @returns {string}
+ */
+export function sizeRowReading(item) {
+  return `${item.label}, ${item.summary}`;
 }
 
 /**
@@ -246,7 +276,14 @@ export function switchView(model, number, readOnly) {
  *
  * @param {DurationModel} model
  * @param {boolean} readOnly
- * @returns {{ label: string, help: string, key: string, checked: boolean, enabled: boolean }}
+ * @returns {{
+ *   label: string,
+ *   help: string,
+ *   key: string,
+ *   description: string,
+ *   checked: boolean,
+ *   enabled: boolean,
+ * }}
  */
 export function offSwitchView(model, readOnly) {
   const off = model.off;
@@ -254,6 +291,7 @@ export function offSwitchView(model, readOnly) {
     label: off?.label ?? model.label,
     help: helpText(off?.help ?? "", model.key),
     key: model.key,
+    description: describe(off?.help ?? "", model.key, [], null),
     checked: model.isOn,
     enabled: model.enabled && !readOnly,
   };
@@ -345,7 +383,7 @@ export function minimumView(draft, field, number) {
  *
  * @param {RowDraft} draft
  * @param {(value: number) => string} number
- * @returns {{ label: string, help: string, issue: string | null } | null}
+ * @returns {{ label: string, help: string, description: string, issue: string | null } | null}
  */
 export function nameView(draft, number) {
   const spec = draft.nameSpec;
@@ -353,7 +391,12 @@ export function nameView(draft, number) {
     return null;
   }
   const issue = draft.nameIssue === null ? null : issueText(draft.nameIssue, number);
-  return { label: spec.label, help: spec.help, issue };
+  return {
+    label: spec.label,
+    help: spec.help,
+    description: describe(spec.help, "", [], issue),
+    issue,
+  };
 }
 
 /**
@@ -361,11 +404,17 @@ export function nameView(draft, number) {
  *
  * @param {RuleDraft} draft
  * @param {(value: number) => string} number
- * @returns {{ label: string, help: string, issue: string | null }}
+ * @returns {{ label: string, help: string, description: string, issue: string | null }}
  */
 export function programView(draft, number) {
   const issue = draft.programIssue === null ? null : issueText(draft.programIssue, number);
-  return { label: draft.programSpec.label, help: draft.programSpec.help, issue };
+  const help = draft.programSpec.help;
+  return {
+    label: draft.programSpec.label,
+    help,
+    description: describe(help, "", [], issue),
+    issue,
+  };
 }
 
 /**

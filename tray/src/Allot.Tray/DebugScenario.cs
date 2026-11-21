@@ -20,7 +20,15 @@ internal static class DebugScenario
     /// <summary>
     /// The scenario named on the command line, or <c>null</c>.
     /// </summary>
-    public static string? Name { get; } = Find(Environment.GetCommandLineArgs());
+    public static string? Name { get; } = Find(Environment.GetCommandLineArgs(), "--scenario");
+
+    /// <summary>
+    /// <c>--settings &lt;page&gt;</c> beside <c>--scenario</c>: opens Settings on that page at
+    /// start, for checks that read the window's UI Automation tree (M7.1). A scenario instance
+    /// has no single-instance key, so nothing else can open it from outside.
+    /// </summary>
+    public static string? SettingsPage { get; } =
+        Find(Environment.GetCommandLineArgs(), "--settings");
 
     /// <summary>
     /// Whether USERPROFILE is the user's own profile folder, as Windows records it, so the
@@ -55,9 +63,9 @@ internal static class DebugScenario
                 StringComparison.OrdinalIgnoreCase);
     }
 
-    private static string? Find(string[] args)
+    private static string? Find(string[] args, string option)
     {
-        var index = Array.IndexOf(args, "--scenario");
+        var index = Array.IndexOf(args, option);
         return index >= 0 && index + 1 < args.Length ? args[index + 1] : null;
     }
 

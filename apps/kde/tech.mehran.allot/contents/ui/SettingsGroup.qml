@@ -97,7 +97,5 @@ SettingsSection {
         text: group.live
         visible: text !== ""
         wrapMode: Text.Wrap
-        Accessible.role: Accessible.StaticText
-        Accessible.name: text
     }
 }

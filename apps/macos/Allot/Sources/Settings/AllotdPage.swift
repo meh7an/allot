@@ -43,7 +43,7 @@ struct AllotdPage: View {
                 }
                 if !advanced.isEmpty {
                     Text("Advanced")
-                        .font(.title3.weight(.semibold))
+                        .font(SettingsFont.title)
                         .accessibilityAddTraits(.isHeader)
                     ForEach(advanced, id: \.spec.id) { group in
                         let rare = group.settings.filter { $0.spec.advanced }
@@ -160,19 +160,26 @@ private struct WhatFitsSection: View {
         SettingsSection(title: "What fits on this machine", live: caption) {
             if fits.unavailable == nil, let preview = fits.latest {
                 Grid(alignment: .leading, horizontalSpacing: 24, verticalSpacing: 6) {
+                    // A row reads as one element ("CPU heavy: now ..., when idle ..."), so the
+                    // headers and cells are hidden from a screen reader.
                     GridRow {
-                        Text("Class")
-                        Text("Now")
-                        Text("When idle")
+                        Text("Class").accessibilityHidden(true)
+                        Text("Now").accessibilityHidden(true)
+                        Text("When idle").accessibilityHidden(true)
                     }
-                    .font(.callout)
+                    .font(SettingsFont.callout)
                     .foregroundStyle(.secondary)
                     ForEach(preview.classes, id: \.name) { fit in
                         let minCores = Double(fit.minCores)
+                        let now = LiveText.fits(fit.now, minCores: minCores, number: model.number)
+                        let idle = LiveText.fits(
+                            fit.idle, minCores: minCores, number: model.number)
                         GridRow {
                             Text(label(fit.name))
-                            Text(LiveText.fits(fit.now, minCores: minCores, number: model.number))
-                            Text(LiveText.fits(fit.idle, minCores: minCores, number: model.number))
+                                .accessibilityLabel(
+                                    "\(label(fit.name)): now, \(now). When idle, \(idle).")
+                            Text(now).accessibilityHidden(true)
+                            Text(idle).accessibilityHidden(true)
                         }
                     }
                 }

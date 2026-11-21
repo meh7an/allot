@@ -267,6 +267,9 @@ internal sealed class RuleListCard
             AutomationProperties.SetName(Item, _name);
             if (editable)
             {
+                // The row menu from the keyboard too (Shift+F10 or the Menu key), since a list
+                // item's own button may be out of the Tab order.
+                Item.ContextFlyout = Menu(card, index, count);
                 Accelerate(Item, VirtualKey.Up, VirtualKeyModifiers.Menu, () =>
                     card.Move(index, index - 1));
                 Accelerate(Item, VirtualKey.Down, VirtualKeyModifiers.Menu, () =>

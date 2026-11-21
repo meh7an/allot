@@ -29,8 +29,9 @@ struct RuleListSections: View {
         }
         SettingsSection(title: title) {
             (Text(RulesText.status(rules)) + Text("  ")
-                + Text(rules.key).font(.caption.monospaced()))
-                .font(.callout)
+                + Text(rules.key).font(SettingsFont.captionMono))
+                .font(SettingsFont.callout)
+                .fixedSize(horizontal: false, vertical: true)
                 .foregroundStyle(.secondary)
                 .padding(.vertical, 6)
             if list.isEmpty {
@@ -71,25 +72,32 @@ struct RuleListSections: View {
         let classLabel = classLabels(window)
         let isMatch = matched.contains(index)
         let name = RulesText.rowName(index, rule, classLabel: classLabel)
+        // The row's label says all of it, with "matches" while it matches; the texts inside are
+        // hidden from a screen reader, and the menu stays its own named control.
         return HStack(spacing: 12) {
             Text("\(index + 1)")
                 .foregroundStyle(.secondary)
-                .frame(width: 24, alignment: .trailing)
+                .frame(width: 24 * SettingsFont.scale, alignment: .trailing)
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text(rule.program)
-                    .font(.body.monospaced())
+                    .font(SettingsFont.mono)
                 Text(RulesText.arguments(rule))
-                    .font(.callout.monospaced())
+                    .font(SettingsFont.calloutMono)
                     .foregroundStyle(.secondary)
             }
+            .accessibilityHidden(true)
             Spacer(minLength: 8)
             if isMatch {
+                // Text, not only the tint: "Matches".
                 Text("Matches")
-                    .font(.caption.weight(.semibold))
+                    .font(SettingsFont.captionStrong)
                     .padding(EdgeInsets(top: 2, leading: 6, bottom: 2, trailing: 6))
                     .background(Color.accentColor.opacity(0.18), in: Capsule())
+                    .accessibilityHidden(true)
             }
             Text("→ \(classLabel(rule.`class`))")
+                .accessibilityHidden(true)
             Menu {
                 Button("Edit…") {
                     edit(index)
@@ -108,6 +116,7 @@ struct RuleListSections: View {
                 }
             } label: {
                 Image(systemName: "ellipsis.circle")
+                    .accessibilityHidden(true)
             }
             .menuStyle(.button)
             .buttonStyle(.borderless)
@@ -121,7 +130,17 @@ struct RuleListSections: View {
             isMatch ? Color.accentColor.opacity(0.08) : Color.clear,
             in: RoundedRectangle(cornerRadius: 6))
         .focusable(editable)
+        .focusEffectDisabled()
         .focused($focusedRule, equals: index)
+        // Our own focus ring, so a focused rule shows it whatever the system does for a custom
+        // focusable row.
+        .overlay {
+            RoundedRectangle(cornerRadius: 6)
+                .strokeBorder(Color.accentColor, lineWidth: 2)
+                .opacity(focusedRule == index ? 1 : 0)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+        }
         // Only while the rule has focus, so Delete in a text box never deletes a rule.
         .onKeyPress(keys: [.upArrow, .downArrow, .delete, .deleteForward], phases: .down) { press in
             ruleKey(press, index)
@@ -218,11 +237,13 @@ private struct RuleSheetView: View {
     let done: @MainActor () -> Void
 
     @State private var program = ""
+    @FocusState private var programFocused: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text(RulesText.dialogTitle(draft))
-                .font(.headline)
+                .font(SettingsFont.headline)
+                .accessibilityAddTraits(.isHeader)
             VStack(alignment: .leading, spacing: 0) {
                 SettingRow(
                     label: draft.programSpec.label, help: draft.programSpec.help,
@@ -230,9 +251,11 @@ private struct RuleSheetView: View {
                 ) {
                     TextField(draft.programSpec.label, text: $program)
                         .labelsHidden()
-                        .font(.body.monospaced())
+                        .font(SettingsFont.mono)
                         .autocorrectionDisabled()
-                        .frame(width: 200)
+                        .frame(width: 200 * SettingsFont.scale)
+                        .rowHint()
+                        .focused($programFocused)
                         .onChange(of: program) {
                             draft.setProgram(program)
                         }
@@ -240,13 +263,15 @@ private struct RuleSheetView: View {
                 Divider()
                 SettingRow(
                     label: draft.args.label, help: draft.args.spec.help,
-                    notes: notes(draft.args.issue)
+                    notes: notes(draft.args.issue), standalone: true
                 ) {
                     EmptyView()
                 }
                 ChipsEditor(
                     model: draft.args, entryName: "New argument pattern", placeholder: "build",
-                    addLabel: "Add Argument")
+                    addLabel: "Add Argument",
+                    hint: RowText.hint(
+                        help: draft.args.spec.help, key: nil, notes: notes(draft.args.issue)))
                     .padding(.bottom, 6)
                 Divider()
                 SettingRow(
@@ -260,6 +285,7 @@ private struct RuleSheetView: View {
                     }
                     .labelsHidden()
                     .fixedSize()
+                    .rowHint()
                 }
                 Divider()
                 CommandTestBox(window: window, help: Self.testHelp, scope: scope) { _ in }
@@ -280,9 +306,14 @@ private struct RuleSheetView: View {
             }
         }
         .padding(20)
+        .font(SettingsFont.body)
         .frame(width: 560)
         .onAppear {
             program = draft.program
+            // The first field takes focus.
+            Task { @MainActor in
+                programFocused = true
+            }
         }
     }
 
@@ -349,17 +380,18 @@ private struct CommandTestBox: View {
         VStack(alignment: .leading, spacing: 4) {
             Text("Command line")
             Text(help)
-                .font(.callout)
+                .font(SettingsFont.callout)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+                .accessibilityHidden(true)
             TextField("Command line", text: $line, prompt: Text("cargo build --release"))
                 .labelsHidden()
-                .font(.body.monospaced())
+                .font(SettingsFont.mono)
                 .autocorrectionDisabled()
                 .accessibilityHint(help)
             if !result.isEmpty {
                 Text(result)
-                    .font(.callout)
+                    .font(SettingsFont.callout)
                     .foregroundStyle(.secondary)
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)

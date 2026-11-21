@@ -6,8 +6,6 @@ using Allot.Tray.Core.ServiceSettings;
 using Allot.Tray.Core.TrayIcon;
 
 using Microsoft.UI.Xaml;
-using Microsoft.UI.Xaml.Automation;
-using Microsoft.UI.Xaml.Automation.Peers;
 using Microsoft.UI.Xaml.Controls;
 
 namespace Allot.Tray.Settings;
@@ -47,17 +45,21 @@ internal static class ServiceCards
         Grid.SetColumn(buttons, 1);
         grid.Children.Add(text);
         grid.Children.Add(buttons);
-        AutomationProperties.SetLiveSetting(text, AutomationLiveSetting.Polite);
 
         var row = new ServiceRow(string.Empty, ServiceButton.Starting, false);
+
+        // After a press, the state the start or stop ends in is spoken (M7.1).
+        var pressed = false;
         action.Click += (_, _) =>
         {
             switch (row.Button)
             {
                 case ServiceButton.Stop:
+                    pressed = true;
                     _ = StopAsync(service, context);
                     break;
                 case ServiceButton.Start:
+                    pressed = true;
                     service.Start();
                     break;
                 case ServiceButton.Starting:
@@ -73,7 +75,13 @@ internal static class ServiceCards
                 context.Session.Status,
                 service.Version,
                 listening);
-            SettingsUi.SetLive(text, row.Text);
+            var settled = row.Button != ServiceButton.Starting;
+            if (SettingsUi.SetLive(text, row.Text) && pressed && settled)
+            {
+                pressed = false;
+                SettingsUi.Announce(text, row.Text);
+            }
+
             action.Content = row.ButtonText;
             action.IsEnabled = row.Button != ServiceButton.Starting;
             action.Style = row.Button == ServiceButton.Start

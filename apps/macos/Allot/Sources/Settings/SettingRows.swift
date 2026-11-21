@@ -18,7 +18,7 @@ struct SettingRows: View {
                 Toggle(off.label, isOn: isOn)
                     .toggleStyle(.switch)
                     .labelsHidden()
-                    .accessibilityHint(off.help)
+                    .rowHint()
             }
             .disabled(locked)
             SettingRow(label: setting.label, help: setting.spec.help, key: setting.key) {
@@ -32,13 +32,14 @@ struct SettingRows: View {
             VStack(alignment: .leading, spacing: 0) {
                 SettingRow(
                     label: setting.label, help: setting.spec.help, key: setting.key,
-                    notes: notes, reset: resetButton
+                    notes: notes, reset: resetButton, standalone: true
                 ) {
                     EmptyView()
                 }
                 ChipsEditor(
                     model: list, entryName: "New print-only flag", placeholder: "--dry-run",
-                    addLabel: "Add Flag")
+                    addLabel: "Add Flag",
+                    hint: RowText.hint(help: setting.spec.help, key: setting.key, notes: notes))
                     .padding(.bottom, 6)
             }
             .disabled(locked)
@@ -58,7 +59,7 @@ struct SettingRows: View {
             Toggle(setting.label, isOn: Binding(get: { toggle.isOn }, set: { toggle.set($0) }))
                 .toggleStyle(.switch)
                 .labelsHidden()
-                .accessibilityHint(setting.spec.help)
+                .rowHint()
         } else if let number = setting as? NumberModel {
             NumberEditor(model: number)
         }
@@ -118,41 +119,26 @@ struct SettingRow<Control: View>: View {
     var key: String?
     var notes: [RowNote] = []
     var reset: ResetButton?
+
+    /// Whether the row has no control of its own, so its text is what a screen reader reads.
+    /// Otherwise the control carries the label and, as its hint, the help, key and errors.
+    var standalone = false
     @ViewBuilder let control: Control
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text(label)
-                if !help.isEmpty || key != nil {
-                    helpText
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                ForEach(notes, id: \.self) { note in
-                    switch note {
-                    case .issue(let text):
-                        Label(text, systemImage: "exclamationmark.circle.fill")
-                            .font(.callout)
-                            .foregroundStyle(.red)
-                    case .info(let text):
-                        Text(text)
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-            }
-            .accessibilityElement(children: .combine)
+            texts
             Spacer(minLength: 16)
             control
-                .accessibilityLabel(label)
+                .environment(
+                    \.settingHint, RowText.hint(help: help, key: key, notes: notes))
             Group {
                 if let reset {
                     Button {
                         reset.action()
                     } label: {
                         Image(systemName: "arrow.counterclockwise")
+                            .accessibilityHidden(true)
                     }
                     .buttonStyle(.borderless)
                     .help(reset.name)
@@ -167,11 +153,52 @@ struct SettingRow<Control: View>: View {
         .padding(.vertical, 6)
     }
 
+    // The label, help with the key, and notes. A control's row hides them from a screen reader,
+    // since the control says the same as its name and hint.
+    @ViewBuilder private var texts: some View {
+        let column = VStack(alignment: .leading, spacing: 3) {
+            Text(label)
+                .font(SettingsFont.body)
+                .fixedSize(horizontal: false, vertical: true)
+            if !help.isEmpty || key != nil {
+                helpText
+                    .font(SettingsFont.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            ForEach(notes, id: \.self) { note in
+                switch note {
+                case .issue(let text):
+                    HStack(alignment: .firstTextBaseline, spacing: 4) {
+                        Image(systemName: "exclamationmark.circle.fill")
+                            .accessibilityHidden(true)
+                        Text(text)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .font(SettingsFont.callout)
+                    .foregroundStyle(.red)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("Error: \(text)")
+                case .info(let text):
+                    Text(text)
+                        .font(SettingsFont.callout)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+        if standalone {
+            column.accessibilityElement(children: .combine)
+        } else {
+            column.accessibilityHidden(true)
+        }
+    }
+
     private var helpText: Text {
         guard let key else {
             return Text(help)
         }
-        return Text(help) + Text("  ") + Text(key).font(.caption.monospaced())
+        return Text(help) + Text("  ") + Text(key).font(SettingsFont.captionMono)
     }
 }
 
@@ -180,6 +207,10 @@ struct SettingRow<Control: View>: View {
 struct NumberEditor: View {
     let model: NumberModel
 
+    /// Whether the number box takes focus when the editor appears, such as the first field of
+    /// a dialog.
+    var autofocus = false
+
     var body: some View {
         HStack(spacing: 6) {
             switch model.quantity {
@@ -187,17 +218,21 @@ struct NumberEditor: View {
                 Slider(value: sliderValue, in: sliderRange, step: 1)
                     .frame(width: 140)
                     .accessibilityLabel("\(model.label) slider")
-                NumberField(model: model)
+                    .rowHint()
+                NumberField(model: model, autofocus: autofocus)
                 Text("%")
+                    .font(SettingsFont.body)
                     .accessibilityHidden(true)
             case .runs, .days, .cores:
-                NumberField(model: model)
+                NumberField(model: model, autofocus: autofocus)
                 Stepper(model.label, onIncrement: { step(1) }, onDecrement: { step(-1) })
                     .labelsHidden()
+                    .accessibilityLabel("\(model.label) stepper")
                 Text(countUnit)
+                    .font(SettingsFont.body)
                     .accessibilityHidden(true)
             case .seconds, .megabytes:
-                NumberField(model: model)
+                NumberField(model: model, autofocus: autofocus)
                 Picker(model.label, selection: unit) {
                     ForEach(model.units, id: \.name) { option in
                         Text(option.name).tag(option.name)
@@ -207,7 +242,7 @@ struct NumberEditor: View {
                 .fixedSize()
                 .accessibilityLabel("\(model.label) unit")
             case .port:
-                NumberField(model: model, grouped: false)
+                NumberField(model: model, grouped: false, autofocus: autofocus)
             }
         }
     }
@@ -254,14 +289,19 @@ struct NumberField: View {
     let model: NumberModel
     var grouped = true
 
+    /// Takes focus when the box appears.
+    var autofocus = false
+
     @State private var text = ""
     @FocusState private var focused: Bool
 
     var body: some View {
         TextField(model.label, text: $text)
             .labelsHidden()
+            .font(SettingsFont.body)
             .multilineTextAlignment(.trailing)
-            .frame(width: model.quantity == .port ? 72 : 64)
+            .frame(width: (model.quantity == .port ? 72 : 64) * SettingsFont.scale)
+            .rowHint()
             .focused($focused)
             .onSubmit { commit() }
             .onExitCommand {
@@ -284,6 +324,11 @@ struct NumberField: View {
             }
             .onAppear {
                 text = shownText
+                if autofocus {
+                    Task { @MainActor in
+                        focused = true
+                    }
+                }
             }
     }
 

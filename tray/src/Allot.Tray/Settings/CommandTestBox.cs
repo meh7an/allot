@@ -4,6 +4,7 @@ using Allot.Tray.Core.ServiceSettings;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
+using Microsoft.UI.Xaml.Automation.Peers;
 using Microsoft.UI.Xaml.Controls;
 
 namespace Allot.Tray.Settings;
@@ -89,16 +90,15 @@ internal sealed class CommandTestBox
         entry.Children.Add(_shellBox);
         _result.Visibility = Visibility.Collapsed;
         _result.IsTextSelectionEnabled = true;
+        // The label and help are the box's name and description, so screen readers skip them.
+        var label = SettingsUi.Text("Command line", "BodyTextBlockStyle");
+        var helpLine = SettingsUi.Text(help, "SettingsHelpTextStyle");
+        AutomationProperties.SetAccessibilityView(label, AccessibilityView.Raw);
+        AutomationProperties.SetAccessibilityView(helpLine, AccessibilityView.Raw);
         Root = new StackPanel
         {
             Spacing = 4,
-            Children =
-            {
-                SettingsUi.Text("Command line", "BodyTextBlockStyle"),
-                SettingsUi.Text(help, "SettingsHelpTextStyle"),
-                entry,
-                _result,
-            },
+            Children = { label, helpLine, entry, _result },
         };
         ShowShell();
     }
@@ -169,9 +169,14 @@ internal sealed class CommandTestBox
         Show(string.Join("\n", lines), test);
     }
 
+    // The test's result is the outcome of the user's typing, so it is spoken (M7.1).
     private void Show(string text, CommandTest? test)
     {
-        SettingsUi.SetLive(_result, text);
+        if (SettingsUi.SetLive(_result, text) && text.Length > 0)
+        {
+            SettingsUi.Announce(_result, text);
+        }
+
         Matched?.Invoke(RulesText.Matched(test));
     }
 }

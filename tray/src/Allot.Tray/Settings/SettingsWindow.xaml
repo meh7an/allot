@@ -80,8 +80,7 @@
           Margin="16,8,16,12"
           Style="{StaticResource CaptionTextBlockStyle}"
           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-          TextWrapping="WrapWholeWords"
-          AutomationProperties.LiveSetting="Polite" />
+          TextWrapping="WrapWholeWords" />
       </NavigationView.PaneFooter>
 
       <Grid>

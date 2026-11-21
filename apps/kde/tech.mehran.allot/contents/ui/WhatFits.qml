@@ -46,7 +46,5 @@ SettingsSection {
         text: fits.view.caption
         visible: text !== ""
         wrapMode: Text.Wrap
-        Accessible.role: Accessible.StaticText
-        Accessible.name: text
     }
 }

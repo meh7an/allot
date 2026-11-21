@@ -16,6 +16,9 @@ struct ChipsEditor: View {
     /// The Add button, such as "Add Flag".
     let addLabel: String
 
+    /// What the box says as its hint: the row's help, key and any error.
+    var hint = ""
+
     @State private var entry = ""
     @FocusState private var entryFocused: Bool
 
@@ -36,9 +39,10 @@ struct ChipsEditor: View {
             HStack(spacing: 8) {
                 TextField(entryName, text: $entry, prompt: Text(placeholder))
                     .labelsHidden()
-                    .font(.body.monospaced())
+                    .font(SettingsFont.mono)
                     .autocorrectionDisabled()
-                    .frame(width: 180)
+                    .frame(width: 180 * SettingsFont.scale)
+                    .accessibilityHint(hint)
                     .focused($entryFocused)
                     .onSubmit(add)
                 Button(addLabel, action: add)
@@ -62,12 +66,13 @@ private struct Chip: View {
     var body: some View {
         HStack(spacing: 2) {
             Text(text)
-                .font(.body.monospaced())
+                .font(SettingsFont.mono)
             Button {
                 remove()
             } label: {
                 Image(systemName: "xmark.circle.fill")
                     .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
             }
             .buttonStyle(.borderless)
             .help("Remove \(text)")

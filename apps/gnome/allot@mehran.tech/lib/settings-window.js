@@ -20,6 +20,7 @@ import {
   SwitchModel,
 } from "./setting-values.js";
 import { SERVICE_PAGE, restartNote, settingsBanners } from "./settings-banners.js";
+import { SettingsAnnouncer, announcerView } from "./settings-announcer.js";
 import { SettingsSession } from "./settings-session.js";
 import {
   LOADING_TEXT,
@@ -226,8 +227,17 @@ export class SettingsWindowModel {
   sharesMemory = false;
   /** @type {(() => void) | null} */
   onChange = null;
+  /**
+   * Speaks a text to screen readers without moving focus: errors and outcomes (M7.1).
+   *
+   * @type {((text: string) => void) | null}
+   */
+  onAnnounce = null;
 
   #client;
+  #announcer = new SettingsAnnouncer();
+  /** @type {string | null} */
+  #shownPage = null;
   #timers;
   #launcher;
   #host;
@@ -300,6 +310,11 @@ export class SettingsWindowModel {
    */
   showPage(pageId) {
     this.fits.setActive(PAGES_WITH_FITS.includes(pageId));
+    if (pageId !== this.#shownPage) {
+      this.#shownPage = pageId;
+      this.#announcer.pageShown();
+      this.#announce();
+    }
   }
 
   /** Fetches the settings again, such as when the window takes focus. */
@@ -543,6 +558,19 @@ export class SettingsWindowModel {
   #changed() {
     if (!this.#disposed) {
       this.onChange?.();
+      this.#announce();
+    }
+  }
+
+  /** Speaks what changed since the last call, for the page shown. */
+  #announce() {
+    if (this.#shownPage === null) {
+      return;
+    }
+    const banners = settingsBanners(this.session, this.#shownPage, this.#port, this.number);
+    const text = this.#announcer.update(announcerView(this.session, banners, this.number));
+    if (text !== "") {
+      this.onAnnounce?.(text);
     }
   }
 

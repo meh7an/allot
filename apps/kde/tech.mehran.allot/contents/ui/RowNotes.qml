@@ -38,6 +38,7 @@ ColumnLayout {
             Accessible.name: "Error"
         }
 
+        // Also in the field's description while it shows, so Orca reads it with the field.
         QQC2.Label {
             Layout.fillWidth: true
             text: notes.view === null ? "" : (notes.view.issue ?? "")

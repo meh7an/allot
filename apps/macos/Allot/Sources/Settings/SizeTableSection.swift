@@ -21,16 +21,20 @@ struct SizeTableSection: View {
         SettingsSection(title: title, help: table.spec.help) {
             ScrollView(.horizontal) {
                 Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 8) {
+                    // Each row reads as one element with a summary, so the headers add nothing
+                    // for a screen reader.
                     GridRow {
                         Text(table.canAdd ? "Preset" : "Class")
+                            .accessibilityHidden(true)
                         ForEach(Self.headers, id: \.self) { header in
                             Text(header)
+                                .accessibilityHidden(true)
                         }
                         Color.clear
                             .gridCellUnsizedAxes([.horizontal, .vertical])
                             .accessibilityHidden(true)
                     }
-                    .font(.callout)
+                    .font(SettingsFont.callout)
                     .foregroundStyle(.secondary)
                     ForEach(table.rows, id: \.row.name) { view in
                         row(view, editable: editable)
@@ -63,16 +67,22 @@ struct SizeTableSection: View {
     private func row(_ view: SizeRowView, editable: Bool) -> some View {
         let number = window.number
         let cells = SizesText.cells(view.row, number: number)
-        let fits = SizesText.fitsNow(window.fits.fit(table.key, view.row.name), number: number)
+        let fit = window.fits.fit(table.key, view.row.name)
+        let fits = SizesText.fitsNow(fit, number: number)
+        let summary = SizesText.rowSummary(table, view, fit: fit, number: number)
         return GridRow {
+            // The name cell speaks the whole row; the value cells and their sentence parts
+            // are hidden, and the buttons stay separate and named.
             nameCell(view)
-            Text(cells.cores)
-            Text(cells.minCores)
-            Text(cells.memory)
-            Text(cells.gpu)
-            Text(cells.videoMemory)
-            Text(cells.runTime)
-            Text(fits)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(summary)
+            hiddenCell(cells.cores)
+            hiddenCell(cells.minCores)
+            hiddenCell(cells.memory)
+            hiddenCell(cells.gpu)
+            hiddenCell(cells.videoMemory)
+            hiddenCell(cells.runTime)
+            hiddenCell(fits)
             HStack(spacing: 4) {
                 Button("Edit…") {
                     open(view.row.name)
@@ -96,19 +106,24 @@ struct SizeTableSection: View {
         .lineLimit(1)
     }
 
+    private func hiddenCell(_ text: String) -> some View {
+        Text(text)
+            .accessibilityHidden(true)
+    }
+
     // A class shows its label over its key; a preset its name over "built in" or "yours".
     private func nameCell(_ view: SizeRowView) -> some View {
         VStack(alignment: .leading, spacing: 1) {
             if table.canAdd {
                 Text(view.row.name)
-                    .font(.body.monospaced())
+                    .font(SettingsFont.mono)
                 Text(view.builtIn ? "built in" : "yours")
-                    .font(.caption)
+                    .font(SettingsFont.caption)
                     .foregroundStyle(.secondary)
             } else {
                 Text(view.label)
                 Text(view.row.name)
-                    .font(.caption.monospaced())
+                    .font(SettingsFont.captionMono)
                     .foregroundStyle(.secondary)
             }
         }
@@ -123,6 +138,7 @@ struct SizeTableSection: View {
             action()
         } label: {
             Image(systemName: symbol)
+                .accessibilityHidden(true)
         }
         .buttonStyle(.borderless)
         .help(name)
@@ -191,20 +207,24 @@ private struct SizeSheetView: View {
 
     @State private var name = ""
     @State private var live = ""
+    @FocusState private var nameFocused: Bool
 
     var body: some View {
         let proposal = table.proposal(draft)
         VStack(alignment: .leading, spacing: 12) {
             Text(SizesText.dialogTitle(table, draft))
-                .font(.headline)
+                .font(SettingsFont.headline)
+                .accessibilityAddTraits(.isHeader)
             VStack(alignment: .leading, spacing: 0) {
                 if draft.canRename, let spec = draft.nameSpec {
                     SettingRow(label: spec.label, help: spec.help, notes: notes(draft.nameIssue)) {
                         TextField(spec.label, text: $name)
                             .labelsHidden()
-                            .font(.body.monospaced())
+                            .font(SettingsFont.mono)
                             .autocorrectionDisabled()
-                            .frame(width: 200)
+                            .frame(width: 200 * SettingsFont.scale)
+                            .rowHint()
+                            .focused($nameFocused)
                             .onChange(of: name) {
                                 draft.setName(name)
                             }
@@ -215,15 +235,22 @@ private struct SizeSheetView: View {
                     if index > 0 {
                         Divider()
                     }
-                    fieldRow(draft.fields[index])
+                    fieldRow(draft.fields[index], first: index == 0)
                 }
             }
             if let warning = SizesText.renameWarning(draft) {
-                Label(warning, systemImage: "exclamationmark.triangle.fill")
-                    .font(.callout)
+                HStack(alignment: .firstTextBaseline, spacing: 4) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .accessibilityHidden(true)
+                    Text(warning)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .font(SettingsFont.callout)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("Warning: \(warning)")
             }
             Text(live)
-                .font(.callout)
+                .font(SettingsFont.callout)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             HStack {
@@ -246,9 +273,16 @@ private struct SizeSheetView: View {
             }
         }
         .padding(20)
+        .font(SettingsFont.body)
         .frame(width: 600)
         .onAppear {
             name = draft.name
+            // The first field takes focus: the name when the sheet has one, else the first size.
+            if hasNameField {
+                Task { @MainActor in
+                    nameFocused = true
+                }
+            }
         }
         .task(id: proposal) {
             // Asks again once the values have been still for the save delay.
@@ -265,16 +299,20 @@ private struct SizeSheetView: View {
         }
     }
 
-    @ViewBuilder private func fieldRow(_ field: NumberModel) -> some View {
+    @ViewBuilder private func fieldRow(_ field: NumberModel, first: Bool) -> some View {
         if field.key == "min_cores" {
             SettingRow(label: field.label, help: field.spec.help, notes: notes(field.issue)) {
                 MinCoresEditor(field: field, automaticCores: automaticCores, number: window.number)
             }
         } else {
             SettingRow(label: field.label, help: field.spec.help, notes: notes(field.issue)) {
-                NumberEditor(model: field)
+                NumberEditor(model: field, autofocus: first && !hasNameField)
             }
         }
+    }
+
+    private var hasNameField: Bool {
+        draft.canRename && draft.nameSpec != nil
     }
 
     private var automaticCores: Double {

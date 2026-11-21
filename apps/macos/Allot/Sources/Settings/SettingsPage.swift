@@ -46,12 +46,15 @@ struct SettingsPage: View {
                 }
             }
             Divider()
+            // Read when focus reaches it; changes are not spoken (the window's announcer speaks
+            // only errors and outcomes).
             Text(model.saveStatus)
-                .font(.callout)
+                .font(SettingsFont.callout)
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(EdgeInsets(top: 8, leading: 20, bottom: 8, trailing: 20))
         }
+        .font(SettingsFont.body)
         .frame(width: pageId == "sizes" ? Self.wideWidth : Self.width)
     }
 
@@ -77,6 +80,7 @@ private struct BannerView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text(banner.message)
                     .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityLabel("\(severityName): \(banner.message)")
                 HStack(spacing: 8) {
                     ForEach(Array(banner.actions.enumerated()), id: \.offset) { index, action in
                         if index == 0 {
@@ -93,6 +97,15 @@ private struct BannerView: View {
         .padding(12)
         .background(tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
         .accessibilityElement(children: .contain)
+    }
+
+    // The severity in words, since the icon and tint are not read.
+    private var severityName: String {
+        switch banner.severity {
+        case .informational: "Information"
+        case .warning: "Warning"
+        case .error: "Error"
+        }
     }
 
     private var symbol: String {
@@ -120,13 +133,17 @@ private struct NoticeView: View {
     var body: some View {
         HStack(spacing: 12) {
             Text(notice.message)
+                .font(SettingsFont.body)
+                .fixedSize(horizontal: false, vertical: true)
             if notice.undo != nil {
                 Button("Undo") { undo() }
+                    .accessibilityHint(notice.message)
             }
         }
         .padding(EdgeInsets(top: 8, leading: 14, bottom: 8, trailing: 10))
-        .background(.regularMaterial, in: Capsule())
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
         .shadow(radius: 4, y: 1)
+        .accessibilityElement(children: .contain)
     }
 }
 
@@ -140,12 +157,13 @@ struct SettingsSection<Content: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title)
-                .font(.headline)
+                .font(SettingsFont.headline)
                 .accessibilityAddTraits(.isHeader)
             if !help.isEmpty {
                 Text(help)
-                    .font(.callout)
+                    .font(SettingsFont.callout)
                     .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             GroupBox {
                 VStack(alignment: .leading, spacing: 0) {
@@ -154,7 +172,7 @@ struct SettingsSection<Content: View>: View {
                         Divider()
                             .padding(.vertical, 4)
                         Text(live)
-                            .font(.callout)
+                            .font(SettingsFont.callout)
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                             .padding(.vertical, 4)
@@ -184,7 +202,7 @@ struct ResetSection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("Reset")
-                .font(.headline)
+                .font(SettingsFont.headline)
                 .accessibilityAddTraits(.isHeader)
             HStack(spacing: 8) {
                 ForEach(items) { item in
@@ -194,7 +212,7 @@ struct ResetSection: View {
             }
             if !items.contains(where: \.isEnabled) {
                 Text(SettingsText.nothingToReset)
-                    .font(.callout)
+                    .font(SettingsFont.callout)
                     .foregroundStyle(.secondary)
             }
         }

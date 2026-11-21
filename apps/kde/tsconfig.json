@@ -65,6 +65,7 @@
     "../gnome/allot@mehran.tech/lib/service-row.js",
     "../gnome/allot@mehran.tech/lib/setting-values.js",
     "../gnome/allot@mehran.tech/lib/settings.js",
+    "../gnome/allot@mehran.tech/lib/settings-announcer.js",
     "../gnome/allot@mehran.tech/lib/settings-banners.js",
     "../gnome/allot@mehran.tech/lib/settings-editors.js",
     "../gnome/allot@mehran.tech/lib/settings-session.js",
