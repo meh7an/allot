@@ -164,7 +164,7 @@ public enum SettingsBanners {
     }
 
     // allotd's reasons come without a full stop; the banner's next sentence needs one.
-    static func sentence(_ text: String?) -> String {
+    nonisolated static func sentence(_ text: String?) -> String {
         let trimmed = (text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty || trimmed.hasSuffix(".") ? trimmed : "\(trimmed)."
     }

@@ -87,10 +87,12 @@ fi
 
 if [ -n "$dry_run" ]; then
     arguments+=(--dry-run)
-    # cargo verifies each crate against its packaged siblings, which it unpacks under
-    # CARGO_HOME and reuses when one of that name and version is already there. The CI cache
-    # keeps the registry, so a copy an earlier run unpacked at the same version would be built
-    # instead of these sources; drop those first.
+    # cargo verifies each crate against its packaged siblings: it keeps them in a registry under
+    # target/package and unpacks them under CARGO_HOME, reusing what one of that name and
+    # version left there. The CI cache keeps both, so crates an earlier run packaged at the same
+    # version would be built instead of these sources; drop those first.
+    target_dir=$(cargo metadata --no-deps --format-version 1 | jq -r .target_directory | tr -d '\r')
+    rm -rf "$target_dir/package"
     cargo_home=${CARGO_HOME:-$HOME/.cargo}
     while read -r name version; do
         [ -n "$name" ] || continue
