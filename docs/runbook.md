@@ -72,7 +72,8 @@ busctl --user introspect tech.mehran.Allot /tech/mehran/Allot
 
 | Symptom | Cause and fix |
 |---------|---------------|
-| The GNOME extension shows the service down while `allot status` shows it running | allotd has no session bus, for example when it was started inside a sandbox, or it is older than the extension (before 0.6.0). `logs/allotd.log` has a warning about the bus at startup; HTTP clients keep working. Restart it outside the sandbox: `systemctl --user restart allotd`, or `allot install` from the same release. |
+| The GNOME extension says allotd runs without the session bus | allotd was started without a session bus, for example inside a sandbox. The extension sees it from the PID in `allotd.lock`, offers Restart service (`systemctl --user restart allotd`), and never starts a second one. `logs/allotd.log` has a warning about the bus at startup; HTTP clients keep working. An allotd older than 0.6.0 writes no PID, so the extension shows it as stopped: `allot install` from the same release. |
+| GNOME's Start service says to run `allot install` | The extension starts allotd only through its systemd user unit, and the unit is missing. `allot install` creates it. |
 | `[todo] allotd at login` | No systemd user session, such as WSL without systemd. The line prints the commands. On WSL, set `systemd=true` under `[boot]` in `/etc/wsl.conf` and restart WSL. Clients still start allotd without the unit. |
 | `systemctl --user list-units 'allot-*.scope'` lists nothing while a job runs | `linux.scopes` needs cgroup v2 and a systemd user session; without them leases follow the process tree. See Configuration. |
 | `allot: command not found` | `~/.local/bin` is not on `PATH`, or it did not exist during the install. Add `~/.allot/bin` to `PATH`, or create the folder and install again. |
@@ -148,9 +149,14 @@ Kill (in the flyout, or `allot kill <id>`) works on an active lease, whichever s
    `claude.exe` after the hook reported the command.
 2. It refuses, and the lease stays, when that root is protected (Claude Code and its
    ancestors, `allotd`, `allot`, `allot-mcp`) or started before the command was reported.
-3. Otherwise the lease ends as killed, and the tree is ended root first. When nothing is bound
-   or the root has already exited, the lease still ends and nothing is terminated; the
-   response says so.
+3. Otherwise the lease ends as killed, and the tree is ended root first. A Claude Code
+   session inside the tree, such as a `claude -p` the command started, is spared with
+   everything below it, whether or not it holds a lease. When nothing is bound or the root has
+   already exited, the lease still ends and nothing is terminated; the response says so.
+
+A session's agent cannot run `allot kill`, `allot remove` or `allot daemon stop` on its own:
+the PreToolUse hook asks you first, since each can end another session's job or stop allotd
+for every session.
 
 On Linux with `linux.scopes` on, a lease's command also runs in its own systemd scope, and Kill
 ends every process in that scope at once (`cgroup.kill`), then anything of the tree that started
@@ -285,7 +291,7 @@ outside leases)".
 | allotd exits right after starting | `logs\allotd.log` says why. "another allotd is already running": one is up already. "binding 127.0.0.1:<port>": another program has the port, so set `[daemon] port` in `config.toml`. A config error names the file and key. |
 | `config REJECTED` in `allot status` | `config.toml` has an invalid value; allotd keeps the previous config until the file is valid again (checked every 5 s). The message names the key. |
 | Nothing can reach allotd after a port change | allotd keeps its old port until it restarts, but clients read the new one at once, `allot daemon stop` included. End `allotd.exe` in Task Manager, then run `allot daemon start`. |
-| 401 errors | The token in `token` does not match allotd's. Clients re-read the file once. If it persists, restart allotd: it reads `token` at startup. |
+| 401 errors | The token in `token` does not match allotd's. Clients re-read the file once, and allotd re-reads it when a request brings another token, so a replaced file takes effect without a restart. If it persists, check that `token` is readable and not empty. |
 | A lease stays queued | `allot leases` shows what is ahead, and its reasons what is not free (see Reading a queued reason). A `benchmark_exclusive` lease drains the machine and then waits up to `benchmark.max_quiet_wait_secs` for quiet. Leases of sessions that ended expire within a second (holder process gone) or after the heartbeat TTL (60 s). |
 | `allot install` lists files "still in use" | Old binaries that running sessions or allotd still hold. They are harmless and are deleted by the next install once nothing uses them. |
 | `%USERPROFILE%\.resources-helper\` is still there after the upgrade from Resources Helper | Sessions that were open during the upgrade still run its `rh-mcp.exe`, which reads its `token` and `config.toml`. Restart them and run `allot install` again; it deletes the folder once nothing runs from it. A "kept ... exists already" line means the new folder already had that file, so the old one was left for you to compare. |
@@ -330,7 +336,7 @@ are rejected. `allot classes` prints the classifier rules and class profiles in 
 | `benchmark.quiet_cpu_pct`, `quiet_gpu_pct` | 10, 10 | Load a benchmark waits under. |
 | `benchmark.quiet_secs` | 10 | How long the machine must stay quiet. |
 | `benchmark.max_quiet_wait_secs` | 60 | After this, a benchmark is granted without quiet. |
-| `leases.heartbeat_ttl_secs` | 60 | A lease without a heartbeat for this long expires. |
+| `leases.heartbeat_ttl_secs` | 60 | A lease without a heartbeat for this long expires. At least 10. |
 | `leases.idle_release_secs` | 180 | An active lease ends once no command runs under it and its session has been idle this long, for holders that forget `release_lease`. 0 turns it off. |
 | `retention.lease_days`, `history_days` | 30, 90 | Age at which ended leases and job runs are pruned (hourly). |
 | `retention.keep_runs_per_job`, `max_job_runs` | 20, 5000 | Runs kept per job regardless of age, and in total. |
@@ -338,7 +344,7 @@ are rejected. `allot classes` prints the classifier rules and class profiles in 
 | `linux.scopes` | true | Linux: run each lease's command in a systemd scope of its own (`allot-<id>-<grant time>-<tag>.scope`), which gives its exact CPU time and memory and a kill that ends it at once. Needs cgroup v2 and a systemd user session; without them leases follow their process tree. |
 | `linux.enforce_cpu` | false | Linux: cap a lease's scope at its reserved cores (`CPUQuota`). |
 | `linux.enforce_memory` | false | Linux: throttle a lease's scope above its reserved RAM (`MemoryHigh`); it is never killed for memory. |
-| `[classes.<class>]` | built in | Profiles of `light`, `cpu_heavy`, `gpu_heavy`, `mixed`: `cores`, `ram_mb`, `gpu_pct`, `vram_mb`, `est_secs`, and `min_cores` (see Minimum cores). A table changes only the keys it names; without `min_cores`, the minimum follows `cores`. |
+| `[classes.<class>]` | built in | Profiles of `light`, `cpu_heavy`, `gpu_heavy`, `mixed`: `cores` (0 to 4096), `ram_mb`, `gpu_pct`, `vram_mb`, `est_secs`, and `min_cores` (see Minimum cores). A table changes only the keys it names; without `min_cores`, the minimum follows `cores`. |
 | `[presets.<name>]` | built in | `cpu_small`, `cpu_medium`, `gpu_small`, `quick`, `low_impact`, with the same keys as a class. A new name adds a preset, which needs at least `cores` and `ram_mb` (GPU and VRAM default to 0, the run time to 300 s). |
 | `[[classifier.rules]]` | built in | Heavy-command rules. A list here replaces the default list. |
 | `classifier.light_flags` | `--help`, `-h`, `--version`, `-V`, `/?` | A command with any of these arguments only prints and exits, so it is light even when a rule matches it. A list here replaces the default list. |

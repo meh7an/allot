@@ -42,7 +42,21 @@ All notable changes to this project are documented in this file. The format foll
   is on: bottom, top, left or right. The tray icon's menu opens away from the taskbar.
 - allotd refuses a request whose `Host` is not `127.0.0.1` or `localhost` on its port, `/health`
   included, so a web page cannot reach it through DNS rebinding. Lease labels and command lines
-  are cut to 512 characters.
+  are cut to 512 characters. A config error on `/health` names `config.toml` without its folder.
+- A session's agent no longer runs `allot kill`, `allot remove` or `allot daemon stop` on its
+  own: the hook asks you first.
+- Kill spares a Claude Code session inside the killed tree, such as a `claude -p` the command
+  started, whether or not it holds a lease, on every OS and with or without a Linux scope.
+- `leases.heartbeat_ttl_secs` must be at least 10, and a class or preset's `cores` at most
+  4096; a `config.toml` outside these is rejected with the key named.
+- allotd re-reads its token file when a request brings another token, so a token file replaced
+  while it runs takes effect without a restart, and the panels' Restart service works again.
+- The GNOME extension starts allotd only through its systemd user unit, and says to run
+  `allot install` when the unit is missing. When allotd runs without the session bus, the
+  extension says so and offers a restart instead of showing it stopped, and it never starts a
+  second one. Opening Settings leaves window handling to GNOME.
+- The GNOME and KDE Settings windows share one wording: Open File and Show in Folder in Files,
+  one accessible description per row, and a note when `config.toml` does not exist yet.
 - A settings request whose body is not the JSON the route takes gets a `SettingsRefusal` over
   HTTP and D-Bus, as every other settings refusal does.
 - The GNOME extension's Settings window no longer names a port; it says when allotd is not on
