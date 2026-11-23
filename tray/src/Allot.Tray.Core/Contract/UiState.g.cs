@@ -68,6 +68,12 @@ public sealed record UiState
     /// Every registered session, with or without leases.
     /// </summary>
     public required IReadOnlyList<UiSession> Sessions { get; init; }
+
+    /// <summary>
+    /// Whether a newer release exists and how installing it is going; <c>null</c> from allotd builds
+    /// that do not check for updates.
+    /// </summary>
+    public UpdateStatus? Update { get; init; }
 }
 
 /// <summary>
@@ -2268,6 +2274,107 @@ public sealed record UnkilledProcess
     /// Why it is still running.
     /// </summary>
     public required string Reason { get; init; }
+}
+
+/// <summary>
+/// Where the update stands.
+/// </summary>
+[JsonConverter(typeof(StrictEnumConverter<UpdateState>))]
+public enum UpdateState
+{
+    /// <summary>
+    /// No check has finished since allotd first ran, so nothing is known about newer releases.
+    /// </summary>
+    [JsonStringEnumMemberName("unchecked")]
+    Unchecked,
+
+    /// <summary>
+    /// A check is running now.
+    /// </summary>
+    [JsonStringEnumMemberName("checking")]
+    Checking,
+
+    /// <summary>
+    /// The installed version is the newest release the last check found.
+    /// </summary>
+    [JsonStringEnumMemberName("up_to_date")]
+    UpToDate,
+
+    /// <summary>
+    /// A newer release is out; <c>latest</c> and <c>release_url</c> name it.
+    /// </summary>
+    [JsonStringEnumMemberName("available")]
+    Available,
+
+    /// <summary>
+    /// <c>allot update</c> is installing <c>latest</c>.
+    /// </summary>
+    [JsonStringEnumMemberName("installing")]
+    Installing,
+
+    /// <summary>
+    /// The last check could not tell whether a newer release exists; <c>reason</c> says why.
+    /// </summary>
+    [JsonStringEnumMemberName("check_failed")]
+    CheckFailed,
+
+    /// <summary>
+    /// The last install did not finish; <c>reason</c> says why. <c>latest</c> still names the newer
+    /// release, so a panel can offer to try again.
+    /// </summary>
+    [JsonStringEnumMemberName("install_failed")]
+    InstallFailed,
+
+    /// <summary>
+    /// The user turned checking off, so nothing contacts github.com.
+    /// </summary>
+    [JsonStringEnumMemberName("disabled")]
+    Disabled,
+}
+
+/// <summary>
+/// What <c>GET /ui/state</c> says about updates, in its <c>update</c> field.
+/// </summary>
+public sealed record UpdateStatus
+{
+    /// <summary>
+    /// When the last check finished, successful or not, in milliseconds since the Unix epoch;
+    /// <c>null</c> before the first.
+    /// </summary>
+    public long? CheckedAtMs { get; init; }
+
+    /// <summary>
+    /// Version of the running allotd, for example <c>0.6.1</c>.
+    /// </summary>
+    public required string Installed { get; init; }
+
+    /// <summary>
+    /// The newest release any check has found, without the leading <c>v</c>; <c>null</c> until one has.
+    /// A failed check keeps it, so a panel goes on offering the update it knew of.
+    /// </summary>
+    public string? Latest { get; init; }
+
+    /// <summary>
+    /// Lines for a panel to show under its banner as given, for example that a panel loads its
+    /// new version at the next login. <c>allot update</c> writes them; empty when there is nothing to
+    /// say.
+    /// </summary>
+    public required IReadOnlyList<string> Notes { get; init; }
+
+    /// <summary>
+    /// Why the last check or install failed; <c>null</c> in every other state.
+    /// </summary>
+    public string? Reason { get; init; }
+
+    /// <summary>
+    /// The page of <c>latest</c> on GitHub.
+    /// </summary>
+    public string? ReleaseUrl { get; init; }
+
+    /// <summary>
+    /// What the update is doing or has found.
+    /// </summary>
+    public required UpdateState State { get; init; }
 }
 
 /// <summary>

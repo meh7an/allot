@@ -75,6 +75,18 @@
       "items": {
         "$ref": "#/definitions/UiSession"
       }
+    },
+    "update": {
+      "description": "Whether a newer release exists and how installing it is going; `None` from allotd builds\nthat do not check for updates.",
+      "anyOf": [
+        {
+          "$ref": "#/definitions/UpdateStatus"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
     }
   },
   "required": [
@@ -1388,6 +1400,110 @@
       "required": [
         "session",
         "usage"
+      ]
+    },
+    "UpdateState": {
+      "description": "Where the update stands.",
+      "oneOf": [
+        {
+          "description": "No check has finished since allotd first ran, so nothing is known about newer releases.",
+          "type": "string",
+          "const": "unchecked"
+        },
+        {
+          "description": "A check is running now.",
+          "type": "string",
+          "const": "checking"
+        },
+        {
+          "description": "The installed version is the newest release the last check found.",
+          "type": "string",
+          "const": "up_to_date"
+        },
+        {
+          "description": "A newer release is out; `latest` and `release_url` name it.",
+          "type": "string",
+          "const": "available"
+        },
+        {
+          "description": "`allot update` is installing `latest`.",
+          "type": "string",
+          "const": "installing"
+        },
+        {
+          "description": "The last check could not tell whether a newer release exists; `reason` says why.",
+          "type": "string",
+          "const": "check_failed"
+        },
+        {
+          "description": "The last install did not finish; `reason` says why. `latest` still names the newer\nrelease, so a panel can offer to try again.",
+          "type": "string",
+          "const": "install_failed"
+        },
+        {
+          "description": "The user turned checking off, so nothing contacts github.com.",
+          "type": "string",
+          "const": "disabled"
+        }
+      ]
+    },
+    "UpdateStatus": {
+      "description": "What `GET /ui/state` says about updates, in its `update` field.",
+      "type": "object",
+      "properties": {
+        "checked_at_ms": {
+          "description": "When the last check finished, successful or not, in milliseconds since the Unix epoch;\n`None` before the first.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "int64"
+        },
+        "installed": {
+          "description": "Version of the running allotd, for example `0.6.1`.",
+          "type": "string"
+        },
+        "latest": {
+          "description": "The newest release any check has found, without the leading `v`; `None` until one has.\nA failed check keeps it, so a panel goes on offering the update it knew of.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "notes": {
+          "description": "Lines for a panel to show under its banner as given, for example that a panel loads its\nnew version at the next login. `allot update` writes them; empty when there is nothing to\nsay.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "reason": {
+          "description": "Why the last check or install failed; `None` in every other state.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "release_url": {
+          "description": "The page of `latest` on GitHub.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "state": {
+          "description": "What the update is doing or has found.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/UpdateState"
+            }
+          ]
+        }
+      },
+      "required": [
+        "installed",
+        "state",
+        "notes"
       ]
     },
     "Verdict": {

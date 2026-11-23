@@ -137,6 +137,7 @@ pub async fn ui_state(state: &AppState, service: HealthResponse) -> Result<UiSta
         recent: stored.recent,
         notices: stored.notices,
         ended: stored.ended,
+        update: None,
     })
 }
 

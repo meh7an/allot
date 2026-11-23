@@ -37,6 +37,10 @@ public struct UiState: Codable, Sendable, Equatable {
     /// Every registered session, with or without leases.
     public let sessions: [UiSession]
 
+    /// Whether a newer release exists and how installing it is going; `nil` from allotd builds
+    /// that do not check for updates.
+    public let update: UpdateStatus?
+
     private enum CodingKeys: String, CodingKey {
         case active
         case ended
@@ -48,6 +52,7 @@ public struct UiState: Codable, Sendable, Equatable {
         case recent
         case service
         case sessions
+        case update
     }
 
     public init(from decoder: any Decoder) throws {
@@ -62,6 +67,7 @@ public struct UiState: Codable, Sendable, Equatable {
         self.recent = try container.decode([RecentRun].self, forKey: .recent)
         self.service = try container.decode(HealthResponse.self, forKey: .service)
         self.sessions = try container.decode([UiSession].self, forKey: .sessions)
+        self.update = try container.decodeIfPresent(UpdateStatus.self, forKey: .update)
     }
 }
 
@@ -2071,6 +2077,65 @@ public struct UnkilledProcess: Codable, Sendable, Equatable {
         case name
         case pid
         case reason
+    }
+}
+
+/// Where the update stands.
+public enum UpdateState: String, Codable, Sendable, Equatable {
+    /// No check has finished since allotd first ran, so nothing is known about newer releases.
+    case unchecked
+    /// A check is running now.
+    case checking
+    /// The installed version is the newest release the last check found.
+    case upToDate = "up_to_date"
+    /// A newer release is out; `latest` and `release_url` name it.
+    case available
+    /// `allot update` is installing `latest`.
+    case installing
+    /// The last check could not tell whether a newer release exists; `reason` says why.
+    case checkFailed = "check_failed"
+    /// The last install did not finish; `reason` says why. `latest` still names the newer
+    /// release, so a panel can offer to try again.
+    case installFailed = "install_failed"
+    /// The user turned checking off, so nothing contacts github.com.
+    case disabled
+}
+
+/// What `GET /ui/state` says about updates, in its `update` field.
+public struct UpdateStatus: Codable, Sendable, Equatable {
+    /// When the last check finished, successful or not, in milliseconds since the Unix epoch;
+    /// `nil` before the first.
+    public let checkedAtMs: Int64?
+
+    /// Version of the running allotd, for example `0.6.1`.
+    public let installed: String
+
+    /// The newest release any check has found, without the leading `v`; `nil` until one has.
+    /// A failed check keeps it, so a panel goes on offering the update it knew of.
+    public let latest: String?
+
+    /// Lines for a panel to show under its banner as given, for example that a panel loads its
+    /// new version at the next login. `allot update` writes them; empty when there is nothing to
+    /// say.
+    public let notes: [String]
+
+    /// Why the last check or install failed; `nil` in every other state.
+    public let reason: String?
+
+    /// The page of `latest` on GitHub.
+    public let releaseUrl: String?
+
+    /// What the update is doing or has found.
+    public let state: UpdateState
+
+    private enum CodingKeys: String, CodingKey {
+        case checkedAtMs = "checked_at_ms"
+        case installed
+        case latest
+        case notes
+        case reason
+        case releaseUrl = "release_url"
+        case state
     }
 }
 

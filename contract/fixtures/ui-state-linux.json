@@ -206,5 +206,16 @@
   },
   "recent": [],
   "notices": [],
-  "ended": []
+  "ended": [],
+  "update": {
+    "installed": "0.2.0",
+    "state": "up_to_date",
+    "latest": "0.2.0",
+    "checked_at_ms": 1792824420000,
+    "release_url": "https://github.com/meh7an/allot/releases/tag/v0.2.0",
+    "reason": null,
+    "notes": [
+      "The GNOME Shell extension was updated to 0.2.0 and loads at your next login."
+    ]
+  }
 }

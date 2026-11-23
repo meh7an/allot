@@ -11,6 +11,7 @@ use crate::{
         Accuracy, DriveUsage, EndCause, JobProfile, JobRun, Lease, LeaseId, NoiseReport,
         ResourceUsage, SessionKey, is_default,
     },
+    update::UpdateStatus,
 };
 
 /// Response of `GET /ui/state`: everything the flyout shows, in one poll.
@@ -41,6 +42,10 @@ pub struct UiState {
     /// can hold a card that just went away with how it ended. Older allotd builds send none.
     #[serde(default)]
     pub ended: Vec<EndedLease>,
+    /// Whether a newer release exists and how installing it is going; `None` from allotd builds
+    /// that do not check for updates.
+    #[serde(default)]
+    pub update: Option<UpdateStatus>,
 }
 
 /// One registered Claude session.

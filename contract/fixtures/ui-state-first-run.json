@@ -29,5 +29,14 @@
   },
   "recent": [],
   "notices": [],
-  "ended": []
+  "ended": [],
+  "update": {
+    "installed": "0.2.0",
+    "state": "unchecked",
+    "latest": null,
+    "checked_at_ms": null,
+    "release_url": null,
+    "reason": null,
+    "notes": []
+  }
 }

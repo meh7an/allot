@@ -42,6 +42,7 @@ use crate::{
         ActiveJob, CpuMeter, EndedLease, GpuMeter, JobProcess, Meters, Notice, QueuedJob, RamMeter,
         RecentRun, UiSession, UiState,
     },
+    update::{UpdateState, UpdateStatus},
 };
 
 const UPDATE_VAR: &str = "ALLOT_UPDATE_CONTRACT";
@@ -185,6 +186,29 @@ fn service() -> HealthResponse {
         pid: 58_260,
         uptime_secs: 7_380,
         config_error: None,
+    }
+}
+
+/// What allotd 0.2.0 knows before any check has finished.
+fn update_status(state: UpdateState) -> UpdateStatus {
+    UpdateStatus {
+        installed: "0.2.0".into(),
+        state,
+        latest: None,
+        checked_at_ms: None,
+        release_url: None,
+        reason: None,
+        notes: Vec::new(),
+    }
+}
+
+/// allotd 0.2.0 after a check `checked_ago_ms` before [`NOW_MS`] found release 0.3.0.
+fn found_update(state: UpdateState, checked_ago_ms: i64) -> UpdateStatus {
+    UpdateStatus {
+        latest: Some("0.3.0".into()),
+        checked_at_ms: Some(NOW_MS - checked_ago_ms),
+        release_url: Some("https://github.com/meh7an/allot/releases/tag/v0.3.0".into()),
+        ..update_status(state)
     }
 }
 
@@ -380,6 +404,7 @@ pub(crate) fn busy() -> UiState {
                 ended_at_ms: NOW_MS - 20_000,
             },
         ],
+        update: Some(found_update(UpdateState::Available, 3 * 60 * MINUTE_MS)),
     }
 }
 
@@ -450,6 +475,7 @@ fn benchmark() -> UiState {
         recent: Vec::new(),
         notices: Vec::new(),
         ended: Vec::new(),
+        update: Some(found_update(UpdateState::Installing, 3 * 60 * MINUTE_MS)),
     }
 }
 
@@ -566,6 +592,12 @@ fn idle() -> UiState {
             delivered_at_ms: Some(NOW_MS - 8 * MINUTE_MS),
         }],
         ended: Vec::new(),
+        update: Some(UpdateStatus {
+            latest: Some("0.2.0".into()),
+            checked_at_ms: Some(NOW_MS - 40 * MINUTE_MS),
+            release_url: Some("https://github.com/meh7an/allot/releases/tag/v0.2.0".into()),
+            ..update_status(UpdateState::UpToDate)
+        }),
     }
 }
 
@@ -588,6 +620,7 @@ fn first_run() -> UiState {
         recent: Vec::new(),
         notices: Vec::new(),
         ended: Vec::new(),
+        update: Some(update_status(UpdateState::Unchecked)),
     }
 }
 
@@ -700,6 +733,16 @@ fn linux() -> UiState {
         recent: Vec::new(),
         notices: Vec::new(),
         ended: Vec::new(),
+        update: Some(UpdateStatus {
+            latest: Some("0.2.0".into()),
+            checked_at_ms: Some(NOW_MS - 5 * MINUTE_MS),
+            release_url: Some("https://github.com/meh7an/allot/releases/tag/v0.2.0".into()),
+            notes: vec![
+                "The GNOME Shell extension was updated to 0.2.0 and loads at your next login."
+                    .into(),
+            ],
+            ..update_status(UpdateState::UpToDate)
+        }),
     }
 }
 
@@ -801,6 +844,10 @@ fn macos() -> UiState {
         recent: Vec::new(),
         notices: Vec::new(),
         ended: Vec::new(),
+        update: Some(UpdateStatus {
+            reason: Some("allot install exited with code 1".into()),
+            ..found_update(UpdateState::InstallFailed, 12 * MINUTE_MS)
+        }),
     }
 }
 

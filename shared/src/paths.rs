@@ -90,6 +90,11 @@ impl Paths {
         self.root.join("stopped.json")
     }
 
+    /// The last check for a newer release (see [`crate::update::UpdateCheck`]).
+    pub fn update_check_file(&self) -> PathBuf {
+        self.root.join("update-check.json")
+    }
+
     /// Directory for the daemon's log files.
     pub fn log_dir(&self) -> PathBuf {
         self.root.join("logs")
@@ -114,6 +119,7 @@ mod tests {
         assert_eq!(paths.log_dir(), root.join("logs"));
         assert_eq!(paths.lock_file(), root.join("allotd.lock"));
         assert_eq!(paths.stop_file(), root.join("stopped.json"));
+        assert_eq!(paths.update_check_file(), root.join("update-check.json"));
     }
 
     #[test]

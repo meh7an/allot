@@ -164,5 +164,14 @@
   },
   "recent": [],
   "notices": [],
-  "ended": []
+  "ended": [],
+  "update": {
+    "installed": "0.2.0",
+    "state": "install_failed",
+    "latest": "0.3.0",
+    "checked_at_ms": 1792824000000,
+    "release_url": "https://github.com/meh7an/allot/releases/tag/v0.3.0",
+    "reason": "allot install exited with code 1",
+    "notes": []
+  }
 }

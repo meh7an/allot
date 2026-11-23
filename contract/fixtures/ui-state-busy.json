@@ -264,5 +264,14 @@
       "granted_at_ms": 1792824625000,
       "ended_at_ms": 1792824700000
     }
-  ]
+  ],
+  "update": {
+    "installed": "0.2.0",
+    "state": "available",
+    "latest": "0.3.0",
+    "checked_at_ms": 1792813920000,
+    "release_url": "https://github.com/meh7an/allot/releases/tag/v0.3.0",
+    "reason": null,
+    "notes": []
+  }
 }

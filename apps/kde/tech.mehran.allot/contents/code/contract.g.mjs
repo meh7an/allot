@@ -33,6 +33,9 @@
  *   The daemon itself.
  * @property {UiSession[]} sessions
  *   Every registered session, with or without leases.
+ * @property {UpdateStatus | null} update
+ *   Whether a newer release exists and how installing it is going; `null` from allotd builds
+ *   that do not check for updates.
  */
 
 /**
@@ -1279,6 +1282,55 @@
  */
 
 /**
+ * Where the update stands.
+ *
+ * - `unchecked`: No check has finished since allotd first ran, so nothing is known about newer releases.
+ * - `checking`: A check is running now.
+ * - `up_to_date`: The installed version is the newest release the last check found.
+ * - `available`: A newer release is out; `latest` and `release_url` name it.
+ * - `installing`: `allot update` is installing `latest`.
+ * - `check_failed`: The last check could not tell whether a newer release exists; `reason` says why.
+ * - `install_failed`: The last install did not finish; `reason` says why. `latest` still names the newer
+ *   release, so a panel can offer to try again.
+ * - `disabled`: The user turned checking off, so nothing contacts github.com.
+ *
+ * @typedef {(
+ *   | "unchecked"
+ *   | "checking"
+ *   | "up_to_date"
+ *   | "available"
+ *   | "installing"
+ *   | "check_failed"
+ *   | "install_failed"
+ *   | "disabled"
+ * )} UpdateState
+ */
+
+/**
+ * What `GET /ui/state` says about updates, in its `update` field.
+ *
+ * @typedef {object} UpdateStatus
+ * @property {number | null} checked_at_ms
+ *   When the last check finished, successful or not, in milliseconds since the Unix epoch;
+ *   `null` before the first.
+ * @property {string} installed
+ *   Version of the running allotd, for example `0.6.1`.
+ * @property {string | null} latest
+ *   The newest release any check has found, without the leading `v`; `null` until one has.
+ *   A failed check keeps it, so a panel goes on offering the update it knew of.
+ * @property {string[]} notes
+ *   Lines for a panel to show under its banner as given, for example that a panel loads its
+ *   new version at the next login. `allot update` writes them; empty when there is nothing to
+ *   say.
+ * @property {string | null} reason
+ *   Why the last check or install failed; `null` in every other state.
+ * @property {string | null} release_url
+ *   The page of `latest` on GitHub.
+ * @property {UpdateState} state
+ *   What the update is doing or has found.
+ */
+
+/**
  * The admission engine's answer. Response of `POST /can-fit`.
  *
  * @typedef {object} Verdict
@@ -1329,6 +1381,7 @@ const TYPES = {
       recent: { array: { type: "RecentRun" } },
       service: { type: "HealthResponse" },
       sessions: { array: { type: "UiSession" } },
+      update: { type: "UpdateStatus", nullable: true, absent: null },
     },
   },
   KillResponse: {
@@ -1930,6 +1983,18 @@ const TYPES = {
       name: { type: "string" },
       pid: { type: "uint32" },
       reason: { type: "string" },
+    },
+  },
+  UpdateState: { values: ["unchecked", "checking", "up_to_date", "available", "installing", "check_failed", "install_failed", "disabled"] },
+  UpdateStatus: {
+    fields: {
+      checked_at_ms: { type: "int64", nullable: true, absent: null },
+      installed: { type: "string" },
+      latest: { type: "string", nullable: true, absent: null },
+      notes: { array: { type: "string" } },
+      reason: { type: "string", nullable: true, absent: null },
+      release_url: { type: "string", nullable: true, absent: null },
+      state: { type: "UpdateState" },
     },
   },
   Verdict: {
