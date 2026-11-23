@@ -6,7 +6,7 @@ use std::{net::Ipv4Addr, time::Duration};
 use allot_core::sampler::Sampler;
 use allot_sampler::SystemSampler;
 use allot_shared::{config::Config, paths::Paths};
-use allotd::{DaemonOptions, Maintenance, Scopes, db, startup};
+use allotd::{DaemonOptions, Maintenance, Scopes, UpdateOptions, db, startup};
 use anyhow::Context;
 use clap::Parser;
 use tokio::net::TcpListener;
@@ -81,6 +81,7 @@ async fn run(paths: &Paths) -> anyhow::Result<()> {
         maintenance: Maintenance::standard(config_file),
         scopes: Scopes::detect(paths.root()).await,
         stop_file: Some(paths.stop_file()),
+        updates: UpdateOptions::standard(paths),
         #[cfg(target_os = "linux")]
         bus: allotd::bus::PanelBus::Session,
     };

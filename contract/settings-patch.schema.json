@@ -29,7 +29,7 @@
       "description": "One change to `config.toml`. Keys are the spec's dotted keys, such as\n`admission.headroom_pct`; tables are a size table's key, `classes` or `presets`.",
       "oneOf": [
         {
-          "description": "Turns a switch on or off.",
+          "description": "Turns a switch on or off. A switch set to its default is removed from the file instead,\nso the file lists only what differs, and an allotd that predates a newer switch still\nreads a file that has not turned it away from its default.",
           "type": "object",
           "properties": {
             "key": {

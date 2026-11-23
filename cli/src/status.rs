@@ -13,6 +13,7 @@ use allot_shared::{
     stop::StopRecord,
     types::{EndCause, JobClass, Lease, LeaseState, ResourceUsage, SessionKey, Snapshot},
     ui::Notice,
+    update::{UpdateState, UpdateStatus},
 };
 use anstyle::Style;
 
@@ -73,9 +74,10 @@ fn status_text(client: &BlockingClient) -> anyhow::Result<String> {
     };
     let health = client.health()?;
     let leases = current_leases(client)?;
-    let notices = recent_notices(client)?;
+    let (notices, update) = notices_and_update(client)?;
     Ok(format_status(
         &health,
+        update.as_ref(),
         &snapshot,
         &leases,
         &notices,
@@ -108,12 +110,37 @@ fn watch(client: &BlockingClient, interval: Duration) -> anyhow::Result<()> {
     }
 }
 
-/// The newest kills and removals; none from an allotd built before they existed.
-fn recent_notices(client: &BlockingClient) -> anyhow::Result<Vec<Notice>> {
+/// The newest kills and removals, and what allotd says about updates; none of either from an
+/// allotd built before they existed.
+fn notices_and_update(
+    client: &BlockingClient,
+) -> anyhow::Result<(Vec<Notice>, Option<UpdateStatus>)> {
     match client.ui_state() {
-        Ok(state) => Ok(state.notices),
-        Err(error) if error.status() == Some(404) => Ok(Vec::new()),
+        Ok(state) => Ok((state.notices, state.update)),
+        Err(error) if error.status() == Some(404) => Ok((Vec::new(), None)),
         Err(error) => Err(error.into()),
+    }
+}
+
+/// What `allot status` says about updates: nothing while the install is current, checking is
+/// off or no check has run, and a line when there is something to do or to know.
+fn update_line(update: &UpdateStatus) -> Option<String> {
+    let latest = update.latest.as_deref().unwrap_or("a newer release");
+    let reason = update.reason.as_deref().unwrap_or("no reason was given");
+    match update.state {
+        UpdateState::Available => Some(format!(
+            "update  {latest} is {}; run `allot update`\n",
+            paint(WAIT, "available")
+        )),
+        UpdateState::Installing => Some(format!("update  installing {latest}\n")),
+        UpdateState::InstallFailed => Some(format!(
+            "update  {} installing {latest}: {reason}; `allot update` tries again\n",
+            paint(BAD, "FAILED")
+        )),
+        UpdateState::CheckFailed => Some(format!(
+            "update  the last check for a newer release failed: {reason}\n"
+        )),
+        _ => None,
     }
 }
 
@@ -211,6 +238,7 @@ fn format_stopped(record: &StopRecord, now_ms: i64) -> String {
 
 fn format_status(
     health: &HealthResponse,
+    update: Option<&UpdateStatus>,
     snapshot: &Snapshot,
     leases: &[Lease],
     notices: &[Notice],
@@ -230,6 +258,7 @@ fn format_status(
             paint(BAD, "REJECTED")
         ));
     }
+    text.extend(update.and_then(update_line));
     text.push_str(&format!(
         "cpu     {:5.1}% (10s {:.1}%, 60s {:.1}%) of {} logical cores\n",
         cpu.avg_1s, cpu.avg_10s, cpu.avg_60s, snapshot.cpu.logical_cores
@@ -532,7 +561,14 @@ mod tests {
             lease(12, "3f2a9c1e-aaaa-bbbb", LeaseState::Active),
             lease(13, "77777777-cccc", LeaseState::Queued),
         ];
-        let text = plain(format_status(&health, &snapshot(), &leases, &[], 62_000));
+        let text = plain(format_status(
+            &health,
+            None,
+            &snapshot(),
+            &leases,
+            &[],
+            62_000,
+        ));
         assert!(
             text.starts_with("allotd 0.1.0 (pid 1234, up 1h 02m)\n"),
             "{text}"
@@ -580,7 +616,14 @@ mod tests {
             notice(38, EndCause::Removed, now - 600_000, Some(now - 590_000)),
             notice(37, EndCause::Killed, now - NOTICES_SHOWN_MS - 1, None),
         ];
-        let text = plain(format_status(&health, &snapshot(), &[], &notices, now));
+        let text = plain(format_status(
+            &health,
+            None,
+            &snapshot(),
+            &[],
+            &notices,
+            now,
+        ));
         assert!(
             text.contains(
                 "stopped by the user\n  3f2a9c1e  lease 39   killed   4m 00s ago  cargo clippy  \
@@ -600,10 +643,79 @@ mod tests {
             uptime_secs: 5,
             config_error: Some("config.toml: invalid configuration: x".into()),
         };
-        let text = plain(format_status(&health, &snapshot(), &[], &[], 0));
+        let text = plain(format_status(&health, None, &snapshot(), &[], &[], 0));
         assert!(
             text.contains("config  REJECTED, still using the previous one: config.toml:"),
             "{text}"
+        );
+    }
+
+    fn update(state: UpdateState) -> UpdateStatus {
+        UpdateStatus {
+            installed: "0.6.1".into(),
+            state,
+            latest: Some("0.7.0".into()),
+            checked_at_ms: Some(5),
+            release_url: Some("https://github.com/meh7an/allot/releases/tag/v0.7.0".into()),
+            reason: None,
+            notes: Vec::new(),
+            announce: None,
+        }
+    }
+
+    #[test]
+    fn test_format_status_says_when_an_update_is_available_and_how_to_run_it() {
+        let health = HealthResponse {
+            version: "0.6.1".into(),
+            pid: 1,
+            uptime_secs: 5,
+            config_error: None,
+        };
+        let available = update(UpdateState::Available);
+
+        let text = plain(format_status(
+            &health,
+            Some(&available),
+            &snapshot(),
+            &[],
+            &[],
+            0,
+        ));
+
+        assert!(
+            text.contains("update  0.7.0 is available; run `allot update`\n"),
+            "{text}"
+        );
+    }
+
+    #[test]
+    fn test_update_line_speaks_only_when_there_is_something_to_do_or_to_know() {
+        for quiet in [
+            UpdateState::Unchecked,
+            UpdateState::Checking,
+            UpdateState::UpToDate,
+            UpdateState::Disabled,
+        ] {
+            assert_eq!(update_line(&update(quiet)), None, "{quiet:?}");
+        }
+        let line = |state| plain(update_line(&update(state)).unwrap());
+        assert_eq!(line(UpdateState::Installing), "update  installing 0.7.0\n");
+        let failed = UpdateStatus {
+            reason: Some("the download does not match its checksum".into()),
+            ..update(UpdateState::InstallFailed)
+        };
+        assert_eq!(
+            plain(update_line(&failed).unwrap()),
+            "update  FAILED installing 0.7.0: the download does not match its checksum; \
+             `allot update` tries again\n"
+        );
+        let unreachable = UpdateStatus {
+            reason: Some("could not reach github.com".into()),
+            ..update(UpdateState::CheckFailed)
+        };
+        assert_eq!(
+            plain(update_line(&unreachable).unwrap()),
+            "update  the last check for a newer release failed: could not reach github.com\n"
         );
     }
 

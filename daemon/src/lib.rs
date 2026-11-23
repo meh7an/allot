@@ -14,6 +14,7 @@ mod settings;
 pub mod startup;
 mod state;
 mod ui;
+mod updates;
 
 use std::{future::Future, path::PathBuf, sync::Arc, time::Duration};
 
@@ -28,7 +29,12 @@ use crate::{
     db::{DbPool, repo},
     state::{Service, Shared, now_ms},
 };
-pub use crate::{maintenance::Maintenance, sampling::SamplerFactory, scopes::Scopes};
+pub use crate::{
+    maintenance::Maintenance,
+    sampling::SamplerFactory,
+    scopes::Scopes,
+    updates::{LaunchError, UpdateOptions, UpdateRun},
+};
 
 /// What the daemon needs to serve, prepared by `main` or by a test.
 pub struct DaemonOptions {
@@ -52,6 +58,9 @@ pub struct DaemonOptions {
     pub scopes: Scopes,
     /// Where a panel's Stop service writes the stop record; `None` refuses such a stop.
     pub stop_file: Option<PathBuf>,
+    /// The daily check for a newer release and the update a panel starts;
+    /// [`UpdateOptions::inert`] reaches no network and starts nothing.
+    pub updates: UpdateOptions,
     /// The bus the GNOME extension's interface is offered on.
     #[cfg(target_os = "linux")]
     pub bus: bus::PanelBus,
@@ -77,6 +86,7 @@ pub async fn serve(
         listening_port: listener.local_addr()?.port(),
         stop_file: options.stop_file,
         token_file: options.token_file,
+        updates: options.updates,
     };
     let state = Arc::new(Shared::new(
         options.config,
@@ -91,6 +101,7 @@ pub async fn serve(
     let samples = sampling::spawn_sampler(options.sampler, options.sample_interval, tracked)?;
     let sampling = tokio::spawn(sampling::run(state.clone(), samples, holders));
     let upkeep = tokio::spawn(maintenance::run(state.clone(), options.maintenance));
+    let updating = tokio::spawn(updates::run(state.clone()));
 
     let mut requested = state.shutdown.subscribe();
     let stopping = state.clone();
@@ -123,6 +134,7 @@ pub async fn serve(
     }
     sampling.abort();
     upkeep.abort();
+    updating.abort();
     tracing::info!("stopped");
     Ok(served?)
 }

@@ -1,6 +1,13 @@
 [alias]
 xtask = "run --quiet --package xtask --"
 
+[env]
+# Tests and `cargo run` never reach github.com: allotd's daily update check and `allot update` read
+# releases from this closed loopback port. A test or script that serves a release sets its own
+# value, which wins because `force` is off. A real GitHub check from a checkout needs
+# `ALLOT_UPDATE_BASE=https://github.com/meh7an/allot/releases` in the shell.
+ALLOT_UPDATE_BASE = "http://127.0.0.1:9/releases"
+
 [target.x86_64-pc-windows-msvc]
 linker = "rust-lld.exe"
 # The C runtime goes into each binary, so a clean Windows needs no Visual C++ Redistributable.

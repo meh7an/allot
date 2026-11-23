@@ -182,6 +182,7 @@ test("pages list their parts in the design's order, advanced keys last", async (
     service: [
       "service_status",
       "Connection",
+      "Updates (updates)",
       "Linux (linux)",
       "files",
       "Advanced: Connection (connection)",

@@ -37,6 +37,7 @@ public sealed class ContractFixtureTests
             ["settings-patch"] = typeof(SettingsPatch),
             ["classify-request"] = typeof(ClassifyRequest),
             ["shutdown-request"] = typeof(ShutdownRequest),
+            ["announce-request"] = typeof(AnnounceRequest),
         };
 
     public static IEnumerable<object[]> FixtureFiles =>

@@ -45,7 +45,7 @@ test("the settings state fixture decodes with every setting's value", async () =
   assert.deepEqual(reply.value.pending_restart, ["daemon.port"]);
   assert.equal(reply.value.listening_port, 47823);
   assert.equal(reply.value.file_error, null);
-  assert.equal(reply.value.values.length, 23);
+  assert.equal(reply.value.values.length, 24);
   assert.deepEqual(transport.requests[0], {
     method: "GET",
     url: "http://127.0.0.1:1/settings",

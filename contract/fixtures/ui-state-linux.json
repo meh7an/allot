@@ -216,6 +216,7 @@
     "reason": null,
     "notes": [
       "The GNOME Shell extension was updated to 0.2.0 and loads at your next login."
-    ]
+    ],
+    "announce": null
   }
 }

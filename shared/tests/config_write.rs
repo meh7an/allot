@@ -149,6 +149,12 @@ const CASES: &[Case] = &[
     Case {
         name: "scalar_bool_change",
         fixture: HAND,
+        changes: || vec![switch("linux.enforce_cpu", true)],
+        expect: |config| config.linux.enforce_cpu = true,
+    },
+    Case {
+        name: "scalar_bool_default_removes_key",
+        fixture: HAND,
         changes: || vec![switch("estimates.lower", true)],
         expect: |config| config.estimates.lower = true,
     },
@@ -465,6 +471,21 @@ fn test_edit_writes_new_whole_numbers_by_type() {
         &[number("admission.headroom_pct", 30.0)],
     );
     assert_eq!(kept.unwrap().text, "[admission]\nheadroom_pct = 30\n");
+}
+
+#[test]
+fn test_edit_writes_update_check_only_while_it_is_off() {
+    let off = config_write::edit("", &[switch("update.check", false)]).unwrap();
+    assert_eq!(off.text, "[update]\ncheck = false\n");
+    assert!(!off.config.update.check);
+
+    let on = config_write::edit(&off.text, &[switch("update.check", true)]).unwrap();
+    assert_eq!(on.text, "");
+    assert!(on.config.update.check);
+
+    // On again from a file that never had the key writes nothing either.
+    let unchanged = config_write::edit("", &[switch("update.check", true)]).unwrap();
+    assert_eq!(unchanged.text, "");
 }
 
 fn invalid(text: &str, changes: &[Change]) -> Vec<(String, String)> {

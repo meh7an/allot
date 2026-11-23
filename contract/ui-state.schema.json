@@ -1451,6 +1451,14 @@
       "description": "What `GET /ui/state` says about updates, in its `update` field.",
       "type": "object",
       "properties": {
+        "announce": {
+          "description": "The release no panel has announced yet, so one panel raises the one notification per\nversion and then tells allotd with `POST /update/announced`; `None` once a notice went\nout for the newest release, and in every state but `available`.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
         "checked_at_ms": {
           "description": "When the last check finished, successful or not, in milliseconds since the Unix epoch;\n`None` before the first.",
           "type": [

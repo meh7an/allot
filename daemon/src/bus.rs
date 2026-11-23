@@ -15,6 +15,7 @@ use std::{
 use allot_shared::{
     api::{ClassifyRequest, PreviewRequest, SettingsPatch, ShutdownRequest},
     stop::StoppedBy,
+    update::AnnounceRequest,
 };
 use axum::{
     Json,
@@ -36,7 +37,7 @@ use zbus::{
     object_server::SignalEmitter,
 };
 
-use crate::{routes, settings, state::AppState, ui};
+use crate::{routes, settings, state::AppState, ui, updates};
 
 /// The well-known name allotd owns on the session bus.
 pub const NAME: &str = "tech.mehran.Allot";
@@ -333,6 +334,43 @@ impl Panel {
         let _call = self.admit(&header, connection).await?;
         let request = Json::<ClassifyRequest>::from_bytes(request.as_bytes());
         answer(settings::classify(State(self.state.clone()), request).await).await
+    }
+
+    /// Starts a check for a newer release now and answers at once; `UpdateStatus` as JSON,
+    /// which says `checking` until `GetState` shows the result. `Conflict` while the setting
+    /// is off.
+    async fn check_update(
+        &self,
+        #[zbus(header)] header: Header<'_>,
+        #[zbus(connection)] connection: &Connection,
+    ) -> Result<String, BusError> {
+        let _call = self.admit(&header, connection).await?;
+        answer(updates::check_now(State(self.state.clone())).await).await
+    }
+
+    /// Starts `allot update` for the release the last check found, detached from allotd;
+    /// `UpdateStatus` as JSON, which says `installing`. `Conflict` while the setting is off,
+    /// an update runs, or no newer release is known.
+    async fn start_update(
+        &self,
+        #[zbus(header)] header: Header<'_>,
+        #[zbus(connection)] connection: &Connection,
+    ) -> Result<String, BusError> {
+        let _call = self.admit(&header, connection).await?;
+        answer(updates::start_update(State(self.state.clone())).await).await
+    }
+
+    /// Tells allotd a notification was raised for a release; takes an `AnnounceRequest` (JSON)
+    /// and answers `UpdateStatus` as JSON, whose `announce` no longer names it.
+    async fn update_announced(
+        &self,
+        request: &str,
+        #[zbus(header)] header: Header<'_>,
+        #[zbus(connection)] connection: &Connection,
+    ) -> Result<String, BusError> {
+        let _call = self.admit(&header, connection).await?;
+        let request = Json::<AnnounceRequest>::from_bytes(request.as_bytes());
+        answer(updates::announced(State(self.state.clone()), request).await).await
     }
 
     /// allotd's version, which anyone on the bus may read.

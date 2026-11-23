@@ -312,6 +312,17 @@ public sealed record ShutdownRequest
 }
 
 /// <summary>
+/// Body of <c>POST /update/announced</c>: the panel raised its notification for this release.
+/// </summary>
+public sealed record AnnounceRequest
+{
+    /// <summary>
+    /// The release the notification named, without the leading <c>v</c>.
+    /// </summary>
+    public required string Version { get; init; }
+}
+
+/// <summary>
 /// How well a GPU source measures something per process.
 /// </summary>
 [JsonConverter(typeof(StrictEnumConverter<Accuracy>))]
@@ -485,7 +496,9 @@ public sealed record BoundProcess
 public abstract record Change
 {
     /// <summary>
-    /// Turns a switch on or off.
+    /// Turns a switch on or off. A switch set to its default is removed from the file instead,
+    /// so the file lists only what differs, and an allotd that predates a newer switch still
+    /// reads a file that has not turned it away from its default.
     /// </summary>
     public sealed record SetSwitch : Change
     {
@@ -2338,6 +2351,13 @@ public enum UpdateState
 public sealed record UpdateStatus
 {
     /// <summary>
+    /// The release no panel has announced yet, so one panel raises the one notification per
+    /// version and then tells allotd with <c>POST /update/announced</c>; <c>null</c> once a notice went
+    /// out for the newest release, and in every state but <c>available</c>.
+    /// </summary>
+    public string? Announce { get; init; }
+
+    /// <summary>
     /// When the last check finished, successful or not, in milliseconds since the Unix epoch;
     /// <c>null</c> before the first.
     /// </summary>
@@ -2438,6 +2458,7 @@ public sealed class StrictEnumConverter<TEnum> : JsonStringEnumConverter<TEnum>
 [JsonSerializable(typeof(CommandTest))]
 [JsonSerializable(typeof(SettingsRefusal))]
 [JsonSerializable(typeof(ShutdownRequest))]
+[JsonSerializable(typeof(AnnounceRequest))]
 public sealed partial class ContractJsonContext : JsonSerializerContext
 {
 }

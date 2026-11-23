@@ -22,9 +22,13 @@ use allot_shared::{
     stop::{StopRecord, StoppedBy},
     types::{EndCause, Holder, JobClass, LeaseKind, LeaseState},
     ui::UiState,
+    update::{UpdateState, UpdateStatus},
 };
-use allotd::bus::{INTERFACE, NAME, PATH};
-use common::{Daemon, alice, bob, send};
+use allotd::{
+    UpdateOptions,
+    bus::{INTERFACE, NAME, PATH},
+};
+use common::{Daemon, alice, bob, releases::ReleaseServer, send};
 use futures_util::StreamExt;
 use reqwest::StatusCode;
 use tempfile::TempDir;
@@ -290,5 +294,60 @@ async fn test_bus_name_taken_by_another_program_leaves_allotd_on_http() {
     let owner = name_owner(&other).await;
     let other_name = other.unique_name().map(|name| name.as_str());
     assert_eq!(owner.as_deref(), other_name);
+    daemon.stop().await;
+}
+
+#[tokio::test]
+async fn test_bus_update_methods_check_announce_and_start_like_the_http_routes() {
+    let server = ReleaseServer::start("v99.0.0").await;
+    let bus = PrivateBus::start();
+    let daemon = Daemon::start_on_bus_updating(&bus.address, |dir| UpdateOptions {
+        first_check_after: Duration::from_secs(3_600),
+        ..server.options(dir)
+    })
+    .await;
+    let client = bus.connect().await;
+    let state_of = |json: String| -> UpdateStatus {
+        serde_json::from_str::<UiState>(&json)
+            .unwrap()
+            .update
+            .unwrap()
+    };
+    assert_eq!(
+        state_of(ask(&client, "GetState").await.unwrap()).state,
+        UpdateState::Unchecked
+    );
+
+    let started: UpdateStatus =
+        serde_json::from_str(&ask(&client, "CheckUpdate").await.unwrap()).unwrap();
+    assert_eq!(started.state, UpdateState::Checking);
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    let found = loop {
+        let update = state_of(ask(&client, "GetState").await.unwrap());
+        if update.state == UpdateState::Available {
+            break update;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "no release found: {update:?}"
+        );
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    };
+    assert_eq!(found.latest.as_deref(), Some("99.0.0"));
+    assert_eq!(found.announce.as_deref(), Some("99.0.0"));
+
+    let announced: UpdateStatus = serde_json::from_str(
+        &ask_json(&client, "UpdateAnnounced", r#"{"version":"99.0.0"}"#)
+            .await
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(announced.announce, None);
+    let (name, _) = refusal(ask_json(&client, "UpdateAnnounced", r#"{"version":"x"}"#).await);
+    assert_eq!(name, "Invalid");
+    // The test's allotd has no `allot` to run, which the refusal says.
+    let (name, message) = refusal(ask(&client, "StartUpdate").await);
+    assert_eq!(name, "Conflict");
+    assert!(message.contains("allot install"), "{message}");
     daemon.stop().await;
 }

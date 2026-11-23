@@ -5,10 +5,12 @@
 // Each test binary uses its own share of the harness.
 #![allow(dead_code)]
 
+pub mod releases;
+
 use std::{
     fs,
     future::Future,
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::{Arc, Mutex},
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
@@ -19,7 +21,7 @@ use allot_shared::{
     config::Config,
     types::{Holder, MemStats, ResourceUsage, SessionKey},
 };
-use allotd::{DaemonOptions, Maintenance, Scopes, db::open_pool};
+use allotd::{DaemonOptions, Maintenance, Scopes, UpdateOptions, db::open_pool};
 use diesel::{Connection, sqlite::SqliteConnection};
 use reqwest::{RequestBuilder, Response, StatusCode};
 use serde_json::Value;
@@ -164,6 +166,53 @@ impl Daemon {
         .await
     }
 
+    /// Starts a daemon whose update options are `updates(folder)`, `folder` being the one its
+    /// files live in, for the tests of the update check.
+    pub async fn start_updating(
+        config: Config,
+        updates: impl FnOnce(&Path) -> UpdateOptions,
+    ) -> Self {
+        let dir = TempDir::new().unwrap();
+        let options = updates(dir.path());
+        let machine = Arc::new(Mutex::new(idle_machine()));
+        let poll = Duration::from_millis(20);
+        Self::serve(dir, config, machine, poll, move |daemon| {
+            daemon.updates = options;
+        })
+        .await
+    }
+
+    /// Stops the daemon gracefully and starts a new one on the same files and machine, with
+    /// the update options `updates(folder)`.
+    pub async fn restart_updating(mut self, updates: impl FnOnce(&Path) -> UpdateOptions) -> Self {
+        self.stop_server().await;
+        let Self { machine, dir, .. } = self;
+        let options = updates(dir.path());
+        let poll = Duration::from_millis(20);
+        Self::serve(dir, Config::default(), machine, poll, move |daemon| {
+            daemon.updates = options;
+        })
+        .await
+    }
+
+    /// [`Daemon::start_on_bus`] with the update options `updates(folder)`.
+    #[cfg(target_os = "linux")]
+    pub async fn start_on_bus_updating(
+        address: &str,
+        updates: impl FnOnce(&Path) -> UpdateOptions,
+    ) -> Self {
+        let dir = TempDir::new().unwrap();
+        let options = updates(dir.path());
+        let machine = Arc::new(Mutex::new(idle_machine()));
+        let bus = allotd::bus::PanelBus::Address(address.to_owned());
+        let poll = Duration::from_millis(20);
+        Self::serve(dir, Config::default(), machine, poll, move |daemon| {
+            daemon.bus = bus;
+            daemon.updates = options;
+        })
+        .await
+    }
+
     pub async fn serve_in(dir: TempDir, config: Config, machine: Arc<Mutex<RawSample>>) -> Self {
         Self::serve(dir, config, machine, Duration::from_millis(20), |_| {}).await
     }
@@ -195,6 +244,7 @@ impl Daemon {
             },
             scopes: Scopes::disabled(),
             stop_file: Some(dir.path().join("stopped.json")),
+            updates: UpdateOptions::inert(dir.path()),
             #[cfg(target_os = "linux")]
             bus: allotd::bus::PanelBus::Off,
         };

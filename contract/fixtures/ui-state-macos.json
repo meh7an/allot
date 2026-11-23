@@ -172,6 +172,7 @@
     "checked_at_ms": 1792824000000,
     "release_url": "https://github.com/meh7an/allot/releases/tag/v0.3.0",
     "reason": "allot install exited with code 1",
-    "notes": []
+    "notes": [],
+    "announce": null
   }
 }

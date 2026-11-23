@@ -44,7 +44,7 @@ use crate::{
     error::AppError,
     scopes, settings,
     state::{AppState, Latest, Requested, Shared, now_ms},
-    ui,
+    ui, updates,
 };
 
 // Longer waits risk client and proxy timeouts; the caller can heartbeat and ask again.
@@ -96,6 +96,9 @@ pub fn router(state: AppState) -> Router {
         .route("/history", get(job_history))
         .route("/history/runs", get(history_runs))
         .route("/shutdown", post(shutdown))
+        .route("/update/check", post(updates::check_now))
+        .route("/update/start", post(updates::start_update))
+        .route("/update/announced", post(updates::announced))
         .route("/settings", get(settings::read).patch(settings::change))
         .route("/settings/preview", post(settings::preview))
         .route("/classify", post(settings::classify))

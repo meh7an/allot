@@ -1,0 +1,15 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "AnnounceRequest",
+  "description": "Body of `POST /update/announced`: the panel raised its notification for this release.",
+  "type": "object",
+  "properties": {
+    "version": {
+      "description": "The release the notification named, without the leading `v`.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "version"
+  ]
+}

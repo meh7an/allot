@@ -37,6 +37,8 @@ pub struct Config {
     pub classifier: ClassifierConfig,
     /// How leases use cgroups on Linux; ignored on other OSes.
     pub linux: LinuxConfig,
+    /// Whether allotd looks for newer releases.
+    pub update: UpdateConfig,
 }
 
 impl Config {
@@ -419,6 +421,25 @@ impl Default for LinuxConfig {
             enforce_cpu: false,
             enforce_memory: false,
         }
+    }
+}
+
+/// Whether allotd looks for newer releases.
+///
+/// The config writer drops a switch that is set back to its default, so the file holds
+/// `[update]` only while checking is off, and an allotd that predates the table still reads
+/// every file that has not turned it off.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct UpdateConfig {
+    /// Ask github.com once a day whether a newer release exists. Off means allotd never
+    /// contacts it.
+    pub check: bool,
+}
+
+impl Default for UpdateConfig {
+    fn default() -> Self {
+        Self { check: true }
     }
 }
 
@@ -875,6 +896,16 @@ mod tests {
             }
         );
         let result = Config::from_toml("[linux]\nenforce_io = true\n");
+        assert!(matches!(result, Err(Error::ConfigParse(_))));
+    }
+
+    #[test]
+    fn test_config_update_check_is_on_by_default_and_turns_off() {
+        assert!(Config::from_toml("").unwrap().update.check);
+        assert!(Config::default().update.check);
+        let config = Config::from_toml("[update]\ncheck = false\n").unwrap();
+        assert!(!config.update.check);
+        let result = Config::from_toml("[update]\ninterval_hours = 6\n");
         assert!(matches!(result, Err(Error::ConfigParse(_))));
     }
 

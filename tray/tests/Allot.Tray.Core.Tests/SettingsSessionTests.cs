@@ -40,8 +40,8 @@ public sealed class SettingsSessionTests
         var linux = await LoadAsync(Platform.Linux);
         var windows = await LoadAsync(Platform.Windows);
 
-        CollectionAssert.AreEqual(Strings("connection", "linux"), GroupIds(linux.Session));
-        CollectionAssert.AreEqual(Strings("connection"), GroupIds(windows.Session));
+        CollectionAssert.AreEqual(Strings("connection", "updates", "linux"), GroupIds(linux.Session));
+        CollectionAssert.AreEqual(Strings("connection", "updates"), GroupIds(windows.Session));
         Assert.IsNull(windows.Session.Setting("linux.scopes"));
     }
 

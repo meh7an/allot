@@ -272,6 +272,7 @@
     "checked_at_ms": 1792813920000,
     "release_url": "https://github.com/meh7an/allot/releases/tag/v0.3.0",
     "reason": null,
-    "notes": []
+    "notes": [],
+    "announce": "0.3.0"
   }
 }

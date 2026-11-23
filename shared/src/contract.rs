@@ -42,7 +42,7 @@ use crate::{
         ActiveJob, CpuMeter, EndedLease, GpuMeter, JobProcess, Meters, Notice, QueuedJob, RamMeter,
         RecentRun, UiSession, UiState,
     },
-    update::{UpdateState, UpdateStatus},
+    update::{AnnounceRequest, UpdateState, UpdateStatus},
 };
 
 const UPDATE_VAR: &str = "ALLOT_UPDATE_CONTRACT";
@@ -61,6 +61,7 @@ const CLASSIFY_REQUEST_SCHEMA_FILE: &str = "contract/classify-request.schema.jso
 const COMMAND_TEST_SCHEMA_FILE: &str = "contract/command-test.schema.json";
 const SETTINGS_REFUSAL_SCHEMA_FILE: &str = "contract/settings-refusal.schema.json";
 const SHUTDOWN_REQUEST_SCHEMA_FILE: &str = "contract/shutdown-request.schema.json";
+const ANNOUNCE_REQUEST_SCHEMA_FILE: &str = "contract/announce-request.schema.json";
 const LEASES_SCHEMA_FILE: &str = "contract/leases.schema.json";
 const JOBS_SCHEMA_FILE: &str = "contract/job-summaries.schema.json";
 const RUNS_SCHEMA_FILE: &str = "contract/job-runs.schema.json";
@@ -199,6 +200,7 @@ fn update_status(state: UpdateState) -> UpdateStatus {
         release_url: None,
         reason: None,
         notes: Vec::new(),
+        announce: None,
     }
 }
 
@@ -404,7 +406,10 @@ pub(crate) fn busy() -> UiState {
                 ended_at_ms: NOW_MS - 20_000,
             },
         ],
-        update: Some(found_update(UpdateState::Available, 3 * 60 * MINUTE_MS)),
+        update: Some(UpdateStatus {
+            announce: Some("0.3.0".into()),
+            ..found_update(UpdateState::Available, 3 * 60 * MINUTE_MS)
+        }),
     }
 }
 
@@ -956,7 +961,7 @@ fn root_schema<T: schemars::JsonSchema>() -> Schema {
 
 /// Every root the desktop apps decode or send, with its committed schema file; `UiState`
 /// first.
-fn contract_schemas() -> [(&'static str, Schema); 13] {
+fn contract_schemas() -> [(&'static str, Schema); 14] {
     [
         (SCHEMA_FILE, root_schema::<UiState>()),
         (KILL_SCHEMA_FILE, root_schema::<KillResponse>()),
@@ -979,6 +984,10 @@ fn contract_schemas() -> [(&'static str, Schema); 13] {
         (
             SHUTDOWN_REQUEST_SCHEMA_FILE,
             root_schema::<ShutdownRequest>(),
+        ),
+        (
+            ANNOUNCE_REQUEST_SCHEMA_FILE,
+            root_schema::<AnnounceRequest>(),
         ),
     ]
 }
@@ -1253,6 +1262,12 @@ fn test_request_fixtures_match_committed_files() {
         "shutdown-request",
         &ShutdownRequest {
             by: StoppedBy::Panel,
+        },
+    );
+    assert_fixture(
+        "announce-request",
+        &AnnounceRequest {
+            version: "0.3.0".into(),
         },
     );
 }

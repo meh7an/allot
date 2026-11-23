@@ -892,6 +892,24 @@
           ]
         },
         {
+          "id": "updates",
+          "label": "Updates",
+          "settings": [
+            {
+              "key": "update.check",
+              "label": "Check for a newer release once a day",
+              "help": "The service asks github.com whether a newer release exists, and sends nothing but that request. Off means it never contacts github.com.",
+              "control": {
+                "kind": "switch",
+                "default": true
+              },
+              "advanced": false,
+              "needs_restart": false,
+              "platforms": []
+            }
+          ]
+        },
+        {
           "id": "linux",
           "label": "Linux",
           "settings": [

@@ -787,6 +787,17 @@ fn service(config: &Config) -> SettingsPageSpec {
                 ],
             ),
             group(
+                "updates",
+                "Updates",
+                vec![setting(
+                    "update.check",
+                    "Check for a newer release once a day",
+                    "The service asks github.com whether a newer release exists, and sends \
+                     nothing but that request. Off means it never contacts github.com.",
+                    switch(config.update.check),
+                )],
+            ),
+            group(
                 "linux",
                 "Linux",
                 vec![

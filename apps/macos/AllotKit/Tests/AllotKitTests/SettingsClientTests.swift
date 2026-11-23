@@ -47,7 +47,7 @@ private func failure<Value>(_ reply: SettingsReply<Value>) throws -> SettingsFai
         #expect(state.pendingRestart == ["daemon.port"])
         #expect(state.listeningPort == 47823)
         #expect(state.fileError == nil)
-        #expect(state.values.count == 23)
+        #expect(state.values.count == 24)
         let request = try #require(transport.requests.first)
         #expect(request.httpMethod == "GET")
         #expect(request.url?.absoluteString == "http://127.0.0.1:1/settings")

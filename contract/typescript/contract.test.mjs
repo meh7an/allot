@@ -4,6 +4,7 @@ import { test } from "node:test";
 
 import {
   ContractError,
+  decodeAnnounceRequest,
   decodeClassifyRequest,
   decodeCommandTest,
   decodeFitPreview,
@@ -34,6 +35,7 @@ const DECODERS = [
   ["settings-patch", decodeSettingsPatch],
   ["classify-request", decodeClassifyRequest],
   ["shutdown-request", decodeShutdownRequest],
+  ["announce-request", decodeAnnounceRequest],
 ];
 
 /**

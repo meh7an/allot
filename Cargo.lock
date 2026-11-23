@@ -117,6 +117,7 @@ dependencies = [
  "allot-core",
  "allot-sampler",
  "allot-shared",
+ "allot-updater",
  "anyhow",
  "axum",
  "clap",

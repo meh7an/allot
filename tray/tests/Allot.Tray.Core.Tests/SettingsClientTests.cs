@@ -29,7 +29,7 @@ public sealed class SettingsClientTests
         Assert.AreEqual("daemon.port", reply.Value.PendingRestart[0]);
         Assert.AreEqual(47_823u, reply.Value.ListeningPort);
         Assert.IsNull(reply.Value.FileError);
-        Assert.HasCount(23, reply.Value.Values);
+        Assert.HasCount(24, reply.Value.Values);
         var request = sent.Single();
         Assert.AreEqual(HttpMethod.Get, request.Method);
         Assert.AreEqual("/settings", request.Path);

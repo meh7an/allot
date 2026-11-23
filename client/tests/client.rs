@@ -21,7 +21,7 @@ use allot_shared::{
         EndCause, Holder, JobClass, LeaseKind, LeaseState, MemStats, ResourceUsage, SessionKey,
     },
 };
-use allotd::{DaemonOptions, Maintenance, Scopes, db::open_pool};
+use allotd::{DaemonOptions, Maintenance, Scopes, UpdateOptions, db::open_pool};
 use tempfile::TempDir;
 use tokio::{net::TcpListener, sync::oneshot, task::JoinHandle};
 
@@ -124,6 +124,7 @@ impl Daemon {
             maintenance: Maintenance::default(),
             scopes: Scopes::disabled(),
             stop_file: None,
+            updates: UpdateOptions::inert(dir.path()),
             #[cfg(target_os = "linux")]
             bus: allotd::bus::PanelBus::Off,
         };

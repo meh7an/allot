@@ -16,10 +16,9 @@ impl<'a> Contract<'a> {
     pub(super) fn new(roots: &[&'a Value]) -> Self {
         let mut definitions = Map::new();
         for root in roots {
-            let own = root["definitions"]
-                .as_object()
-                .expect("the schema has definitions");
-            for (name, schema) in own {
+            // A request of plain strings and numbers holds no other type, so has no definitions.
+            let own = root["definitions"].as_object();
+            for (name, schema) in own.into_iter().flatten() {
                 match definitions.get(name) {
                     Some(known) => assert_eq!(known, schema, "{name} differs between the roots"),
                     None => {

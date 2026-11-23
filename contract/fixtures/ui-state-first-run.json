@@ -37,6 +37,7 @@
     "checked_at_ms": null,
     "release_url": null,
     "reason": null,
-    "notes": []
+    "notes": [],
+    "announce": null
   }
 }

@@ -287,6 +287,16 @@ public struct ShutdownRequest: Codable, Sendable, Equatable {
     }
 }
 
+/// Body of `POST /update/announced`: the panel raised its notification for this release.
+public struct AnnounceRequest: Codable, Sendable, Equatable {
+    /// The release the notification named, without the leading `v`.
+    public let version: String
+
+    private enum CodingKeys: String, CodingKey {
+        case version
+    }
+}
+
 /// How well a GPU source measures something per process.
 public enum Accuracy: String, Codable, Sendable, Equatable {
     /// Measured per process.
@@ -453,7 +463,9 @@ public struct BoundProcess: Codable, Sendable, Equatable {
 /// One change to `config.toml`. Keys are the spec's dotted keys, such as
 /// `admission.headroom_pct`; tables are a size table's key, `classes` or `presets`.
 public enum Change: Codable, Sendable, Equatable {
-    /// Turns a switch on or off.
+    /// Turns a switch on or off. A switch set to its default is removed from the file instead,
+    /// so the file lists only what differs, and an allotd that predates a newer switch still
+    /// reads a file that has not turned it away from its default.
     case setSwitch(SetSwitch)
     /// Sets a number, in the unit of its setting. A whole number is written as an integer
     /// for whole-number settings and as a float, such as `8.0`, for the others.
@@ -473,7 +485,9 @@ public enum Change: Codable, Sendable, Equatable {
     /// every row of it.
     case reset(Reset)
 
-    /// Turns a switch on or off.
+    /// Turns a switch on or off. A switch set to its default is removed from the file instead,
+    /// so the file lists only what differs, and an allotd that predates a newer switch still
+    /// reads a file that has not turned it away from its default.
     public struct SetSwitch: Codable, Sendable, Equatable {
         /// The switch's key.
         public let key: String
@@ -2103,6 +2117,11 @@ public enum UpdateState: String, Codable, Sendable, Equatable {
 
 /// What `GET /ui/state` says about updates, in its `update` field.
 public struct UpdateStatus: Codable, Sendable, Equatable {
+    /// The release no panel has announced yet, so one panel raises the one notification per
+    /// version and then tells allotd with `POST /update/announced`; `nil` once a notice went
+    /// out for the newest release, and in every state but `available`.
+    public let announce: String?
+
     /// When the last check finished, successful or not, in milliseconds since the Unix epoch;
     /// `nil` before the first.
     public let checkedAtMs: Int64?
@@ -2129,6 +2148,7 @@ public struct UpdateStatus: Codable, Sendable, Equatable {
     public let state: UpdateState
 
     private enum CodingKeys: String, CodingKey {
+        case announce
         case checkedAtMs = "checked_at_ms"
         case installed
         case latest

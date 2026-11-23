@@ -343,6 +343,7 @@ are rejected. `allot classes` prints the classifier rules and class profiles in 
 | `retention.lease_days`, `history_days` | 30, 90 | Age at which ended leases and job runs are pruned (hourly). |
 | `retention.keep_runs_per_job`, `max_job_runs` | 20, 5000 | Runs kept per job regardless of age, and in total. |
 | `hook.fail_open` | true | See Fail-open behavior. |
+| `update.check` | true | Ask github.com once a day whether a newer release exists: one `GET` of `https://github.com/meh7an/allot/releases/latest` with the User-Agent `allot-updater/<version>`, no cookies and no machine identifiers. Off means allotd never contacts it. The Settings window writes the key only while it is off, so an older allotd, which rejects keys it does not know, still reads the file. |
 | `linux.scopes` | true | Linux: run each lease's command in a systemd scope of its own (`allot-<id>-<grant time>-<tag>.scope`), which gives its exact CPU time and memory and a kill that ends it at once. Needs cgroup v2 and a systemd user session; without them leases follow their process tree. |
 | `linux.enforce_cpu` | false | Linux: cap a lease's scope at its reserved cores (`CPUQuota`). |
 | `linux.enforce_memory` | false | Linux: throttle a lease's scope above its reserved RAM (`MemoryHigh`); it is never killed for memory. |

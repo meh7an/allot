@@ -59,6 +59,19 @@ pub struct UpdateStatus {
     /// new version at the next login. `allot update` writes them; empty when there is nothing to
     /// say.
     pub notes: Vec<String>,
+    /// The release no panel has announced yet, so one panel raises the one notification per
+    /// version and then tells allotd with `POST /update/announced`; `None` once a notice went
+    /// out for the newest release, and in every state but `available`.
+    #[serde(default)]
+    pub announce: Option<String>,
+}
+
+/// Body of `POST /update/announced`: the panel raised its notification for this release.
+#[cfg_attr(any(feature = "schema", test), derive(schemars::JsonSchema))]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AnnounceRequest {
+    /// The release the notification named, without the leading `v`.
+    pub version: String,
 }
 
 /// The JSON in `~/.allot/update-check.json`: the last check of GitHub's releases, so a restart
@@ -224,9 +237,22 @@ mod tests {
             release_url: Some("https://github.com/meh7an/allot/releases/tag/v0.7.0".into()),
             reason: Some("the setup exited with code 5".into()),
             notes: vec!["The GNOME panel loads at your next login.".into()],
+            announce: Some("0.7.0".into()),
         };
         let json = serde_json::to_string(&status).unwrap();
         assert_eq!(serde_json::from_str::<UpdateStatus>(&json).unwrap(), status);
+    }
+
+    #[test]
+    fn test_update_status_json_without_announce_reads_as_nothing_to_announce() {
+        let json = concat!(
+            r#"{"installed":"0.6.1","state":"available","latest":"0.7.0","#,
+            r#""checked_at_ms":5,"release_url":null,"reason":null,"notes":[]}"#
+        );
+
+        let status: UpdateStatus = serde_json::from_str(json).unwrap();
+
+        assert_eq!(status.announce, None);
     }
 
     #[test]

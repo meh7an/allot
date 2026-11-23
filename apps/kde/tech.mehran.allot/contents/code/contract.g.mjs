@@ -181,6 +181,14 @@
  */
 
 /**
+ * Body of `POST /update/announced`: the panel raised its notification for this release.
+ *
+ * @typedef {object} AnnounceRequest
+ * @property {string} version
+ *   The release the notification named, without the leading `v`.
+ */
+
+/**
  * How well a GPU source measures something per process.
  *
  * - `exact`: Measured per process.
@@ -292,7 +300,9 @@
  */
 
 /**
- * Turns a switch on or off.
+ * Turns a switch on or off. A switch set to its default is removed from the file instead,
+ * so the file lists only what differs, and an allotd that predates a newer switch still
+ * reads a file that has not turned it away from its default.
  *
  * @typedef {object} ChangeSetSwitch
  * @property {"set_switch"} kind
@@ -1310,6 +1320,10 @@
  * What `GET /ui/state` says about updates, in its `update` field.
  *
  * @typedef {object} UpdateStatus
+ * @property {string | null} announce
+ *   The release no panel has announced yet, so one panel raises the one notification per
+ *   version and then tells allotd with `POST /update/announced`; `null` once a notice went
+ *   out for the newest release, and in every state but `available`.
  * @property {number | null} checked_at_ms
  *   When the last check finished, successful or not, in milliseconds since the Unix epoch;
  *   `null` before the first.
@@ -1461,6 +1475,11 @@ const TYPES = {
   ShutdownRequest: {
     fields: {
       by: { type: "StoppedBy" },
+    },
+  },
+  AnnounceRequest: {
+    fields: {
+      version: { type: "string" },
     },
   },
   Accuracy: { values: ["exact", "estimated", "unavailable"] },
@@ -1988,6 +2007,7 @@ const TYPES = {
   UpdateState: { values: ["unchecked", "checking", "up_to_date", "available", "installing", "check_failed", "install_failed", "disabled"] },
   UpdateStatus: {
     fields: {
+      announce: { type: "string", nullable: true, absent: null },
       checked_at_ms: { type: "int64", nullable: true, absent: null },
       installed: { type: "string" },
       latest: { type: "string", nullable: true, absent: null },
@@ -2320,4 +2340,15 @@ export function decodeSettingsRefusal(json) {
  */
 export function decodeShutdownRequest(json) {
   return /** @type {ShutdownRequest} */ (decodeType(json, "ShutdownRequest", "ShutdownRequest"));
+}
+
+/**
+ * Decodes a parsed `AnnounceRequest` body.
+ *
+ * @param {unknown} json The value `JSON.parse` returned.
+ * @returns {AnnounceRequest}
+ * @throws {ContractError} When the value does not match the contract.
+ */
+export function decodeAnnounceRequest(json) {
+  return /** @type {AnnounceRequest} */ (decodeType(json, "AnnounceRequest", "AnnounceRequest"));
 }

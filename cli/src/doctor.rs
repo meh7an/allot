@@ -15,6 +15,7 @@ use allot_shared::{
     paths::Paths,
     platform::{ALLOT_BINARIES, CLI_EXE},
     stop::StopRecord,
+    update::{UpdateState, UpdateStatus},
 };
 use allot_updater::Version;
 use anstyle::Style;
@@ -303,19 +304,72 @@ fn check_config_and_daemon(paths: &Paths) -> Vec<Check> {
             return vec![config, daemon];
         }
     };
-    let daemon = match client.health() {
-        Ok(health) => check_running(&health, client.base_url()),
-        Err(error) if error.is_unreachable() => {
-            check_not_running(client.stop_record().as_ref(), client.base_url(), now_ms())
+    let (daemon, update) = match client.health() {
+        Ok(health) => {
+            // An allotd that predates the update check, or has no sample yet, says nothing.
+            let update = client.ui_state().ok().and_then(|state| state.update);
+            (
+                check_running(&health, client.base_url()),
+                update.as_ref().map(check_update),
+            )
         }
-        Err(error) => Check::problem(
-            "allotd",
-            Outcome::Fail,
-            format!("{error:#}"),
-            "`allot daemon stop`, then `allot daemon start`",
+        Err(error) if error.is_unreachable() => (
+            check_not_running(client.stop_record().as_ref(), client.base_url(), now_ms()),
+            None,
+        ),
+        Err(error) => (
+            Check::problem(
+                "allotd",
+                Outcome::Fail,
+                format!("{error:#}"),
+                "`allot daemon stop`, then `allot daemon start`",
+            ),
+            None,
         ),
     };
-    vec![config, daemon]
+    let mut checks = vec![config, daemon];
+    checks.extend(update);
+    checks
+}
+
+/// What allotd knows about newer releases: a warning when one is out or the last check or
+/// install failed, and what to do about it.
+fn check_update(update: &UpdateStatus) -> Check {
+    let latest = update.latest.as_deref().unwrap_or("a newer release");
+    let reason = update.reason.as_deref().unwrap_or("no reason was given");
+    let installed = &update.installed;
+    match update.state {
+        UpdateState::Available => Check::problem(
+            "update",
+            Outcome::Warn,
+            format!("{latest} is out; allotd is {installed}"),
+            "`allot update`",
+        ),
+        UpdateState::InstallFailed => Check::problem(
+            "update",
+            Outcome::Warn,
+            format!("installing {latest} failed: {reason}"),
+            "`allot update` tries again; its log is update.log in the logs folder",
+        ),
+        UpdateState::CheckFailed => Check::problem(
+            "update",
+            Outcome::Warn,
+            format!("the last check for a newer release failed: {reason}"),
+            "allotd tries again within the hour; `allot update --check` asks now",
+        ),
+        UpdateState::Installing => Check::ok("update", format!("installing {latest}")),
+        UpdateState::Disabled => Check::ok(
+            "update",
+            "checking for newer releases is off (update.check in the config)".to_owned(),
+        ),
+        UpdateState::Unchecked | UpdateState::Checking => Check::ok(
+            "update",
+            "no check for a newer release has finished yet; allotd checks soon after it \
+             starts, then daily"
+                .to_owned(),
+        ),
+        _ => Check::ok("update", format!("{installed} is the newest release")),
+    }
 }
 
 fn check_not_running(stopped: Option<&StopRecord>, url: &str, now_ms: i64) -> Check {
@@ -397,6 +451,56 @@ mod tests {
             "{}",
             rejected.detail
         );
+    }
+
+    fn update(state: UpdateState, reason: Option<&str>) -> UpdateStatus {
+        UpdateStatus {
+            installed: "0.6.1".into(),
+            state,
+            latest: Some("0.7.0".into()),
+            checked_at_ms: Some(5),
+            release_url: None,
+            reason: reason.map(Into::into),
+            notes: Vec::new(),
+            announce: None,
+        }
+    }
+
+    #[test]
+    fn test_check_update_warns_with_the_fix_when_a_release_is_out_or_a_step_failed() {
+        let available = check_update(&update(UpdateState::Available, None));
+        assert_eq!(available.outcome, Outcome::Warn);
+        assert_eq!(available.detail, "0.7.0 is out; allotd is 0.6.1");
+        assert_eq!(available.fix.as_deref(), Some("`allot update`"));
+
+        let install = check_update(&update(UpdateState::InstallFailed, Some("no space")));
+        assert_eq!(install.outcome, Outcome::Warn);
+        assert_eq!(install.detail, "installing 0.7.0 failed: no space");
+
+        let check = check_update(&update(UpdateState::CheckFailed, Some("offline")));
+        assert_eq!(check.outcome, Outcome::Warn);
+        assert!(
+            check.detail.ends_with("failed: offline"),
+            "{}",
+            check.detail
+        );
+    }
+
+    #[test]
+    fn test_check_update_is_ok_when_current_off_busy_or_not_checked_yet() {
+        for state in [
+            UpdateState::UpToDate,
+            UpdateState::Disabled,
+            UpdateState::Installing,
+            UpdateState::Unchecked,
+            UpdateState::Checking,
+        ] {
+            let check = check_update(&update(state, None));
+            assert_eq!(check.outcome, Outcome::Ok, "{state:?}");
+            assert_eq!(check.fix, None, "{state:?}");
+        }
+        let off = check_update(&update(UpdateState::Disabled, None));
+        assert!(off.detail.contains("update.check"), "{}", off.detail);
     }
 
     #[test]

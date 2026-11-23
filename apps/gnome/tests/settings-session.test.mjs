@@ -64,8 +64,8 @@ test("the Linux group shows only on Linux", async () => {
 
   const groups = (/** @type {SettingsSession} */ session) =>
     session.pages.find((page) => page.spec.id === "service")?.groups.map((group) => group.spec.id);
-  assert.deepEqual(groups(linux.session), ["connection", "linux"]);
-  assert.deepEqual(groups(windows.session), ["connection"]);
+  assert.deepEqual(groups(linux.session), ["connection", "updates", "linux"]);
+  assert.deepEqual(groups(windows.session), ["connection", "updates"]);
   assert.equal(windows.session.setting("linux.scopes"), undefined);
 });
 

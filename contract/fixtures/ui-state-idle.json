@@ -221,6 +221,7 @@
     "checked_at_ms": 1792822320000,
     "release_url": "https://github.com/meh7an/allot/releases/tag/v0.2.0",
     "reason": null,
-    "notes": []
+    "notes": [],
+    "announce": null
   }
 }

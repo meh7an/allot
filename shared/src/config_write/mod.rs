@@ -33,7 +33,9 @@ use crate::{
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[non_exhaustive]
 pub enum Change {
-    /// Turns a switch on or off.
+    /// Turns a switch on or off. A switch set to its default is removed from the file instead,
+    /// so the file lists only what differs, and an allotd that predates a newer switch still
+    /// reads a file that has not turned it away from its default.
     SetSwitch {
         /// The switch's key.
         key: String,
@@ -246,9 +248,13 @@ fn apply_change(
 ) -> Result<(), FieldError> {
     match change {
         Change::SetSwitch { key, value } => {
-            match control(spec, key)? {
-                SettingControl::Switch { .. } => {}
+            let default = match control(spec, key)? {
+                SettingControl::Switch { default } => *default,
                 other => return Err(wrong_kind(key, other)),
+            };
+            if *value == default {
+                edit::remove(doc, &path(key));
+                return Ok(());
             }
             set(doc, key, Value::from(*value))
         }

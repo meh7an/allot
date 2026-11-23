@@ -26,6 +26,7 @@ use tokio::sync::{Mutex as AsyncMutex, watch};
 use crate::{
     db::{DbPool, repo},
     scopes::Scopes,
+    updates::{UpdateOptions, Updates},
 };
 
 /// Handle the handlers receive through Axum's `State`.
@@ -104,6 +105,8 @@ pub struct Shared {
     /// Held while the settings routes write the config file, so two writes from this daemon
     /// never race between the revision check and the rename.
     pub config_writes: AsyncMutex<()>,
+    /// What allotd knows about newer releases and the update it started.
+    pub updates: Updates,
     settings: RwLock<Arc<Settings>>,
     config_error: Mutex<Option<String>>,
     latest: RwLock<Option<Arc<Latest>>>,
@@ -126,6 +129,8 @@ pub struct Service {
     pub stop_file: Option<PathBuf>,
     /// The token's file, read again when a request presents another token.
     pub token_file: Option<PathBuf>,
+    /// How allotd looks for newer releases and starts the update.
+    pub updates: UpdateOptions,
 }
 
 impl Shared {
@@ -152,6 +157,7 @@ impl Shared {
             listening_port: service.listening_port,
             stop_file: service.stop_file,
             config_writes: AsyncMutex::new(()),
+            updates: Updates::new(service.updates),
             settings: RwLock::new(Arc::new(Settings::new(config))),
             config_error: Mutex::new(None),
             latest: RwLock::new(None),

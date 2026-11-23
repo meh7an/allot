@@ -229,6 +229,7 @@ fn status_of(
         release_url: latest.map(|release| release.page_url.clone()),
         reason: None,
         notes,
+        announce: None,
     })
 }
 
