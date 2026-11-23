@@ -104,11 +104,86 @@ impl UpdateCheck {
     }
 }
 
+/// How far one `allot update` run got.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[non_exhaustive]
+pub enum OutcomeState {
+    /// The run is installing `version` now, or died before it could say how it ended.
+    Installing,
+    /// `version` is installed.
+    Succeeded,
+    /// The install did not finish; `reason` says why.
+    Failed,
+}
+
+/// The JSON in `~/.allot/update-install.json`: what the last `allot update` that installed
+/// something did, kept apart from [`UpdateCheck`] because allotd's memory is lost when the update
+/// restarts it. Only `allot update` writes it; allotd reads it into [`UpdateStatus`].
+///
+/// A reader applies it only while `version` is newer than the allotd it runs in: once that
+/// allotd is the new one, the outcome is history. An `Installing` record whose `pid` no longer
+/// runs, or that is hours old, is a run that died.
+///
+/// Readers ignore keys they do not know, so a downgrade still reads it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UpdateOutcome {
+    /// How the run stands.
+    pub state: OutcomeState,
+    /// The release the run installs, without the leading `v`.
+    pub version: String,
+    /// When the run began, in milliseconds since the Unix epoch.
+    pub started_at_ms: i64,
+    /// When the run ended; `None` while it installs.
+    pub finished_at_ms: Option<i64>,
+    /// The process id of the `allot update` that wrote this.
+    pub pid: u32,
+    /// Why the run failed; `None` otherwise.
+    pub reason: Option<String>,
+    /// Lines for a panel to show as given, such as that a panel loads its new version at the
+    /// next login. They become [`UpdateStatus::notes`].
+    #[serde(default)]
+    pub notes: Vec<String>,
+}
+
+impl UpdateOutcome {
+    /// The outcome stored at `path`, or `None` when there is none or it cannot be read.
+    pub fn read(path: &Path) -> Option<Self> {
+        let text = fs::read_to_string(path).ok()?;
+        serde_json::from_str(&text).ok()
+    }
+
+    /// Writes the outcome to `path` through a temporary file in the same folder, so a reader
+    /// never sees half of it.
+    ///
+    /// # Errors
+    ///
+    /// Fails when the folder is missing or the file cannot be written or renamed.
+    pub fn write(&self, path: &Path) -> Result<()> {
+        let mut json = serde_json::to_string_pretty(self).map_err(io::Error::other)?;
+        json.push('\n');
+        atomic_file::replace(path, json.as_bytes())?;
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use tempfile::TempDir;
 
     use super::*;
+
+    fn outcome() -> UpdateOutcome {
+        UpdateOutcome {
+            state: OutcomeState::Succeeded,
+            version: "0.7.0".into(),
+            started_at_ms: 1_792_824_720_000,
+            finished_at_ms: Some(1_792_824_731_000),
+            pid: 4_242,
+            reason: None,
+            notes: vec!["The GNOME panel loads its new version at your next login.".into()],
+        }
+    }
 
     fn check() -> UpdateCheck {
         UpdateCheck {
@@ -247,5 +322,100 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("missing").join("update-check.json");
         assert!(check().write(&path).is_err());
+    }
+
+    #[test]
+    fn test_outcome_state_json_uses_snake_case_names() {
+        for (state, name) in [
+            (OutcomeState::Installing, "installing"),
+            (OutcomeState::Succeeded, "succeeded"),
+            (OutcomeState::Failed, "failed"),
+        ] {
+            let json = serde_json::to_string(&state).unwrap();
+            assert_eq!(json, format!("\"{name}\""));
+            assert_eq!(serde_json::from_str::<OutcomeState>(&json).unwrap(), state);
+        }
+    }
+
+    #[test]
+    fn test_outcome_write_then_read_round_trips() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("update-install.json");
+
+        outcome().write(&path).unwrap();
+
+        assert_eq!(UpdateOutcome::read(&path), Some(outcome()));
+        assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 1);
+    }
+
+    #[test]
+    fn test_outcome_json_uses_these_key_names() {
+        let json = serde_json::to_string(&outcome()).unwrap();
+        assert_eq!(
+            json,
+            concat!(
+                r#"{"state":"succeeded","version":"0.7.0","started_at_ms":1792824720000,"#,
+                r#""finished_at_ms":1792824731000,"pid":4242,"reason":null,"#,
+                r#""notes":["The GNOME panel loads its new version at your next login."]}"#
+            )
+        );
+    }
+
+    #[test]
+    fn test_outcome_read_missing_or_garbled_file_is_none() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("update-install.json");
+        assert_eq!(UpdateOutcome::read(&path), None);
+        fs::write(&path, "not json").unwrap();
+        assert_eq!(UpdateOutcome::read(&path), None);
+    }
+
+    #[test]
+    fn test_outcome_read_ignores_keys_a_newer_allot_wrote_and_defaults_notes() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("update-install.json");
+        fs::write(
+            &path,
+            r#"{"state":"installing","version":"0.7.0","started_at_ms":5,"finished_at_ms":null,
+                "pid":7,"reason":null,"step":"download"}"#,
+        )
+        .unwrap();
+
+        let read = UpdateOutcome::read(&path).unwrap();
+
+        assert_eq!(read.state, OutcomeState::Installing);
+        assert_eq!(read.pid, 7);
+        assert!(read.notes.is_empty());
+    }
+
+    #[test]
+    fn test_outcome_read_an_unknown_state_is_none() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("update-install.json");
+        fs::write(
+            &path,
+            r#"{"state":"paused","version":"0.7.0","started_at_ms":5,"finished_at_ms":null,
+                "pid":7,"reason":null}"#,
+        )
+        .unwrap();
+
+        assert_eq!(UpdateOutcome::read(&path), None);
+    }
+
+    #[test]
+    fn test_outcome_write_replaces_the_run_before_it() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("update-install.json");
+        outcome().write(&path).unwrap();
+        let failed = UpdateOutcome {
+            state: OutcomeState::Failed,
+            reason: Some("the setup exited with code 5".into()),
+            notes: Vec::new(),
+            ..outcome()
+        };
+
+        failed.write(&path).unwrap();
+
+        assert_eq!(UpdateOutcome::read(&path), Some(failed));
     }
 }

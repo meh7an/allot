@@ -16,6 +16,7 @@ dependencies = [
  "allot-core",
  "allot-sampler",
  "allot-shared",
+ "allot-updater",
  "anstream",
  "anstyle",
  "anyhow",

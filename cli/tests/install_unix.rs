@@ -149,6 +149,11 @@ impl Home {
     }
 
     fn run(&self, exe: &Path, args: &[&str], desktop: &str) -> Output {
+        self.run_with(exe, args, desktop, &[])
+    }
+
+    /// As [`Self::run`], with more environment variables.
+    fn run_with(&self, exe: &Path, args: &[&str], desktop: &str, vars: &[(&str, &str)]) -> Output {
         let path = format!(
             "{}:{}",
             self.fakes().display(),
@@ -163,9 +168,35 @@ impl Home {
             .env("XDG_CURRENT_DESKTOP", desktop)
             .env("ALLOT_CLAUDE", self.0.join("no-claude"))
             .env("PATH", path)
+            .envs(vars.iter().copied())
             .stdin(Stdio::null())
             .output()
             .unwrap()
+    }
+
+    /// Puts an `allot` that prints `version` where the install keeps its own.
+    fn install_stand_in_allot(&self, version: &str) {
+        fs::create_dir_all(self.bin()).unwrap();
+        let exe = self.bin().join("allot");
+        fs::write(
+            &exe,
+            format!(
+                "#!/bin/sh
+echo allot {version}
+"
+            ),
+        )
+        .unwrap();
+        fs::set_permissions(&exe, fs::Permissions::from_mode(0o755)).unwrap();
+        // Runs it until it starts: a script written a moment ago can still be open for writing
+        // in a process another test forked, which fails an exec with ETXTBSY.
+        for _ in 0..20 {
+            if Command::new(&exe).output().is_ok() {
+                return;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+        panic!("{} does not start", exe.display());
     }
 
     fn install_with(&self, extra: &[&str]) -> String {
@@ -690,5 +721,70 @@ fn test_install_from_the_bin_dir_is_refused_with_a_unix_example() {
     assert!(
         stderr.contains("such as target/release/allot install"),
         "{stderr}"
+    );
+}
+
+#[test]
+fn test_install_refuses_to_replace_a_newer_install() {
+    let home = Home::new("guard-refuses");
+    home.install_stand_in_allot("99.0.0");
+    let build = home.build();
+
+    let output = home.allot(&["install", "--from", build.to_str().unwrap()]);
+
+    assert!(!output.status.success(), "{output:?}");
+    let message = String::from_utf8_lossy(&output.stderr);
+    assert!(message.contains("99.0.0"), "{message}");
+    assert!(message.contains("--allow-downgrade"), "{message}");
+    assert_eq!(bin_names(&home.bin()), ["allot"], "nothing was installed");
+    assert!(
+        fs::read_to_string(home.bin().join("allot"))
+            .unwrap()
+            .contains("99.0.0")
+    );
+}
+
+#[test]
+fn test_install_replaces_a_newer_install_when_the_flag_or_the_variable_allows_it() {
+    let home = Home::new("guard-flag");
+    home.install_stand_in_allot("99.0.0");
+    home.install_with(&["--allow-downgrade", "--no-claude", "--no-autostart"]);
+    assert_eq!(
+        fs::read(home.bin().join("allot")).unwrap(),
+        fs::read(home.build().join("allot")).unwrap()
+    );
+
+    let home = Home::new("guard-variable");
+    home.install_stand_in_allot("99.0.0");
+    let build = home.build();
+    let output = home.run_with(
+        Path::new(env!("CARGO_BIN_EXE_allot")),
+        &[
+            "install",
+            "--from",
+            build.to_str().unwrap(),
+            "--no-claude",
+            "--no-autostart",
+        ],
+        "",
+        &[("ALLOT_ALLOW_DOWNGRADE", "1")],
+    );
+    assert!(output.status.success(), "{output:?}");
+    assert_eq!(
+        fs::read(home.bin().join("allot")).unwrap(),
+        fs::read(home.build().join("allot")).unwrap()
+    );
+}
+
+#[test]
+fn test_install_replaces_an_older_install_without_asking() {
+    let home = Home::new("guard-older");
+    home.install_stand_in_allot("0.0.1");
+
+    home.install_with(&["--no-claude", "--no-autostart"]);
+
+    assert_eq!(
+        fs::read(home.bin().join("allot")).unwrap(),
+        fs::read(home.build().join("allot")).unwrap()
     );
 }

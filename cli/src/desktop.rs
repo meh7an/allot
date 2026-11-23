@@ -7,13 +7,18 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use allot_shared::paths::Paths;
+use allot_shared::{paths::Paths, release::Asset};
 
 use crate::{
     install::remove_if_present,
     xdg::{config_home, data_home},
 };
 
+/// The folder of the GNOME extension under `$XDG_DATA_HOME/gnome-shell/extensions`.
+pub(crate) const GNOME_EXTENSION_UUID: &str = "allot@mehran.tech";
+/// The folder of the KDE widget under `$XDG_DATA_HOME/plasma/plasmoids`.
+pub(crate) const KDE_WIDGET_ID: &str = "tech.mehran.allot";
+const VERSION: &str = env!("CARGO_PKG_VERSION");
 const DESKTOP_VAR: &str = "XDG_CURRENT_DESKTOP";
 /// The file the KDE widget copies into `knotifications6` at start, and the name of the user's
 /// choices for it, which System Settings writes to the config folder.
@@ -114,20 +119,24 @@ fn remove_icons(hicolor: &Path) -> anyhow::Result<()> {
 fn panel_hint(desktop: &str, data: &Path) -> Option<String> {
     let names = || desktop.split(':').map(str::to_ascii_uppercase);
     if names().any(|name| name == "GNOME") {
-        let installed = data.join("gnome-shell/extensions/allot@mehran.tech");
+        let installed = data
+            .join("gnome-shell/extensions")
+            .join(GNOME_EXTENSION_UUID);
+        let zip = Asset::GnomeExtension.file_name(VERSION);
         return (!installed.exists()).then(|| {
             format!(
-                "for the panel extension, get the gnome-extension.zip from {RELEASE_URL}, run \
+                "for the panel extension, get {zip} from {RELEASE_URL}, run \
                  `gnome-extensions install --force <zip>`, log out and in, and run \
-                 `gnome-extensions enable allot@mehran.tech`"
+                 `gnome-extensions enable {GNOME_EXTENSION_UUID}`"
             )
         });
     }
     if names().any(|name| name == "KDE") {
-        let installed = data.join("plasma/plasmoids/tech.mehran.allot");
+        let installed = data.join("plasma/plasmoids").join(KDE_WIDGET_ID);
+        let plasmoid = Asset::KdeWidget.file_name(VERSION);
         return (!installed.exists()).then(|| {
             format!(
-                "for the panel widget, get the kde-widget.plasmoid from {RELEASE_URL}, run \
+                "for the panel widget, get {plasmoid} from {RELEASE_URL}, run \
                  `kpackagetool6 -t Plasma/Applet -i <file>`, and add Allot with Add Widgets"
             )
         });
@@ -225,6 +234,10 @@ mod tests {
 
         assert!(hint.contains("gnome-extensions install --force"), "{hint}");
         assert!(hint.contains(RELEASE_URL), "{hint}");
+        assert!(
+            hint.contains(&Asset::GnomeExtension.file_name(VERSION)),
+            "{hint}"
+        );
     }
 
     #[test]
@@ -234,13 +247,23 @@ mod tests {
         let hint = panel_hint("KDE", &folder.0).unwrap();
 
         assert!(hint.contains("kpackagetool6 -t Plasma/Applet -i"), "{hint}");
+        assert!(
+            hint.contains(&Asset::KdeWidget.file_name(VERSION)),
+            "{hint}"
+        );
     }
 
     #[test]
     fn test_panel_hint_with_the_package_installed_says_nothing() {
         let folder = Folder::new("hint-installed");
-        fs::create_dir_all(folder.0.join("plasma/plasmoids/tech.mehran.allot")).unwrap();
-        fs::create_dir_all(folder.0.join("gnome-shell/extensions/allot@mehran.tech")).unwrap();
+        fs::create_dir_all(folder.0.join("plasma/plasmoids").join(KDE_WIDGET_ID)).unwrap();
+        fs::create_dir_all(
+            folder
+                .0
+                .join("gnome-shell/extensions")
+                .join(GNOME_EXTENSION_UUID),
+        )
+        .unwrap();
 
         assert_eq!(panel_hint("KDE", &folder.0), None);
         assert_eq!(panel_hint("GNOME", &folder.0), None);

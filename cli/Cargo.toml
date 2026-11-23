@@ -30,6 +30,7 @@ allot-client = { version = "0.6.1", path = "../client" }
 allot-core = { version = "0.6.1", path = "../core" }
 allot-sampler = { version = "0.6.1", path = "../sampler" }
 allot-shared = { version = "0.6.1", path = "../shared" }
+allot-updater = { version = "0.6.1", path = "../updater" }
 anstream = "1.0.0"
 anstyle = "1.0.14"
 anyhow = "1.0.104"

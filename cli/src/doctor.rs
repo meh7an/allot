@@ -16,12 +16,15 @@ use allot_shared::{
     platform::{ALLOT_BINARIES, CLI_EXE},
     stop::StopRecord,
 };
+use allot_updater::Version;
 use anstyle::Style;
 use anyhow::bail;
 use serde::Serialize;
 
 use crate::{
+    channel::{self, NPM_LAUNCHER_ENV, first_on_path, is_this_install},
     daemon::describe_stop,
+    guard::{self, Installed},
     output::{BAD, GOOD, WAIT, paint, print_json},
     registration::{self, State},
     status::now_ms,
@@ -31,8 +34,6 @@ use crate::{
 const REINSTALL: &str =
     "run the one-line install again (README, Install), or `allot install` from a release folder";
 const VERSION: &str = env!("CARGO_PKG_VERSION");
-/// Set by the npm package's launcher (`npm/bin/allot.js`) on the allot it runs.
-const NPM_LAUNCHER_ENV: &str = "ALLOT_NPM_LAUNCHER";
 
 /// How one check came out.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -170,44 +171,89 @@ fn check_binaries(paths: &Paths) -> Check {
 
 /// `npm_launcher` is [`NPM_LAUNCHER_ENV`]'s value.
 fn check_path(paths: &Paths, npm_launcher: Option<OsString>) -> Check {
+    let installed = match guard::installed(paths) {
+        Installed::Version(version) => Some(version),
+        Installed::Missing | Installed::Unreadable => None,
+    };
     // npm's `allot` is a launcher for the binary in its own package, so on PATH it is never this
     // install's file, and on Windows it is a .cmd that the lookup below cannot see.
     if let Some(launcher) = npm_launcher.filter(|value| !value.is_empty()) {
-        return Check::ok(
-            "path",
-            format!(
-                "allot runs through npm's launcher {}",
-                Path::new(&launcher).display()
-            ),
+        return check_launcher(
+            Path::new(&launcher),
+            &guard::running_version(),
+            installed.as_ref(),
+            paths,
         );
     }
     let path = env::var_os("PATH").unwrap_or_default();
     let dirs: Vec<PathBuf> = env::split_paths(&path).collect();
-    check_found(first_on_path(&dirs, CLI_EXE), paths)
+    check_found(
+        first_on_path(&dirs, CLI_EXE),
+        paths,
+        installed.as_ref(),
+        guard::version_of,
+    )
 }
 
-/// `found` is the first `allot` on PATH.
-fn check_found(found: Option<PathBuf>, paths: &Paths) -> Check {
-    let installed = paths.bin_dir().join(CLI_EXE);
+/// `running` is the allot the launcher started and `installed` the one in `~/.allot/bin`.
+fn check_launcher(
+    launcher: &Path,
+    running: &Version,
+    installed: Option<&Version>,
+    paths: &Paths,
+) -> Check {
+    match installed.and_then(|installed| channel::older_npm_copy(launcher, running, installed)) {
+        Some(older) => Check::problem(
+            "path",
+            Outcome::Warn,
+            older.detail(),
+            &upgrade_fix(&older, paths),
+        ),
+        None => Check::ok(
+            "path",
+            format!("allot runs through npm's launcher {}", launcher.display()),
+        ),
+    }
+}
+
+/// `found` is the first `allot` on PATH, `installed` the version in `~/.allot/bin`, and
+/// `read_version` says what version a file is.
+fn check_found(
+    found: Option<PathBuf>,
+    paths: &Paths,
+    installed: Option<&Version>,
+    read_version: impl FnOnce(&Path) -> Option<Version>,
+) -> Check {
+    let installed_exe = paths.bin_dir().join(CLI_EXE);
     match found {
-        Some(found) if is_this_install(&found, &installed) => {
+        Some(found) if is_this_install(&found, &installed_exe) => {
             Check::ok("path", format!("allot runs {}", found.display()))
         }
         // `cargo install` leaves its copy in ~/.cargo/bin, usually first on PATH.
-        Some(found) if same_contents(&found, &installed) => Check::ok(
+        Some(found) if same_contents(&found, &installed_exe) => Check::ok(
             "path",
             format!("allot runs {}, a copy of this install", found.display()),
         ),
-        Some(found) => Check::problem(
-            "path",
-            Outcome::Warn,
-            format!("allot on PATH is {}, not this install", found.display()),
-            &format!(
-                "run `allot install` if that is a newer build; otherwise remove or rename it, or \
-                 put {} first on PATH",
-                paths.bin_dir().display()
-            ),
-        ),
+        Some(found) => {
+            let older = installed.and_then(|v| channel::older_copy_of(&found, v, read_version));
+            match older {
+                Some(older) => Check::problem(
+                    "path",
+                    Outcome::Warn,
+                    older.detail(),
+                    &upgrade_fix(&older, paths),
+                ),
+                None => Check::problem(
+                    "path",
+                    Outcome::Warn,
+                    format!("allot on PATH is {}, not this install", found.display()),
+                    &format!(
+                        "run `allot install` if that is a newer build; otherwise remove or                          rename it, or put {} first on PATH",
+                        paths.bin_dir().display()
+                    ),
+                ),
+            }
+        }
         None => Check::problem(
             "path",
             Outcome::Warn,
@@ -217,17 +263,13 @@ fn check_found(found: Option<PathBuf>, paths: &Paths) -> Check {
     }
 }
 
-/// The first `name` in `dirs`, as a shell would find it.
-fn first_on_path(dirs: &[PathBuf], name: &str) -> Option<PathBuf> {
-    dirs.iter()
-        .map(|dir| dir.join(name))
-        .find(|file| file.is_file())
-}
-
-/// Whether `found` is `installed`, directly or through a link such as `~/.local/bin/allot`.
-fn is_this_install(found: &Path, installed: &Path) -> bool {
-    let canonical = |path: &Path| path.canonicalize().ok();
-    found == installed || canonical(found).is_some_and(|found| Some(found) == canonical(installed))
+/// The fix for a package-manager copy that `~/.allot/bin` has outgrown.
+fn upgrade_fix(older: &channel::OlderCopy, paths: &Paths) -> String {
+    format!(
+        "`{}`, or put {} first on PATH",
+        older.channel.upgrade(),
+        paths.bin_dir().display()
+    )
 }
 
 /// Whether both files can be read and hold the same bytes.
@@ -327,7 +369,7 @@ mod tests {
     use std::{fs, process};
 
     use super::*;
-    use crate::output::plain;
+    use crate::{output::plain, test_support::TempDir};
 
     fn health(version: &str, config_error: Option<&str>) -> HealthResponse {
         HealthResponse {
@@ -384,28 +426,6 @@ mod tests {
     }
 
     #[test]
-    fn test_first_on_path_takes_the_earliest_directory() {
-        let root = env::temp_dir().join(format!("allot-doctor-{}", process::id()));
-        let (first, second) = (root.join("a"), root.join("b"));
-        fs::create_dir_all(&first).unwrap();
-        fs::create_dir_all(&second).unwrap();
-        fs::write(second.join(CLI_EXE), "").unwrap();
-        let dirs = [root.join("missing"), first.clone(), second.clone()];
-        assert_eq!(first_on_path(&dirs, CLI_EXE), Some(second.join(CLI_EXE)));
-        fs::write(first.join(CLI_EXE), "").unwrap();
-        assert_eq!(first_on_path(&dirs, CLI_EXE), Some(first.join(CLI_EXE)));
-        assert!(is_this_install(
-            &first.join(CLI_EXE),
-            &first.join(".").join(CLI_EXE)
-        ));
-        assert!(!is_this_install(
-            &first.join(CLI_EXE),
-            &second.join(CLI_EXE)
-        ));
-        fs::remove_dir_all(&root).unwrap();
-    }
-
-    #[test]
     fn test_check_path_accepts_the_npm_launcher() {
         let paths = Paths::under(env::temp_dir().join("allot-doctor-npm"));
         let launcher = Path::new("npm").join("bin").join("allot.js");
@@ -433,7 +453,7 @@ mod tests {
         let found = cargo_bin.join(CLI_EXE);
 
         fs::write(&found, "build one").unwrap();
-        let copy = check_found(Some(found.clone()), &paths);
+        let copy = check_found(Some(found.clone()), &paths, None, |_| None);
         assert_eq!(copy.outcome, Outcome::Ok);
         assert!(
             copy.detail.contains("a copy of this install"),
@@ -442,10 +462,68 @@ mod tests {
         );
 
         fs::write(&found, "build two").unwrap();
-        let other = check_found(Some(found), &paths);
+        let other = check_found(Some(found), &paths, None, |_| None);
         assert_eq!(other.outcome, Outcome::Warn);
         assert!(other.fix.unwrap().contains("allot install"));
         fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn test_check_launcher_warns_when_the_npm_copy_is_older_than_the_install() {
+        let paths = Paths::under(env::temp_dir().join("allot-doctor-launcher"));
+        let launcher = Path::new("npm").join("bin").join("allot.js");
+        let version = |text: &str| Version::parse(text).unwrap();
+
+        let older = check_launcher(
+            &launcher,
+            &version("0.6.1"),
+            Some(&version("0.7.0")),
+            &paths,
+        );
+        assert_eq!(older.outcome, Outcome::Warn);
+        assert!(older.detail.contains("npm 0.6.1"), "{}", older.detail);
+        let fix = older.fix.unwrap();
+        assert!(fix.contains("npm install -g @meh7an/allot@latest"), "{fix}");
+
+        for installed in [Some(version("0.6.1")), Some(version("0.5.0")), None] {
+            let same = check_launcher(&launcher, &version("0.6.1"), installed.as_ref(), &paths);
+            assert_eq!(same.outcome, Outcome::Ok, "{installed:?}");
+        }
+    }
+
+    #[test]
+    fn test_check_found_names_the_upgrade_for_an_older_package_manager_copy() {
+        let root = TempDir::new();
+        let paths = Paths::under(root.path().join("home"));
+        fs::create_dir_all(paths.bin_dir()).unwrap();
+        fs::write(paths.bin_dir().join(CLI_EXE), "build two").unwrap();
+        let cellar = root
+            .path()
+            .join("Cellar")
+            .join("allot")
+            .join("0.6.1")
+            .join("bin");
+        fs::create_dir_all(&cellar).unwrap();
+        let found = cellar.join(CLI_EXE);
+        fs::write(&found, "build one").unwrap();
+        let version = |text: &str| Version::parse(text).unwrap();
+
+        let older = check_found(Some(found.clone()), &paths, Some(&version("0.7.0")), |_| {
+            Some(version("0.6.1"))
+        });
+
+        assert_eq!(older.outcome, Outcome::Warn);
+        assert!(older.detail.contains("Homebrew 0.6.1"), "{}", older.detail);
+        assert!(older.fix.unwrap().contains("`brew upgrade allot`"));
+
+        let newer = check_found(Some(found), &paths, Some(&version("0.7.0")), |_| {
+            Some(version("0.8.0"))
+        });
+        assert!(
+            newer.detail.ends_with("not this install"),
+            "{}",
+            newer.detail
+        );
     }
 
     #[test]

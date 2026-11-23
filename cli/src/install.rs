@@ -18,11 +18,12 @@ use allot_shared::{
     paths::Paths,
     platform::{ALLOT_BINARIES, CLI_EXE, DAEMON_EXE, EXE_SUFFIX},
 };
+use allot_updater::Version;
 use anyhow::{Context, bail};
 
 #[cfg(target_os = "linux")]
 use crate::desktop;
-use crate::{completions, daemon, registration};
+use crate::{completions, daemon, guard, registration};
 #[cfg(windows)]
 use crate::{legacy, tray};
 
@@ -61,6 +62,9 @@ pub struct Options<'a> {
     pub launch_at_logon: Option<bool>,
     /// The Claude Code integration (with the skill) and allotd's autostart.
     pub setup: registration::Setup,
+    /// Replace a newer install with this older build, which the downgrade guard otherwise
+    /// refuses. `ALLOT_ALLOW_DOWNGRADE` allows it too.
+    pub allow_downgrade: bool,
 }
 
 /// Takes over an install from before the rename (Windows), copies the built binaries into the
@@ -71,9 +75,9 @@ pub struct Options<'a> {
 ///
 /// # Errors
 ///
-/// Fails when the source is the bin directory itself or lacks a binary, when the given tray
-/// folder has no tray app, when the old daemon does not stop, or when a file cannot be
-/// written.
+/// Fails when the source is the bin directory itself or lacks a binary, when the bin directory
+/// holds a newer allot and the downgrade is not allowed, when the given tray folder has no tray
+/// app, when the old daemon does not stop, or when a file cannot be written.
 pub fn install(options: Options) -> anyhow::Result<()> {
     // allotd and the tray app outlive this run; the setup's log must not stay open in them.
     #[cfg(windows)]
@@ -98,6 +102,13 @@ pub fn install(options: Options) -> anyhow::Result<()> {
             source.display()
         );
     }
+    // Before anything changes, so a refusal leaves the install as it was.
+    guard::refuse_downgrade(
+        &guard::installed(&paths),
+        &incoming_version(&source),
+        &bin.join(CLI_EXE),
+        options.allow_downgrade || guard::allowed_by_env(),
+    )?;
     #[cfg(windows)]
     let tray_build = tray::find_build(&source, options.tray)?;
     if cfg!(debug_assertions) {
@@ -127,6 +138,18 @@ pub fn install(options: Options) -> anyhow::Result<()> {
     }
     #[cfg(windows)]
     install_on_windows(options, paths, source, bin, tray_build)
+}
+
+/// The version of the allot in `source`, which is what the install would put in the bin
+/// directory: this build's own when it runs from there, otherwise what that file reports. A file
+/// that reports nothing counts as this build, so the guard never blocks an install it cannot
+/// judge.
+fn incoming_version(source: &Path) -> Version {
+    let running = guard::running_version();
+    if current_exe_dir().is_ok_and(|dir| same_dir(source, &dir)) {
+        return running;
+    }
+    guard::version_of(&source.join(CLI_EXE)).unwrap_or(running)
 }
 
 fn copy_binaries(source: &Path, bin: &Path) -> anyhow::Result<()> {

@@ -1,6 +1,7 @@
 use std::{env, path::PathBuf, process::ExitCode, time::Duration};
 
 use allot_client::ClientError;
+use allot_updater::Version;
 use clap::{Parser, Subcommand};
 use clap_complete::Shell;
 
@@ -9,6 +10,7 @@ use crate::{
     status::StatusMode,
 };
 
+mod channel;
 mod classes;
 mod completions;
 mod daemon;
@@ -19,6 +21,7 @@ mod daemon;
 )]
 mod desktop;
 mod doctor;
+mod guard;
 mod history;
 mod hook;
 mod install;
@@ -31,8 +34,11 @@ mod registration;
 mod sample;
 mod status;
 mod stop;
+#[cfg(test)]
+mod test_support;
 #[cfg(windows)]
 mod tray;
+mod update;
 #[cfg(any(unix, test))]
 #[cfg_attr(
     not(unix),
@@ -48,6 +54,8 @@ Examples:
   allot kill 12                    stop lease 12's command and its processes
   allot history --json             past jobs as JSON
   allot doctor                     check the install and say what to fix
+  allot update --check             is a newer release out?
+  allot update                     install the latest release
   allot completions fish > ~/.config/fish/completions/allot.fish
 
 Run `allot <command> --help` for a command's options.";
@@ -196,6 +204,9 @@ Examples:
         /// allotd at login.
         #[arg(long)]
         no_autostart: bool,
+        /// Replace a newer install with this older one (or set ALLOT_ALLOW_DOWNGRADE=1).
+        #[arg(long)]
+        allow_downgrade: bool,
     },
     /// Copy the built binaries into %USERPROFILE%\.allot\bin, restart allotd on them
     /// when it runs, install and start the tray app, copy the resource-guard skill, register
@@ -221,6 +232,37 @@ Examples:
         /// Do not register the scheduled task that starts allotd at logon.
         #[arg(long, alias = "no-autostart")]
         no_logon_task: bool,
+        /// Replace a newer install with this older one (or set ALLOT_ALLOW_DOWNGRADE=1).
+        #[arg(long)]
+        allow_downgrade: bool,
+    },
+    /// Update ~/.allot/bin to the latest release: downloads it from GitHub, checks it against its
+    /// .sha256, and installs it, keeping this install's choices. Linux panels that came from a
+    /// release are replaced too; on a Mac with Allot.app, the app updates itself and the service.
+    #[command(after_help = "\
+Examples:
+  allot update --check
+  allot update --check --json
+  allot update
+  allot update --version 0.6.0 --allow-downgrade")]
+    Update {
+        /// Only say whether a newer release exists; install nothing.
+        #[arg(long)]
+        check: bool,
+        /// Print the report of --check as JSON (the `update` object of the `ui-state` schema).
+        #[arg(long, requires = "check")]
+        json: bool,
+        /// Install this release (such as 0.6.0) instead of the latest.
+        #[arg(
+            long,
+            value_name = "X.Y.Z",
+            conflicts_with = "check",
+            value_parser = parse_version
+        )]
+        version: Option<Version>,
+        /// Allow --version to name a release older than the installed one.
+        #[arg(long, requires = "version")]
+        allow_downgrade: bool,
     },
     /// Stop allotd and remove its systemd user unit or LaunchAgent, the binaries, the link in
     /// ~/.local/bin, the skill copy, and on Linux the allot icon and the KDE widget's
@@ -331,6 +373,7 @@ fn main() -> ExitCode {
             launch_at_logon,
             no_claude,
             no_logon_task,
+            allow_downgrade,
         } => install::install(install::Options {
             from: from.as_deref(),
             tray: tray.as_deref(),
@@ -339,18 +382,32 @@ fn main() -> ExitCode {
                 claude: !no_claude,
                 autostart: !no_logon_task,
             },
+            allow_downgrade,
         }),
         #[cfg(not(windows))]
         Command::Install {
             from,
             no_claude,
             no_autostart,
+            allow_downgrade,
         } => install::install(install::Options {
             from: from.as_deref(),
             setup: registration::Setup {
                 claude: !no_claude,
                 autostart: !no_autostart,
             },
+            allow_downgrade,
+        }),
+        Command::Update {
+            check,
+            json,
+            version,
+            allow_downgrade,
+        } => update::update(update::Options {
+            check,
+            json,
+            version,
+            allow_downgrade,
         }),
         Command::Uninstall { purge } => install::uninstall(purge),
         Command::Probe(args) => probe::run(&args),
@@ -370,6 +427,12 @@ fn main() -> ExitCode {
             ExitCode::FAILURE
         }
     }
+}
+
+/// A release version for `--version`, with or without the `v` of its tag.
+fn parse_version(text: &str) -> Result<Version, String> {
+    Version::parse(text.strip_prefix('v').unwrap_or(text))
+        .map_err(|error| format!("{text:?} is not a release version such as 0.6.0 ({error})"))
 }
 
 /// What to do next about a failure whose message does not say it already.
@@ -439,6 +502,46 @@ mod tests {
         assert!(parse(&["allot", "status", "--watch", "--json"]).is_err());
         assert!(parse(&["allot", "status", "--interval", "5"]).is_err());
         assert!(parse(&["allot", "status", "--watch", "--interval", "0"]).is_err());
+    }
+
+    #[test]
+    fn test_update_takes_a_pin_and_the_downgrade_flag_only_together() {
+        let Command::Update {
+            version,
+            allow_downgrade,
+            check,
+            ..
+        } = parse(&[
+            "allot",
+            "update",
+            "--version",
+            "v0.6.0",
+            "--allow-downgrade",
+        ])
+        .unwrap()
+        .command
+        else {
+            panic!("not update");
+        };
+        assert_eq!(version, Some(Version::new(0, 6, 0)));
+        assert!(allow_downgrade);
+        assert!(!check);
+        assert!(parse(&["allot", "update", "--allow-downgrade"]).is_err());
+        assert!(parse(&["allot", "update", "--version", "0.6"]).is_err());
+        assert!(parse(&["allot", "update", "--version", "latest"]).is_err());
+    }
+
+    #[test]
+    fn test_update_check_takes_json_and_refuses_a_pin() {
+        assert!(parse(&["allot", "update", "--check", "--json"]).is_ok());
+        assert!(parse(&["allot", "update", "--json"]).is_err());
+        assert!(parse(&["allot", "update", "--check", "--version", "0.6.0"]).is_err());
+        assert!(parse(&["allot", "update"]).is_ok());
+    }
+
+    #[test]
+    fn test_install_takes_the_downgrade_flag() {
+        assert!(parse(&["allot", "install", "--allow-downgrade"]).is_ok());
     }
 
     #[test]

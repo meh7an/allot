@@ -128,6 +128,19 @@ pub fn inspect(paths: &Paths) -> [Inspection; 5] {
     ]
 }
 
+/// What this install has set up, as `allot update` keeps it: Claude Code when any of its steps is
+/// in place, and the autostart when it starts this install's allotd. A step that cannot be read
+/// counts as absent, which only means the update does not set it up again.
+pub fn current_setup(paths: &Paths) -> Setup {
+    let [mcp, hooks, rule, _skill, autostart] = inspect(paths);
+    Setup {
+        claude: [mcp, hooks, rule]
+            .iter()
+            .any(|step| step.state == State::Done),
+        autostart: autostart.state == State::Done,
+    }
+}
+
 fn inspect_mcp(paths: &Paths) -> Inspection {
     let file = claude_json(paths);
     let exe = allot_mcp_exe(paths);
@@ -855,6 +868,33 @@ mod tests {
 
     fn paths() -> Paths {
         Paths::under(r"C:\Users\someone")
+    }
+
+    #[test]
+    fn test_current_setup_of_an_install_with_nothing_registered_has_neither_choice() {
+        let home = crate::test_support::TempDir::new();
+
+        let setup = current_setup(&Paths::under(home.path()));
+
+        assert_eq!(
+            setup,
+            Setup {
+                claude: false,
+                autostart: false
+            }
+        );
+    }
+
+    #[test]
+    fn test_current_setup_keeps_claude_when_the_mcp_server_is_registered() {
+        let home = crate::test_support::TempDir::new();
+        let paths = Paths::under(home.path());
+        let config = json!({
+            "mcpServers": { "allot": { "command": allot_mcp_exe(&paths) } },
+        });
+        fs::write(claude_json(&paths), config.to_string()).unwrap();
+
+        assert!(current_setup(&paths).claude);
     }
 
     #[cfg(windows)]

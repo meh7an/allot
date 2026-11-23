@@ -95,6 +95,12 @@ impl Paths {
         self.root.join("update-check.json")
     }
 
+    /// What the last `allot update` that installed something did (see
+    /// [`crate::update::UpdateOutcome`]).
+    pub fn update_outcome_file(&self) -> PathBuf {
+        self.root.join("update-install.json")
+    }
+
     /// Where `allot update` keeps what it downloads, one folder per version.
     pub fn updates_dir(&self) -> PathBuf {
         self.root.join("updates")
@@ -125,6 +131,10 @@ mod tests {
         assert_eq!(paths.lock_file(), root.join("allotd.lock"));
         assert_eq!(paths.stop_file(), root.join("stopped.json"));
         assert_eq!(paths.update_check_file(), root.join("update-check.json"));
+        assert_eq!(
+            paths.update_outcome_file(),
+            root.join("update-install.json")
+        );
         assert_eq!(paths.updates_dir(), root.join("updates"));
     }
 
