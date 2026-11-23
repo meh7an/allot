@@ -89,8 +89,8 @@ private func model<Model: ValueModel>(
         func groups(_ session: SettingsSession) -> [String]? {
             session.pages.first { $0.spec.id == "service" }?.groups.map { $0.spec.id }
         }
-        #expect(groups(linux.session) == ["connection", "linux"])
-        #expect(groups(macos.session) == ["connection"])
+        #expect(groups(linux.session) == ["connection", "updates", "linux"])
+        #expect(groups(macos.session) == ["connection", "updates"])
         #expect(macos.session.setting("linux.scopes") == nil)
     }
 
