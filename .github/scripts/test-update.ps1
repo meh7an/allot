@@ -75,9 +75,14 @@ try {
     $version = ((& $allot --version) -split ' ')[1]
     if ($version -eq $old) { throw "this tree is $version, the release to start from" }
 
-    # Every program this script runs works in the throwaway profile. ALLOT_CLAUDE points
-    # nowhere, so nothing is registered with a real Claude Code.
+    $iscc = Join-Path $env:LOCALAPPDATA 'Programs\Inno Setup 7\ISCC.exe'
+
+    # Every program this script runs works in the throwaway profile. The setup finds its log
+    # folder through the shell, which expands %USERPROFILE%, so LOCALAPPDATA moves with it for
+    # allot.exe to find the same install.log. ALLOT_CLAUDE points nowhere, so nothing is
+    # registered with a real Claude Code.
     $env:USERPROFILE = $userHome
+    $env:LOCALAPPDATA = Join-Path $userHome 'AppData\Local'
     $env:ALLOT_CLAUDE = Join-Path $userHome 'no-claude.exe'
     $env:ALLOT_UPDATE_BASE = "http://127.0.0.1:$serverPort/releases"
 
@@ -88,7 +93,6 @@ try {
     foreach ($exe in 'allot.exe', 'allotd.exe', 'allot-mcp.exe') {
         Copy-Item (Join-Path $tree $exe) $payload
     }
-    $iscc = Join-Path $env:LOCALAPPDATA 'Programs\Inno Setup 7\ISCC.exe'
     & $iscc /Qp "/DAppVersion=$version" "/DPayload=$payload" "/O$download" `
         (Join-Path $root 'installer\allot.iss')
     if ($LASTEXITCODE -ne 0) { throw "ISCC exited with $LASTEXITCODE" }
@@ -106,9 +110,11 @@ try {
     $started += $server
     foreach ($attempt in 1..50) {
         try {
-            $status = (Invoke-WebRequest -Uri "http://127.0.0.1:$serverPort/releases/$setup" `
-                -Method Head -UseBasicParsing -MaximumRedirection 0).StatusCode
-            if ($status -eq 404 -or $status -eq 200) { break }
+            $status = (Invoke-WebRequest -Uri "http://127.0.0.1:$serverPort/releases/latest" `
+                -Method Head -UseBasicParsing -MaximumRedirection 0 `
+                -SkipHttpErrorCheck).StatusCode
+            if ($status -eq 302) { break }
+            Start-Sleep -Milliseconds 100
         } catch {
             Start-Sleep -Milliseconds 100
         }
