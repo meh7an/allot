@@ -89,19 +89,13 @@ jobs:
       # enough to check that it compiles. Same pinned Inno Setup as the release. The next step's
       # setup runs allot.exe, so its stand-in is a real program: for a file that is not one, cmd
       # opens an error dialog that nobody on the runner closes.
+      - name: Install Inno Setup
+        shell: pwsh
+        run: ..\.github\scripts\install-inno-setup.ps1
+
       - name: Installer script
         shell: pwsh
         run: |
-          $installer = "$env:RUNNER_TEMP\innosetup-7.1.0-x64.exe"
-          Invoke-WebRequest -OutFile $installer `
-            https://github.com/jrsoftware/issrc/releases/download/is-7_1_0/innosetup-7.1.0-x64.exe
-          $hash = (Get-FileHash $installer -Algorithm SHA256).Hash.ToLower()
-          if ($hash -ne '0362a383ed217d4c4239b5933866dd96d3eb2102737da92f80f6057a4b40df2f') {
-            throw "the Inno Setup installer has SHA-256 $hash"
-          }
-          $process = Start-Process $installer -Wait -PassThru -ArgumentList `
-            '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/CURRENTUSER', '/SP-'
-          if ($process.ExitCode -ne 0) { throw "the Inno Setup install exited with $($process.ExitCode)" }
           $payload = "$env:RUNNER_TEMP\payload"
           New-Item -ItemType Directory $payload | Out-Null
           foreach ($exe in 'allotd.exe', 'allot-mcp.exe') { Set-Content "$payload\$exe" 'stand-in' }
@@ -273,7 +267,8 @@ jobs:
           shellcheck install.sh .github/scripts/test-install-sh.sh \
             .github/scripts/check-completions.sh .github/scripts/npm-packages.sh \
             .github/scripts/test-npm.sh .github/scripts/publish-crates.sh \
-            .github/scripts/test-cargo-install.sh .github/scripts/test-binstall.sh
+            .github/scripts/test-cargo-install.sh .github/scripts/test-binstall.sh \
+            .github/scripts/test-update.sh
 
       - name: install.sh
         if: matrix.shell == 'sh'
@@ -283,6 +278,50 @@ jobs:
         if: matrix.shell != 'sh'
         shell: pwsh
         run: .github/scripts/test-install-ps1.ps1 install.ps1 ${{ matrix.shell }}
+
+  # An older real release updates itself to this tree's build, served as a release on loopback
+  # through ALLOT_UPDATE_BASE. The install, allotd's restart and a lease across it are checked,
+  # and a wrong checksum must change nothing. The allot built here runs the update, since the
+  # older release has no `allot update`. The Windows setup is built without the tray app.
+  update:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    env:
+      OLD_VERSION: "0.6.0"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install toolchain
+        run: rustup toolchain install stable --profile minimal
+
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-update-${{ hashFiles('Cargo.lock') }}
+
+      - name: Build
+        run: cargo build --release --locked
+
+      - name: Update (Linux and macOS)
+        if: runner.os != 'Windows'
+        run: bash .github/scripts/test-update.sh
+
+      - name: Install Inno Setup
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: .github/scripts/install-inno-setup.ps1
+
+      - name: Update (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: .github/scripts/test-update.ps1
 
   # The npm packages, packed from the latest release by the script distribute.yml publishes with.
   npm-pack:
