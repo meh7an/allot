@@ -67,6 +67,7 @@ const PINS: &[Pin] = &[
     path_dependencies("daemon/Cargo.toml"),
     path_dependencies("mcp/Cargo.toml"),
     path_dependencies("sampler/Cargo.toml"),
+    path_dependencies("updater/Cargo.toml"),
     Pin {
         path: "tray/src/Allot.Tray/Allot.Tray.csproj",
         line_start: "<Version>",

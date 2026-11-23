@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["cli","client","core", "daemon", "mcp", "sampler","shared", "xtask"]
+members = ["cli","client","core", "daemon", "mcp", "sampler","shared", "updater", "xtask"]
 exclude = ["spikes"]
 
 [workspace.package]

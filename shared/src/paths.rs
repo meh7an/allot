@@ -95,6 +95,11 @@ impl Paths {
         self.root.join("update-check.json")
     }
 
+    /// Where `allot update` keeps what it downloads, one folder per version.
+    pub fn updates_dir(&self) -> PathBuf {
+        self.root.join("updates")
+    }
+
     /// Directory for the daemon's log files.
     pub fn log_dir(&self) -> PathBuf {
         self.root.join("logs")
@@ -120,6 +125,7 @@ mod tests {
         assert_eq!(paths.lock_file(), root.join("allotd.lock"));
         assert_eq!(paths.stop_file(), root.join("stopped.json"));
         assert_eq!(paths.update_check_file(), root.join("update-check.json"));
+        assert_eq!(paths.updates_dir(), root.join("updates"));
     }
 
     #[test]
