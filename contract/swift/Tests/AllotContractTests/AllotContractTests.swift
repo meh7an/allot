@@ -67,6 +67,9 @@ private func reencode(_ name: String) throws -> Data {
     if name.hasPrefix("shutdown-request") {
         return try reencode(ShutdownRequest.self)
     }
+    if name.hasPrefix("announce-request") {
+        return try reencode(AnnounceRequest.self)
+    }
     throw CocoaError(.fileReadUnknown, userInfo: [NSFilePathErrorKey: name])
 }
 
