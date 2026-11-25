@@ -109,6 +109,9 @@ internal static class ServiceCards
         var title = SettingsUi.Text(string.Empty, "BodyTextBlockStyle");
         var detail = SettingsUi.Text(string.Empty, "SettingsHelpTextStyle");
         var checkedAt = SettingsUi.Text(string.Empty, "SettingsHelpTextStyle");
+        // SetLive hides a line once its text empties; these two start empty.
+        detail.Visibility = Visibility.Collapsed;
+        checkedAt.Visibility = Visibility.Collapsed;
         var lines = new StackPanel
         {
             VerticalAlignment = VerticalAlignment.Center,
