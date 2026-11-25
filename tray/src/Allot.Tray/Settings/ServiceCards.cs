@@ -1,9 +1,12 @@
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Globalization;
 
+using Allot.Tray.Core.Contract;
 using Allot.Tray.Core.Daemon;
 using Allot.Tray.Core.ServiceSettings;
 using Allot.Tray.Core.TrayIcon;
+using Allot.Tray.Core.ViewModels;
 
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -11,8 +14,8 @@ using Microsoft.UI.Xaml.Controls;
 namespace Allot.Tray.Settings;
 
 /// <summary>
-/// The Service page's cards that hold no key: the status row with Stop or Start service, and
-/// Files with the path of <c>config.toml</c>.
+/// The Service page's cards that hold no key: the status row with Stop or Start service, the
+/// update card, and Files with the path of <c>config.toml</c>.
 /// </summary>
 internal static class ServiceCards
 {
@@ -96,6 +99,85 @@ internal static class ServiceCards
     }
 
     /// <summary>
+    /// The card of the Updates group: what allotd knows of a newer release, when it last
+    /// checked, Check now and Update. Hidden while allotd says nothing about updates.
+    /// </summary>
+    /// <param name="service">The latest poll.</param>
+    /// <param name="updates">Update and Check now.</param>
+    public static UIElement Updates(ServiceControl service, UpdateActions updates)
+    {
+        var title = SettingsUi.Text(string.Empty, "BodyTextBlockStyle");
+        var detail = SettingsUi.Text(string.Empty, "SettingsHelpTextStyle");
+        var checkedAt = SettingsUi.Text(string.Empty, "SettingsHelpTextStyle");
+        var lines = new StackPanel
+        {
+            VerticalAlignment = VerticalAlignment.Center,
+            Children = { title, detail, checkedAt },
+        };
+
+        // After a press, what it ends in is spoken, as for Start and Stop service.
+        var pressed = false;
+        var check = SettingsUi.Button("Check now", () =>
+        {
+            pressed = true;
+            _ = updates.CheckAsync(CancellationToken.None);
+        });
+        var start = SettingsUi.Button(
+            "Update",
+            () =>
+            {
+                pressed = true;
+                _ = updates.StartAsync(CancellationToken.None);
+            },
+            accent: true);
+        var buttons = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 8,
+            VerticalAlignment = VerticalAlignment.Center,
+            Children = { check, start },
+        };
+        var grid = new Grid { ColumnSpacing = 12 };
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = SettingsUi.Star });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        Grid.SetColumn(buttons, 1);
+        grid.Children.Add(lines);
+        grid.Children.Add(buttons);
+        var card = SettingsUi.Card([grid]);
+        card.Margin = new Thickness(0, 8, 0, 0);
+
+        void Update()
+        {
+            var view = UpdateView.From(
+                service.Status,
+                service.State?.Update,
+                updates.Press,
+                TimeProvider.System.GetUtcNow(),
+                TimeZoneInfo.Local,
+                CultureInfo.CurrentCulture);
+            card.Visibility = SettingsUi.Shows(view != UpdateView.Hidden);
+            var changed = SettingsUi.SetLive(title, view.Title);
+            changed |= SettingsUi.SetLive(detail, view.Detail);
+            // A check that finds the same changes only this line.
+            changed |= SettingsUi.SetLive(checkedAt, view.Checked);
+            Show(check, view.CheckText, view.CanCheck);
+            Show(start, view.UpdateText, view.CanUpdate);
+            var settled = updates.Press.Pending == UpdateAction.None
+                && service.State?.Update?.State != UpdateState.Checking;
+            if (changed && pressed && settled)
+            {
+                pressed = false;
+                SettingsUi.Announce(title, $"{view.Title}. {view.Detail}".TrimEnd());
+            }
+        }
+
+        service.Changed += Update;
+        updates.Changed += Update;
+        Update();
+        return card;
+    }
+
+    /// <summary>
     /// Files: the config file's path with Open file and Show in File Explorer.
     /// </summary>
     public static UIElement Files(DataDirectory data)
@@ -139,6 +221,13 @@ internal static class ServiceCards
 
     private static StackPanel Group(string heading, UIElement content) =>
         new() { Children = { SettingsUi.Heading(heading), SettingsUi.Card([content]) } };
+
+    private static void Show(Button button, string text, bool enabled)
+    {
+        button.Content = text;
+        button.IsEnabled = enabled;
+        button.Visibility = SettingsUi.Shows(text.Length > 0);
+    }
 
     private static void ShowInFolder(string path)
     {

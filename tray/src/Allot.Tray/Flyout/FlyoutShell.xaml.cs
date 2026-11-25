@@ -59,6 +59,7 @@ public sealed partial class FlyoutShell : UserControl, IFlyoutContent
     private (double Width, double Left, double Right, double Reach) _bodyClip;
     private bool _pinShown;
     private double _reportedHeight;
+    private string _updateTitle = "";
 
     // The Resources card's running expand or collapse, if any.
     private Storyboard? _resourcesStoryboard;
@@ -151,6 +152,16 @@ public sealed partial class FlyoutShell : UserControl, IFlyoutContent
     /// A press of the service-down banner's Start service.
     /// </summary>
     public event Action? StartServicePressed;
+
+    /// <summary>
+    /// A press of the update banner's Update or Try again.
+    /// </summary>
+    public event Action? UpdatePressed;
+
+    /// <summary>
+    /// A press of the update banner's Check now.
+    /// </summary>
+    public event Action? CheckUpdatePressed;
 
     /// <summary>
     /// The first-run card's Launch at logon switch was flipped, with its new state.
@@ -283,6 +294,8 @@ public sealed partial class FlyoutShell : UserControl, IFlyoutContent
         Hides(banner.Caption.Length == 0);
 
     public static string OnOff(bool on) => on ? "On" : "Off";
+
+    public static Visibility ShowsIf(bool shown) => Hides(!shown);
 
     /// <summary>
     /// Ended cards (Stopped, Removed, Finished, Ended by allotd) show tile, command and chip at 50%.
@@ -504,24 +517,32 @@ public sealed partial class FlyoutShell : UserControl, IFlyoutContent
         _window.SetMenuOpen(false);
     }
 
-    // The summary is a polite live region (handoff, Keyboard), but Narrator reads a change only
-    // when the element raises one; the binding updates the text first.
+    // The summary and the update banner's title are polite live regions (handoff, Keyboard),
+    // but Narrator reads a change only when the element raises one; the binding updates the text
+    // first.
     private void OnModelChanged(object? sender, PropertyChangedEventArgs args)
     {
-        if (args.PropertyName != nameof(FlyoutModel.Summary))
+        if (args.PropertyName == nameof(FlyoutModel.Summary))
         {
-            return;
+            RaiseLiveRegionChanged(SummaryText);
         }
+        else if (args.PropertyName == nameof(FlyoutModel.UpdateBanner)
+            && Model.UpdateBanner.Title != _updateTitle)
+        {
+            _updateTitle = Model.UpdateBanner.Title;
+            RaiseLiveRegionChanged(UpdateTitle);
+        }
+    }
 
+    private void RaiseLiveRegionChanged(TextBlock text) =>
         _ = DispatcherQueue.TryEnqueue(() =>
         {
             if (_window.Behavior.IsOpen)
             {
-                FrameworkElementAutomationPeer.CreatePeerForElement(SummaryText)
+                FrameworkElementAutomationPeer.CreatePeerForElement(text)
                     ?.RaiseAutomationEvent(AutomationEvents.LiveRegionChanged);
             }
         });
-    }
 
     // A stop's outcome appears after focus has moved on from its card, so it is spoken as a
     // notification instead.
@@ -671,6 +692,11 @@ public sealed partial class FlyoutShell : UserControl, IFlyoutContent
 
     private void OnStartServiceClick(object sender, RoutedEventArgs e) =>
         StartServicePressed?.Invoke();
+
+    private void OnUpdateClick(object sender, RoutedEventArgs e) => UpdatePressed?.Invoke();
+
+    private void OnCheckUpdateClick(object sender, RoutedEventArgs e) =>
+        CheckUpdatePressed?.Invoke();
 
     // Toggled also fires when the binding sets the switch from the model; only a flip by the
     // user differs from the row.

@@ -2,6 +2,7 @@ using System.Globalization;
 
 using Allot.Tray.Core.Daemon;
 using Allot.Tray.Core.ServiceSettings;
+using Allot.Tray.Core.ViewModels;
 
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Windowing;
@@ -15,12 +16,14 @@ namespace Allot.Tray.Settings;
 /// </summary>
 /// <param name="Session">allotd's settings.</param>
 /// <param name="Service">Start, Stop and Restart service, and the latest poll.</param>
+/// <param name="Updates">Update and Check now, shared with the flyout.</param>
 /// <param name="Data">The install, for the config file and the port this panel dials.</param>
 /// <param name="Panel">The Panel page's stores.</param>
 /// <param name="OpenLogs">Opens the log folder.</param>
 internal sealed record SettingsServices(
     SettingsSession Session,
     ServiceControl Service,
+    UpdateActions Updates,
     DataDirectory Data,
     PanelHost Panel,
     Action OpenLogs);
@@ -165,6 +168,7 @@ public sealed partial class SettingsWindow : Window
             _services.Service,
             _context,
             _services.OpenLogs));
+        service.After["updates"] = [ServiceCards.Updates(_services.Service, _services.Updates)];
         service.End.Add(ServiceCards.Files(_services.Data));
 
         foreach (var page in _pages.Values)

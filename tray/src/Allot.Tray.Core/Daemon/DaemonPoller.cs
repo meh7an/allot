@@ -6,10 +6,19 @@ namespace Allot.Tray.Core.Daemon;
 
 /// <summary>
 /// Polls the daemon on the <see cref="PollSchedule"/> and keeps the last state it served, which
-/// the service-down view shows dimmed.
+/// the service-down view shows dimmed. A running allotd counts as stopped only after
+/// <see cref="MissesUntilStopped"/> polls in a row found nothing, since a busy machine answers
+/// late; the polls before that report nothing.
 /// </summary>
 public sealed class DaemonPoller(DaemonClient client, IServiceLauncher launcher, TimeProvider time)
 {
+    public const int MissesUntilStopped = 3;
+
+    /// <summary>
+    /// How long after Stop service the first poll that finds nothing already counts.
+    /// </summary>
+    public static readonly TimeSpan ChosenStopWindow = TimeSpan.FromSeconds(15);
+
     /// <summary>
     /// How long Start service reports <see cref="ServiceStatus.Starting"/> before giving up.
     /// </summary>
@@ -26,11 +35,13 @@ public sealed class DaemonPoller(DaemonClient client, IServiceLauncher launcher,
     private readonly PollSchedule _schedule = new();
     private TaskCompletionSource _wake = NewWake();
     private DateTimeOffset? _startingUntil;
+    private DateTimeOffset? _stopChosenUntil;
+    private int _misses;
     private volatile string? _startProblem;
     private volatile bool _flyoutOpen;
 
     /// <summary>
-    /// Raised after every poll, on the polling thread.
+    /// Raised after every poll that says something new about allotd, on the polling thread.
     /// </summary>
     public event EventHandler<PollResult>? Updated;
 
@@ -94,6 +105,14 @@ public sealed class DaemonPoller(DaemonClient client, IServiceLauncher launcher,
     {
         var problem = await client.ShutdownAsync(record: true, cancellationToken)
             .ConfigureAwait(false);
+        if (problem is null)
+        {
+            lock (_gate)
+            {
+                _stopChosenUntil = time.GetUtcNow() + ChosenStopWindow;
+            }
+        }
+
         PollNow();
         return problem;
     }
@@ -166,6 +185,11 @@ public sealed class DaemonPoller(DaemonClient client, IServiceLauncher launcher,
         lock (_gate)
         {
             result = WhileStarting(result);
+            if (IsPassingMiss(result))
+            {
+                return PollSchedule.FirstRetry;
+            }
+
             delay = _schedule.Next(_flyoutOpen, result.Status);
         }
 
@@ -181,6 +205,23 @@ public sealed class DaemonPoller(DaemonClient client, IServiceLauncher launcher,
 
     private static TaskCompletionSource NewWake() =>
         new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    private bool IsPassingMiss(PollResult result)
+    {
+        if (result.Status != ServiceStatus.Stopped || Latest?.Status != ServiceStatus.Running)
+        {
+            _misses = 0;
+            return false;
+        }
+
+        if (_stopChosenUntil is { } until && time.GetUtcNow() < until)
+        {
+            _stopChosenUntil = null;
+            return false;
+        }
+
+        return ++_misses < MissesUntilStopped;
+    }
 
     // A launched allotd takes a moment to bind its port; until then it looks stopped.
     private PollResult WhileStarting(PollResult result)

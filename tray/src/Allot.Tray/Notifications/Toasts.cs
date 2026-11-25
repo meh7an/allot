@@ -26,6 +26,7 @@ internal static class Toasts
     public const string StartService = "start-service";
     public const string OpenLogs = "open-logs";
     public const string Show = "show";
+    public const string Update = "update";
 
     private const string ActionKey = "action";
     private const string TargetKey = "target";
@@ -162,6 +163,7 @@ internal static class Toasts
             ToastButton.StartService => ("Start service", StartService),
             ToastButton.OpenLogs => ("Open logs", OpenLogs),
             ToastButton.Show => ("Show", Show),
+            ToastButton.Update => ("Update", Update),
             _ => throw new ArgumentOutOfRangeException(nameof(button)),
         };
         var result = new AppNotificationButton(text).AddArgument(ActionKey, action);

@@ -61,6 +61,7 @@ public sealed partial class App : Application
     private DaemonClient? _client;
     private DaemonPoller? _poller;
     private ServiceControl? _service;
+    private UpdateActions? _updates;
     private SettingsHost? _settingsHost;
     private FlyoutWindow? _flyout;
     private FlyoutShell? _shell;
@@ -139,6 +140,8 @@ public sealed partial class App : Application
         _stopper = _client;
         _poller = new DaemonPoller(_client, new ServiceLauncher(_data), TimeProvider.System);
         _service = new ServiceControl(_poller, _data, _toastRules.ExpectStop);
+        _updates = new UpdateActions(_client, _poller.PollNow, TimeProvider.System, AppLog.Write);
+        _updates.Changed += () => _ = Show();
         _settingsHost = new SettingsHost(
             CreateSettingsServices,
             () => _settings.SettingsWindow,
@@ -180,6 +183,8 @@ public sealed partial class App : Application
             }
         };
         shell.StartServicePressed += StartService;
+        shell.UpdatePressed += StartUpdate;
+        shell.CheckUpdatePressed += () => _ = _updates?.CheckAsync(_stopping.Token);
         shell.LaunchAtLogonChanged += SetLaunchAtLogon;
         shell.FirstRunDonePressed += () => ChangeSettings(settings => settings.FirstRunDone = true);
         shell.NotificationSettingsPressed += () => _ = Toasts.OpenSettingsAsync();
@@ -286,12 +291,15 @@ public sealed partial class App : Application
             return;
         }
 
+        // Asked of Windows only while there is a release to announce.
+        var turnedOff = result.State?.Update?.Announce is not null && Toasts.AreTurnedOff();
         var update = _toastRules.Observe(
             result.Status,
             result.State,
             _poller?.LastKnown,
             _settings.Notifications,
-            _flyoutOpen);
+            _flyoutOpen,
+            turnedOff);
         foreach (var tag in update.Withdraw)
         {
             _ = Toasts.WithdrawAsync(tag);
@@ -301,7 +309,37 @@ public sealed partial class App : Application
         {
             DisplayToast(toast);
         }
+
+        if (update.Announced is { } version)
+        {
+            _ = AnnounceAsync(version);
+        }
     }
+
+    // allotd keeps which release was announced, so no panel and no restart repeats the notice.
+    private async Task AnnounceAsync(string version)
+    {
+        if (_client is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var problem = await _client.UpdateAnnouncedAsync(version, _stopping.Token)
+                .ConfigureAwait(true);
+            if (problem is not null)
+            {
+                AppLog.Write($"announcing {version} failed: {problem}");
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Quit.
+        }
+    }
+
+    private void StartUpdate() => _ = _updates?.StartAsync(_stopping.Token);
 
     private void DisplayToast(ToastMessage toast)
     {
@@ -319,6 +357,8 @@ public sealed partial class App : Application
     {
         _status = status;
         _state = shown;
+        // Before anything shows the poll, so a press that it answers is already over.
+        _updates?.Observe(live?.Update);
         _service?.Update(new PollResult(status, live));
         _clock.Received(live);
         if (live is null)
@@ -369,6 +409,13 @@ public sealed partial class App : Application
                 _status,
                 _state,
                 _poller?.StartProblem,
+                TimeZoneInfo.Local,
+                CultureInfo.CurrentCulture));
+            _model.ApplyUpdate(UpdateView.From(
+                _status,
+                state?.Update,
+                _updates?.Press ?? UpdatePress.None,
+                TimeProvider.System.GetUtcNow(),
                 TimeZoneInfo.Local,
                 CultureInfo.CurrentCulture));
             _model.Resources.Apply(ResourcesView.From(
@@ -696,6 +743,11 @@ public sealed partial class App : Application
             case Toasts.StartService:
                 StartService();
                 break;
+            case Toasts.Update:
+                StartUpdate();
+                // The flyout shows "Updating", or why it did not start.
+                OpenFlyout();
+                break;
             default:
                 OpenFlyout();
                 _shell?.ScrollTo(action.Target);
@@ -766,7 +818,7 @@ public sealed partial class App : Application
                 return _notificationsOff;
             },
             () => _ = Toasts.OpenSettingsAsync());
-        return new SettingsServices(session, _service!, data, panel, OpenLogs);
+        return new SettingsServices(session, _service!, _updates!, data, panel, OpenLogs);
     }
 
     /// <summary>

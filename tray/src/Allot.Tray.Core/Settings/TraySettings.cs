@@ -92,6 +92,8 @@ public sealed record NotificationToggles
     public bool JobFinished { get; set; }
 
     public bool KilledOutsideFlyout { get; set; }
+
+    public bool UpdateAvailable { get; set; } = true;
 }
 
 [JsonSourceGenerationOptions(

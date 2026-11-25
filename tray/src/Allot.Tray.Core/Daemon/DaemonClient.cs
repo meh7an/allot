@@ -17,7 +17,7 @@ namespace Allot.Tray.Core.Daemon;
 /// one. Each request sets its own timeout.</param>
 /// <param name="tokenFile">The bearer token file, read on first use and after a 401.</param>
 public sealed class DaemonClient(HttpClient http, string tokenFile)
-    : IDisposable, IJobStopper, ISettingsClient
+    : IDisposable, IJobStopper, ISettingsClient, IUpdateClient
 {
     private static readonly TimeSpan ConnectTimeout = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(3);
@@ -25,6 +25,9 @@ public sealed class DaemonClient(HttpClient http, string tokenFile)
     // allotd answers a kill after up to three sweeps over the tree, each waiting for the processes
     // it terminated.
     private static readonly TimeSpan StopTimeout = TimeSpan.FromSeconds(10);
+
+    // A person waits for the answer to a press, and a busy machine answers slowly.
+    private static readonly TimeSpan UpdateTimeout = TimeSpan.FromSeconds(10);
 
     private string? _token;
 
@@ -221,6 +224,26 @@ public sealed class DaemonClient(HttpClient http, string tokenFile)
             StopResult.Removed,
             cancellationToken);
 
+    /// <inheritdoc/>
+    public Task<string?> CheckForUpdateAsync(CancellationToken cancellationToken) =>
+        UpdateRouteAsync("update/check", null, HttpStatusCode.Accepted, cancellationToken);
+
+    /// <inheritdoc/>
+    public Task<string?> StartUpdateAsync(CancellationToken cancellationToken) =>
+        UpdateRouteAsync("update/start", null, HttpStatusCode.Accepted, cancellationToken);
+
+    /// <inheritdoc/>
+    public Task<string?> UpdateAnnouncedAsync(
+        string version,
+        CancellationToken cancellationToken) =>
+        UpdateRouteAsync(
+            "update/announced",
+            JsonSerializer.Serialize(
+                new AnnounceRequest { Version = version },
+                ContractJsonContext.Default.AnnounceRequest),
+            HttpStatusCode.OK,
+            cancellationToken);
+
     public void Dispose() => http.Dispose();
 
     /// <summary>
@@ -272,6 +295,40 @@ public sealed class DaemonClient(HttpClient http, string tokenFile)
             {
                 return new PollResult(ServiceStatus.Incompatible, Detail: error.Message);
             }
+        }
+    }
+
+    // The update routes refuse with a line of text saying why, not a JSON refusal.
+    private async Task<string?> UpdateRouteAsync(
+        string path,
+        string? body,
+        HttpStatusCode accepted,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var response = await SendWithTokenAsync(
+                    HttpMethod.Post, path, UpdateTimeout, body, cancellationToken)
+                .ConfigureAwait(false);
+            if (response is null)
+            {
+                return $"no token in {tokenFile}";
+            }
+
+            if (response.StatusCode == accepted)
+            {
+                return null;
+            }
+
+            var text = (await response.Content.ReadAsStringAsync(cancellationToken)
+                .ConfigureAwait(false)).Trim();
+            return text.Length == 0 ? $"POST /{path} answered {(int)response.StatusCode}" : text;
+        }
+        catch (Exception error) when (IsUnreachable(error, cancellationToken))
+        {
+            return error is HttpRequestException
+                ? "the service is not running"
+                : $"the service did not answer within {UpdateTimeout.TotalSeconds:0} s";
         }
     }
 

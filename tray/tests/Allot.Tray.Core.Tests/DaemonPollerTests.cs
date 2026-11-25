@@ -80,11 +80,80 @@ public sealed class DaemonPollerTests
         var served = poller.LastKnown;
         up = false;
 
-        _ = await PollTimes(poller, 1);
+        _ = await PollTimes(poller, DaemonPoller.MissesUntilStopped);
 
         Assert.IsNotNull(served);
         Assert.AreSame(served, poller.LastKnown);
         Assert.IsNull(poller.Latest?.State);
+    }
+
+    [TestMethod]
+    public async Task ARunningDaemonIsStoppedOnTheThirdMissInARow()
+    {
+        using var directory = new TempDirectory();
+        var up = true;
+        var handler = new FakeHttpHandler(_ => up
+            ? FakeHttpHandler.Json(Fixtures.Read("ui-state-idle.json"))
+            : throw FakeHttpHandler.Refused());
+        var poller = Poller(directory, handler);
+        var raised = new List<ServiceStatus>();
+        poller.Updated += (_, result) => raised.Add(result.Status);
+        _ = await PollTimes(poller, 1);
+        up = false;
+
+        var delays = await PollTimes(poller, 4);
+
+        CollectionAssert.AreEqual(Seconds(1, 1, 1, 2), delays);
+        CollectionAssert.AreEqual(
+            new[] { ServiceStatus.Running, ServiceStatus.Stopped, ServiceStatus.Stopped },
+            raised);
+    }
+
+    [TestMethod]
+    public async Task AnAnswerStartsTheMissCountAgain()
+    {
+        using var directory = new TempDirectory();
+        var up = true;
+        var handler = new FakeHttpHandler(_ => up
+            ? FakeHttpHandler.Json(Fixtures.Read("ui-state-idle.json"))
+            : throw FakeHttpHandler.Refused());
+        var poller = Poller(directory, handler);
+        _ = await PollTimes(poller, 1);
+        up = false;
+        _ = await PollTimes(poller, 2);
+        up = true;
+        _ = await PollTimes(poller, 1);
+        up = false;
+
+        _ = await PollTimes(poller, 2);
+
+        Assert.AreEqual(ServiceStatus.Running, poller.Latest?.Status);
+    }
+
+    [TestMethod]
+    public async Task AChosenStopCountsOnTheFirstMiss()
+    {
+        using var directory = new TempDirectory();
+        var up = true;
+        var handler = new FakeHttpHandler(request =>
+        {
+            if (request.RequestUri!.AbsolutePath == "/shutdown")
+            {
+                up = false;
+                return FakeHttpHandler.Status(HttpStatusCode.Accepted);
+            }
+
+            return up
+                ? FakeHttpHandler.Json(Fixtures.Read("ui-state-idle.json"))
+                : throw FakeHttpHandler.Refused();
+        });
+        var poller = Poller(directory, handler);
+        _ = await PollTimes(poller, 1);
+
+        Assert.IsNull(await poller.StopServiceAsync(TestContext.CancellationToken));
+        _ = await PollTimes(poller, 1);
+
+        Assert.AreEqual(ServiceStatus.Stopped, poller.Latest?.Status);
     }
 
     [TestMethod]
@@ -129,7 +198,7 @@ public sealed class DaemonPollerTests
         _ = await PollTimes(poller, 1);
         up = false;
 
-        _ = await PollTimes(poller, 1);
+        _ = await PollTimes(poller, DaemonPoller.MissesUntilStopped);
 
         Assert.AreEqual(ServiceStatus.Stopped, poller.Latest?.Status);
     }

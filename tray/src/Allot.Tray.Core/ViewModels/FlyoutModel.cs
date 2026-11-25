@@ -13,6 +13,7 @@ public sealed class FlyoutModel : Observable
     private string _summary = "Starting service…";
     private bool _isLastKnown = true;
     private ServiceBanner _banner = ServiceBanner.Hidden;
+    private UpdateView _updateBanner = UpdateView.Hidden;
 
     public HeaderGlyph Glyph
     {
@@ -43,6 +44,15 @@ public sealed class FlyoutModel : Observable
     {
         get => _banner;
         private set => Set(ref _banner, value);
+    }
+
+    /// <summary>
+    /// The banner of a newer release, or <see cref="UpdateView.Hidden"/> without one to show.
+    /// </summary>
+    public UpdateView UpdateBanner
+    {
+        get => _updateBanner;
+        private set => Set(ref _updateBanner, value);
     }
 
     public ObservableCollection<FlyoutRow> Rows { get; } = [];
@@ -101,6 +111,9 @@ public sealed class FlyoutModel : Observable
     }
 
     public void ApplyBanner(ServiceBanner? banner) => Banner = banner ?? ServiceBanner.Hidden;
+
+    public void ApplyUpdate(UpdateView view) =>
+        UpdateBanner = view.InFlyout ? view : UpdateView.Hidden;
 
     /// <summary>
     /// Makes <paramref name="rows"/> equal to <paramref name="fresh"/> by key with the fewest

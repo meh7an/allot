@@ -100,6 +100,11 @@ public static class PanelToggles
             "When a job is stopped by something other than this flyout.",
             settings => settings.Notifications.KilledOutsideFlyout,
             (settings, on) => settings.Notifications.KilledOutsideFlyout = on),
+        new(
+            "Update available",
+            "When a newer version of Allot is released.",
+            settings => settings.Notifications.UpdateAvailable,
+            (settings, on) => settings.Notifications.UpdateAvailable = on),
     ];
 
     /// <summary>

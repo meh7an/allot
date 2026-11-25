@@ -265,6 +265,7 @@
   <Thickness x:Key="AllotChipPadding">8,0,8,0</Thickness>
   <Thickness x:Key="AllotBenchmarkChipPadding">5,0,8,0</Thickness>
   <Thickness x:Key="AllotBannerPadding">10,6,6,6</Thickness>
+  <Thickness x:Key="AllotUpdateBannerPadding">10,8,8,8</Thickness>
   <Thickness x:Key="AllotMenuPadding">4</Thickness>
   <Thickness x:Key="AllotMenuItemPadding">12,0,12,0</Thickness>
 

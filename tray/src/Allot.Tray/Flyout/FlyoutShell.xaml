@@ -926,6 +926,84 @@
               </Button>
             </Grid>
           </Border>
+          <!-- A newer release: offered, installing, or not installed. -->
+          <Border
+            Padding="{StaticResource AllotUpdateBannerPadding}"
+            Background="{ThemeResource AllotCardBrush}"
+            BorderBrush="{ThemeResource AllotCardBorderBrush}"
+            BorderThickness="1"
+            CornerRadius="{StaticResource AllotCardCornerRadius}"
+            Visibility="{x:Bind local:FlyoutShell.ShowsText(Model.UpdateBanner.Title), Mode=OneWay}">
+            <StackPanel Spacing="8">
+              <Grid ColumnSpacing="8">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="Auto" />
+                  <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <TextBlock
+                  VerticalAlignment="Top"
+                  Style="{StaticResource AllotInlineIconStyle}"
+                  FontFamily="{StaticResource AllotIconFilledFontFamily}"
+                  FontSize="16"
+                  Foreground="{ThemeResource AllotDangerTextBrush}"
+                  Text="{StaticResource AllotGlyphErrorCircleFilled}"
+                  Visibility="{x:Bind local:FlyoutShell.ShowsIf(Model.UpdateBanner.Failed), Mode=OneWay}" />
+                <StackPanel Grid.Column="1">
+                  <TextBlock
+                    x:Name="UpdateTitle"
+                    Style="{StaticResource AllotBodyTextStyle}"
+                    FontWeight="SemiBold"
+                    TextWrapping="WrapWholeWords"
+                    AutomationProperties.LiveSetting="Polite"
+                    Text="{x:Bind Model.UpdateBanner.Title, Mode=OneWay}" />
+                  <TextBlock
+                    Style="{StaticResource AllotBodyTextStyle}"
+                    Foreground="{ThemeResource AllotTextSecondaryBrush}"
+                    TextWrapping="Wrap"
+                    Text="{x:Bind Model.UpdateBanner.Detail, Mode=OneWay}"
+                    Visibility="{x:Bind local:FlyoutShell.ShowsText(Model.UpdateBanner.Detail), Mode=OneWay}" />
+                </StackPanel>
+              </Grid>
+              <StackPanel HorizontalAlignment="Right" Orientation="Horizontal" Spacing="8">
+                <Button
+                  MinHeight="{StaticResource AllotButtonSize}"
+                  Padding="12,0,12,0"
+                  BorderThickness="1"
+                  CornerRadius="{StaticResource AllotControlCornerRadius}"
+                  FontSize="12"
+                  Content="{x:Bind Model.UpdateBanner.CheckText, Mode=OneWay}"
+                  IsEnabled="{x:Bind Model.UpdateBanner.CanCheck, Mode=OneWay}"
+                  Visibility="{x:Bind local:FlyoutShell.ShowsText(Model.UpdateBanner.CheckText), Mode=OneWay}"
+                  Click="OnCheckUpdateClick">
+                  <Button.Resources>
+                    <StaticResource x:Key="ButtonBackground" ResourceKey="AllotCardBrush" />
+                    <StaticResource x:Key="ButtonBorderBrush" ResourceKey="AllotCardBorderBrush" />
+                    <StaticResource x:Key="ButtonBorderBrushPointerOver" ResourceKey="AllotCardBorderBrush" />
+                    <StaticResource x:Key="ButtonBorderBrushPressed" ResourceKey="AllotCardBorderBrush" />
+                  </Button.Resources>
+                </Button>
+                <Button
+                  MinHeight="{StaticResource AllotButtonSize}"
+                  Padding="12,0,12,0"
+                  CornerRadius="{StaticResource AllotControlCornerRadius}"
+                  FontSize="12"
+                  FontWeight="SemiBold"
+                  Style="{StaticResource AccentButtonStyle}"
+                  Content="{x:Bind Model.UpdateBanner.UpdateText, Mode=OneWay}"
+                  IsEnabled="{x:Bind Model.UpdateBanner.CanUpdate, Mode=OneWay}"
+                  Visibility="{x:Bind local:FlyoutShell.ShowsText(Model.UpdateBanner.UpdateText), Mode=OneWay}"
+                  Click="OnUpdateClick">
+                  <Button.Resources>
+                    <StaticResource x:Key="AccentButtonBackground" ResourceKey="AllotAccentBrush" />
+                    <StaticResource x:Key="AccentButtonForeground" ResourceKey="AllotAccentForegroundBrush" />
+                    <StaticResource x:Key="AccentButtonBackgroundDisabled" ResourceKey="AllotAccentBusyBrush" />
+                    <StaticResource x:Key="AccentButtonForegroundDisabled" ResourceKey="AllotAccentForegroundBrush" />
+                    <SolidColorBrush x:Key="AccentButtonBorderBrushDisabled" Color="Transparent" />
+                  </Button.Resources>
+                </Button>
+              </StackPanel>
+            </StackPanel>
+          </Border>
           <TextBlock
             Padding="6,4,6,0"
             Style="{StaticResource AllotBodyTextStyle}"

@@ -1,7 +1,8 @@
 namespace Allot.Tray.Core.Notifications;
 
 /// <summary>
-/// The toasts of handoff section 9, each behind its own ⋯ › Notifications toggle.
+/// The toasts of handoff section 9 and the update notice, each behind its own switch on the
+/// Settings window's Panel page.
 /// </summary>
 public enum ToastKind
 {
@@ -10,6 +11,7 @@ public enum ToastKind
     BenchmarkFinished,
     JobFinished,
     KilledOutsideFlyout,
+    UpdateAvailable,
 }
 
 public enum ToastButton
@@ -17,6 +19,7 @@ public enum ToastButton
     StartService,
     OpenLogs,
     Show,
+    Update,
 }
 
 /// <summary>
@@ -39,11 +42,17 @@ public sealed record ToastMessage(
     string? Target);
 
 /// <summary>
-/// What one poll changes: toasts to show, and tags of shown toasts that no longer apply.
+/// What one poll changes: toasts to show, tags of shown toasts that no longer apply, and a
+/// release to tell allotd about.
 /// </summary>
 /// <param name="Show">New toasts, oldest event first.</param>
 /// <param name="Withdraw">Tags to remove from Notification Center.</param>
-public sealed record ToastUpdate(IReadOnlyList<ToastMessage> Show, IReadOnlyList<string> Withdraw)
+/// <param name="Announced">The release this panel raised the notice for, or showed in the open
+/// flyout, for <c>POST /update/announced</c>; <c>null</c> otherwise.</param>
+public sealed record ToastUpdate(
+    IReadOnlyList<ToastMessage> Show,
+    IReadOnlyList<string> Withdraw,
+    string? Announced = null)
 {
     public static ToastUpdate None { get; } = new([], []);
 }

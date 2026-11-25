@@ -15,6 +15,11 @@ public static class ToastText
     /// </summary>
     public const string ServiceTag = "service";
 
+    /// <summary>
+    /// The one update toast, withdrawn once the update installs.
+    /// </summary>
+    public const string UpdateTag = "update";
+
     // Row keys of FlyoutRows: JobCardRow and RecentRow.
     private const string RecentTarget = "recent";
 
@@ -103,6 +108,16 @@ public static class ToastText
             $"{notice.Command} was stopped",
             "Killed from the command line · Claude was notified",
             [],
+            null);
+
+    /// <param name="version">The newer release.</param>
+    public static ToastMessage UpdateAvailable(string version) =>
+        new(
+            ToastKind.UpdateAvailable,
+            UpdateTag,
+            $"Allot {version} is available",
+            "Running jobs are not interrupted. The tray closes for a few seconds.",
+            [ToastButton.Update],
             null);
 
     private static string JobTarget(long lease) => $"job:{lease}";

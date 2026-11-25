@@ -9,7 +9,9 @@ namespace Allot.Tray.Core.Notifications;
 /// the first live state after the tray app starts is a baseline whose jobs, runs and notices never
 /// toast, so a restart repeats nothing, and an event from while the app was not running is not
 /// shown. An event that comes while its toggle is off or the flyout is open counts as seen
-/// without a toast.
+/// without a toast. The update notice differs: allotd remembers which release was announced, so
+/// it shows on the first state too, and a panel that cannot notify leaves it for one that can.
+/// A stopped poll is already a stop: <see cref="DaemonPoller"/> holds back the passing misses.
 /// </summary>
 public sealed class ToastRules(TimeProvider time)
 {
@@ -17,11 +19,6 @@ public sealed class ToastRules(TimeProvider time)
     /// A job is running long at this multiple of its estimate.
     /// </summary>
     public const double LongFactor = 1.5;
-
-    /// <summary>
-    /// A service stop seen on a single poll is a restart (allot install, for one), not a stop.
-    /// </summary>
-    public const int StoppedPolls = 2;
 
     /// <summary>
     /// Finishes within this time of a window's first toast join its toast.
@@ -40,6 +37,7 @@ public sealed class ToastRules(TimeProvider time)
         BenchmarkFinished = false,
         JobFinished = false,
         KilledOutsideFlyout = false,
+        UpdateAvailable = false,
     };
 
     private readonly HashSet<long> _long = [];
@@ -51,9 +49,14 @@ public sealed class ToastRules(TimeProvider time)
     private int _mergeWindows;
     private bool _baselined;
     private bool _wasRunning;
-    private int _stoppedPolls;
     private bool _stopShown;
     private DateTimeOffset? _stopChosenAt;
+
+    // The release already raised or seen, so a slow POST /update/announced repeats nothing.
+    private string? _raisedUpdate;
+
+    // Null until known, as an earlier run of the app may have left its toast.
+    private bool? _updateToastShown;
 
     /// <summary>
     /// The flyout is about to kill this lease, so its notice is not a kill from outside. Called
@@ -70,18 +73,21 @@ public sealed class ToastRules(TimeProvider time)
     /// <param name="live">The state allotd served, or <c>null</c> while it is not running.</param>
     /// <param name="lastKnown">The newest state allotd served, for the session count after a
     /// stop.</param>
-    /// <param name="toggles">The ⋯ › Notifications toggles.</param>
+    /// <param name="toggles">The Panel page's Notifications toggles.</param>
     /// <param name="flyoutOpen">The flyout is showing, so the user sees events already.</param>
+    /// <param name="turnedOff">Windows has Allot's notifications turned off.</param>
     public ToastUpdate Observe(
         ServiceStatus status,
         UiState? live,
         UiState? lastKnown,
         NotificationToggles toggles,
-        bool flyoutOpen)
+        bool flyoutOpen,
+        bool turnedOff = false)
     {
         var allowed = flyoutOpen ? Silent : toggles;
         var show = new List<ToastMessage>();
         var withdraw = new List<string>();
+        string? announced = null;
         ObserveService(status, lastKnown, allowed, show, withdraw);
         if (live is not null)
         {
@@ -93,9 +99,14 @@ public sealed class ToastRules(TimeProvider time)
             {
                 Baseline(live);
             }
+
+            var notifies = toggles.UpdateAvailable && !turnedOff;
+            announced = ObserveUpdate(live.Update, notifies, flyoutOpen, show, withdraw);
         }
 
-        return show.Count == 0 && withdraw.Count == 0 ? ToastUpdate.None : new(show, withdraw);
+        return show.Count == 0 && withdraw.Count == 0 && announced is null
+            ? ToastUpdate.None
+            : new(show, withdraw, announced);
     }
 
     private void ObserveService(
@@ -108,7 +119,6 @@ public sealed class ToastRules(TimeProvider time)
         if (status == ServiceStatus.Running)
         {
             _wasRunning = true;
-            _stoppedPolls = 0;
             if (_stopShown)
             {
                 _stopShown = false;
@@ -119,7 +129,7 @@ public sealed class ToastRules(TimeProvider time)
         }
 
         // Starting and Incompatible change nothing: neither is a running service going away.
-        if (status != ServiceStatus.Stopped || !_wasRunning || ++_stoppedPolls < StoppedPolls)
+        if (status != ServiceStatus.Stopped || !_wasRunning)
         {
             return;
         }
@@ -127,11 +137,51 @@ public sealed class ToastRules(TimeProvider time)
         _wasRunning = false;
         var chosen = _stopChosenAt is { } at && time.GetUtcNow() - at <= ExpectedStopWindow;
         _stopChosenAt = null;
-        if (!chosen && allowed.ServiceStopped)
+
+        // An update stops allotd to replace it.
+        var updating = lastKnown?.Update?.State == UpdateState.Installing;
+        if (!chosen && !updating && allowed.ServiceStopped)
         {
             show.Add(ToastText.ServiceStopped(lastKnown?.Sessions.Count ?? 0));
             _stopShown = true;
         }
+    }
+
+    private string? ObserveUpdate(
+        UpdateStatus? update,
+        bool notifies,
+        bool flyoutOpen,
+        List<ToastMessage> show,
+        List<string> withdraw)
+    {
+        if (update is null)
+        {
+            return null;
+        }
+
+        if (update.State is UpdateState.Installing or UpdateState.UpToDate
+            && _updateToastShown != false)
+        {
+            _updateToastShown = false;
+            withdraw.Add(ToastText.UpdateTag);
+        }
+
+        if (update.Announce is not { } version || !notifies)
+        {
+            return null;
+        }
+
+        if (_raisedUpdate != version)
+        {
+            _raisedUpdate = version;
+            if (!flyoutOpen)
+            {
+                _updateToastShown = true;
+                show.Add(ToastText.UpdateAvailable(version));
+            }
+        }
+
+        return version;
     }
 
     private void Baseline(UiState live)

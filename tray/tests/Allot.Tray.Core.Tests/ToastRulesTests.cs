@@ -86,33 +86,123 @@ public sealed class ToastRulesTests
     }
 
     [TestMethod]
-    public void ServiceStoppedNeedsTwoStoppedPolls()
+    public void ServiceStoppedToastsOnce()
     {
         _ = Poll(Busy(at: 0));
 
         var first = Poll(null, ServiceStatus.Stopped);
         var second = Poll(null, ServiceStatus.Stopped);
-        var third = Poll(null, ServiceStatus.Stopped);
 
-        Assert.AreEqual("", Titles(first));
         Assert.AreEqual(
             new ToastMessage(
                 ToastKind.ServiceStopped,
                 "service",
                 "Service stopped",
                 "Heavy commands now run unchecked. 3 Claude sessions are connected.",
-                second.Show[0].Buttons,
+                first.Show[0].Buttons,
                 null),
-            second.Show.Single());
-        Assert.AreEqual("StartService OpenLogs", Buttons(second.Show[0]));
-        Assert.AreEqual("", Titles(third));
+            first.Show.Single());
+        Assert.AreEqual("StartService OpenLogs", Buttons(first.Show[0]));
+        Assert.AreEqual("", Titles(second));
+    }
+
+    [TestMethod]
+    public void AStopWhileAnUpdateInstallsDoesNotToast()
+    {
+        _ = Poll(Busy(at: 0) with { Update = Release(UpdateState.Installing) });
+
+        var update = Poll(null, ServiceStatus.Stopped);
+
+        Assert.AreEqual("", Titles(update));
+    }
+
+    [TestMethod]
+    public void AReleaseNotYetAnnouncedToastsOnTheFirstState()
+    {
+        var update = Poll(Idle(at: 0) with { Update = Release(UpdateState.Available, "0.7.0") });
+
+        Assert.AreEqual(
+            new ToastMessage(
+                ToastKind.UpdateAvailable,
+                "update",
+                "Allot 0.7.0 is available",
+                "Running jobs are not interrupted. The tray closes for a few seconds.",
+                update.Show[0].Buttons,
+                null),
+            update.Show.Single());
+        Assert.AreEqual("Update", Buttons(update.Show[0]));
+        Assert.AreEqual("0.7.0", update.Announced);
+    }
+
+    [TestMethod]
+    public void AReleaseIsToldToAllotdUntilAllotdRecordsIt()
+    {
+        var offered = Idle(at: 0) with { Update = Release(UpdateState.Available, "0.7.0") };
+        _ = Poll(offered);
+
+        var again = Poll(offered);
+        var recorded = Poll(offered with { Update = Release(UpdateState.Available) });
+
+        Assert.AreEqual("", Titles(again));
+        Assert.AreEqual("0.7.0", again.Announced);
+        Assert.AreSame(ToastUpdate.None, recorded);
+    }
+
+    [TestMethod]
+    public void AnOpenFlyoutCountsTheReleaseAsAnnounced()
+    {
+        var update = Poll(
+            Idle(at: 0) with { Update = Release(UpdateState.Available, "0.7.0") },
+            open: true);
+
+        Assert.AreEqual("", Titles(update));
+        Assert.AreEqual("0.7.0", update.Announced);
+    }
+
+    [TestMethod]
+    public void APanelThatCannotNotifyLeavesTheReleaseForOneThatCan()
+    {
+        var offered = Idle(at: 0) with { Update = Release(UpdateState.Available, "0.7.0") };
+
+        var switchedOff = Poll(offered, toggles: AllOn with { UpdateAvailable = false });
+        var windowsOff = _rules.Observe(
+            ServiceStatus.Running, offered, offered, AllOn, flyoutOpen: false, turnedOff: true);
+        var on = Poll(offered);
+
+        Assert.AreSame(ToastUpdate.None, switchedOff);
+        Assert.AreSame(ToastUpdate.None, windowsOff);
+        Assert.AreEqual("Allot 0.7.0 is available", Titles(on));
+    }
+
+    [TestMethod]
+    public void TheUpdateToastIsWithdrawnOnceTheUpdateInstalls()
+    {
+        _ = Poll(Idle(at: 0) with { Update = Release(UpdateState.Available, "0.7.0") });
+
+        var installing = Poll(Idle(at: 1) with { Update = Release(UpdateState.Installing) });
+        var still = Poll(Idle(at: 2) with { Update = Release(UpdateState.Installing) });
+
+        Assert.AreEqual("update", string.Join(" ", installing.Withdraw));
+        Assert.AreSame(ToastUpdate.None, still);
+    }
+
+    // The update replaces the tray, so the new one clears the toast the old one showed.
+    [TestMethod]
+    public void AFreshTrayWithdrawsALeftOverUpdateToast()
+    {
+        var upToDate = Idle(at: 0) with { Update = Release(UpdateState.UpToDate) };
+
+        var first = Poll(upToDate);
+        var second = Poll(upToDate);
+
+        Assert.AreEqual("update", string.Join(" ", first.Withdraw));
+        Assert.AreSame(ToastUpdate.None, second);
     }
 
     [TestMethod]
     public void ServiceStoppedToastIsWithdrawnWhenTheServiceIsBack()
     {
         _ = Poll(Busy(at: 0));
-        _ = Poll(null, ServiceStatus.Stopped);
         _ = Poll(null, ServiceStatus.Stopped);
 
         var back = Poll(Busy(at: 10));
@@ -129,26 +219,10 @@ public sealed class ToastRulesTests
     {
         var state = Busy(at: 0);
         _ = Poll(state with { Sessions = state.Sessions.Take(sessions).ToList() });
-        _ = Poll(null, ServiceStatus.Stopped);
 
         var update = Poll(null, ServiceStatus.Stopped);
 
         Assert.AreEqual($"Heavy commands now run unchecked. {expected}", update.Show[0].Body);
-    }
-
-    [TestMethod]
-    public void RestartSeenOnOnePollDoesNotToast()
-    {
-        _ = Poll(Busy(at: 0));
-
-        var updates = new[]
-        {
-            Poll(null, ServiceStatus.Stopped),
-            Poll(null, ServiceStatus.Starting),
-            Poll(Busy(at: 3)),
-        };
-
-        Assert.AreEqual("", string.Concat(updates.Select(Titles)));
     }
 
     [TestMethod]
@@ -172,11 +246,9 @@ public sealed class ToastRulesTests
         _ = Poll(Busy(at: 0));
         _rules.ExpectStop();
         _ = Poll(Busy(at: 1));
-        _ = Poll(null, ServiceStatus.Stopped);
 
         var chosen = Poll(null, ServiceStatus.Stopped);
         _ = Poll(Busy(at: 30));
-        _ = Poll(null, ServiceStatus.Stopped);
         var later = Poll(null, ServiceStatus.Stopped);
 
         Assert.AreEqual("", Titles(chosen));
@@ -189,7 +261,6 @@ public sealed class ToastRulesTests
         _ = Poll(Busy(at: 0));
         _rules.ExpectStop();
         _time.Now += ToastRules.ExpectedStopWindow + TimeSpan.FromSeconds(1);
-        _ = Poll(null, ServiceStatus.Stopped);
 
         var update = Poll(null, ServiceStatus.Stopped);
 
@@ -428,6 +499,16 @@ public sealed class ToastRulesTests
         };
 
     private const string Session = "3f2a9c1e-1111-4000-8000-000000000000";
+
+    private static UpdateStatus Release(UpdateState state, string? announce = null) =>
+        new()
+        {
+            Installed = "0.6.1",
+            State = state,
+            Latest = "0.7.0",
+            Notes = [],
+            Announce = announce,
+        };
 
     private static RecentRun Run(
         long lease,

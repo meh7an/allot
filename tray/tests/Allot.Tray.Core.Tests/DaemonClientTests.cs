@@ -226,6 +226,63 @@ public sealed class DaemonClientTests
     }
 
     [TestMethod]
+    public async Task UpdateRoutesPostWithTheToken()
+    {
+        using var directory = new TempDirectory();
+        var bodies = new List<string?>();
+        var handler = new FakeHttpHandler(request =>
+        {
+            bodies.Add(FakeHttpHandler.BodyOf(request));
+            var announced = request.RequestUri!.AbsolutePath == "/update/announced";
+            return FakeHttpHandler.Status(
+                announced ? HttpStatusCode.OK : HttpStatusCode.Accepted);
+        });
+        using var client = Client(directory, handler, "secret");
+
+        var check = await client.CheckForUpdateAsync(TestContext.CancellationToken);
+        var start = await client.StartUpdateAsync(TestContext.CancellationToken);
+        var announce = await client.UpdateAnnouncedAsync("0.7.0", TestContext.CancellationToken);
+
+        Assert.IsNull(check);
+        Assert.IsNull(start);
+        Assert.IsNull(announce);
+        CollectionAssert.AreEqual(
+            new List<string> { "/update/check", "/update/start", "/update/announced" },
+            handler.Seen.Select(seen => seen.Path).ToList());
+        Assert.IsTrue(handler.Seen.All(seen => seen.Token == "secret"));
+        var expected = JsonNode.Parse("""{"version":"0.7.0"}""");
+        var body = JsonNode.Parse(bodies[2] ?? string.Empty);
+        Assert.IsTrue(JsonNode.DeepEquals(expected, body), "the announced release");
+    }
+
+    [TestMethod]
+    public async Task ARefusedUpdateSaysAllotdsReason()
+    {
+        using var directory = new TempDirectory();
+        var handler = new FakeHttpHandler(_ => new HttpResponseMessage(HttpStatusCode.Conflict)
+        {
+            Content = new StringContent("an update is already running\n"),
+        });
+        using var client = Client(directory, handler, "secret");
+
+        var problem = await client.StartUpdateAsync(TestContext.CancellationToken);
+
+        Assert.AreEqual("an update is already running", problem);
+    }
+
+    [TestMethod]
+    public async Task AnUpdateWithTheServiceDownSaysSo()
+    {
+        using var directory = new TempDirectory();
+        var handler = new FakeHttpHandler(_ => throw FakeHttpHandler.Refused());
+        using var client = Client(directory, handler, "secret");
+
+        var problem = await client.CheckForUpdateAsync(TestContext.CancellationToken);
+
+        Assert.AreEqual("the service is not running", problem);
+    }
+
+    [TestMethod]
     public async Task UsePortSendsLaterRequestsToTheNewPort()
     {
         using var directory = new TempDirectory();
