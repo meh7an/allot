@@ -6,6 +6,11 @@ All notable changes to this project are documented in this file. The format foll
 
 ## [Unreleased]
 
+### Fixed
+
+- Windows: an install or upgrade that fails after it quit the tray app starts the installed tray
+  app again, instead of leaving no icon until the next sign-in.
+
 ## [0.6.1] - 2026-11-21
 
 ### Added

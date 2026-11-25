@@ -71,7 +71,8 @@ pub struct Options<'a> {
 /// bin directory, copies the skill, restarts allotd on the new build when it was running,
 /// installs and starts the tray app (Windows), and registers the rest with Claude Code and the
 /// OS, as `options` ask. A failed restart or tray start is reported, not returned: the install
-/// itself is complete by then.
+/// itself is complete by then. An install that fails after it quit the tray app starts the
+/// installed one again.
 ///
 /// # Errors
 ///
@@ -220,6 +221,26 @@ fn copy_skill(paths: &Paths) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// The folder of a tray app this run quit. Dropped while it still holds one, which a failed
+/// install does, it starts that app again: otherwise no icon is left until the next sign-in,
+/// and no panel to show the failure.
+#[cfg(windows)]
+#[derive(Debug, Default)]
+struct QuitTray(Option<PathBuf>);
+
+#[cfg(windows)]
+impl Drop for QuitTray {
+    fn drop(&mut self) {
+        let Some(dir) = &self.0 else {
+            return;
+        };
+        match tray::start(dir) {
+            Ok(()) => println!("started the tray app again"),
+            Err(error) => println!("warning: {error:#}"),
+        }
+    }
+}
+
 /// The rest of [`install`] on Windows, after the source was checked.
 #[cfg(windows)]
 fn install_on_windows(
@@ -235,11 +256,17 @@ fn install_on_windows(
     // the installed exe: a launch of the same app from another path does not reach the running
     // one.
     let installed_tray = tray::exe(&tray_dir);
-    if tray_build.is_some() && installed_tray.is_file() && !tray::quit(&installed_tray) {
-        println!(
-            "warning: the tray app did not quit; its files are renamed aside, and it keeps \
-             running until you quit it from its tray menu"
-        );
+    let mut quit_tray = QuitTray::default();
+    if tray_build.is_some() && installed_tray.is_file() {
+        let was_running = tray::is_running(&installed_tray);
+        if tray::quit(&installed_tray) {
+            quit_tray.0 = was_running.then(|| tray_dir.clone());
+        } else {
+            println!(
+                "warning: the tray app did not quit; its files are renamed aside, and it keeps \
+                 running until you quit it from its tray menu"
+            );
+        }
     }
 
     copy_binaries(&source, &bin)?;
@@ -272,6 +299,8 @@ fn install_on_windows(
             }
         ),
     }
+    // The new tray app was started in place of the one this run quit.
+    quit_tray.0 = None;
 
     registration::register(&paths, options.setup);
     // After the new entries are in place, so a session is never left without its hooks.

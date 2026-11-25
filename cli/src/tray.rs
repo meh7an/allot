@@ -166,8 +166,8 @@ fn run(exe: &Path, args: &[&str]) -> anyhow::Result<std::process::ExitStatus> {
         .with_context(|| format!("running {} {}", exe.display(), args.join(" ")))
 }
 
-/// A running exe cannot be opened for writing.
-fn is_running(exe: &Path) -> bool {
+/// Whether the app of `exe` is running: a running exe cannot be opened for writing.
+pub fn is_running(exe: &Path) -> bool {
     match fs::OpenOptions::new().write(true).open(exe) {
         Ok(_) => false,
         Err(error) => error.kind() != io::ErrorKind::NotFound,

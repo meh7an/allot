@@ -7,9 +7,12 @@
 
 use std::{
     env, fs,
+    io::{BufRead, BufReader, Read},
     net::{Ipv4Addr, TcpListener},
     path::{Path, PathBuf},
     process::{self, Child, Command, Output, Stdio},
+    thread,
+    time::Duration,
 };
 
 const SKILL: &str = include_str!("../skill/resource-guard/SKILL.md");
@@ -79,16 +82,28 @@ impl Home {
         fs::write(tray.join("allot-tray.pri"), "pri").unwrap();
     }
 
-    /// Runs the built `allot` in this home. `claude` points nowhere, so no test registers the MCP
+    /// The built `allot` in this home. `claude` points nowhere, so no test registers the MCP
     /// server with the real Claude Code.
-    fn allot(&self, args: &[&str]) -> Output {
-        Command::new(env!("CARGO_BIN_EXE_allot"))
+    fn command(&self, args: &[&str]) -> Command {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_allot"));
+        command
             .args(args)
             .env("USERPROFILE", &self.0)
             .env("ALLOT_CLAUDE", self.0.join("no-claude.exe"))
-            .stdin(Stdio::null())
-            .output()
-            .unwrap()
+            .stdin(Stdio::null());
+        command
+    }
+
+    /// Runs [`Self::command`] and waits for it.
+    fn allot(&self, args: &[&str]) -> Output {
+        self.command(args).output().unwrap()
+    }
+
+    /// Puts a directory where the installed skill file goes, so a later install fails when it
+    /// copies the skill, after it replaced the binaries.
+    fn block_the_skill_copy(&self) {
+        fs::remove_file(self.skill()).unwrap();
+        fs::create_dir(self.skill()).unwrap();
     }
 
     /// Installs from the build output. The logon task is left out: it is one per user, so a
@@ -416,6 +431,71 @@ fn test_reinstall_over_a_tray_app_that_does_not_quit_renames_its_files_aside() {
     finish(running);
     home.install();
     assert!(old_copies(&home.tray()).is_empty());
+}
+
+#[test]
+fn test_failed_install_starts_the_tray_app_it_quit_again() {
+    let home = Home::new("tray-restart");
+    home.add_tray_build();
+    home.install();
+    home.block_the_skill_copy();
+    let running = home.run_held(&home.tray().join("allot-tray.exe"));
+
+    let build = home.build();
+    let mut install = home
+        .command(&[
+            "install",
+            "--from",
+            build.to_str().unwrap(),
+            "--no-logon-task",
+        ])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    // The debug-build note is the last line before the install looks for a running tray app.
+    // The stand-in does not know --quit, so it is ended here, while the install waits for it.
+    let mut stdout = BufReader::new(install.stdout.take().unwrap());
+    let mut printed = String::new();
+    stdout.read_line(&mut printed).unwrap();
+    assert!(printed.contains("debug build"), "{printed}");
+    thread::sleep(Duration::from_secs(2));
+    finish(running);
+    stdout.read_to_string(&mut printed).unwrap();
+    let output = install.wait_with_output().unwrap();
+
+    assert_eq!(output.status.code(), Some(1), "{printed}");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("SKILL.md"), "{stderr}");
+    assert!(!printed.contains("did not quit"), "{printed}");
+    // Only a started stand-in reports this: it exits at once, and that stays a warning.
+    assert!(
+        printed.contains("warning: allot-tray.exe exited at once"),
+        "{printed}"
+    );
+}
+
+#[test]
+fn test_failed_install_leaves_a_tray_app_that_was_not_running_stopped() {
+    let home = Home::new("tray-stopped");
+    home.add_tray_build();
+    home.install();
+    home.block_the_skill_copy();
+
+    let build = home.build();
+    let output = home.allot(&[
+        "install",
+        "--from",
+        build.to_str().unwrap(),
+        "--no-logon-task",
+    ]);
+
+    assert_eq!(output.status.code(), Some(1), "{output:?}");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("SKILL.md"), "{stderr}");
+    // Both a start and a failed start say "tray app".
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(!stdout.contains("tray app"), "{stdout}");
 }
 
 #[test]
