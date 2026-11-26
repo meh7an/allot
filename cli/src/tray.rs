@@ -175,7 +175,8 @@ pub fn is_running(exe: &Path) -> bool {
 }
 
 /// Copies `source` over `target`. A file in use (a loaded DLL, the running exe) cannot be
-/// overwritten but can be renamed, so it is renamed aside first.
+/// overwritten but can be renamed, so it is renamed aside first, and back when the copy still
+/// fails.
 fn copy_file(source: &Path, target: &Path) -> anyhow::Result<()> {
     if let Some(dir) = target.parent() {
         fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
@@ -183,10 +184,13 @@ fn copy_file(source: &Path, target: &Path) -> anyhow::Result<()> {
     if fs::copy(source, target).is_ok() {
         return Ok(());
     }
-    fs::rename(target, aside_path(target))
-        .with_context(|| format!("renaming {} aside", target.display()))?;
+    let aside = aside_path(target);
+    fs::rename(target, &aside).with_context(|| format!("renaming {} aside", target.display()))?;
     fs::copy(source, target)
         .map(drop)
+        .inspect_err(|_| {
+            let _ = fs::rename(&aside, target);
+        })
         .with_context(|| format!("copying {} to {}", source.display(), target.display()))
 }
 
@@ -342,6 +346,19 @@ mod tests {
         drop(held);
         mirror(&source, &target).unwrap();
         assert_eq!(sorted_files(&target), ["WinUI.dll"]);
+    }
+
+    // A source that is gone fails both copies, as one that something else locked would.
+    #[test]
+    fn test_copy_file_with_a_source_it_cannot_read_keeps_the_old_file() {
+        let dir = TempDir::new("restore");
+        let target = dir.path().join("allot-tray.exe");
+        write(dir.path(), "allot-tray.exe", "old");
+
+        assert!(copy_file(&dir.path().join("missing.exe"), &target).is_err());
+
+        assert_eq!(sorted_files(dir.path()), ["allot-tray.exe"]);
+        assert_eq!(fs::read_to_string(&target).unwrap(), "old");
     }
 
     #[test]

@@ -10,6 +10,8 @@ All notable changes to this project are documented in this file. The format foll
 
 - Windows: an install or upgrade that fails after it quit the tray app starts the installed tray
   app again, instead of leaving no icon until the next sign-in.
+- Windows: a tray app file that an install cannot replace keeps its name, instead of staying
+  renamed aside and missing from the tray app.
 
 ## [0.6.1] - 2026-11-21
 
